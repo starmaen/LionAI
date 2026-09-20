@@ -3,10 +3,14 @@ package com.lion.ai
 import android.Manifest
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.telephony.SmsManager
@@ -16,6 +20,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,18 +35,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 data class Message(val text: String, val isUser: Boolean, val ytUrl: String? = null, val ytmUrl: String? = null)
 data class Chat(val id: String, val title: String)
+data class Contact(val name: String, val number: String)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,6 +71,25 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+fun getContacts(ctx: Context): List<Contact> {
+    val list = mutableListOf<Contact>()
+    try {
+        val cursor = ctx.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null
+        )
+        cursor?.use {
+            val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            while (it.moveToNext()) {
+                val name = it.getString(nameIdx) ?: ""
+                val num = it.getString(numIdx) ?: ""
+                if (name.isNotBlank() && num.isNotBlank()) list.add(Contact(name, num))
+            }
+        }
+    } catch (e: Exception) { }
+    return list.distinctBy { it.number }.sortedBy { it.name }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LionApp() {
@@ -73,6 +99,7 @@ fun LionApp() {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     var showSettings by remember { mutableStateOf(false) }
+    var showContacts by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var input by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -81,6 +108,7 @@ fun LionApp() {
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
     var autoSpeak by remember { mutableStateOf(false) }
     var chosenFileName by remember { mutableStateOf<String?>(null) }
+    var contacts by remember { mutableStateOf(listOf<Contact>()) }
 
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
@@ -99,74 +127,70 @@ fun LionApp() {
     }
 
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            chosenFileName = uri.lastPathSegment?.substringAfterLast("/") ?: "ملف"
-        }
+        if (uri != null) chosenFileName = uri.lastPathSegment?.substringAfterLast("/") ?: "ملف"
     }
 
     fun startVoice() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "تحدث الآن...")
         }
-        voiceLauncher.launch(intent)
+        voiceLauncher.launch(i)
     }
 
     fun scheduleReminder(text: String, seconds: Int) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val i = Intent(context, ReminderReceiver::class.java).putExtra("text", text)
-        val pi = PendingIntent.getBroadcast(
-            context, System.currentTimeMillis().toInt(), i,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val pi = PendingIntent.getBroadcast(context, System.currentTimeMillis().toInt(), i,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + seconds * 1000L, pi)
     }
 
     fun detectReminder(msg: String): Pair<String, Int>? {
-        val regex = Regex("بعد\\s+(\\d+)\\s*(ثانية|ثواني|دقيقة|دقائق|ساعة|ساعات)")
-        val m = regex.find(msg) ?: return null
-        val num = m.groupValues[1].toIntOrNull() ?: return null
-        val unit = m.groupValues[2]
-        val s = when {
-            unit.contains("ثان") -> num
-            unit.contains("دقيق") -> num * 60
-            unit.contains("ساع") -> num * 3600
-            else -> return null
-        }
-        val text = msg.replace(m.value, "").replace("ذكرني", "").replace("أن", "").replace("ان", "").trim()
-        return Pair(text.ifEmpty { "تذكير" }, s)
+        val r = Regex("بعد\\s+(\\d+)\\s*(ثانية|ثواني|دقيقة|دقائق|ساعة|ساعات)")
+        val m = r.find(msg) ?: return null
+        val n = m.groupValues[1].toIntOrNull() ?: return null
+        val u = m.groupValues[2]
+        val s = when { u.contains("ثان") -> n; u.contains("دقيق") -> n * 60; u.contains("ساع") -> n * 3600; else -> return null }
+        val t = msg.replace(m.value, "").replace("ذكرني", "").replace("أن", "").replace("ان", "").trim()
+        return Pair(t.ifEmpty { "تذكير" }, s)
     }
 
-    fun detectSms(msg: String): Pair<String, String>? {
-        val regex = Regex("(?:أرسل|ارسل)\\s+(?:رسالة|رساله)\\s+(?:للرقم|لرقم|إلى|الى)\\s+(\\S+)\\s*[:：]?\\s*(.+)")
-        val m = regex.find(msg) ?: return null
-        return Pair(m.groupValues[1].trim(), m.groupValues[2].trim())
+    fun detectSms(msg: String): Triple<String, String, String>? {
+        // "أرسل رسالة لـ أحمد: ..." أو "أرسل رسالة للرقم 0952499015: ..."
+        val r1 = Regex("(?:أرسل|ارسل)\\s+(?:رسالة|رساله)\\s+(?:لـ|ل|إلى|الى)\\s+(\\S+?)\\s*[:：]\\s*(.+)")
+        val m1 = r1.find(msg)
+        if (m1 != null) return Triple("name", m1.groupValues[1].trim(), m1.groupValues[2].trim())
+        val r2 = Regex("(?:أرسل|ارسل)\\s+(?:رسالة|رساله)\\s+(?:للرقم|لرقم)\\s+(\\S+)\\s*[:：]?\\s*(.+)")
+        val m2 = r2.find(msg)
+        if (m2 != null) return Triple("number", m2.groupValues[1].trim(), m2.groupValues[2].trim())
+        return null
+    }
+
+    fun findNumberByName(name: String): String? {
+        return contacts.firstOrNull { it.name.contains(name, ignoreCase = true) }?.number
     }
 
     fun sendSms(phone: String, text: String) {
-        try {
-            @Suppress("DEPRECATION")
-            SmsManager.getDefault().sendTextMessage(phone, null, text, null, null)
-        } catch (e: Exception) { }
+        try { @Suppress("DEPRECATION") SmsManager.getDefault().sendTextMessage(phone, null, text, null, null) } catch (e: Exception) { }
     }
 
     fun loadChat(id: String) {
         val saved = prefs.getString("chat_$id", "") ?: ""
         messages = if (saved.isEmpty()) emptyList() else {
             saved.split("\n---\n").filter { it.isNotEmpty() }.map { line ->
-                val parts = line.split("|", limit = 2)
-                Message(parts.getOrElse(1) { "" }, parts.getOrElse(0) { "u" } == "u")
+                val p = line.split("|", limit = 2)
+                Message(p.getOrElse(1) { "" }, p.getOrElse(0) { "u" } == "u")
             }
         }
         currentChat = id
     }
 
     fun saveChat() {
-        val serialized = messages.joinToString("\n---\n") { (if (it.isUser) "u" else "a") + "|" + it.text.replace("\n", " ") }
-        prefs.edit().putString("chat_$currentChat", serialized).apply()
-        val firstUser = messages.firstOrNull { it.isUser }?.text
-        if (firstUser != null) prefs.edit().putString("chat_title_$currentChat", firstUser.take(30)).apply()
+        val s = messages.joinToString("\n---\n") { (if (it.isUser) "u" else "a") + "|" + it.text.replace("\n", " ") }
+        prefs.edit().putString("chat_$currentChat", s).apply()
+        val f = messages.firstOrNull { it.isUser }?.text
+        if (f != null) prefs.edit().putString("chat_title_$currentChat", f.take(30)).apply()
     }
 
     fun loadChatsList() {
@@ -179,10 +203,28 @@ fun LionApp() {
     LaunchedEffect(Unit) {
         loadChatsList()
         loadChat(currentChat)
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+            contacts = getContacts(context)
+        }
+    }
+
+    // جلب السياق من الرسائل السابقة
+    fun buildHistory(): List<Map<String, String>> {
+        return messages.takeLast(10).map {
+            mapOf("role" to (if (it.isUser) "user" else "assistant"), "content" to it.text)
+        }
     }
 
     if (showSettings) {
         SettingsScreen(prefs, autoSpeak, { autoSpeak = it }) { showSettings = false }
+        return
+    }
+
+    if (showContacts) {
+        ContactsScreen(contacts, onBack = { showContacts = false }, onSelect = { c ->
+            input = "أرسل رسالة لـ ${c.name}: "
+            showContacts = false
+        })
         return
     }
 
@@ -196,14 +238,23 @@ fun LionApp() {
                         val newId = "chat_" + System.currentTimeMillis()
                         val ids = (prefs.getString("chat_ids", "") ?: "") + "," + newId
                         prefs.edit().putString("chat_ids", ids).putString("chat_title_$newId", "محادثة جديدة").apply()
-                        currentChat = newId
-                        messages = emptyList()
-                        loadChatsList()
+                        currentChat = newId; messages = emptyList(); loadChatsList()
                         scope.launch { drawerState.close() }
                     },
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
                 ) { Text("+ محادثة جديدة", color = Color(0xFF0D0D0D)) }
+
+                Button(
+                    onClick = {
+                        contacts = getContacts(context)
+                        showContacts = true
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F))
+                ) { Text("📇 جهات الاتصال", color = Color.White) }
+
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(chats) { chat ->
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -212,8 +263,8 @@ fun LionApp() {
                                 modifier = Modifier.weight(1f)
                             ) { Text(chat.title, color = Color.White, maxLines = 1) }
                             IconButton(onClick = {
-                                val newIds = chats.filter { it.id != chat.id }.joinToString(",") { it.id }
-                                prefs.edit().putString("chat_ids", newIds).remove("chat_${chat.id}").remove("chat_title_${chat.id}").apply()
+                                val n = chats.filter { it.id != chat.id }.joinToString(",") { it.id }
+                                prefs.edit().putString("chat_ids", n).remove("chat_${chat.id}").remove("chat_title_${chat.id}").apply()
                                 if (currentChat == chat.id) { currentChat = "default"; messages = emptyList() }
                                 loadChatsList()
                             }) { Icon(Icons.Filled.Delete, "Delete", tint = Color(0xFFE94560)) }
@@ -284,38 +335,47 @@ fun LionApp() {
                                     input = ""
                                     saveChat()
 
-                                    val reminder = detectReminder(userMsg)
-                                    if (reminder != null) {
-                                        scheduleReminder(reminder.first, reminder.second)
-                                        messages = messages + Message("✅ تم جدولة التذكير: ${reminder.first}", false)
+                                    // التذكيرات
+                                    val r = detectReminder(userMsg)
+                                    if (r != null) {
+                                        scheduleReminder(r.first, r.second)
+                                        messages = messages + Message("✅ تم جدولة التذكير: ${r.first}", false)
                                         saveChat()
                                         return@Button
                                     }
 
+                                    // SMS
                                     val sms = detectSms(userMsg)
                                     if (sms != null) {
-                                        sendSms(sms.first, sms.second)
-                                        messages = messages + Message("📱 تم إرسال الرسالة إلى ${sms.first}", false)
+                                        val (type, target, body) = sms
+                                        val phone = if (type == "name") findNumberByName(target) else target
+                                        if (phone != null) {
+                                            sendSms(phone, body)
+                                            messages = messages + Message("📱 تم إرسال الرسالة إلى $target ($phone):\n$body", false)
+                                        } else {
+                                            messages = messages + Message("❌ لم أجد جهة اتصال باسم $target", false)
+                                        }
                                         saveChat()
                                         return@Button
                                     }
 
                                     loading = true
                                     scope.launch {
+                                        val history = buildHistory()
                                         val reply = withContext(Dispatchers.IO) {
                                             try {
                                                 val apiKey = prefs.getString("api_key", "") ?: ""
                                                 val provider = prefs.getString("provider", "groq") ?: "groq"
                                                 val py = Python.getInstance()
                                                 val module = py.getModule("assistant")
-                                                module.callAttr("ask", userMsg, apiKey, provider).toString()
+                                                module.callAttr("ask", userMsg, apiKey, provider, history).toString()
                                             } catch (e: Exception) { "خطأ: ${e.message}" }
                                         }
 
                                         var ytUrl: String? = null
                                         var ytmUrl: String? = null
-                                        val musicKeywords = listOf("أغنية", "اغنية", "أغني", "اغني", "شغل", "موسيقى", "song", "music")
-                                        if (musicKeywords.any { userMsg.contains(it) }) {
+                                        val kw = listOf("أغنية", "اغنية", "أغني", "اغني", "شغل", "موسيقى", "song", "music")
+                                        if (kw.any { userMsg.contains(it) }) {
                                             val q = userMsg.replace(Regex("(أريد|اريد|شغل|أغنية|اغنية|أغني|اغني|لي|موسيقى)"), "").trim()
                                             if (q.isNotEmpty()) {
                                                 ytUrl = "https://www.youtube.com/results?search_query=" + Uri.encode(q)
@@ -336,6 +396,39 @@ fun LionApp() {
                         ) { Text("➤", color = Color(0xFF0D0D0D), fontSize = 18.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContactsScreen(contacts: List<Contact>, onBack: () -> Unit, onSelect: (Contact) -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("📇 جهات الاتصال (${contacts.size})", color = Color(0xFFFFB800)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back", tint = Color(0xFFFFB800)) } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A))
+            )
+        }
+    ) { padding ->
+        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0D0D0D))) {
+            items(contacts) { c ->
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { onSelect(c) }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("👤", fontSize = 24.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(c.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(c.number, color = Color(0xFFB0B0B0), fontSize = 13.sp)
+                    }
+                }
+                Divider(color = Color(0xFF2A2A2A))
             }
         }
     }
@@ -399,7 +492,62 @@ fun Bubble(msg: Message, context: Context, tts: TextToSpeech?) {
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text(msg.text, color = if (msg.isUser) Color(0xFF0D0D0D) else Color.White, fontSize = 15.sp)
+                // محتوى مع دعم نسخ الأكواد والروابط
+                val text = msg.text
+                val codeBlocks = Regex("```([\\s\\S]*?)```").findAll(text).toList()
+                val urlRegex = Regex("(https?://\\S+)")
+                val hasCode = codeBlocks.isNotEmpty()
+                val hasUrl = urlRegex.containsMatchIn(text)
+
+                if (hasCode) {
+                    var lastEnd = 0
+                    val parts = mutableListOf<Pair<String, Boolean>>()
+                    codeBlocks.forEach { match ->
+                        if (match.range.first > lastEnd) parts.add(Pair(text.substring(lastEnd, match.range.first), false))
+                        parts.add(Pair(match.groupValues[1].trim(), true))
+                        lastEnd = match.range.last + 1
+                    }
+                    if (lastEnd < text.length) parts.add(Pair(text.substring(lastEnd), false))
+                    parts.forEach { (content, isCode) ->
+                        if (isCode) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF000000)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text(content, color = Color(0xFF9BE89B), fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                                    Spacer(Modifier.height(4.dp))
+                                    TextButton(onClick = {
+                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        cm.setPrimaryClip(ClipData.newPlainText("Lion AI Code", content))
+                                    }) { Text("📋 نسخ الكود", color = Color(0xFFFFB800), fontSize = 12.sp) }
+                                }
+                            }
+                        } else {
+                            Text(content, color = if (msg.isUser) Color(0xFF0D0D0D) else Color.White, fontSize = 15.sp)
+                        }
+                    }
+                } else {
+                    Text(text, color = if (msg.isUser) Color(0xFF0D0D0D) else Color.White, fontSize = 15.sp)
+                }
+
+                if (hasUrl) {
+                    Spacer(Modifier.height(6.dp))
+                    urlRegex.findAll(text).forEach { m ->
+                        val url = m.value
+                        Row(modifier = Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(url, color = Color(0xFF6B9EFF), fontSize = 12.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                            TextButton(onClick = {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("Link", url))
+                            }) { Text("📋", color = Color(0xFFFFB800), fontSize = 14.sp) }
+                            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }) {
+                                Text("🌐", color = Color(0xFFFFB800), fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
 
                 if (msg.ytUrl != null || msg.ytmUrl != null) {
                     Spacer(Modifier.height(8.dp))
@@ -428,10 +576,10 @@ fun Bubble(msg: Message, context: Context, tts: TextToSpeech?) {
                     Spacer(Modifier.height(8.dp))
                     Row {
                         TextButton(onClick = {
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Lion AI", msg.text))
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("Lion AI", text))
                         }) { Text("📋 نسخ", color = Color(0xFFFFB800), fontSize = 12.sp) }
-                        TextButton(onClick = { tts?.speak(msg.text.take(500), TextToSpeech.QUEUE_FLUSH, null, null) }) {
+                        TextButton(onClick = { tts?.speak(text.take(500), TextToSpeech.QUEUE_FLUSH, null, null) }) {
                             Text("🔊 استماع", color = Color(0xFFFFB800), fontSize = 12.sp)
                         }
                         TextButton(onClick = { tts?.stop() }) {
