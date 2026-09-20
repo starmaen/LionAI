@@ -208,11 +208,18 @@ fun LionApp() {
         }
     }
 
-    // جلب السياق من الرسائل السابقة
-    fun buildHistory(): List<Map<String, String>> {
-        return messages.takeLast(10).map {
-            mapOf("role" to (if (it.isUser) "user" else "assistant"), "content" to it.text)
+    // جلب السياق من الرسائل السابقة كـ JSON String
+    fun buildHistoryJson(): String {
+        val sb = StringBuilder("[")
+        val recent = messages.takeLast(10)
+        recent.forEachIndexed { i, m ->
+            if (i > 0) sb.append(",")
+            val role = if (m.isUser) "user" else "assistant"
+            val safeText = m.text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
+            sb.append("{\"role\":\"$role\",\"content\":\"$safeText\"}")
         }
+        sb.append("]")
+        return sb.toString()
     }
 
     if (showSettings) {
@@ -361,14 +368,14 @@ fun LionApp() {
 
                                     loading = true
                                     scope.launch {
-                                        val history = buildHistory()
+                                        val historyJson = buildHistoryJson()
                                         val reply = withContext(Dispatchers.IO) {
                                             try {
                                                 val apiKey = prefs.getString("api_key", "") ?: ""
                                                 val provider = prefs.getString("provider", "groq") ?: "groq"
                                                 val py = Python.getInstance()
                                                 val module = py.getModule("assistant")
-                                                module.callAttr("ask", userMsg, apiKey, provider, history).toString()
+                                                module.callAttr("ask", userMsg, apiKey, provider, historyJson).toString()
                                             } catch (e: Exception) { "خطأ: ${e.message}" }
                                         }
 
