@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.speech.RecognizerIntent
@@ -35,7 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,23 +71,29 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-fun getContacts(ctx: Context): List<Contact> {
+fun loadContactsFromDevice(ctx: Context): List<Contact> {
     val list = mutableListOf<Contact>()
     try {
         val cursor = ctx.contentResolver.query(
-            ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null, null,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
         )
         cursor?.use {
-            val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-            val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
             while (it.moveToNext()) {
-                val name = it.getString(nameIdx) ?: ""
-                val num = it.getString(numIdx) ?: ""
+                val name = it.getString(0) ?: ""
+                val num = it.getString(1) ?: ""
                 if (name.isNotBlank() && num.isNotBlank()) list.add(Contact(name, num))
             }
         }
-    } catch (e: Exception) { }
-    return list.distinctBy { it.number }.sortedBy { it.name }
+    } catch (e: Exception) {
+        android.util.Log.e("LionAI", "Contacts error: " + e.message)
+    }
+    return list.distinctBy { it.number }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,24 +115,41 @@ fun LionApp() {
     var autoSpeak by remember { mutableStateOf(false) }
     var chosenFileName by remember { mutableStateOf<String?>(null) }
     var contacts by remember { mutableStateOf(listOf<Contact>()) }
-    var permGranted by remember { mutableStateOf(false) }
+    var permissionsGranted by remember { mutableStateOf(false) }
 
-    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        permGranted = result[Manifest.permission.READ_CONTACTS] == true
+    // الأذونات الأساسية
+    val requiredPerms = remember {
+        mutableListOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.RECORD_AUDIO
+        ).apply {
+            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+            if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.SCHEDULE_EXACT_ALARM)
+        }.toTypedArray()
+    }
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        permissionsGranted = result[Manifest.permission.READ_CONTACTS] == true
+        if (permissionsGranted) {
+            contacts = loadContactsFromDevice(context)
+        }
     }
 
     LaunchedEffect(Unit) {
-        permLauncher.launch(arrayOf(
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.POST_NOTIFICATIONS
-        ))
+        // فحص الأذونات أولاً
+        val allGranted = requiredPerms.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+        if (allGranted) {
+            permissionsGranted = true
+            contacts = loadContactsFromDevice(context)
+        } else {
+            permLauncher.launch(requiredPerms)
+        }
         tts = TextToSpeech(context) { }
-    }
-
-    LaunchedEffect(permGranted) {
-        if (permGranted) contacts = getContacts(context)
     }
 
     val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
@@ -139,64 +162,59 @@ fun LionApp() {
     }
 
     fun startVoice() {
-        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
-        }
-        voiceLauncher.launch(i)
+        try {
+            val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
+            }
+            voiceLauncher.launch(i)
+        } catch (e: Exception) { }
     }
 
-    // كشف التذكير بالكلمات المفتاحية
+    // كشف التذكير
     fun detectReminder(msg: String): Pair<String, Int>? {
-        if (!msg.contains("ذكرني") && !msg.contains("نبهني")) return null
+        val hasReminderWord = msg.contains("ذكرني") || msg.contains("نبهني") || msg.contains("ذكرنى")
+        if (!hasReminderWord) return null
         if (!msg.contains("بعد")) return null
 
-        // استخراج الرقم
-        val numRegex = Regex("(\\d+)")
-        val numMatch = numRegex.find(msg.substringAfter("بعد")) ?: return null
+        // استخرج الرقم بعد "بعد"
+        val after = msg.substringAfter("بعد", "")
+        val numMatch = Regex("(\\d+)").find(after) ?: return null
         val n = numMatch.groupValues[1].toIntOrNull() ?: return null
 
-        // تحديد الوحدة
         val s = when {
-            msg.contains("ثانية") || msg.contains("ثواني") || msg.contains("ثانيه") -> n
-            msg.contains("دقيقة") || msg.contains("دقائق") || msg.contains("دقيقه") -> n * 60
-            msg.contains("ساعة") || msg.contains("ساعات") || msg.contains("ساعه") -> n * 3600
-            msg.contains("يوم") || msg.contains("أيام") || msg.contains("ايام") -> n * 86400
+            after.contains("ثانية") || after.contains("ثواني") || after.contains("ثانيه") -> n
+            after.contains("دقيقة") || after.contains("دقائق") || after.contains("دقيقه") || after.contains("دقيقتين") -> if (after.contains("دقيقتين")) 120 else n * 60
+            after.contains("ساعة") || after.contains("ساعات") || after.contains("ساعه") || after.contains("ساعتين") -> if (after.contains("ساعتين")) 7200 else n * 3600
+            after.contains("يوم") || after.contains("أيام") || after.contains("ايام") -> n * 86400
             else -> return null
         }
 
-        // استخراج النص
-        var text = msg.replace(Regex("ذكرني|نبهني"), "").trim()
-        text = text.replace(Regex("بعد\\s*\\d+\\s*(ثانية|ثواني|ثانيه|دقيقة|دقائق|دقيقه|ساعة|ساعات|ساعه|يوم|أيام|ايام)"), "").trim()
+        var text = msg.replace(Regex("(ذكرني|نبهني|ذكرنى|بعد|ثانية|ثواني|ثانيه|دقيقة|دقائق|دقيقه|دقيقتين|ساعة|ساعات|ساعه|ساعتين|يوم|أيام|ايام|\\d+)"), "").trim()
         text = text.replace(Regex("^(أن|ان|بأن|بان|ب)\\s+"), "").trim()
         return Pair(text.ifEmpty { "تذكير" }, s)
     }
 
-    // كشف رسالة SMS
+    // كشف SMS
     fun detectSms(msg: String): Triple<String, String, String>? {
         val hasSend = msg.contains("أرسل") || msg.contains("ارسل") || msg.contains("ابعث")
         val hasMsg = msg.contains("رسالة") || msg.contains("رساله") || msg.contains("sms")
         if (!hasSend || !hasMsg) return null
 
-        // ابحث عن الرقم أولاً
-        val numRegex = Regex("(\\+?\\d{6,})")
-        val numMatch = numRegex.find(msg)
+        val colonIdx = msg.indexOfFirst { it == ':' || it == '：' }
+        if (colonIdx < 0) return null
+        val body = msg.substring(colonIdx + 1).trim()
+        if (body.isEmpty()) return null
 
-        // استخرج النص بعد ":"
-        val bodyRegex = Regex("[:：]\\s*(.+)")
-        val bodyMatch = bodyRegex.find(msg)
-        val body = bodyMatch?.groupValues?.get(1)?.trim() ?: return null
+        val beforeColon = msg.substring(0, colonIdx)
 
-        if (numMatch != null) {
-            // رقم موجود
-            return Triple("number", numMatch.groupValues[1], body)
-        }
+        val numMatch = Regex("(\\+?\\d{6,})").find(beforeColon)
+        if (numMatch != null) return Triple("number", numMatch.groupValues[1], body)
 
-        // ابحث عن اسم بعد "لـ" أو "ل" أو "إلى"
-        val nameRegex = Regex("(?:لـ|ل\\s|إلى|الى)\\s*(\\S+?)\\s*[:：]")
-        val nameMatch = nameRegex.find(msg)
+        val nameMatch = Regex("(?:لـ|ل|إلى|الى)\\s*(\\S+)\\s*$").find(beforeColon)
         if (nameMatch != null) {
-            return Triple("name", nameMatch.groupValues[1].trim(), body)
+            val name = nameMatch.groupValues[1].trim()
+            if (name.isNotEmpty()) return Triple("name", name, body)
         }
         return null
     }
@@ -208,19 +226,28 @@ fun LionApp() {
     fun sendSms(phone: String, text: String) {
         try {
             @Suppress("DEPRECATION")
-            SmsManager.getDefault().sendTextMessage(phone, null, text, null, null)
-        } catch (e: Exception) { }
+            val sm = SmsManager.getDefault()
+            sm.sendTextMessage(phone, null, text, null, null)
+        } catch (e: Exception) {
+            android.util.Log.e("LionAI", "SMS error: " + e.message)
+        }
     }
 
     fun scheduleReminder(text: String, seconds: Int) {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val i = Intent(context, ReminderReceiver::class.java).putExtra("text", text)
-        val pi = PendingIntent.getBroadcast(context, System.currentTimeMillis().toInt(), i,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         try {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + seconds * 1000L, pi)
-        } catch (e: SecurityException) {
-            am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + seconds * 1000L, pi)
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val i = Intent(context, ReminderReceiver::class.java).putExtra("text", text)
+            val pi = PendingIntent.getBroadcast(
+                context, System.currentTimeMillis().toInt(), i,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+                am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + seconds * 1000L, pi)
+            } else {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + seconds * 1000L, pi)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LionAI", "Alarm error: " + e.message)
         }
     }
 
@@ -299,7 +326,7 @@ fun LionApp() {
 
                 Button(
                     onClick = {
-                        contacts = getContacts(context)
+                        contacts = loadContactsFromDevice(context)
                         showContacts = true
                         scope.launch { drawerState.close() }
                     },
@@ -387,25 +414,25 @@ fun LionApp() {
                                     input = ""
                                     saveChat()
 
-                                    // كشف التذكير
+                                    // التذكير
                                     val r = detectReminder(userMsg)
                                     if (r != null) {
                                         scheduleReminder(r.first, r.second)
-                                        messages = messages + Message("✅ تم جدولة التذكير: ${r.first}\nبعد ${r.second} ثانية", false)
+                                        messages = messages + Message("✅ تم جدولة التذكير: ${r.first}", false)
                                         saveChat()
                                         return@Button
                                     }
 
-                                    // كشف SMS
+                                    // SMS
                                     val sms = detectSms(userMsg)
                                     if (sms != null) {
                                         val (type, target, body) = sms
                                         val phone = if (type == "name") findNumberByName(target) else target
                                         if (phone != null) {
                                             sendSms(phone, body)
-                                            messages = messages + Message("📱 تم إرسال الرسالة إلى $target ($phone):\n$body", false)
+                                            messages = messages + Message("📱 تم إرسال الرسالة إلى $target ($phone)", false)
                                         } else {
-                                            messages = messages + Message("❌ لم أجد جهة اتصال باسم $target", false)
+                                            messages = messages + Message("❌ لم أجد جهة اتصال باسم $target. جهات الاتصال المتوفرة: ${contacts.size}", false)
                                         }
                                         saveChat()
                                         return@Button
@@ -416,8 +443,8 @@ fun LionApp() {
                                         val historyJson = buildHistoryJson()
                                         val reply = withContext(Dispatchers.IO) {
                                             try {
-                                                val apiKey = prefs.getString("api_key_" + prefs.getString("provider", "groq"), "") ?: ""
                                                 val provider = prefs.getString("provider", "groq") ?: "groq"
+                                                val apiKey = prefs.getString("api_key_" + provider, "") ?: ""
                                                 val py = Python.getInstance()
                                                 val module = py.getModule("assistant")
                                                 module.callAttr("ask", userMsg, apiKey, provider, historyJson).toString()
@@ -465,22 +492,28 @@ fun ContactsScreen(contacts: List<Contact>, onBack: () -> Unit, onSelect: (Conta
             )
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0D0D0D))) {
-            items(contacts) { c ->
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .clickable { onSelect(c) }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("👤", fontSize = 24.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(c.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text(c.number, color = Color(0xFFB0B0B0), fontSize = 13.sp)
+        if (contacts.isEmpty()) {
+            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("لا توجد جهات اتصال. تأكد من منح إذن جهات الاتصال.", color = Color.White)
+            }
+        } else {
+            LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0D0D0D))) {
+                items(contacts) { c ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable { onSelect(c) }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("👤", fontSize = 24.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(c.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(c.number, color = Color(0xFFB0B0B0), fontSize = 13.sp)
+                        }
                     }
+                    Divider(color = Color(0xFF2A2A2A))
                 }
-                Divider(color = Color(0xFF2A2A2A))
             }
         }
     }
@@ -497,7 +530,7 @@ fun SettingsScreen(prefs: android.content.SharedPreferences, autoSpeak: Boolean,
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("⚙️ الإعدادات", color = Color(0xFFFFB800), fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Text("المزود الحالي:", color = Color.White)
         providers.forEach { p ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
@@ -505,34 +538,34 @@ fun SettingsScreen(prefs: android.content.SharedPreferences, autoSpeak: Boolean,
                 Text(p.replaceFirstChar { it.uppercase() }, color = Color.White)
             }
         }
-        Spacer(Modifier.height(24.dp))
-        Text("🔑 مفاتيح API (كل مزود بمفتاح مستقل):", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("🔑 مفاتيح API:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
 
-        Text("Groq:", color = Color.White, fontSize = 14.sp)
-        OutlinedTextField(value = groqKey, onValueChange = { groqKey = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("gsk_...", color = Color.Gray) }, maxLines = 3,
+        Text("Groq (gsk_...)", color = Color.White, fontSize = 14.sp)
+        OutlinedTextField(value = groqKey, onValueChange = { groqKey = it }, modifier = Modifier.fillMaxWidth(), maxLines = 3,
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFFB800), unfocusedBorderColor = Color(0xFF2A2A2A), focusedTextColor = Color.White, unfocusedTextColor = Color.White))
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        Text("Gemini:", color = Color.White, fontSize = 14.sp)
-        OutlinedTextField(value = geminiKey, onValueChange = { geminiKey = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("AIza...", color = Color.Gray) }, maxLines = 3,
+        Text("Gemini (AIza...)", color = Color.White, fontSize = 14.sp)
+        OutlinedTextField(value = geminiKey, onValueChange = { geminiKey = it }, modifier = Modifier.fillMaxWidth(), maxLines = 3,
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFFB800), unfocusedBorderColor = Color(0xFF2A2A2A), focusedTextColor = Color.White, unfocusedTextColor = Color.White))
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        Text("OpenAI:", color = Color.White, fontSize = 14.sp)
-        OutlinedTextField(value = openaiKey, onValueChange = { openaiKey = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("sk-...", color = Color.Gray) }, maxLines = 3,
+        Text("OpenAI (sk-...)", color = Color.White, fontSize = 14.sp)
+        OutlinedTextField(value = openaiKey, onValueChange = { openaiKey = it }, modifier = Modifier.fillMaxWidth(), maxLines = 3,
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFFB800), unfocusedBorderColor = Color(0xFF2A2A2A), focusedTextColor = Color.White, unfocusedTextColor = Color.White))
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        Text("Claude:", color = Color.White, fontSize = 14.sp)
-        OutlinedTextField(value = claudeKey, onValueChange = { claudeKey = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("sk-ant-...", color = Color.Gray) }, maxLines = 3,
+        Text("Claude (sk-ant-...)", color = Color.White, fontSize = 14.sp)
+        OutlinedTextField(value = claudeKey, onValueChange = { claudeKey = it }, modifier = Modifier.fillMaxWidth(), maxLines = 3,
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFFB800), unfocusedBorderColor = Color(0xFF2A2A2A), focusedTextColor = Color.White, unfocusedTextColor = Color.White))
         Spacer(Modifier.height(16.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = autoSpeak, onCheckedChange = onAutoSpeakChange, colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800)))
             Spacer(Modifier.width(8.dp))
-            Text("قراءة الردود تلقائياً", color = Color.White)
+            Text("قراءة تلقائية", color = Color.White)
         }
         Spacer(Modifier.height(24.dp))
 
@@ -549,7 +582,7 @@ fun SettingsScreen(prefs: android.content.SharedPreferences, autoSpeak: Boolean,
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
-        ) { Text("💾 حفظ الكل", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold) }
+        ) { Text("💾 حفظ", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -567,8 +600,7 @@ fun Bubble(msg: Message, context: Context, tts: TextToSpeech?) {
                     Spacer(Modifier.height(8.dp))
                     Row {
                         if (msg.ytUrl != null) {
-                            Button(
-                                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(msg.ytUrl))) },
+                            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(msg.ytUrl))) },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000)),
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -576,8 +608,7 @@ fun Bubble(msg: Message, context: Context, tts: TextToSpeech?) {
                         }
                         Spacer(Modifier.width(6.dp))
                         if (msg.ytmUrl != null) {
-                            Button(
-                                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(msg.ytmUrl))) },
+                            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(msg.ytmUrl))) },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF8C00)),
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
