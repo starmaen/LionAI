@@ -38,7 +38,7 @@ import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.*
+import java.util.Locale
 
 data class Message(val text: String, val isUser: Boolean, val ytUrl: String? = null, val ytmUrl: String? = null)
 data class Chat(val id: String, val title: String)
@@ -80,12 +80,16 @@ fun LionApp() {
     var chats by remember { mutableStateOf(listOf<Chat>()) }
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
     var autoSpeak by remember { mutableStateOf(false) }
-    var chosenFileUri by remember { mutableStateOf<Uri?>(null) }
     var chosenFileName by remember { mutableStateOf<String?>(null) }
 
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
-        permLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.SEND_SMS, Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS))
+        permLauncher.launch(arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.POST_NOTIFICATIONS
+        ))
         tts = TextToSpeech(context) { }
     }
 
@@ -96,16 +100,15 @@ fun LionApp() {
 
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            chosenFileUri = uri
             chosenFileName = uri.lastPathSegment?.substringAfterLast("/") ?: "ملف"
         }
     }
 
     fun startVoice() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SCREENSHOT).apply {
-            action = RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "تحدث الآن...")
         }
         voiceLauncher.launch(intent)
     }
@@ -113,7 +116,10 @@ fun LionApp() {
     fun scheduleReminder(text: String, seconds: Int) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val i = Intent(context, ReminderReceiver::class.java).putExtra("text", text)
-        val pi = PendingIntent.getBroadcast(context, System.currentTimeMillis().toInt(), i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val pi = PendingIntent.getBroadcast(
+            context, System.currentTimeMillis().toInt(), i,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + seconds * 1000L, pi)
     }
 
@@ -122,7 +128,12 @@ fun LionApp() {
         val m = regex.find(msg) ?: return null
         val num = m.groupValues[1].toIntOrNull() ?: return null
         val unit = m.groupValues[2]
-        val s = when { unit.contains("ثان") -> num; unit.contains("دقيق") -> num * 60; unit.contains("ساع") -> num * 3600; else -> return null }
+        val s = when {
+            unit.contains("ثان") -> num
+            unit.contains("دقيق") -> num * 60
+            unit.contains("ساع") -> num * 3600
+            else -> return null
+        }
         val text = msg.replace(m.value, "").replace("ذكرني", "").replace("أن", "").replace("ان", "").trim()
         return Pair(text.ifEmpty { "تذكير" }, s)
     }
@@ -134,7 +145,10 @@ fun LionApp() {
     }
 
     fun sendSms(phone: String, text: String) {
-        try { @Suppress("DEPRECATION") SmsManager.getDefault().sendTextMessage(phone, null, text, null, null) } catch (e: Exception) { }
+        try {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault().sendTextMessage(phone, null, text, null, null)
+        } catch (e: Exception) { }
     }
 
     fun loadChat(id: String) {
@@ -151,7 +165,6 @@ fun LionApp() {
     fun saveChat() {
         val serialized = messages.joinToString("\n---\n") { (if (it.isUser) "u" else "a") + "|" + it.text.replace("\n", " ") }
         prefs.edit().putString("chat_$currentChat", serialized).apply()
-        // تحديث عنوان المحادثة
         val firstUser = messages.firstOrNull { it.isUser }?.text
         if (firstUser != null) prefs.edit().putString("chat_title_$currentChat", firstUser.take(30)).apply()
     }
@@ -195,10 +208,7 @@ fun LionApp() {
                     items(chats) { chat ->
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             TextButton(
-                                onClick = {
-                                    loadChat(chat.id)
-                                    scope.launch { drawerState.close() }
-                                },
+                                onClick = { loadChat(chat.id); scope.launch { drawerState.close() } },
                                 modifier = Modifier.weight(1f)
                             ) { Text(chat.title, color = Color.White, maxLines = 1) }
                             IconButton(onClick = {
@@ -224,7 +234,9 @@ fun LionApp() {
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) { Icon(Icons.Filled.Menu, "Menu", tint = Color(0xFFFFB800)) }
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Filled.Menu, "Menu", tint = Color(0xFFFFB800))
+                        }
                     },
                     actions = {
                         IconButton(onClick = { tts?.stop() }) { Icon(Icons.Filled.VolumeOff, "Stop", tint = Color(0xFFFFB800)) }
@@ -243,7 +255,7 @@ fun LionApp() {
                 if (chosenFileName != null) {
                     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("📎 $chosenFileName", color = Color(0xFFFFB800), fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { chosenFileUri = null; chosenFileName = null }) { Icon(Icons.Filled.Close, "Close", tint = Color(0xFFFF8C00)) }
+                        IconButton(onClick = { chosenFileName = null }) { Icon(Icons.Filled.Close, "Close", tint = Color(0xFFFF8C00)) }
                     }
                 }
 
@@ -266,7 +278,7 @@ fun LionApp() {
                         Spacer(Modifier.width(6.dp))
                         Button(
                             onClick = {
-                                if ((input.isNotBlank() || chosenFileUri != null) && !loading) {
+                                if ((input.isNotBlank() || chosenFileName != null) && !loading) {
                                     val userMsg = if (input.isNotBlank()) input else "📎 $chosenFileName"
                                     messages = messages + Message(userMsg, true)
                                     input = ""
@@ -300,7 +312,6 @@ fun LionApp() {
                                             } catch (e: Exception) { "خطأ: ${e.message}" }
                                         }
 
-                                        // توليد روابط الأغاني إذا كان السؤال عن أغنية
                                         var ytUrl: String? = null
                                         var ytmUrl: String? = null
                                         val musicKeywords = listOf("أغنية", "اغنية", "أغني", "اغني", "شغل", "موسيقى", "song", "music")
