@@ -1,17 +1,12 @@
-import os
-try:
-    from groq import Groq
-except ImportError:
-    Groq = None
-
-def ask(message, api_key="", model="qwen/qwen3.8-27b"):
+def ask(message, api_key=""):
     if not api_key:
         return "⚠️ يرجى إدخال مفتاح API أولاً"
     try:
+        from groq import Groq
         client = Groq(api_key=api_key)
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": message}],
-            model=model,
+            model="qwen/qwen3.8-27b",
             max_tokens=1500
         )
         return response.choices[0].message.content
