@@ -583,7 +583,7 @@ fun Bubble(msg: Message, context: Context, tts: TextToSpeech?) {
                         }
                         Spacer(Modifier.width(6.dp))
                         if (msg.ytmUrl != null) {
-                            Button(onClick = { context.startActivity(Intent.ACTION_VIEW, Uri.parse(msg.ytmUrl))) },
+                            Button(onClick = { context.startActivity(Intent.ACTION_VIEW, Uri.parse(msg.ytmUrl)) },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF8C00)),
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
