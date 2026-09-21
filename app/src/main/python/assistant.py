@@ -3,7 +3,7 @@ import json
 
 def ask(message, api_key="", provider="groq", history_json="[]"):
     if not api_key:
-        return "⚠️ يرجى إدخال مفتاح API"
+        return "⚠️ يرجى إدخال مفتاح API من الإعدادات (⚙️)"
     try:
         history = json.loads(history_json) if history_json else []
     except Exception:
@@ -14,16 +14,15 @@ def ask(message, api_key="", provider="groq", history_json="[]"):
             url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {"Authorization": "Bearer " + api_key, "Content-Type": "application/json"}
             data = {
-                "model": "llama-3.3-70b-versatile",
+                "model": "groq/compound-beta",
                 "messages": messages,
                 "max_tokens": 1500,
                 "temperature": 0.3
             }
-            r = requests.post(url, headers=headers, json=data, timeout=60)
+            r = requests.post(url, headers=headers, json=data, timeout=90)
             js = r.json()
             if "error" in js:
-                # إذا فشل، جرب qwen
-                data["model"] = "qwen/qwen3.8-27b"
+                data["model"] = "llama-3.3-70b-versatile"
                 r = requests.post(url, headers=headers, json=data, timeout=60)
                 js = r.json()
             return js.get("choices", [{}])[0].get("message", {}).get("content", "لا يوجد رد")

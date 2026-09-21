@@ -90,9 +90,7 @@ fun loadContactsFromDevice(ctx: Context): List<Contact> {
                 if (name.isNotBlank() && num.isNotBlank()) list.add(Contact(name, num))
             }
         }
-    } catch (e: Exception) {
-        android.util.Log.e("LionAI", "Contacts error: " + e.message)
-    }
+    } catch (e: Exception) { }
     return list.distinctBy { it.number }
 }
 
@@ -115,39 +113,29 @@ fun LionApp() {
     var autoSpeak by remember { mutableStateOf(false) }
     var chosenFileName by remember { mutableStateOf<String?>(null) }
     var contacts by remember { mutableStateOf(listOf<Contact>()) }
-    var permissionsGranted by remember { mutableStateOf(false) }
-
-    // الأذونات الأساسية
-    val requiredPerms = remember {
-        mutableListOf(
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECORD_AUDIO
-        ).apply {
-            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-            if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.SCHEDULE_EXACT_ALARM)
-        }.toTypedArray()
-    }
+    var permGranted by remember { mutableStateOf(false) }
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
-        permissionsGranted = result[Manifest.permission.READ_CONTACTS] == true
-        if (permissionsGranted) {
-            contacts = loadContactsFromDevice(context)
-        }
+        permGranted = result[Manifest.permission.READ_CONTACTS] == true
+        if (permGranted) contacts = loadContactsFromDevice(context)
     }
 
     LaunchedEffect(Unit) {
-        // فحص الأذونات أولاً
-        val allGranted = requiredPerms.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
+        val perms = mutableListOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.RECORD_AUDIO
+        )
+        if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        if (Build.VERSION.SDK_INT >= 31) perms.add(Manifest.permission.SCHEDULE_EXACT_ALARM)
+        val allGranted = perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
         if (allGranted) {
-            permissionsGranted = true
+            permGranted = true
             contacts = loadContactsFromDevice(context)
         } else {
-            permLauncher.launch(requiredPerms)
+            permLauncher.launch(perms.toTypedArray())
         }
         tts = TextToSpeech(context) { }
     }
@@ -171,49 +159,43 @@ fun LionApp() {
         } catch (e: Exception) { }
     }
 
-    // كشف التذكير
+    // ===== التذكيرات =====
     fun detectReminder(msg: String): Pair<String, Int>? {
-        val hasReminderWord = msg.contains("ذكرني") || msg.contains("نبهني") || msg.contains("ذكرنى")
-        if (!hasReminderWord) return null
-        if (!msg.contains("بعد")) return null
-
-        // استخرج الرقم بعد "بعد"
-        val after = msg.substringAfter("بعد", "")
+        val hasWord = msg.contains("ذكرني") || msg.contains("نبهني")
+        if (!hasWord) return null
+        val afterIdx = msg.indexOf("بعد")
+        if (afterIdx < 0) return null
+        val after = msg.substring(afterIdx + 3)
         val numMatch = Regex("(\\d+)").find(after) ?: return null
         val n = numMatch.groupValues[1].toIntOrNull() ?: return null
-
         val s = when {
             after.contains("ثانية") || after.contains("ثواني") || after.contains("ثانيه") -> n
-            after.contains("دقيقة") || after.contains("دقائق") || after.contains("دقيقه") || after.contains("دقيقتين") -> if (after.contains("دقيقتين")) 120 else n * 60
-            after.contains("ساعة") || after.contains("ساعات") || after.contains("ساعه") || after.contains("ساعتين") -> if (after.contains("ساعتين")) 7200 else n * 3600
+            after.contains("دقيقة") || after.contains("دقائق") || after.contains("دقيقه") -> n * 60
+            after.contains("ساعة") || after.contains("ساعات") || after.contains("ساعه") -> n * 3600
             after.contains("يوم") || after.contains("أيام") || after.contains("ايام") -> n * 86400
             else -> return null
         }
-
-        var text = msg.replace(Regex("(ذكرني|نبهني|ذكرنى|بعد|ثانية|ثواني|ثانيه|دقيقة|دقائق|دقيقه|دقيقتين|ساعة|ساعات|ساعه|ساعتين|يوم|أيام|ايام|\\d+)"), "").trim()
+        var text = msg.replace("ذكرني", "").replace("نبهني", "").trim()
+        text = text.replace(Regex("بعد\\s*\\d+\\s*(ثانية|ثواني|ثانيه|دقيقة|دقائق|دقيقه|ساعة|ساعات|ساعه|يوم|أيام|ايام)"), "").trim()
         text = text.replace(Regex("^(أن|ان|بأن|بان|ب)\\s+"), "").trim()
         return Pair(text.ifEmpty { "تذكير" }, s)
     }
 
-    // كشف SMS
+    // ===== الرسائل =====
     fun detectSms(msg: String): Triple<String, String, String>? {
         val hasSend = msg.contains("أرسل") || msg.contains("ارسل") || msg.contains("ابعث")
-        val hasMsg = msg.contains("رسالة") || msg.contains("رساله") || msg.contains("sms")
+        val hasMsg = msg.contains("رسالة") || msg.contains("رساله")
         if (!hasSend || !hasMsg) return null
-
         val colonIdx = msg.indexOfFirst { it == ':' || it == '：' }
         if (colonIdx < 0) return null
         val body = msg.substring(colonIdx + 1).trim()
         if (body.isEmpty()) return null
-
         val beforeColon = msg.substring(0, colonIdx)
-
         val numMatch = Regex("(\\+?\\d{6,})").find(beforeColon)
         if (numMatch != null) return Triple("number", numMatch.groupValues[1], body)
-
-        val nameMatch = Regex("(?:لـ|ل|إلى|الى)\\s*(\\S+)\\s*$").find(beforeColon)
+        val nameMatch = Regex("(?:لـ|ل|إلى|الى)\\s*(\\S+?)\\s*$").find(beforeColon)
         if (nameMatch != null) {
-            val name = nameMatch.groupValues[1].trim()
+            val name = nameMatch.groupValues[1].trim().replace(":", "").trim()
             if (name.isNotEmpty()) return Triple("name", name, body)
         }
         return null
@@ -226,11 +208,8 @@ fun LionApp() {
     fun sendSms(phone: String, text: String) {
         try {
             @Suppress("DEPRECATION")
-            val sm = SmsManager.getDefault()
-            sm.sendTextMessage(phone, null, text, null, null)
-        } catch (e: Exception) {
-            android.util.Log.e("LionAI", "SMS error: " + e.message)
-        }
+            SmsManager.getDefault().sendTextMessage(phone, null, text, null, null)
+        } catch (e: Exception) { }
     }
 
     fun scheduleReminder(text: String, seconds: Int) {
@@ -246,9 +225,7 @@ fun LionApp() {
             } else {
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + seconds * 1000L, pi)
             }
-        } catch (e: Exception) {
-            android.util.Log.e("LionAI", "Alarm error: " + e.message)
-        }
+        } catch (e: Exception) { }
     }
 
     fun loadChat(id: String) {
@@ -432,7 +409,7 @@ fun LionApp() {
                                             sendSms(phone, body)
                                             messages = messages + Message("📱 تم إرسال الرسالة إلى $target ($phone)", false)
                                         } else {
-                                            messages = messages + Message("❌ لم أجد جهة اتصال باسم $target. جهات الاتصال المتوفرة: ${contacts.size}", false)
+                                            messages = messages + Message("❌ لم أجد جهة اتصال باسم $target", false)
                                         }
                                         saveChat()
                                         return@Button
@@ -494,15 +471,13 @@ fun ContactsScreen(contacts: List<Contact>, onBack: () -> Unit, onSelect: (Conta
     ) { padding ->
         if (contacts.isEmpty()) {
             Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("لا توجد جهات اتصال. تأكد من منح إذن جهات الاتصال.", color = Color.White)
+                Text("لا توجد جهات اتصال", color = Color.White)
             }
         } else {
             LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF0D0D0D))) {
                 items(contacts) { c ->
                     Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable { onSelect(c) }
-                            .padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(c) }.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("👤", fontSize = 24.sp)
@@ -608,7 +583,7 @@ fun Bubble(msg: Message, context: Context, tts: TextToSpeech?) {
                         }
                         Spacer(Modifier.width(6.dp))
                         if (msg.ytmUrl != null) {
-                            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(msg.ytmUrl))) },
+                            Button(onClick = { context.startActivity(Intent.ACTION_VIEW, Uri.parse(msg.ytmUrl))) },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF8C00)),
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
