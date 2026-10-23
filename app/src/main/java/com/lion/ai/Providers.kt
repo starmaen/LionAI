@@ -7,7 +7,8 @@ data class ProviderInfo(
     val docsUrl: String,
     val defaultModel: String,
     val free: Boolean = true,
-    val needsAccountId: Boolean = false
+    val needsAccountId: Boolean = false,
+    val shortName: String = label
 )
 
 val PROVIDERS = listOf(
@@ -16,7 +17,8 @@ val PROVIDERS = listOf(
         label = "Google Gemini",
         tagline = "Free Tier — gemini-3.8-flash مجاني",
         docsUrl = "https://ai.google.dev/gemini-api/docs/pricing",
-        defaultModel = "gemini-3.8-flash"
+        defaultModel = "gemini-3.8-flash",
+        shortName = "Gemini"
     ),
     ProviderInfo(
         id = "groq",
@@ -45,7 +47,8 @@ val PROVIDERS = listOf(
         tagline = "10000 Neuron يومياً — يحتاج Account ID",
         docsUrl = "https://developers.cloudflare.com/workers-ai/platform/pricing/",
         defaultModel = "@cf/openai/gpt-oss-120b",
-        needsAccountId = true
+        needsAccountId = true,
+        shortName = "Cloudflare"
     ),
     ProviderInfo(
         id = "deepseek",
@@ -69,7 +72,8 @@ val PROVIDERS = listOf(
         tagline = "مدفوع — يتطلب رصيداً",
         docsUrl = "https://platform.claude.com/docs/en/about-claude/models/overview",
         defaultModel = "claude-sonnet-5-5",
-        free = false
+        free = false,
+        shortName = "Claude"
     )
 )
 

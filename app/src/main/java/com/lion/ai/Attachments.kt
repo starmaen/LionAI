@@ -3,13 +3,16 @@ package com.lion.ai
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
 import java.io.BufferedReader
 import java.util.zip.ZipInputStream
 
 data class Attachment(val name: String, val text: String)
+data class ImageAttachment(val name: String, val mime: String, val base64: String)
 
 object Attachments {
     private const val MAX_CHARS = 12000
+    private const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
     private val TEXT_EXTENSIONS = setOf(
         "txt", "md", "csv", "json", "xml", "html", "htm",
         "kt", "kts", "java", "py", "js", "ts", "tsx", "jsx",
@@ -18,6 +21,30 @@ object Attachments {
     )
 
     data class Result(val attachment: Attachment?, val error: String?)
+
+    data class ImageResult(val image: ImageAttachment?, val error: String?)
+
+    fun readImage(context: Context, uri: Uri): ImageResult {
+        return try {
+            val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+            if (!mime.startsWith("image/")) {
+                return ImageResult(null, "⚠️ الملف المختار ليس صورة ($mime).")
+            }
+            val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+                stream.readLimitedBytes(MAX_IMAGE_BYTES)
+            }
+            if (bytes == null || bytes.isEmpty()) {
+                return ImageResult(null, "⚠️ تعذر قراءة الصورة.")
+            }
+            if (bytes.size >= MAX_IMAGE_BYTES) {
+                return ImageResult(null, "⚠️ حجم الصورة أكبر من 4 ميجابايت.")
+            }
+            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            ImageResult(ImageAttachment(displayName(context, uri), mime, base64), null)
+        } catch (e: Exception) {
+            ImageResult(null, "⚠️ تعذر قراءة الصورة: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
 
     fun read(context: Context, uri: Uri): Result {
         val name = displayName(context, uri)
@@ -85,6 +112,17 @@ object Attachments {
             }
         }
         return name
+    }
+
+    private fun java.io.InputStream.readLimitedBytes(max: Int): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (output.size() < max) {
+            val count = read(buffer)
+            if (count < 0) break
+            output.write(buffer, 0, minOf(count, max - output.size()))
+        }
+        return output.toByteArray()
     }
 
     private fun BufferedReader.readLimited(max: Int): String {

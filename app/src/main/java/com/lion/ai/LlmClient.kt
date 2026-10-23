@@ -31,7 +31,8 @@ object LlmClient {
         provider: String,
         history: List<ChatTurn>,
         modelOverride: String = "",
-        accountId: String = ""
+        accountId: String = "",
+        image: ImageAttachment? = null
     ): String {
         if (apiKey.isBlank()) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
@@ -45,29 +46,31 @@ object LlmClient {
 
         return try {
             when (provider) {
-                "gemini" -> callGemini(message, apiKey, model, turns)
+                "gemini" -> callGemini(message, apiKey, model, turns, image)
                 "groq" -> callOpenAiCompatible(
-                    "https://api.groq.com/openai/v1/chat/completions", apiKey, model, turns, message
+                    "https://api.groq.com/openai/v1/chat/completions", apiKey, model, turns, message,
+                    image = image
                 )
                 "openrouter" -> callOpenAiCompatible(
                     "https://openrouter.ai/api/v1/chat/completions", apiKey, model, turns, message,
-                    mapOf("HTTP-Referer" to "https://github.com/starmaen/LionAI", "X-Title" to "Lion AI")
+                    mapOf("HTTP-Referer" to "https://github.com/starmaen/LionAI", "X-Title" to "Lion AI"),
+                    image = image
                 )
                 "deepseek" -> callOpenAiCompatible(
                     "https://api.deepseek.com/chat/completions", apiKey, model, turns, message,
-                    omitTemperature = true, maxTokens = OPENAI_MAX_TOKENS
+                    omitTemperature = true, maxTokens = OPENAI_MAX_TOKENS, image = image
                 )
                 "openai" -> callOpenAiCompatible(
                     "https://api.openai.com/v1/chat/completions", apiKey, model, turns, message,
                     tokenParam = "max_completion_tokens", omitTemperature = true,
-                    maxTokens = OPENAI_MAX_TOKENS
+                    maxTokens = OPENAI_MAX_TOKENS, image = image
                 )
                 "cloudflare" -> callOpenAiCompatible(
                     "https://api.cloudflare.com/client/v4/accounts/$accountId/ai/v1/chat/completions",
-                    apiKey, model, turns, message
+                    apiKey, model, turns, message, image = image
                 )
-                "cohere" -> callCohere(message, apiKey, model, turns)
-                "claude" -> callClaude(message, apiKey, model, turns)
+                "cohere" -> callCohere(message, apiKey, model, turns, image)
+                "claude" -> callClaude(message, apiKey, model, turns, image)
                 else -> "⚠️ مزود غير معروف: $provider"
             }
         } catch (e: LlmException) {
@@ -91,14 +94,26 @@ object LlmClient {
         extraHeaders: Map<String, String> = emptyMap(),
         tokenParam: String = "max_tokens",
         omitTemperature: Boolean = false,
-        maxTokens: Int = MAX_TOKENS
+        maxTokens: Int = MAX_TOKENS,
+        image: ImageAttachment? = null
     ): String {
         val messages = JSONArray()
         messages.put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
         history.forEach { turn ->
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }
-        messages.put(JSONObject().put("role", "user").put("content", message))
+        val userContent: Any = if (image == null) {
+            message
+        } else {
+            JSONArray()
+                .put(JSONObject().put("type", "text").put("text", message))
+                .put(
+                    JSONObject()
+                        .put("type", "image_url")
+                        .put("image_url", JSONObject().put("url", imageDataUri(image)))
+                )
+        }
+        messages.put(JSONObject().put("role", "user").put("content", userContent))
 
         val body = JSONObject()
             .put("model", model)
@@ -122,7 +137,8 @@ object LlmClient {
         message: String,
         apiKey: String,
         model: String,
-        history: List<ChatTurn>
+        history: List<ChatTurn>,
+        image: ImageAttachment?
     ): String {
         val contents = JSONArray()
         history.forEach { turn ->
@@ -132,11 +148,16 @@ object LlmClient {
                     .put("parts", JSONArray().put(JSONObject().put("text", turn.content)))
             )
         }
-        contents.put(
-            JSONObject()
-                .put("role", "user")
-                .put("parts", JSONArray().put(JSONObject().put("text", message)))
-        )
+        val userParts = JSONArray().put(JSONObject().put("text", message))
+        if (image != null) {
+            userParts.put(
+                JSONObject().put(
+                    "inline_data",
+                    JSONObject().put("mime_type", image.mime).put("data", image.base64)
+                )
+            )
+        }
+        contents.put(JSONObject().put("role", "user").put("parts", userParts))
 
         val body = JSONObject()
             .put(
@@ -182,14 +203,26 @@ object LlmClient {
         message: String,
         apiKey: String,
         model: String,
-        history: List<ChatTurn>
+        history: List<ChatTurn>,
+        image: ImageAttachment?
     ): String {
         val messages = JSONArray()
         messages.put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
         history.forEach { turn ->
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }
-        messages.put(JSONObject().put("role", "user").put("content", message))
+        val cohereContent: Any = if (image == null) {
+            message
+        } else {
+            JSONArray()
+                .put(JSONObject().put("type", "text").put("text", message))
+                .put(
+                    JSONObject()
+                        .put("type", "image_url")
+                        .put("image_url", JSONObject().put("url", imageDataUri(image)))
+                )
+        }
+        messages.put(JSONObject().put("role", "user").put("content", cohereContent))
 
         val body = JSONObject()
             .put("model", model)
@@ -218,13 +251,29 @@ object LlmClient {
         message: String,
         apiKey: String,
         model: String,
-        history: List<ChatTurn>
+        history: List<ChatTurn>,
+        image: ImageAttachment?
     ): String {
         val messages = JSONArray()
         history.forEach { turn ->
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }
-        messages.put(JSONObject().put("role", "user").put("content", message))
+        val claudeContent = JSONArray()
+        if (image != null) {
+            claudeContent.put(
+                JSONObject()
+                    .put("type", "image")
+                    .put(
+                        "source",
+                        JSONObject()
+                            .put("type", "base64")
+                            .put("media_type", image.mime)
+                            .put("data", image.base64)
+                    )
+            )
+        }
+        claudeContent.put(JSONObject().put("type", "text").put("text", message))
+        messages.put(JSONObject().put("role", "user").put("content", claudeContent))
 
         val body = JSONObject()
             .put("model", model)
@@ -251,6 +300,9 @@ object LlmClient {
         }
         return text.toString().ifBlank { "لم يصل رد من Claude." }
     }
+
+    private fun imageDataUri(image: ImageAttachment): String =
+        "data:${image.mime};base64,${image.base64}"
 
     private fun normalize(history: List<ChatTurn>): List<ChatTurn> {
         val result = mutableListOf<ChatTurn>()

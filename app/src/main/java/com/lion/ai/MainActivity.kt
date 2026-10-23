@@ -19,6 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,7 +33,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,10 +46,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
@@ -54,12 +61,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
@@ -76,6 +86,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -88,10 +99,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
@@ -174,7 +188,13 @@ fun LionApp() {
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
     var autoSpeak by remember { mutableStateOf(prefs.getBoolean("auto_speak", false)) }
     var attachment by remember { mutableStateOf<Attachment?>(null) }
+    var imageAttachment by remember { mutableStateOf<ImageAttachment?>(null) }
     var contacts by remember { mutableStateOf(listOf<Contact>()) }
+    var selectedProvider by remember {
+        mutableStateOf(prefs.getString("provider", "gemini") ?: "gemini")
+    }
+    var showModelSheet by remember { mutableStateOf(false) }
+    val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun saveChat() {
         prefs.edit().putString("chat_$currentChat", ChatStore.encode(messages)).apply()
@@ -183,7 +203,7 @@ fun LionApp() {
             ?.lineSequence()
             ?.firstOrNull()
             ?.trim()
-            ?.take(40)
+            ?.take(30)
         if (!title.isNullOrBlank()) {
             prefs.edit().putString("chat_title_$currentChat", title).apply()
             chats = chats.map { if (it.id == currentChat) Chat(it.id, title) else it }
@@ -203,13 +223,26 @@ fun LionApp() {
         currentChat = id
     }
 
+    fun chatTitle(id: String): String {
+        val stored = (prefs.getString("chat_title_$id", "") ?: "").trim()
+        if (stored.isNotEmpty() && stored != "محادثة" && stored != "محادثة جديدة") {
+            return stored
+        }
+        val first = ChatStore.decode(prefs.getString("chat_$id", "") ?: "")
+            .firstOrNull { it.isUser }
+            ?.text
+            ?.lineSequence()
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+        return first.take(30).ifBlank { "محادثة" }
+    }
+
     fun loadChatsList() {
         val ids = (prefs.getString("chat_ids", "") ?: "")
             .split(",")
             .filter { it.isNotBlank() && it != "default" }
-        chats = ids.map { id ->
-            Chat(id, prefs.getString("chat_title_$id", "محادثة") ?: "محادثة")
-        }
+        chats = ids.map { id -> Chat(id, chatTitle(id)) }
     }
 
     fun requestContacts() {
@@ -249,6 +282,28 @@ fun LionApp() {
                     attachment = null
                     messages = messages + Message(
                         result.error ?: "⚠️ تعذر قراءة الملف.",
+                        false
+                    )
+                    saveChat()
+                }
+            }
+        }
+    }
+
+    val imageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    Attachments.readImage(context, uri)
+                }
+                if (result.image != null) {
+                    imageAttachment = result.image
+                    attachment = null
+                } else {
+                    messages = messages + Message(
+                        result.error ?: "⚠️ تعذر قراءة الصورة.",
                         false
                     )
                     saveChat()
@@ -410,7 +465,19 @@ fun LionApp() {
         if (loading) return
         val text = input.trim()
         val file = attachment
-        if (text.isEmpty() && file == null) return
+        val image = imageAttachment
+        if (text.isEmpty() && file == null && image == null) return
+
+        val provider = selectedProvider
+        val visionProviders = setOf("gemini", "deepseek", "openai", "claude")
+        if (image != null && provider !in visionProviders) {
+            messages = messages + Message(
+                "⚠️ المزود الحالي لا يقرأ الصور. اختر Gemini أو DeepSeek أو OpenAI أو Claude من زر الموديل أسفل مربع الكتابة.",
+                false
+            )
+            saveChat()
+            return
+        }
 
         val displayText = buildString {
             if (text.isNotEmpty()) append(text)
@@ -418,14 +485,21 @@ fun LionApp() {
                 if (isNotEmpty()) append('\n')
                 append("📎 ").append(file.name)
             }
+            if (image != null) {
+                if (isNotEmpty()) append('\n')
+                append("🖼️ ").append(image.name)
+            }
         }
-        val prompt = if (file != null) {
+        var prompt = if (file != null) {
             buildString {
                 if (text.isNotEmpty()) append(text).append("\n\n")
                 append("محتوى الملف (").append(file.name).append("):\n").append(file.text)
             }
         } else {
             text
+        }
+        if (prompt.isBlank() && image != null) {
+            prompt = "اشرح محتوى هذه الصورة بالتفصيل."
         }
 
         val history = messages.map {
@@ -435,9 +509,10 @@ fun LionApp() {
         messages = messages + Message(displayText, true)
         input = ""
         attachment = null
+        imageAttachment = null
         saveChat()
 
-        if (file == null) {
+        if (file == null && image == null) {
             val reminder = detectReminder(text)
             if (reminder != null) {
                 scheduleReminder(reminder.first, reminder.second)
@@ -492,13 +567,12 @@ fun LionApp() {
 
         loading = true
         scope.launch {
-            val provider = prefs.getString("provider", "gemini") ?: "gemini"
             val apiKey = prefs.getString("api_key_$provider", "") ?: ""
             val model = prefs.getString("model_$provider", "") ?: ""
             val accountId = prefs.getString("cf_account_id", "") ?: ""
 
             val reply = withContext(Dispatchers.IO) {
-                LlmClient.ask(prompt, apiKey, provider, history, model, accountId)
+                LlmClient.ask(prompt, apiKey, provider, history, model, accountId, image)
             }
             messages = messages + Message(reply, false, ytUrl, ytmUrl)
             loading = false
@@ -517,7 +591,14 @@ fun LionApp() {
                 autoSpeak = it
                 prefs.edit().putBoolean("auto_speak", it).apply()
             },
-            onSave = { showSettings = false }
+            onBack = {
+                showSettings = false
+                selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+            },
+            onSave = {
+                showSettings = false
+                selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+            }
         )
         return
     }
@@ -534,6 +615,82 @@ fun LionApp() {
         return
     }
 
+    if (showModelSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showModelSheet = false },
+            sheetState = modelSheetState,
+            containerColor = Color(0xFF1A1A1A)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Text(
+                    "اختر الموديل",
+                    color = Color(0xFFFFB800),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                PROVIDERS.forEach { info ->
+                    val configured = (prefs.getString("model_${info.id}", "") ?: "")
+                        .ifBlank { info.defaultModel }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                prefs.edit().putString("provider", info.id).apply()
+                                selectedProvider = info.id
+                                showModelSheet = false
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedProvider == info.id,
+                            onClick = {
+                                prefs.edit().putString("provider", info.id).apply()
+                                selectedProvider = info.id
+                                showModelSheet = false
+                            },
+                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                info.label + (if (info.free) "  🟢" else "  🔵"),
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                configured,
+                                color = Color(0xFF9A9A9A),
+                                fontSize = 11.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+                HorizontalHorizontalDivider(color = Color(0xFF2A2A2A))
+                TextButton(
+                    onClick = {
+                        showModelSheet = false
+                        showSettings = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                ) {
+                    Text(
+                        "⚙️ الإعدادات والمفاتيح وحدود الاستخدام",
+                        color = Color(0xFFFFB800),
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+    }
+
     LaunchedEffect(messages.size, loading) {
         val count = messages.size + if (loading) 1 else 0
         if (count > 0) listState.animateScrollToItem(count - 1)
@@ -546,6 +703,12 @@ fun LionApp() {
                 drawerContainerColor = Color(0xFF1A1A1A),
                 modifier = Modifier.width(280.dp)
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                ) {
                 Text(
                     "💬 المحادثات",
                     color = Color(0xFFFFB800),
@@ -567,6 +730,7 @@ fun LionApp() {
                         messages = emptyList()
                         input = ""
                         attachment = null
+                        imageAttachment = null
                         loadChatsList()
                         scope.launch { drawerState.close() }
                     },
@@ -603,7 +767,12 @@ fun LionApp() {
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text(chat.title, color = Color.White, maxLines = 1)
+                                Text(
+                                    chat.title,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                             IconButton(onClick = {
                                 val remaining = chats
@@ -625,6 +794,7 @@ fun LionApp() {
                     }
                 }
             }
+        }
         }
     ) {
         Scaffold(
@@ -684,67 +854,134 @@ fun LionApp() {
                 }
 
                 val file = attachment
-                if (file != null) {
+                val image = imageAttachment
+                if (file != null || image != null) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "📎 ${file.name}",
+                            if (file != null) "📎 ${file.name}" else "🖼️ ${image?.name.orEmpty()}",
                             color = Color(0xFFFFB800),
                             fontSize = 13.sp,
+                            maxLines = 1,
                             modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = { attachment = null }) {
+                        IconButton(onClick = {
+                            attachment = null
+                            imageAttachment = null
+                        }) {
                             Icon(Icons.Filled.Close, "إزالة المرفق", tint = Color(0xFFFF8C00))
                         }
                     }
                 }
 
-                Surface(color = Color(0xFF1A1A1A), modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    color = Color(0xFF161616),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                            .navigationBarsPadding()
                     ) {
-                        IconButton(onClick = { fileLauncher.launch("*/*") }) {
-                            Icon(Icons.Filled.AttachFile, "ملف", tint = Color(0xFFFFB800))
-                        }
-                        IconButton(onClick = { startVoice() }) {
-                            Icon(Icons.Filled.Mic, "صوت", tint = Color(0xFFFFB800))
-                        }
                         OutlinedTextField(
                             value = input,
                             onValueChange = { input = it },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text("اكتب...", color = Color(0xFFB0B0B0)) },
-                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = {
+                                Text(
+                                    "اكتب رسالتك...",
+                                    color = Color(0xFF7A7A7A),
+                                    fontSize = 14.sp
+                                )
+                            },
+                            textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                            maxLines = 4,
+                            shape = RoundedCornerShape(18.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color(0xFFFFB800),
                                 unfocusedBorderColor = Color(0xFF2A2A2A),
                                 focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                unfocusedTextColor = Color.White,
+                                cursorColor = Color(0xFFFFB800)
                             )
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Button(
-                            onClick = { sendMessage() },
-                            enabled = !loading && (input.isNotBlank() || attachment != null),
-                            shape = RoundedCornerShape(24.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
+                        Spacer(Modifier.height(2.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                "➤",
-                                color = Color(0xFF0D0D0D),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            InputAction(Icons.Filled.AttachFile, "ملف") {
+                                fileLauncher.launch("*/*")
+                            }
+                            InputAction(Icons.Filled.Image, "صورة") {
+                                imageLauncher.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly
+                                    )
+                                )
+                            }
+                            InputAction(Icons.Filled.Mic, "صوت") { startVoice() }
+                            Spacer(Modifier.weight(1f))
+                            TextButton(
+                                onClick = { showModelSheet = true },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    providerInfo(selectedProvider).shortName,
+                                    color = Color(0xFFFFB800),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Icon(
+                                    Icons.Filled.ArrowDropDown,
+                                    "اختيار الموديل",
+                                    tint = Color(0xFFFFB800),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(2.dp))
+                            FilledIconButton(
+                                onClick = { sendMessage() },
+                                enabled = !loading && (
+                                    input.isNotBlank() || attachment != null || imageAttachment != null
+                                ),
+                                modifier = Modifier.size(42.dp),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color(0xFFFFB800),
+                                    contentColor = Color(0xFF0D0D0D),
+                                    disabledContainerColor = Color(0xFF3A3A3A),
+                                    disabledContentColor = Color(0xFF7A7A7A)
+                                )
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    "إرسال",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun InputAction(icon: ImageVector, description: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+        Icon(
+            icon,
+            description,
+            tint = Color(0xFFFFB800),
+            modifier = Modifier.size(22.dp)
+        )
     }
 }
 
@@ -807,18 +1044,20 @@ fun ContactsScreen(
                             Text(contact.number, color = Color(0xFFB0B0B0), fontSize = 13.sp)
                         }
                     }
-                    Divider(color = Color(0xFF2A2A2A))
+                    HorizontalDivider(color = Color(0xFF2A2A2A))
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     prefs: android.content.SharedPreferences,
     autoSpeak: Boolean,
     onAutoSpeakChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
     onSave: () -> Unit
 ) {
     val uriHandler = LocalUriHandler.current
@@ -845,135 +1084,179 @@ fun SettingsScreen(
 
     val current = providerInfo(provider)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        Text(
-            "⚙️ الإعدادات",
-            color = Color(0xFFFFB800),
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "المفاتيح تُحفظ مشفّرة على الجهاز ولا تُرسل إلا إلى مزود الخدمة.",
-            color = Color(0xFFB0B0B0),
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(16.dp))
+    fun persist() {
+        val editor = prefs.edit()
+        editor.putString("provider", provider)
+        keys.forEach { (id, value) -> editor.putString("api_key_$id", value) }
+        models.forEach { (id, value) -> editor.putString("model_$id", value) }
+        editor.putString("cf_account_id", accountId)
+        editor.putBoolean("auto_speak", autoSpeak)
+        editor.apply()
+    }
 
-        Text("المزود:", color = Color.White, fontWeight = FontWeight.Bold)
-        PROVIDERS.forEach { info ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { provider = info.id }
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(
-                    selected = provider == info.id,
-                    onClick = { provider = info.id },
-                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
-                )
-                Column(modifier = Modifier.weight(1f)) {
+    Scaffold(
+        modifier = Modifier.imePadding(),
+        containerColor = Color(0xFF0D0D0D),
+        topBar = {
+            TopAppBar(
+                title = {
                     Text(
-                        info.label + (if (info.free) "  🟢" else "  🔵"),
-                        color = Color.White
+                        "⚙️ الإعدادات",
+                        color = Color(0xFFFFB800),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                    Text(info.tagline, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, "رجوع", tint = Color(0xFFFFB800))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF1A1A1A)
+                )
+            )
+        },
+        bottomBar = {
+            Surface(color = Color(0xFF1A1A1A), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        persist()
+                        onSave()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
+                ) {
+                    Text("💾 حفظ", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold)
                 }
             }
         }
-
-        Spacer(Modifier.height(16.dp))
-        Text("🔑 مفتاح ${current.label}", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = keys[provider].orEmpty(),
-            onValueChange = { keys[provider] = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("الصق المفتاح هنا", color = Color(0xFF707070)) },
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFFFFB800),
-                unfocusedBorderColor = Color(0xFF2A2A2A),
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            Text(
+                "المفاتيح تُحفظ مشفّرة على الجهاز ولا تُرسل إلا إلى مزود الخدمة.",
+                color = Color(0xFFB0B0B0),
+                fontSize = 12.sp
             )
-        )
+            Spacer(Modifier.height(16.dp))
 
-        if (current.needsAccountId) {
-            Spacer(Modifier.height(12.dp))
-            Text("Cloudflare Account ID", color = Color.White, fontSize = 14.sp)
+            Text("المزود:", color = Color.White, fontWeight = FontWeight.Bold)
+            PROVIDERS.forEach { info ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { provider = info.id }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = provider == info.id,
+                        onClick = { provider = info.id },
+                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            info.label + (if (info.free) "  🟢" else "  🔵"),
+                            color = Color.White
+                        )
+                        Text(info.tagline, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "🔑 مفتاح ${current.label}",
+                color = Color(0xFFFFB800),
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value = accountId,
-                onValueChange = { accountId = it },
+                value = keys[provider].orEmpty(),
+                onValueChange = { keys[provider] = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("من لوحة Cloudflare", color = Color(0xFF707070)) },
+                placeholder = { Text("الصق المفتاح هنا", color = Color(0xFF707070)) },
+                textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFFFFB800),
                     unfocusedBorderColor = Color(0xFF2A2A2A),
                     focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFFFFB800)
                 )
             )
-        }
 
-        Spacer(Modifier.height(12.dp))
-        Text("الموديل (اختياري)", color = Color.White, fontSize = 14.sp)
-        OutlinedTextField(
-            value = models[provider].orEmpty(),
-            onValueChange = { models[provider] = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(current.defaultModel, color = Color(0xFF707070)) },
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFFFFB800),
-                unfocusedBorderColor = Color(0xFF2A2A2A),
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+            if (current.needsAccountId) {
+                Spacer(Modifier.height(12.dp))
+                Text("Cloudflare Account ID", color = Color.White, fontSize = 14.sp)
+                OutlinedTextField(
+                    value = accountId,
+                    onValueChange = { accountId = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("من لوحة Cloudflare", color = Color(0xFF707070)) },
+                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFFB800),
+                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFFFFB800)
+                    )
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text("الموديل (اختياري)", color = Color.White, fontSize = 14.sp)
+            OutlinedTextField(
+                value = models[provider].orEmpty(),
+                onValueChange = { models[provider] = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(current.defaultModel, color = Color(0xFF707070)) },
+                textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFFFB800),
+                    unfocusedBorderColor = Color(0xFF2A2A2A),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFFFFB800)
+                )
             )
-        )
 
-        TextButton(onClick = {
-            runCatching { uriHandler.openUri(current.docsUrl) }
-        }) {
-            Text("📖 التوثيق الرسمي وحدود الاستخدام", color = Color(0xFFFFB800), fontSize = 12.sp)
-        }
+            TextButton(onClick = {
+                runCatching { uriHandler.openUri(current.docsUrl) }
+            }) {
+                Text(
+                    "📖 التوثيق الرسمي وحدود الاستخدام",
+                    color = Color(0xFFFFB800),
+                    fontSize = 12.sp
+                )
+            }
 
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(
-                checked = autoSpeak,
-                onCheckedChange = onAutoSpeakChange,
-                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("قراءة الردود تلقائياً", color = Color.White)
-        }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = autoSpeak,
+                    onCheckedChange = onAutoSpeakChange,
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("قراءة الردود تلقائياً", color = Color.White)
+            }
 
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = {
-                val editor = prefs.edit()
-                editor.putString("provider", provider)
-                keys.forEach { (id, value) -> editor.putString("api_key_$id", value) }
-                models.forEach { (id, value) -> editor.putString("model_$id", value) }
-                editor.putString("cf_account_id", accountId)
-                editor.putBoolean("auto_speak", autoSpeak)
-                editor.apply()
-                onSave()
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
-        ) {
-            Text("💾 حفظ", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
