@@ -1,19 +1,92 @@
 # 🦁 Lion AI
 
-Smart Multi-Provider AI Assistant for Android
+مساعد ذكاء اصطناعي عربي لأندرويد، متعدد المزودات، يعمل محلياً على الجهاز.
 
-## Features
-- 🤖 Multi-provider AI (Groq, Gemini, Claude, OpenAI)
-- 🌐 Translation, browsing, deep search
-- 📄 PDF, ZIP, TXT support
-- ⏰ Reminders, SMS, calls
-- 💬 WhatsApp auto-reply
-- 🎵 YouTube & YouTube Music integration
-- 🎤 Voice chat (STT + TTS)
-- 🔐 Google Sign-in + Sync
+## الميزات المنفذة فعلياً
 
-## Build
-GitHub Actions builds the APK automatically on every push.
+- 🤖 **8 مزودات**: Gemini، Groq، OpenRouter، Cohere، Cloudflare Workers AI (مجانية)، وDeepSeek، OpenAI وClaude (مدفوعة اختيارياً).
+- 🎛️ **تجاوز الموديل** لكل مزود من الإعدادات دون إعادة بناء التطبيق.
+- 🔐 **تشفير المفاتيح** عبر Android Keystore و`EncryptedSharedPreferences`، مع تعطيل النسخ الاحتياطي.
+- 💬 **محادثات متعددة** محفوظة محلياً بصيغة JSON تحافظ على الأسطر الجديدة.
+- 📎 **مرفقات حقيقية**: ملفات نصية وكود (حتى 12000 حرف) وZIP (فهرس المحتويات). PDF غير مدعوم حالياً.
+- ⏰ **تذكيرات** عبر AlarmManager وإشعار قابل للنقر.
+- 📱 **SMS** وجهات الاتصال: إرسال مباشر عند منح الصلاحية، وإلا يُفتح تطبيق الرسائل للتأكيد.
+- 🎤 **إدخال صوتي** (STT) و**قراءة الردود** (TTS) بالعربية.
+- 🎵 روابط بحث سريعة في YouTube وYouTube Music.
+- 📜 تمرير تلقائي، نسخ الردود، وإيقاف القراءة.
+- 🧱 Kotlin + Jetpack Compose فقط (بدون Python أو Chaquopy).
 
-## License
+## المزودات المجانية (موثقة)
+
+| المزود | الموديل الافتراضي | الحد المجاني | التوثيق |
+|---|---|---|---|
+| Google Gemini | `gemini-3.8-flash` | Free Tier — مجاني بحسب صفحة الأسعار | [pricing](https://ai.google.dev/gemini-api/docs/pricing) · [limits](https://ai.google.dev/gemini-api/docs/rate-limits) |
+| Groq | `openai/gpt-oss-120b` | 30 طلب/دقيقة، 1000 طلب/يوم، 8K توكن/دقيقة | [docs](https://console.groq.com/docs/rate-limits) |
+| OpenRouter | `cohere/north-mini-code:free` | 20 طلب/دقيقة، 50 طلب/يوم (1000 بعد شراء 10$ مرة واحدة) | [docs](https://openrouter.ai/docs/api-reference/limits) |
+| Cohere | `north-mini-code-1-0` | مفتاح Trial: 1000 استدعاء/شهر، 20 طلب/دقيقة | [docs](https://docs.cohere.com/docs/rate-limits) |
+| Cloudflare Workers AI | `@cf/openai/gpt-oss-120b` | 10000 Neuron/يوم (يحتاج Account ID + API Token) | [docs](https://developers.cloudflare.com/workers-ai/platform/pricing/) |
+
+> الحدود قابلة للتغيير من المزود؛ الروابط أعلاه هي المصدر الرسمي. التطبيق يعرض رسالة واضحة عند 401/404/429.
+>
+> **GitHub Models** خدمة منفصلة عن GitHub Copilot وقد **أُوقفت نهائياً في 30 يوليو 2026**، لذا لم تُدمج. [إعلان الإيقاف](https://docs.github.com/en/github-models/about-github-models)
+
+### المزودات المدفوعة (اختيارية)
+
+| المزود | الموديل الافتراضي | ملاحظة |
+|---|---|---|
+| DeepSeek | `deepseek-flash` | رخيص جداً (V4.1 Flash)؛ لا يوفّر DeepSeek خطة مجانية لواجهته البرمجية |
+| OpenAI | `gpt-6-luna` | يستخدم `max_completion_tokens` ولا يرسل `temperature` (متوافق مع موديلات التفكير) |
+| Anthropic Claude | `claude-sonnet-5-5` | لا يرسل `temperature` لأن الموديلات الجديدة ترفضه |
+
+> نسخة `deepseek-v4.1-flash:free` موجودة حالياً لدى وسطاء خارجيين فقط (وليست من DeepSeek أو OpenRouter)، وليست موثوقة للإنتاج، لذا لم تُضمَّن.
+
+يمكن كتابة أي موديل أحدث في حقل الموديل بالإعدادات.
+
+### لماذا هذه المزودات؟
+
+كلها تعمل عبر HTTPS من أندرويد ومن GitHub Actions وأي خدمة سحابية، وتوفر موديلات برمجة، ولا تحتاج سيرفراً وسيطاً:
+
+- **Gemini**: الأقرب لتجربة Android Studio وGoogle Cloud.
+- **Groq / OpenRouter / Cohere**: موديلات كود مفتوحة (GPT-OSS، North Mini Code) بواجهات OpenAI-compatible أو REST.
+- **Cloudflare**: ضمن خدمات Cloudflare السحابية، وواجهته متوافقة مع OpenAI.
+
+## الإعداد
+
+1. أنشئ مفتاحاً من لوحة المزود (الروابط أعلاه).
+2. افتح ⚙️ الإعدادات في التطبيق، اختر المزود، والصق المفتاح.
+3. لـCloudflare أضف `Account ID` أيضاً.
+4. اترك حقل الموديل فارغاً لاستخدام الافتراضي، أو اكتب موديلاً أحدث متاحاً لحسابك.
+
+## البناء
+
+### Android Studio
+افتح المجلد مباشرة (JDK 17، compileSdk 35). الملفات: `app/src/main/java/com/lion/ai/`.
+
+### سطر الأوامر
+```bash
+./gradlew assembleDebug
+```
+
+### GitHub Actions
+`.github/workflows/build.yml` يبني APK عند كل push إلى `main` ويرفعه كـArtifact. لا تُخزَّن مفاتيح API في المستودع؛ المفاتيح يدخلها المستخدم على جهازه.
+
+## الأمان والخصوصية
+
+- لا يوجد سيرفر وسيط ولا تحليلات ولا إعلانات.
+- المفاتيح مشفّرة على الجهاز (`lion_secure`) و`allowBackup=false`.
+- المحادثات محلية فقط.
+- تُرسل الرسالة إلى مزود الخدمة المختار فقط.
+- على الخطة المجانية قد يستخدم بعض المزودين البيانات لتحسين خدماتهم (مثل Gemini: "Used to improve our products: Yes"). لا ترسل بيانات حساسة عند استخدام الحسابات المجانية.
+- تطبيق أندرويد يطلب `READ_CONTACTS` و`SEND_SMS`؛ إن رفضت صلاحية SMS يفتح التطبيق واجهة الرسائل بدلاً من الإرسال الصامت.
+
+## غير منفذ بعد
+
+- عرض Markdown/كتل الكود وتظليلها (الردود تُعرض كنص خام).
+- البث المباشر للردود (Streaming).
+- قراءة PDF أو استخراج نصه.
+- WhatsApp auto-reply وGoogle Sign-in/Mirror sync (ادعاءات قديمة أُزيلت من الوصف).
+- اختبار المفتاح داخل الإعدادات قبل الحفظ.
+
+## الرخصة
+
 MIT
