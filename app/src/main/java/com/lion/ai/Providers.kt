@@ -8,7 +8,8 @@ data class ProviderInfo(
     val defaultModel: String,
     val free: Boolean = true,
     val needsAccountId: Boolean = false,
-    val shortName: String = label
+    val shortName: String = label,
+    val modelHint: String = ""
 )
 
 val PROVIDERS = listOf(
@@ -19,6 +20,15 @@ val PROVIDERS = listOf(
         docsUrl = "https://ai.google.dev/gemini-api/docs/pricing",
         defaultModel = "gemini-3.8-flash",
         shortName = "Gemini"
+    ),
+    ProviderInfo(
+        id = "opencode",
+        label = "OpenCode Zen",
+        tagline = "موديلات مجانية ممتازة للكود — المفتاح من opencode.ai/auth",
+        docsUrl = "https://opencode.ai/docs/zen/",
+        defaultModel = "big-pickle",
+        shortName = "OpenCode",
+        modelHint = "موديلات مجانية: big-pickle ، deepseek-v4-flash-free ، minimax-m3-free ، mimo-v2.5-free ، nemotron-3-super-free. القائمة تتغير؛ راجع opencode.ai/zen/v1/models. تعمل هنا موديلات chat/completions فقط."
     ),
     ProviderInfo(
         id = "groq",

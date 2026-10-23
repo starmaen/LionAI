@@ -113,17 +113,25 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 data class Message(
     val text: String,
     val isUser: Boolean,
     val ytUrl: String? = null,
-    val ytmUrl: String? = null
+    val ytmUrl: String? = null,
+    val pending: PendingAction? = null
 )
 
-data class Chat(val id: String, val title: String)
-data class Contact(val name: String, val number: String)
+data class Contact(val name: String, val number: String, val normalized: String? = null)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -152,7 +160,8 @@ fun loadContactsFromDevice(ctx: Context): List<Contact> {
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
             arrayOf(
                 ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                ContactsContract.CommonDataKinds.Phone.NUMBER
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER
             ),
             null, null,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
@@ -161,7 +170,10 @@ fun loadContactsFromDevice(ctx: Context): List<Contact> {
             while (it.moveToNext()) {
                 val name = it.getString(0) ?: ""
                 val number = it.getString(1) ?: ""
-                if (name.isNotBlank() && number.isNotBlank()) list.add(Contact(name, number))
+                val normalized = it.getString(2)
+                if (name.isNotBlank() && number.isNotBlank()) {
+                    list.add(Contact(name, number, normalized?.takeIf { n -> n.isNotBlank() }))
+                }
             }
         }
     } catch (e: Exception) {
@@ -180,11 +192,18 @@ fun LionApp() {
 
     var showSettings by remember { mutableStateOf(false) }
     var showContacts by remember { mutableStateOf(false) }
+    var showScheduled by remember { mutableStateOf(false) }
+    var showArchive by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var input by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
-    var currentChat by remember { mutableStateOf("default") }
-    var chats by remember { mutableStateOf(listOf<Chat>()) }
+    var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
+    var chatMetas by remember { mutableStateOf(listOf<ChatMeta>()) }
+    var scheduledItems by remember { mutableStateOf(listOf<ScheduledItem>()) }
+    var renameTarget by remember { mutableStateOf<ChatMeta?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<ChatMeta?>(null) }
+    var autoSendTrigger by remember { mutableStateOf(0) }
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
     var autoSpeak by remember { mutableStateOf(prefs.getBoolean("auto_speak", false)) }
     var attachment by remember { mutableStateOf<Attachment?>(null) }
@@ -196,53 +215,72 @@ fun LionApp() {
     var showModelSheet by remember { mutableStateOf(false) }
     val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    fun saveChat() {
-        prefs.edit().putString("chat_$currentChat", ChatStore.encode(messages)).apply()
-        val title = messages.firstOrNull { it.isUser }
-            ?.text
-            ?.lineSequence()
-            ?.firstOrNull()
-            ?.trim()
-            ?.take(30)
-        if (!title.isNullOrBlank()) {
-            prefs.edit().putString("chat_title_$currentChat", title).apply()
-            chats = chats.map { if (it.id == currentChat) Chat(it.id, title) else it }
-        }
-        val ids = (prefs.getString("chat_ids", "") ?: "")
-            .split(",")
-            .filter { it.isNotBlank() }
-            .toMutableList()
-        if (currentChat !in ids) {
-            ids.add(currentChat)
-            prefs.edit().putString("chat_ids", ids.joinToString(",")).apply()
-        }
+    fun refreshChats() {
+        chatMetas = ChatRepository.all(prefs)
     }
 
-    fun loadChat(id: String) {
-        messages = ChatStore.decode(prefs.getString("chat_$id", "") ?: "")
+    fun saveCurrent() {
+        ChatRepository.save(prefs, currentChat, messages)
+        refreshChats()
+    }
+
+    fun openChat(id: String) {
+        messages = ChatRepository.load(prefs, id)
         currentChat = id
+        input = ""
+        attachment = null
+        imageAttachment = null
+        prefs.edit().putString("last_chat", id).apply()
     }
 
-    fun chatTitle(id: String): String {
-        val stored = (prefs.getString("chat_title_$id", "") ?: "").trim()
-        if (stored.isNotEmpty() && stored != "محادثة" && stored != "محادثة جديدة") {
-            return stored
+    fun startNewChat() {
+        val id = ChatRepository.newId()
+        messages = emptyList()
+        currentChat = id
+        input = ""
+        attachment = null
+        imageAttachment = null
+        prefs.edit().putString("last_chat", id).apply()
+    }
+
+    fun appendToChat(chatId: String, message: Message) {
+        if (chatId == currentChat) {
+            messages = messages + message
+            saveCurrent()
+        } else {
+            ChatRepository.save(prefs, chatId, ChatRepository.load(prefs, chatId) + message)
+            refreshChats()
         }
-        val first = ChatStore.decode(prefs.getString("chat_$id", "") ?: "")
-            .firstOrNull { it.isUser }
-            ?.text
-            ?.lineSequence()
-            ?.firstOrNull()
-            ?.trim()
-            .orEmpty()
-        return first.take(30).ifBlank { "محادثة" }
     }
 
-    fun loadChatsList() {
-        val ids = (prefs.getString("chat_ids", "") ?: "")
-            .split(",")
-            .filter { it.isNotBlank() && it != "default" }
-        chats = ids.map { id -> Chat(id, chatTitle(id)) }
+    fun providerCredentials(): Triple<String, String, String> {
+        val provider = selectedProvider
+        return Triple(
+            prefs.getString("api_key_$provider", "") ?: "",
+            prefs.getString("model_$provider", "") ?: "",
+            prefs.getString("cf_account_id", "") ?: ""
+        )
+    }
+
+    fun generateTitle(chatId: String, force: Boolean) {
+        if (!force && !prefs.getBoolean("smart_titles", true)) return
+        val meta = ChatRepository.get(prefs, chatId) ?: return
+        if (meta.titleSource == "user") return
+        if (!force && meta.titleSource == "ai") return
+        val list = ChatRepository.load(prefs, chatId)
+        val firstUser = list.firstOrNull { it.isUser }?.text ?: return
+        val firstReply = list.firstOrNull { !it.isUser && !LlmClient.isErrorReply(it.text) }?.text ?: return
+        val provider = selectedProvider
+        val (apiKey, model, accountId) = providerCredentials()
+        scope.launch {
+            val title = withContext(Dispatchers.IO) {
+                LlmClient.generateTitle(firstUser, firstReply, apiKey, provider, model, accountId)
+            }
+            if (!title.isNullOrBlank()) {
+                ChatRepository.setAiTitle(prefs, chatId, title)
+                refreshChats()
+            }
+        }
     }
 
     fun requestContacts() {
@@ -267,7 +305,11 @@ fun LionApp() {
         val text = result.data
             ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             ?.firstOrNull()
-        if (!text.isNullOrBlank()) input = text
+        if (!text.isNullOrBlank()) {
+            input = text
+            // الأمر الصوتي (رسالة/اتصال/تذكير) يُنفّذ مباشرة بعد التعرف عليه
+            if (ActionDetector.looksLikeCommand(text)) autoSendTrigger += 1
+        }
     }
 
     val fileLauncher = rememberLauncherForActivityResult(
@@ -284,7 +326,7 @@ fun LionApp() {
                         result.error ?: "⚠️ تعذر قراءة الملف.",
                         false
                     )
-                    saveChat()
+                    saveCurrent()
                 }
             }
         }
@@ -306,7 +348,7 @@ fun LionApp() {
                         result.error ?: "⚠️ تعذر قراءة الصورة.",
                         false
                     )
-                    saveChat()
+                    saveCurrent()
                 }
             }
         }
@@ -328,12 +370,14 @@ fun LionApp() {
     }
 
     LaunchedEffect(Unit) {
-        loadChatsList()
-        loadChat(currentChat)
+        refreshChats()
+        scheduledItems = Scheduler.list(prefs)
+        openChat(currentChat)
 
         val permissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.SEND_SMS,
+            Manifest.permission.CALL_PHONE,
             Manifest.permission.RECORD_AUDIO
         )
         if (Build.VERSION.SDK_INT >= 33) {
@@ -363,71 +407,24 @@ fun LionApp() {
         }
     }
 
-    fun detectReminder(message: String): Pair<String, Int>? {
-        val hasWord = message.contains("ذكرني") || message.contains("نبهني")
-        if (!hasWord) return null
-        val afterIndex = message.indexOf("بعد")
-        if (afterIndex < 0) return null
-        val after = message.substring(afterIndex + 3)
-        val numberMatch = Regex("(\\d+)").find(after) ?: return null
-        val amount = numberMatch.groupValues[1].toIntOrNull() ?: return null
-        val seconds = when {
-            after.contains("ثانية") || after.contains("ثواني") || after.contains("ثانيه") -> amount
-            after.contains("دقيقة") || after.contains("دقائق") || after.contains("دقيقه") -> amount * 60
-            after.contains("ساعة") || after.contains("ساعات") || after.contains("ساعه") -> amount * 3600
-            after.contains("يوم") || after.contains("أيام") || after.contains("ايام") -> amount * 86400
-            else -> return null
-        }
-        var text = message.replace("ذكرني", "").replace("نبهني", "").trim()
-        text = text.replace(
-            Regex("بعد\\s*\\d+\\s*(ثانية|ثواني|ثانيه|دقيقة|دقائق|دقيقه|ساعة|ساعات|ساعه|يوم|أيام|ايام)"),
-            ""
-        ).trim()
-        text = text.replace(Regex("^(أن|ان|بأن|بان|ب)\\s+"), "").trim()
-        return Pair(text.ifEmpty { "تذكير" }, seconds)
-    }
+    fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
-    fun detectSms(message: String): Triple<String, String, String>? {
-        val hasSend = message.contains("أرسل") || message.contains("ارسل") || message.contains("ابعث")
-        val hasMessage = message.contains("رسالة") || message.contains("رساله")
-        if (!hasSend || !hasMessage) return null
-        val colonIndex = message.indexOfFirst { it == ':' || it == '：' }
-        if (colonIndex < 0) return null
-        val body = message.substring(colonIndex + 1).trim()
-        if (body.isEmpty()) return null
-        val beforeColon = message.substring(0, colonIndex)
-        val numberMatch = Regex("(\\+?\\d{6,})").find(beforeColon)
-        if (numberMatch != null) {
-            return Triple("number", numberMatch.groupValues[1], body)
+    fun resolveRecipients(query: String): List<Recipient> {
+        val q = TextNorm.digits(query).trim()
+        if (Regex("^\\+?[0-9][0-9\\s\\-]{4,}$").matches(q)) {
+            val n = q.replace(Regex("[\\s\\-]"), "")
+            return listOf(Recipient(n, n, if (n.startsWith("+")) n.drop(1) else null))
         }
-        val nameMatch = Regex("(?:^|\\s)(?:لـ|ل|إلى|الى)\\s+")
-            .findAll(beforeColon)
-            .lastOrNull()
-        if (nameMatch != null) {
-            val name = beforeColon.substring(nameMatch.range.last + 1).trim()
-            if (name.isNotEmpty()) return Triple("name", name, body)
+        val tries = listOfNotNull(
+            q,
+            if (q.length > 3 && (q.startsWith("ب") || q.startsWith("ل"))) q.substring(1) else null
+        )
+        for (t in tries) {
+            val found = ContactMatcher.find(contacts, t)
+            if (found.isNotEmpty()) return found.map { it.toRecipient() }
         }
-        return null
-    }
-
-    fun findNumberByName(name: String): String? {
-        return contacts.firstOrNull { it.name.contains(name, ignoreCase = true) }?.number
-    }
-
-    @Suppress("DEPRECATION")
-    fun sendSms(phone: String, text: String): Boolean {
-        if (ContextCompat.checkSelfPermission(
-                context, Manifest.permission.SEND_SMS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return false
-        }
-        return try {
-            SmsManager.getDefault().sendTextMessage(phone, null, text, null, null)
-            true
-        } catch (e: Exception) {
-            false
-        }
+        return emptyList()
     }
 
     fun openSmsComposer(phone: String, text: String) {
@@ -439,25 +436,174 @@ fun LionApp() {
         }
     }
 
-    fun scheduleReminder(text: String, seconds: Int) {
-        try {
-            val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(context, ReminderReceiver::class.java).putExtra("text", text)
-            val pending = PendingIntent.getBroadcast(
-                context,
-                (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val triggerAt = System.currentTimeMillis() +
-                seconds.coerceIn(1, 30 * 24 * 3600) * 1000L
-            val canExact = Build.VERSION.SDK_INT < 31 || manager.canScheduleExactAlarms()
-            if (canExact) {
-                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+    fun openWhatsApp(waNumber: String, text: String): Boolean = runCatching {
+        val uri = Uri.parse(
+            "https://wa.me/" + waNumber.filter { it.isDigit() } + "?text=" + Uri.encode(text)
+        )
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        true
+    }.getOrDefault(false)
+
+    fun startCall(number: String) {
+        runCatching {
+            val action = if (hasPermission(Manifest.permission.CALL_PHONE)) {
+                Intent.ACTION_CALL
             } else {
-                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                Intent.ACTION_DIAL
             }
-        } catch (e: Exception) {
+            context.startActivity(Intent(action, Uri.fromParts("tel", number, null)))
+        }
+    }
+
+    /** ينفّذ الأمر (فوراً أو بجدولته) ويعيد نص النتيجة للمستخدم. */
+    fun runAction(
+        kind: ActionKind,
+        r: Recipient,
+        text: String,
+        triggerAt: Long?,
+        channel: String
+    ): String {
+        if (triggerAt != null) {
+            if (kind == ActionKind.SMS && !hasPermission(Manifest.permission.SEND_SMS)) {
+                return "⚠️ صلاحية إرسال الرسائل غير ممنوحة. فعّلها من إعدادات التطبيق في النظام ثم أعد الطلب."
+            }
+            Scheduler.add(
+                context, prefs,
+                ScheduledItem(Scheduler.newId(), kind, triggerAt, r.name, r.number, text)
+            )
+            scheduledItems = Scheduler.list(prefs)
+            return if (kind == ActionKind.SMS) {
+                "✅ سأرسل الرسالة إلى ${r.name} ${TimeFmt.whenText(triggerAt)}."
+            } else {
+                "✅ سيصلك إشعار ${TimeFmt.whenText(triggerAt)}؛ اضغط عليه للاتصال بـ ${r.name}."
+            }
+        }
+        return when (kind) {
+            ActionKind.SMS -> {
+                if (channel == "whatsapp" && r.waNumber != null) {
+                    if (openWhatsApp(r.waNumber, text)) {
+                        "💬 فتحت واتساب للمحادثة مع ${r.name}. اضغط إرسال هناك."
+                    } else {
+                        "⚠️ تعذر فتح واتساب."
+                    }
+                } else if (SmsSender.send(context, r.number, text)) {
+                    "📱 تم إرسال الرسالة إلى ${r.name} (${r.number})"
+                } else {
+                    openSmsComposer(r.number, text)
+                    "📱 فتحت تطبيق الرسائل لإرسالها إلى ${r.name} (${r.number}). اضغط إرسال للتأكيد."
+                }
+            }
+
+            ActionKind.CALL -> {
+                startCall(r.number)
+                "📞 جارٍ الاتصال بـ ${r.name} (${r.number})"
+            }
+
+            ActionKind.REMINDER -> ""
+        }
+    }
+
+    fun handleAction(chatId: String, a: ParsedAction) {
+        fun reply(text: String, pending: PendingAction? = null) {
+            appendToChat(chatId, Message(text, false, pending = pending))
+        }
+        when (a.kind) {
+            ActionKind.REMINDER -> {
+                val at = a.triggerAt
+                if (at == null) {
+                    reply("⏰ متى تريد التذكير؟ مثال: ذكرني بعد نصف ساعة أن أتصل بأحمد، أو: ذكرني الساعة 7 صباحاً بالاجتماع.")
+                    return
+                }
+                val text = a.message.ifBlank { "تذكير" }
+                Scheduler.add(
+                    context, prefs,
+                    ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, at, "", "", text)
+                )
+                scheduledItems = Scheduler.list(prefs)
+                val notices = NotificationManagerCompat.from(context).areNotificationsEnabled()
+                reply(
+                    "✅ سأذكّرك ${TimeFmt.whenText(at)}:\n$text" +
+                        if (notices) "" else "\n⚠️ الإشعارات معطلة من إعدادات النظام."
+                )
+            }
+
+            ActionKind.SMS, ActionKind.CALL -> {
+                if (a.recipient.isBlank()) {
+                    reply(
+                        if (a.kind == ActionKind.SMS) {
+                            "📱 لمن تريد إرسال الرسالة؟ اكتب الاسم أو الرقم."
+                        } else {
+                            "📞 بمن تريد الاتصال؟ اكتب الاسم أو الرقم."
+                        }
+                    )
+                    return
+                }
+                if (a.kind == ActionKind.SMS && a.message.isBlank()) {
+                    reply("📱 ما نص الرسالة؟")
+                    return
+                }
+                val candidates = resolveRecipients(a.recipient)
+                if (candidates.isEmpty()) {
+                    reply("❌ لم أجد جهة اتصال باسم «${a.recipient}». جرّب كتابة الرقم مباشرة.")
+                    return
+                }
+                val confirm = prefs.getBoolean("confirm_actions", true)
+                if (!confirm && candidates.size == 1) {
+                    reply(runAction(a.kind, candidates[0], a.message, a.triggerAt, "sms"))
+                } else {
+                    val whenLine = a.triggerAt?.let { "\n⏱ ${TimeFmt.whenText(it)}" } ?: ""
+                    val head = if (a.kind == ActionKind.SMS) {
+                        "📱 رسالة جاهزة:\n«${a.message}»$whenLine\n\nاختر المستلم للتأكيد:"
+                    } else {
+                        "📞 اتصال$whenLine\n\nاختر الرقم للتأكيد:"
+                    }
+                    reply(head, PendingAction(a.kind, a.message, a.triggerAt, candidates.take(5)))
+                }
+            }
+        }
+    }
+
+    fun onPendingChoice(index: Int, pending: PendingAction, recipient: Recipient?, channel: String) {
+        val result = if (recipient == null) {
+            "🚫 تم الإلغاء."
+        } else {
+            runAction(pending.kind, recipient, pending.text, pending.triggerAt, channel)
+        }
+        messages = messages.mapIndexed { i, m ->
+            if (i == index) {
+                m.copy(text = m.text.substringBefore("\n\nاختر") + "\n\n" + result, pending = null)
+            } else {
+                m
+            }
+        }
+        saveCurrent()
+    }
+
+    fun runChat(
+        chatId: String,
+        prompt: String,
+        history: List<ChatTurn>,
+        image: ImageAttachment?,
+        ytUrl: String?,
+        ytmUrl: String?
+    ) {
+        val provider = selectedProvider
+        val (apiKey, model, accountId) = providerCredentials()
+        loading = true
+        scope.launch {
+            val reply = withContext(Dispatchers.IO) {
+                LlmClient.ask(prompt, apiKey, provider, history, model, accountId, image)
+            }
+            appendToChat(chatId, Message(reply, false, ytUrl, ytmUrl))
+            loading = false
+            if (autoSpeak && chatId == currentChat) {
+                tts?.speak(reply.take(500), TextToSpeech.QUEUE_FLUSH, null, null)
+            }
+            if (!LlmClient.isErrorReply(reply)) {
+                val replies = ChatRepository.load(prefs, chatId)
+                    .count { !it.isUser && !LlmClient.isErrorReply(it.text) }
+                if (replies == 1) generateTitle(chatId, false)
+            }
         }
     }
 
@@ -475,7 +621,7 @@ fun LionApp() {
                 "⚠️ المزود الحالي لا يقرأ الصور. اختر Gemini أو DeepSeek أو OpenAI أو Claude من زر الموديل أسفل مربع الكتابة.",
                 false
             )
-            saveChat()
+            saveCurrent()
             return
         }
 
@@ -506,48 +652,12 @@ fun LionApp() {
             ChatTurn(if (it.isUser) "user" else "assistant", it.text)
         }
 
+        val chatId = currentChat
         messages = messages + Message(displayText, true)
         input = ""
         attachment = null
         imageAttachment = null
-        saveChat()
-
-        if (file == null && image == null) {
-            val reminder = detectReminder(text)
-            if (reminder != null) {
-                scheduleReminder(reminder.first, reminder.second)
-                val notices = NotificationManagerCompat.from(context).areNotificationsEnabled()
-                messages = messages + Message(
-                    if (notices) {
-                        "✅ تم جدولة التذكير: ${reminder.first}"
-                    } else {
-                        "⚠️ تم جدولة التذكير، لكن الإشعارات معطلة من إعدادات النظام."
-                    },
-                    false
-                )
-                saveChat()
-                return
-            }
-
-            val sms = detectSms(text)
-            if (sms != null) {
-                val (type, target, smsBody) = sms
-                val phone = if (type == "name") findNumberByName(target) else target
-                if (phone == null) {
-                    messages = messages + Message("❌ لم أجد جهة اتصال باسم $target", false)
-                } else if (sendSms(phone, smsBody)) {
-                    messages = messages + Message("📱 تم إرسال الرسالة إلى $target ($phone)", false)
-                } else {
-                    openSmsComposer(phone, smsBody)
-                    messages = messages + Message(
-                        "📱 فتحت تطبيق الرسائل لإرسالها إلى $target ($phone). اضغط إرسال للتأكيد.",
-                        false
-                    )
-                }
-                saveChat()
-                return
-            }
-        }
+        saveCurrent()
 
         val keywords = listOf("أغنية", "اغنية", "أغني", "اغني", "شغل", "موسيقى", "song", "music")
         val wantsMusic = keywords.any { text.contains(it, ignoreCase = true) }
@@ -565,22 +675,31 @@ fun LionApp() {
             null
         }
 
-        loading = true
-        scope.launch {
-            val apiKey = prefs.getString("api_key_$provider", "") ?: ""
-            val model = prefs.getString("model_$provider", "") ?: ""
-            val accountId = prefs.getString("cf_account_id", "") ?: ""
-
-            val reply = withContext(Dispatchers.IO) {
-                LlmClient.ask(prompt, apiKey, provider, history, model, accountId, image)
+        if (file == null && image == null && ActionDetector.looksLikeCommand(text)) {
+            loading = true
+            scope.launch {
+                val (apiKey, model, accountId) = providerCredentials()
+                if (contacts.isEmpty() && hasPermission(Manifest.permission.READ_CONTACTS)) {
+                    contacts = withContext(Dispatchers.IO) { loadContactsFromDevice(context) }
+                }
+                val parsed = withContext(Dispatchers.IO) {
+                    ActionResolver.resolve(text, apiKey, provider, model, accountId)
+                }
+                loading = false
+                if (parsed != null) {
+                    handleAction(chatId, parsed)
+                } else {
+                    runChat(chatId, prompt, history, image, ytUrl, ytmUrl)
+                }
             }
-            messages = messages + Message(reply, false, ytUrl, ytmUrl)
-            loading = false
-            saveChat()
-            if (autoSpeak) {
-                tts?.speak(reply.take(500), TextToSpeech.QUEUE_FLUSH, null, null)
-            }
+            return
         }
+
+        runChat(chatId, prompt, history, image, ytUrl, ytmUrl)
+    }
+
+    LaunchedEffect(autoSendTrigger) {
+        if (autoSendTrigger > 0) sendMessage()
     }
 
     if (showSettings) {
@@ -610,6 +729,18 @@ fun LionApp() {
             onSelect = { contact ->
                 input = "أرسل رسالة لـ ${contact.name}: "
                 showContacts = false
+            }
+        )
+        return
+    }
+
+    if (showScheduled) {
+        ScheduledScreen(
+            items = scheduledItems,
+            onBack = { showScheduled = false },
+            onDelete = { id ->
+                Scheduler.cancel(context, prefs, id)
+                scheduledItems = Scheduler.list(prefs)
             }
         )
         return
@@ -696,12 +827,70 @@ fun LionApp() {
         if (count > 0) listState.animateScrollToItem(count - 1)
     }
 
+    val renaming = renameTarget
+    if (renaming != null) {
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            containerColor = Color(0xFF1A1A1A),
+            title = { Text("✏️ تغيير اسم المحادثة", color = Color(0xFFFFB800)) },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFFB800),
+                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFFFFB800)
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    ChatRepository.rename(prefs, renaming.id, renameText)
+                    refreshChats()
+                    renameTarget = null
+                }) { Text("حفظ", color = Color(0xFFFFB800)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("إلغاء", color = Color.White) }
+            }
+        )
+    }
+
+    val deleting = deleteTarget
+    if (deleting != null) {
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            containerColor = Color(0xFF1A1A1A),
+            title = { Text("🗑️ حذف المحادثة", color = Color(0xFFE94560)) },
+            text = { Text("سيتم حذف «${deleting.title}» نهائياً.", color = Color.White) },
+            confirmButton = {
+                TextButton(onClick = {
+                    ChatRepository.delete(prefs, deleting.id)
+                    if (currentChat == deleting.id) startNewChat()
+                    refreshChats()
+                    deleteTarget = null
+                }) { Text("حذف", color = Color(0xFFE94560)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("إلغاء", color = Color.White) }
+            }
+        )
+    }
+
+    val activeChats = chatMetas.filter { !it.archived && (it.count > 0 || it.id == currentChat) }
+    val archivedChats = chatMetas.filter { it.archived }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = Color(0xFF1A1A1A),
-                modifier = Modifier.width(280.dp)
+                modifier = Modifier.width(300.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -709,92 +898,107 @@ fun LionApp() {
                         .statusBarsPadding()
                         .navigationBarsPadding()
                 ) {
-                Text(
-                    "💬 المحادثات",
-                    color = Color(0xFFFFB800),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp)
-                )
-                Button(
-                    onClick = {
-                        currentChat = "chat_" + System.currentTimeMillis()
-                        val ids = (prefs.getString("chat_ids", "") ?: "")
-                            .split(",")
-                            .filter { it.isNotBlank() }
-                            .toMutableList()
-                        if (currentChat !in ids) {
-                            ids.add(currentChat)
-                            prefs.edit().putString("chat_ids", ids.joinToString(",")).apply()
-                        }
-                        messages = emptyList()
-                        input = ""
-                        attachment = null
-                        imageAttachment = null
-                        loadChatsList()
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
-                ) {
-                    Text("+ محادثة جديدة", color = Color(0xFF0D0D0D))
-                }
+                    Text(
+                        "💬 المحادثات",
+                        color = Color(0xFFFFB800),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    Button(
+                        onClick = {
+                            startNewChat()
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
+                    ) {
+                        Text("+ محادثة جديدة", color = Color(0xFF0D0D0D))
+                    }
+                    Button(
+                        onClick = {
+                            requestContacts()
+                            showContacts = true
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F))
+                    ) {
+                        Text("📇 جهات الاتصال (${contacts.size})", color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            scheduledItems = Scheduler.list(prefs)
+                            showScheduled = true
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E4A2E))
+                    ) {
+                        Text("⏰ المجدولات (${scheduledItems.size})", color = Color.White)
+                    }
+                    Spacer(Modifier.height(6.dp))
 
-                Button(
-                    onClick = {
-                        requestContacts()
-                        showContacts = true
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F))
-                ) {
-                    Text("📇 جهات الاتصال (${contacts.size})", color = Color.White)
-                }
-
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(chats) { chat ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    loadChat(chat.id)
+                    LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                        items(activeChats, key = { it.id }) { meta ->
+                            ChatRow(
+                                meta = meta,
+                                selected = meta.id == currentChat,
+                                onOpen = {
+                                    openChat(meta.id)
                                     scope.launch { drawerState.close() }
                                 },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    chat.title,
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(onClick = {
-                                val remaining = chats
-                                    .filter { it.id != chat.id }
-                                    .joinToString(",") { it.id }
-                                prefs.edit()
-                                    .putString("chat_ids", remaining)
-                                    .remove("chat_${chat.id}")
-                                    .remove("chat_title_${chat.id}")
-                                    .apply()
-                                if (currentChat == chat.id) {
-                                    loadChat("default")
+                                onRename = {
+                                    renameText = meta.title
+                                    renameTarget = meta
+                                },
+                                onAutoTitle = { generateTitle(meta.id, true) },
+                                onArchiveToggle = {
+                                    ChatRepository.setArchived(prefs, meta.id, true)
+                                    if (currentChat == meta.id) startNewChat()
+                                    refreshChats()
+                                },
+                                onDelete = { deleteTarget = meta }
+                            )
+                        }
+                        if (archivedChats.isNotEmpty()) {
+                            item(key = "archive_header") {
+                                TextButton(
+                                    onClick = { showArchive = !showArchive },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "📦 الأرشيف (${archivedChats.size}) " + if (showArchive) "▲" else "▼",
+                                        color = Color(0xFFB0B0B0)
+                                    )
                                 }
-                                loadChatsList()
-                            }) {
-                                Icon(Icons.Filled.Delete, "حذف", tint = Color(0xFFE94560))
+                            }
+                            if (showArchive) {
+                                items(archivedChats, key = { "arch_" + it.id }) { meta ->
+                                    ChatRow(
+                                        meta = meta,
+                                        selected = false,
+                                        onOpen = {
+                                            openChat(meta.id)
+                                            scope.launch { drawerState.close() }
+                                        },
+                                        onRename = {
+                                            renameText = meta.title
+                                            renameTarget = meta
+                                        },
+                                        onAutoTitle = { generateTitle(meta.id, true) },
+                                        onArchiveToggle = {
+                                            ChatRepository.setArchived(prefs, meta.id, false)
+                                            refreshChats()
+                                        },
+                                        onDelete = { deleteTarget = meta }
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
-        }
         }
     ) {
         Scaffold(
@@ -804,7 +1008,17 @@ fun LionApp() {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("🦁", fontSize = 28.sp)
                             Spacer(Modifier.width(8.dp))
-                            Text("Lion AI", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+                            Column {
+                                Text("Lion AI", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+                                Text(
+                                    chatMetas.firstOrNull { it.id == currentChat }?.title
+                                        ?: ChatRepository.DEFAULT_TITLE,
+                                    color = Color(0xFF9A9A9A),
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     },
                     navigationIcon = {
@@ -839,8 +1053,11 @@ fun LionApp() {
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(messages) { message ->
-                        Bubble(message, context, tts)
+                    itemsIndexed(messages) { index, message ->
+                        Bubble(
+                            message, context, tts, index,
+                            onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) }
+                        )
                     }
                     if (loading) {
                         item {
@@ -1081,6 +1298,8 @@ fun SettingsScreen(
     var accountId by remember {
         mutableStateOf(prefs.getString("cf_account_id", "") ?: "")
     }
+    var smartTitles by remember { mutableStateOf(prefs.getBoolean("smart_titles", true)) }
+    var confirmActions by remember { mutableStateOf(prefs.getBoolean("confirm_actions", true)) }
 
     val current = providerInfo(provider)
 
@@ -1091,6 +1310,8 @@ fun SettingsScreen(
         models.forEach { (id, value) -> editor.putString("model_$id", value) }
         editor.putString("cf_account_id", accountId)
         editor.putBoolean("auto_speak", autoSpeak)
+        editor.putBoolean("smart_titles", smartTitles)
+        editor.putBoolean("confirm_actions", confirmActions)
         editor.apply()
     }
 
@@ -1235,6 +1456,10 @@ fun SettingsScreen(
                 )
             )
 
+            if (current.modelHint.isNotBlank()) {
+                Text(current.modelHint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
+            }
+
             TextButton(onClick = {
                 runCatching { uriHandler.openUri(current.docsUrl) }
             }) {
@@ -1256,13 +1481,47 @@ fun SettingsScreen(
                 Text("قراءة الردود تلقائياً", color = Color.White)
             }
 
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = smartTitles,
+                    onCheckedChange = { smartTitles = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("عناوين ذكية للمحادثات", color = Color.White)
+                    Text("طلب قصير للنموذج بعد أول رد لتسمية المحادثة بموضوعها", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = confirmActions,
+                    onCheckedChange = { confirmActions = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("تأكيد قبل إرسال الرسائل والاتصال", color = Color.White)
+                    Text("يُنصح بإبقائه مفعّلاً لتفادي إرسال لشخص خاطئ", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-fun Bubble(message: Message, context: Context, tts: TextToSpeech?) {
+fun Bubble(
+    message: Message,
+    context: Context,
+    tts: TextToSpeech?,
+    index: Int,
+    onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
@@ -1322,6 +1581,43 @@ fun Bubble(message: Message, context: Context, tts: TextToSpeech?) {
                         }
                     }
                 }
+                val pending = message.pending
+                if (pending != null) {
+                    Spacer(Modifier.height(8.dp))
+                    pending.candidates.forEach { r ->
+                        Column(modifier = Modifier.padding(vertical = 3.dp)) {
+                            Text("${r.name} • ${r.number}", color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                            Row {
+                                Button(
+                                    onClick = { onPendingChoice(index, pending, r, "sms") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
+                                    shape = RoundedCornerShape(20.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        if (pending.kind == ActionKind.CALL) "📞 اتصال" else "📱 SMS",
+                                        color = Color(0xFF0D0D0D),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                if (pending.kind == ActionKind.SMS && pending.triggerAt == null && r.waNumber != null) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Button(
+                                        onClick = { onPendingChoice(index, pending, r, "whatsapp") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                                        shape = RoundedCornerShape(20.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text("💬 واتساب", color = Color.White, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    TextButton(onClick = { onPendingChoice(index, pending, null, "") }) {
+                        Text("✖ إلغاء", color = Color(0xFFE94560), fontSize = 12.sp)
+                    }
+                }
                 if (!message.isUser) {
                     Spacer(Modifier.height(8.dp))
                     Row {
@@ -1354,3 +1650,134 @@ fun Bubble(message: Message, context: Context, tts: TextToSpeech?) {
         }
     }
 }
+
+@Composable
+fun ChatRow(
+    meta: ChatMeta,
+    selected: Boolean,
+    onOpen: () -> Unit,
+    onRename: () -> Unit,
+    onAutoTitle: () -> Unit,
+    onArchiveToggle: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var menu by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 1.dp)
+            .background(
+                if (selected) Color(0xFF2A2310) else Color.Transparent,
+                RoundedCornerShape(10.dp)
+            )
+            .clickable(onClick = onOpen)
+            .padding(start = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            meta.title,
+            color = if (selected) Color(0xFFFFB800) else Color.White,
+            fontSize = 14.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Box {
+            IconButton(onClick = { menu = true }) {
+                Icon(Icons.Filled.MoreVert, "خيارات", tint = Color(0xFF9A9A9A))
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text("✏️ تغيير الاسم") },
+                    onClick = {
+                        menu = false
+                        onRename()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("✨ عنوان تلقائي") },
+                    onClick = {
+                        menu = false
+                        onAutoTitle()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(if (meta.archived) "📤 إلغاء الأرشفة" else "📦 أرشفة") },
+                    onClick = {
+                        menu = false
+                        onArchiveToggle()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("🗑️ حذف", color = Color(0xFFE94560)) },
+                    onClick = {
+                        menu = false
+                        onDelete()
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ScheduledScreen(
+    items: List<ScheduledItem>,
+    onBack: () -> Unit,
+    onDelete: (Int) -> Unit
+) {
+    Scaffold(
+        containerColor = Color(0xFF0D0D0D),
+        topBar = {
+            TopAppBar(
+                title = { Text("⏰ المجدولات (${items.size})", color = Color(0xFFFFB800)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, "رجوع", tint = Color(0xFFFFB800))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A))
+            )
+        }
+    ) { padding ->
+        if (items.isEmpty()) {
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "لا توجد تذكيرات أو رسائل مجدولة.\nجرّب: ذكرني بعد نصف ساعة أن أتصل بأحمد",
+                    color = Color(0xFFB0B0B0)
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+                items(items, key = { it.id }) { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            val label = when (item.kind) {
+                                ActionKind.REMINDER -> "⏰ تذكير"
+                                ActionKind.SMS -> "📱 رسالة إلى ${item.name}"
+                                ActionKind.CALL -> "📞 اتصال بـ ${item.name}"
+                            }
+                            Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(TimeFmt.whenText(item.whenMillis), color = Color(0xFFFFB800), fontSize = 12.sp)
+                            if (item.text.isNotBlank()) {
+                                Text(item.text, color = Color(0xFFB0B0B0), fontSize = 13.sp, maxLines = 3)
+                            }
+                        }
+                        IconButton(onClick = { onDelete(item.id) }) {
+                            Icon(Icons.Filled.Delete, "حذف", tint = Color(0xFFE94560))
+                        }
+                    }
+                    HorizontalDivider(color = Color(0xFF2A2A2A))
+                }
+            }
+        }
+    }
+}
+

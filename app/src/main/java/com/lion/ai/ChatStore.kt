@@ -8,8 +8,13 @@ object ChatStore {
     fun encode(messages: List<Message>): String {
         val array = JSONArray()
         messages.forEach { message ->
+            val storedText = if (message.pending != null) {
+                message.text.substringBefore("\n\nاختر") + "\n\n⌛ لم يتم التأكيد."
+            } else {
+                message.text
+            }
             val item = JSONObject()
-                .put("text", message.text)
+                .put("text", storedText)
                 .put("user", message.isUser)
             message.ytUrl?.let { item.put("yt", it) }
             message.ytmUrl?.let { item.put("ytm", it) }

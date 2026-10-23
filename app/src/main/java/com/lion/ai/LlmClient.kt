@@ -4,6 +4,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 data class ChatTurn(val role: String, val content: String)
 
@@ -23,6 +27,62 @@ object LlmClient {
             "وكن دقيقاً ومباشراً. عند كتابة الكود استخدم كتل Markdown مع تحديد اللغة، " +
             "واشرح الخطوات باختصار. لا تخترع معلومات؛ إن لم تكن متأكداً فقل ذلك."
 
+    private const val TITLE_PROMPT =
+        "أنت تكتب عناوين قصيرة للمحادثات. أجب بالعنوان فقط: من 2 إلى 5 كلمات بلغة المستخدم، " +
+            "بدون علامات ترقيم أو اقتباس أو إيموجي أو شرح."
+
+    private const val INTENT_PROMPT = """أنت محلّل أوامر لتطبيق هاتف. حوّل طلب المستخدم إلى JSON فقط، بدون شرح وبدون Markdown.
+الوقت الحالي: {NOW}
+الصيغة:
+{"intent":"reminder|sms|call|none","recipient":"الاسم أو الرقم كما ذكره المستخدم أو فارغ","message":"النص النهائي","delay_minutes":رقم أو null,"at":"yyyy-MM-dd HH:mm" أو null}
+القواعد:
+- reminder: تذكير المستخدم بشيء. message = ما يجب تذكيره به بصيغة المخاطب (مثل: اشرب الدواء).
+- sms: إرسال رسالة لشخص. message = نص الرسالة كما سيقرؤه المستلم مباشرة بصيغة المخاطب (حوّل الغائب إلى مخاطب، مثل: "اخبر احمد ان ياتي هنا الساعة 5" يصبح "تعال إلى هنا الساعة 5"). لا تضف معلومات لم يذكرها المستخدم.
+- call: اتصال هاتفي بشخص. message فارغ.
+- الوقت النسبي: ربع ساعة=15، نصف ساعة=30، ساعة=60، دقيقتان=2، ساعتان=120 ... ضعه في delay_minutes.
+- الوقت المحدد (الساعة 7 صباحاً، غداً الساعة 9 مساءً ...) ضعه في at بتوقيت الجهاز وبنظام 24 ساعة. إذا لم يُذكر صباحاً أو مساءً فاختر أقرب وقت قادم.
+- إن لم يُذكر وقت فاجعل delay_minutes و at يساويان null (التنفيذ فوري للرسالة والاتصال).
+- إن لم يكن الطلب تذكيراً أو رسالة أو اتصالاً فعلياً (مثل سؤال عن كيفية الإرسال) فاجعل intent=none.
+- الرد JSON واحد فقط."""
+
+    fun isErrorReply(reply: String): Boolean =
+        reply.startsWith("⚠️") || reply.startsWith("🔑") || reply.startsWith("⏳") ||
+            reply.startsWith("لم يصل رد")
+
+    private fun stripThinking(text: String): String =
+        text.replace(Regex("(?s)<think>.*?</think>"), "").trim()
+
+    fun generateTitle(
+        userText: String,
+        assistantText: String,
+        apiKey: String,
+        provider: String,
+        model: String,
+        accountId: String
+    ): String? {
+        val prompt = "اكتب عنواناً لهذه المحادثة.\n\nالمستخدم: ${userText.take(400)}\nالمساعد: ${assistantText.take(400)}"
+        val reply = ask(prompt, apiKey, provider, emptyList(), model, accountId, null, TITLE_PROMPT)
+        if (isErrorReply(reply)) return null
+        val line = stripThinking(reply).lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
+        val clean = line.trim('"', '\'', '«', '»', '*', '#', '`', '.', '،', ':', ' ').take(40)
+        return clean.ifBlank { null }
+    }
+
+    fun extractIntent(
+        userText: String,
+        apiKey: String,
+        provider: String,
+        model: String,
+        accountId: String,
+        nowMillis: Long
+    ): String? {
+        val now = SimpleDateFormat("EEEE yyyy-MM-dd HH:mm", Locale.ENGLISH).format(Date(nowMillis)) +
+            " (" + TimeZone.getDefault().id + ")"
+        val reply = ask(userText, apiKey, provider, emptyList(), model, accountId, null, INTENT_PROMPT.replace("{NOW}", now))
+        if (isErrorReply(reply)) return null
+        return stripThinking(reply)
+    }
+
     fun defaultModel(provider: String): String = providerInfo(provider).defaultModel
 
     fun ask(
@@ -32,7 +92,8 @@ object LlmClient {
         history: List<ChatTurn>,
         modelOverride: String = "",
         accountId: String = "",
-        image: ImageAttachment? = null
+        image: ImageAttachment? = null,
+        systemPrompt: String = SYSTEM_PROMPT
     ): String {
         if (apiKey.isBlank()) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
@@ -46,31 +107,41 @@ object LlmClient {
 
         return try {
             when (provider) {
-                "gemini" -> callGemini(message, apiKey, model, turns, image)
+                "gemini" -> callGemini(message, apiKey, model, turns, image, systemPrompt)
+                "opencode" -> {
+                    if (model.startsWith("gpt-") || model.startsWith("claude-") || model.startsWith("gemini-")) {
+                        "⚠️ الموديل «$model» يعمل عبر واجهة مختلفة في OpenCode. اختر موديلاً من نوع chat/completions مثل big-pickle."
+                    } else {
+                        callOpenAiCompatible(
+                            "https://opencode.ai/zen/v1/chat/completions", apiKey, model, turns, message,
+                            maxTokens = OPENAI_MAX_TOKENS, image = null, systemPrompt = systemPrompt
+                        )
+                    }
+                }
                 "groq" -> callOpenAiCompatible(
                     "https://api.groq.com/openai/v1/chat/completions", apiKey, model, turns, message,
-                    image = image
+                    image = image, systemPrompt = systemPrompt
                 )
                 "openrouter" -> callOpenAiCompatible(
                     "https://openrouter.ai/api/v1/chat/completions", apiKey, model, turns, message,
                     mapOf("HTTP-Referer" to "https://github.com/starmaen/LionAI", "X-Title" to "Lion AI"),
-                    image = image
+                    image = image, systemPrompt = systemPrompt
                 )
                 "deepseek" -> callOpenAiCompatible(
                     "https://api.deepseek.com/chat/completions", apiKey, model, turns, message,
-                    omitTemperature = true, maxTokens = OPENAI_MAX_TOKENS, image = image
+                    omitTemperature = true, maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
                 "openai" -> callOpenAiCompatible(
                     "https://api.openai.com/v1/chat/completions", apiKey, model, turns, message,
                     tokenParam = "max_completion_tokens", omitTemperature = true,
-                    maxTokens = OPENAI_MAX_TOKENS, image = image
+                    maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
                 "cloudflare" -> callOpenAiCompatible(
                     "https://api.cloudflare.com/client/v4/accounts/$accountId/ai/v1/chat/completions",
-                    apiKey, model, turns, message, image = image
+                    apiKey, model, turns, message, image = image, systemPrompt = systemPrompt
                 )
-                "cohere" -> callCohere(message, apiKey, model, turns, image)
-                "claude" -> callClaude(message, apiKey, model, turns, image)
+                "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
+                "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
                 else -> "⚠️ مزود غير معروف: $provider"
             }
         } catch (e: LlmException) {
@@ -95,10 +166,11 @@ object LlmClient {
         tokenParam: String = "max_tokens",
         omitTemperature: Boolean = false,
         maxTokens: Int = MAX_TOKENS,
-        image: ImageAttachment? = null
+        image: ImageAttachment? = null,
+        systemPrompt: String = SYSTEM_PROMPT
     ): String {
         val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+        messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
         history.forEach { turn ->
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }
@@ -138,7 +210,8 @@ object LlmClient {
         apiKey: String,
         model: String,
         history: List<ChatTurn>,
-        image: ImageAttachment?
+        image: ImageAttachment?,
+        systemPrompt: String
     ): String {
         val contents = JSONArray()
         history.forEach { turn ->
@@ -162,7 +235,7 @@ object LlmClient {
         val body = JSONObject()
             .put(
                 "systemInstruction",
-                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT)))
+                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt)))
             )
             .put("contents", contents)
             .put(
@@ -204,10 +277,11 @@ object LlmClient {
         apiKey: String,
         model: String,
         history: List<ChatTurn>,
-        image: ImageAttachment?
+        image: ImageAttachment?,
+        systemPrompt: String
     ): String {
         val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+        messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
         history.forEach { turn ->
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }
@@ -252,7 +326,8 @@ object LlmClient {
         apiKey: String,
         model: String,
         history: List<ChatTurn>,
-        image: ImageAttachment?
+        image: ImageAttachment?,
+        systemPrompt: String
     ): String {
         val messages = JSONArray()
         history.forEach { turn ->
@@ -278,7 +353,7 @@ object LlmClient {
         val body = JSONObject()
             .put("model", model)
             .put("max_tokens", CLAUDE_MAX_TOKENS)
-            .put("system", SYSTEM_PROMPT)
+            .put("system", systemPrompt)
             .put("messages", messages)
 
         val response = postJson(
