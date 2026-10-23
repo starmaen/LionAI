@@ -23,7 +23,7 @@ object LlmClient {
     private const val TEMPERATURE = 0.3
 
     private const val SYSTEM_PROMPT =
-        "أنت Lion AI، مساعد ذكي عربي متعدد الاستخدامات. أجب بالعربية الفصحى المبسطة، " +
+        "أنت Lion AI، مساعد ذكي عربي متعدد الاستخدامات. أجب دائماً بالعربية الفصحى المبسطة ولا تجب بالإنجليزية إلا إذا كتب المستخدم بها أو طلبها، " +
             "وكن دقيقاً ومباشراً. عند كتابة الكود استخدم كتل Markdown مع تحديد اللغة، " +
             "واشرح الخطوات باختصار. لا تخترع معلومات؛ إن لم تكن متأكداً فقل ذلك."
 
@@ -112,8 +112,14 @@ object LlmClient {
                     if (model.startsWith("gpt-") || model.startsWith("claude-") || model.startsWith("gemini-")) {
                         "⚠️ الموديل «$model» يعمل عبر واجهة مختلفة في OpenCode. اختر موديلاً من نوع chat/completions مثل big-pickle."
                     } else {
+                        val hasArabic = systemPrompt == SYSTEM_PROMPT && message.any { it in '\u0600'..'\u06FF' }
+                        val finalMessage = if (hasArabic) {
+                            message + "\n\n(أجب بالعربية)"
+                        } else {
+                            message
+                        }
                         callOpenAiCompatible(
-                            "https://opencode.ai/zen/v1/chat/completions", apiKey, model, turns, message,
+                            "https://opencode.ai/zen/v1/chat/completions", apiKey, model, turns, finalMessage,
                             maxTokens = OPENAI_MAX_TOKENS, image = null, systemPrompt = systemPrompt
                         )
                     }
@@ -395,6 +401,153 @@ object LlmClient {
             result.removeAt(0)
         }
         return result
+    }
+
+    private fun idsOf(array: JSONArray?, key: String): List<String> {
+        val out = mutableListOf<String>()
+        if (array != null) {
+            for (i in 0 until array.length()) {
+                val value = array.optJSONObject(i)?.optString(key, "").orEmpty()
+                if (value.isNotBlank()) out.add(value)
+            }
+        }
+        return out
+    }
+
+    private fun requireKey(apiKey: String) {
+        if (apiKey.isBlank()) throw LlmException(401, "أدخل مفتاح المزود أولاً ثم اضغط تحديث")
+    }
+
+    /** يجلب قائمة الموديلات الحالية من المزود. للمزودات المجانية يُرجع المجاني منها فقط حيث أمكن. */
+    fun listModels(provider: String, apiKey: String, accountId: String): List<String> {
+        val bearer = mapOf("Authorization" to "Bearer $apiKey")
+        val ids: List<String> = when (provider) {
+            "opencode" -> {
+                val headers = if (apiKey.isNotBlank()) bearer else emptyMap()
+                val json = getJson("https://opencode.ai/zen/v1/models", headers)
+                idsOf(json.optJSONArray("data"), "id")
+                    .filter { it == "big-pickle" || it.contains("free") }
+            }
+
+            "openrouter" -> {
+                val json = getJson("https://openrouter.ai/api/v1/models", emptyMap())
+                val data = json.optJSONArray("data")
+                val out = mutableListOf<String>()
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val item = data.optJSONObject(i) ?: continue
+                        val id = item.optString("id", "")
+                        val pricing = item.optJSONObject("pricing")
+                        val free = id.endsWith(":free") ||
+                            (pricing != null &&
+                                pricing.optString("prompt") == "0" &&
+                                pricing.optString("completion") == "0")
+                        if (id.isNotBlank() && free) out.add(id)
+                    }
+                }
+                out
+            }
+
+            "groq" -> {
+                requireKey(apiKey)
+                val json = getJson("https://api.groq.com/openai/v1/models", bearer)
+                idsOf(json.optJSONArray("data"), "id").filterNot {
+                    val n = it.lowercase()
+                    n.contains("whisper") || n.contains("tts") || n.contains("orpheus") ||
+                        n.contains("guard") || n.contains("safeguard")
+                }
+            }
+
+            "gemini" -> {
+                requireKey(apiKey)
+                val json = getJson(
+                    "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+                    mapOf("x-goog-api-key" to apiKey)
+                )
+                val data = json.optJSONArray("models")
+                val out = mutableListOf<String>()
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val item = data.optJSONObject(i) ?: continue
+                        val name = item.optString("name", "").removePrefix("models/")
+                        val methods = item.optJSONArray("supportedGenerationMethods")
+                        var canChat = false
+                        if (methods != null) {
+                            for (j in 0 until methods.length()) {
+                                if (methods.optString(j) == "generateContent") canChat = true
+                            }
+                        }
+                        val n = name.lowercase()
+                        val excluded = n.contains("tts") || n.contains("image") || n.contains("live") ||
+                            n.contains("embedding") || n.contains("robotics") ||
+                            n.contains("computer-use") || n.contains("audio")
+                        if (canChat && n.startsWith("gemini") && !excluded) out.add(name)
+                    }
+                }
+                out
+            }
+
+            "cohere" -> {
+                requireKey(apiKey)
+                val json = getJson("https://api.cohere.com/v1/models?endpoint=chat&page_size=100", bearer)
+                idsOf(json.optJSONArray("models"), "name")
+            }
+
+            "cloudflare" -> {
+                requireKey(apiKey)
+                if (accountId.isBlank()) throw LlmException(400, "أدخل Cloudflare Account ID أولاً")
+                val json = getJson(
+                    "https://api.cloudflare.com/client/v4/accounts/$accountId/ai/models/search" +
+                        "?task=Text%20Generation&per_page=100",
+                    bearer
+                )
+                idsOf(json.optJSONArray("result"), "name")
+            }
+
+            "deepseek" -> {
+                requireKey(apiKey)
+                idsOf(getJson("https://api.deepseek.com/models", bearer).optJSONArray("data"), "id")
+            }
+
+            "openai" -> {
+                requireKey(apiKey)
+                idsOf(getJson("https://api.openai.com/v1/models", bearer).optJSONArray("data"), "id")
+                    .filter { it.startsWith("gpt") || it.startsWith("o") }
+            }
+
+            "claude" -> {
+                requireKey(apiKey)
+                val json = getJson(
+                    "https://api.anthropic.com/v1/models?limit=100",
+                    mapOf("x-api-key" to apiKey, "anthropic-version" to "2023-06-01")
+                )
+                idsOf(json.optJSONArray("data"), "id")
+            }
+
+            else -> emptyList()
+        }
+        return ids.distinct().sorted().take(100)
+    }
+
+    private fun getJson(url: String, headers: Map<String, String>): JSONObject {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = CONNECT_TIMEOUT
+            readTimeout = 30_000
+            useCaches = false
+            setRequestProperty("Accept", "application/json")
+            headers.forEach { (name, value) -> setRequestProperty(name, value) }
+        }
+        try {
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            val json = runCatching { JSONObject(raw) }.getOrNull()
+            if (status !in 200..299) throw LlmException(status, errorMessage(json, raw))
+            return json ?: throw LlmException(status, "رد غير صالح من المزود")
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun postJson(

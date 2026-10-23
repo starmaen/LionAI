@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -1299,6 +1300,14 @@ fun SettingsScreen(
         mutableStateOf(prefs.getString("cf_account_id", "") ?: "")
     }
     var smartTitles by remember { mutableStateOf(prefs.getBoolean("smart_titles", true)) }
+    val settingsScope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
+    var modelMenuOpen by remember { mutableStateOf(false) }
+    val modelCache = remember {
+        mutableStateMapOf<String, List<String>>().apply {
+            PROVIDERS.forEach { info -> put(info.id, ModelCatalog.cached(prefs, info.id)) }
+        }
+    }
     var confirmActions by remember { mutableStateOf(prefs.getBoolean("confirm_actions", true)) }
 
     val current = providerInfo(provider)
@@ -1439,22 +1448,88 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            Text("الموديل (اختياري)", color = Color.White, fontSize = 14.sp)
-            OutlinedTextField(
-                value = models[provider].orEmpty(),
-                onValueChange = { models[provider] = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(current.defaultModel, color = Color(0xFF707070)) },
-                textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFFFB800),
-                    unfocusedBorderColor = Color(0xFF2A2A2A),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color(0xFFFFB800)
-                )
+            Text(
+                if (current.free) "الموديل — اختر من القائمة أو اكتب اسماً" else "الموديل (اختياري)",
+                color = Color.White,
+                fontSize = 14.sp
             )
+            val modelOptions = ModelCatalog.options(current, modelCache[provider].orEmpty())
+            val activeModel = models[provider].orEmpty().ifBlank { current.defaultModel }
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = models[provider].orEmpty(),
+                    onValueChange = { models[provider] = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(current.defaultModel, color = Color(0xFF707070)) },
+                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { modelMenuOpen = true }) {
+                            Icon(Icons.Filled.ArrowDropDown, "قائمة الموديلات", tint = Color(0xFFFFB800))
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFFB800),
+                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFFFFB800)
+                    )
+                )
+                DropdownMenu(
+                    expanded = modelMenuOpen,
+                    onDismissRequest = { modelMenuOpen = false },
+                    modifier = Modifier.heightIn(max = 380.dp)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("↺ الافتراضي (${current.defaultModel})", color = Color(0xFFFFB800)) },
+                        onClick = {
+                            models[provider] = ""
+                            modelMenuOpen = false
+                        }
+                    )
+                    modelOptions.forEach { id ->
+                        DropdownMenuItem(
+                            text = { Text(if (id == activeModel) "$id  ✓" else id) },
+                            onClick = {
+                                models[provider] = id
+                                modelMenuOpen = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            var modelStatus by remember(provider) { mutableStateOf("") }
+            TextButton(
+                enabled = !refreshing,
+                onClick = {
+                    refreshing = true
+                    modelStatus = "⏳ جارٍ جلب القائمة..."
+                    val pid = provider
+                    val key = keys[pid].orEmpty().trim()
+                    val account = accountId.trim()
+                    settingsScope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching { LlmClient.listModels(pid, key, account) }
+                        }
+                        val list = result.getOrNull()
+                        if (!list.isNullOrEmpty()) {
+                            modelCache[pid] = list
+                            ModelCatalog.saveCache(prefs, pid, list)
+                            modelStatus = "✅ تم جلب ${list.size} موديل. افتح القائمة ▼ للاختيار."
+                        } else {
+                            modelStatus = "⚠️ " + (result.exceptionOrNull()?.message ?: "لم يتم العثور على موديلات")
+                        }
+                        refreshing = false
+                    }
+                }
+            ) {
+                Text("🔄 تحديث قائمة الموديلات من الإنترنت", color = Color(0xFFFFB800), fontSize = 12.sp)
+            }
+            if (modelStatus.isNotBlank()) {
+                Text(modelStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+            }
 
             if (current.modelHint.isNotBlank()) {
                 Text(current.modelHint, color = Color(0xFF9A9A9A), fontSize = 11.sp)

@@ -412,21 +412,32 @@ object ActionResolver {
         accountId: String
     ): ParsedAction? {
         val now = System.currentTimeMillis()
+        val local = LocalParser.parse(text, now)
         if (apiKey.isNotBlank()) {
             val raw = LlmClient.extractIntent(text, apiKey, provider, model, accountId, now)
             if (raw != null) {
                 val result = ActionParser.parse(raw, now)
-                if (result.valid) {
-                    val action = result.action ?: return null
+                val action = result.action
+                if (result.valid && action != null) {
                     if (action.kind == ActionKind.REMINDER && action.triggerAt == null) {
-                        val at = LocalParser.parse(text, now)?.triggerAt
+                        val at = local?.triggerAt
                         if (at != null) return action.copy(triggerAt = at)
                     }
                     return action
                 }
+                if (result.valid) {
+                    // النموذج قال "ليس أمراً": نقبل المحلل المحلي فقط إذا كان الأمر واضحاً تماماً
+                    return local?.takeIf { isClear(it) }
+                }
             }
         }
-        return LocalParser.parse(text, now)
+        return local
+    }
+
+    private fun isClear(a: ParsedAction): Boolean = when (a.kind) {
+        ActionKind.REMINDER -> a.triggerAt != null
+        ActionKind.SMS -> a.recipient.isNotBlank() && a.message.isNotBlank()
+        ActionKind.CALL -> a.recipient.isNotBlank()
     }
 }
 
