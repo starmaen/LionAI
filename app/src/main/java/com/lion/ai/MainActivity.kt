@@ -671,7 +671,7 @@ fun LionApp() {
                         }
                     }
                 }
-                HorizontalHorizontalDivider(color = Color(0xFF2A2A2A))
+                HorizontalDivider(color = Color(0xFF2A2A2A))
                 TextButton(
                     onClick = {
                         showModelSheet = false
