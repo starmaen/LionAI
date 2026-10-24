@@ -2,6 +2,7 @@ package com.lion.ai
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -35,7 +36,8 @@ data class ParsedAction(
     val kind: ActionKind,
     val recipient: String,
     val message: String,
-    val triggerAt: Long?
+    val triggerAt: Long?,
+    val repeatMs: Long = 0L
 )
 
 data class ParseResult(val valid: Boolean, val action: ParsedAction?)
@@ -53,8 +55,19 @@ data class ScheduledItem(
     val whenMillis: Long,
     val name: String,
     val number: String,
-    val text: String
+    val text: String,
+    val repeatMs: Long = 0L
 )
+
+object RepeatFmt {
+    fun label(ms: Long): String = when {
+        ms <= 0 -> ""
+        ms % 604_800_000L == 0L -> if (ms == 604_800_000L) "كل أسبوع" else "كل ${ms / 604_800_000L} أسابيع"
+        ms % 86_400_000L == 0L -> if (ms == 86_400_000L) "كل يوم" else "كل ${ms / 86_400_000L} أيام"
+        ms % 3_600_000L == 0L -> if (ms == 3_600_000L) "كل ساعة" else "كل ${ms / 3_600_000L} ساعات"
+        else -> "كل ${ms / 60_000L} دقيقة"
+    }
+}
 
 fun Contact.toRecipient(): Recipient {
     val wa = (normalized ?: number).trim()
@@ -170,6 +183,12 @@ object ActionParser {
         }
 
         val delay = if (json.isNull("delay_minutes")) Double.NaN else json.optDouble("delay_minutes", Double.NaN)
+        val repeatMinutes = if (json.isNull("repeat_minutes")) 0.0 else json.optDouble("repeat_minutes", 0.0)
+        val repeatMs = if (kind == ActionKind.REMINDER && !repeatMinutes.isNaN() && repeatMinutes >= 1.0) {
+            (repeatMinutes * 60_000).toLong()
+        } else {
+            0L
+        }
         var triggerAt: Long? = null
         if (!delay.isNaN() && delay > 0) {
             triggerAt = now + (delay * 60_000).toLong()
@@ -188,7 +207,8 @@ object ActionParser {
                 }
             }
         }
-        return ParseResult(true, ParsedAction(kind, str("recipient"), str("message"), triggerAt))
+        if (triggerAt == null && repeatMs > 0) triggerAt = now + repeatMs
+        return ParseResult(true, ParsedAction(kind, str("recipient"), str("message"), triggerAt, repeatMs))
     }
 
     private fun parseDate(s: String): Long? {
@@ -234,14 +254,49 @@ object LocalParser {
         return null
     }
 
-    private fun parseReminder(text: String, now: Long): ParsedAction {
-        val (at, cleaned) = extractTime(text, now)
+    private fun parseRepeat(norm: String): Pair<Long, IntRange>? {
+        Regex("(?<!\\p{L})يوميا(?!\\p{L})").find(norm)?.let { return Pair(86_400_000L, it.range) }
+        Regex("(?<!\\p{L})اسبوعيا(?!\\p{L})").find(norm)?.let { return Pair(604_800_000L, it.range) }
+        Regex("كل\\s+(?:(\\d+(?:\\.\\d+)?)|($wordAlt))\\s*(دقيقه|دقايق|دقائق|ساعه|ساعات|يوم|ايام|اسبوع)")
+            .find(norm)?.let { m ->
+                val n = m.groupValues[1].toDoubleOrNull() ?: WORDS[m.groupValues[2]]?.toDouble()
+                if (n != null && n > 0) {
+                    val unit = if (m.groupValues[3] == "اسبوع") 604_800_000.0 else unitMillis(m.groupValues[3])
+                    return Pair((n * unit).toLong(), m.range)
+                }
+            }
+        Regex("كل\\s+(ربع|نصف|نص)\\s+ساعه").find(norm)?.let { m ->
+            val v = if (m.groupValues[1] == "ربع") 15L else 30L
+            return Pair(v * MIN, m.range)
+        }
+        Regex("كل\\s+(دقيقه|ساعه|يوم|اسبوع)(?!\\p{L})").find(norm)?.let { m ->
+            val ms = when (m.groupValues[1]) {
+                "دقيقه" -> MIN
+                "ساعه" -> 3_600_000L
+                "يوم" -> 86_400_000L
+                else -> 604_800_000L
+            }
+            return Pair(ms, m.range)
+        }
+        return null
+    }
+
+    private fun parseReminder(original: String, now: Long): ParsedAction {
+        var text = original
+        var repeatMs = 0L
+        val repeat = parseRepeat(TextNorm.arabic(text))
+        if (repeat != null) {
+            repeatMs = repeat.first
+            text = text.removeRange(repeat.second)
+        }
+        var (at, cleaned) = extractTime(text, now)
+        if (at == null && repeatMs > 0) at = now + repeatMs
         val norm = TextNorm.arabic(cleaned)
         val m = Regex("(ذكرني|نبهني|ذكرنى|نبهنى)").find(norm)
         var body = if (m != null) cleaned.removeRange(m.range) else cleaned
         body = body.replace(Regex("\\s+"), " ").trim().trim('،', ',', '.', ':')
         body = body.replace(Regex("^(?:أن|ان|بأن|بان|أنني|انني|اني|إني|ب|ل)\\s+"), "").trim()
-        return ParsedAction(ActionKind.REMINDER, "", body.ifBlank { "تذكير" }, at)
+        return ParsedAction(ActionKind.REMINDER, "", body.ifBlank { "تذكير" }, at, repeatMs)
     }
 
     private fun parseCall(text: String, now: Long): ParsedAction? {
@@ -419,11 +474,20 @@ object ActionResolver {
                 val result = ActionParser.parse(raw, now)
                 val action = result.action
                 if (result.valid && action != null) {
-                    if (action.kind == ActionKind.REMINDER && action.triggerAt == null) {
+                    var fixed = action
+                    if (fixed.kind == ActionKind.REMINDER && fixed.triggerAt == null) {
                         val at = local?.triggerAt
-                        if (at != null) return action.copy(triggerAt = at)
+                        if (at != null) fixed = fixed.copy(triggerAt = at)
                     }
-                    return action
+                    // إن كتب المستخدم بالعربية وترجم النموذج النص للإنجليزية نستعمل النص الأصلي
+                    val userArabic = text.any { it in '\u0600'..'\u06FF' }
+                    val modelArabic = fixed.message.any { it in '\u0600'..'\u06FF' }
+                    if (userArabic && !modelArabic && fixed.message.isNotBlank() &&
+                        local != null && local.kind == fixed.kind && local.message.isNotBlank()
+                    ) {
+                        fixed = fixed.copy(message = local.message)
+                    }
+                    return fixed
                 }
                 if (result.valid) {
                     // النموذج قال "ليس أمراً": نقبل المحلل المحلي فقط إذا كان الأمر واضحاً تماماً
@@ -467,40 +531,127 @@ object SmsSender {
 }
 
 object Notifier {
-    private const val CHANNEL = "lion_reminders"
+    // قناة جديدة: القنوات القديمة لا يمكن تعديل أهميتها بعد إنشائها، وقد تكون صامتة أو محظورة
+    private const val CHANNEL = "lion_reminders_v2"
+
+    fun enabled(context: Context): Boolean =
+        androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
 
     fun show(
         context: Context,
         id: Int,
         title: String,
         text: String,
-        contentIntent: PendingIntent? = null
-    ) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL, "تذكيرات Lion AI", NotificationManager.IMPORTANCE_HIGH)
+        contentIntent: PendingIntent? = null,
+        snoozeText: String? = null
+    ): Boolean {
+        return try {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(CHANNEL, "تذكيرات Lion AI", NotificationManager.IMPORTANCE_HIGH)
+                channel.description = "تنبيهات التذكيرات والرسائل المجدولة"
+                channel.enableVibration(true)
+                channel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                manager.createNotificationChannel(channel)
+            }
+            val content = contentIntent ?: PendingIntent.getActivity(
+                context,
+                id,
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+            val builder = NotificationCompat.Builder(context, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setContentIntent(content)
+                .setAutoCancel(true)
+            if (snoozeText != null) {
+                fun action(code: Int, act: String, minutes: Int): PendingIntent =
+                    PendingIntent.getBroadcast(
+                        context,
+                        id * 4 + code,
+                        Intent(context, ReminderActionReceiver::class.java)
+                            .setAction(act)
+                            .putExtra("id", id)
+                            .putExtra("text", snoozeText)
+                            .putExtra("minutes", minutes),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                builder.addAction(android.R.drawable.ic_menu_recent_history, "⏰ بعد 10 دقائق", action(1, ReminderActionReceiver.ACTION_SNOOZE, 10))
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "✔ تم", action(2, ReminderActionReceiver.ACTION_DONE, 0))
+            }
+            manager.notify(id, builder.build())
+            true
+        } catch (e: Exception) {
+            false
         }
-        val content = contentIntent ?: PendingIntent.getActivity(
-            context,
-            id,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentIntent(content)
-            .setAutoCancel(true)
-            .build()
-        runCatching { manager.notify(id, notification) }
+    }
+}
+
+/** يمنع تنفيذ العنصر المجدول مرتين (من المنبه ومن فاحص التطبيق المفتوح). */
+object FiredTracker {
+    private val fired = HashSet<String>()
+
+    @Synchronized
+    fun mark(id: Int, at: Long): Boolean = fired.add("$id:$at")
+}
+
+object ActionRunner {
+    fun fire(context: Context, item: ScheduledItem) {
+        when (item.kind) {
+            ActionKind.REMINDER ->
+                Notifier.show(
+                    context, item.id, "⏰ تذكير", item.text.ifBlank { "تذكير" },
+                    snoozeText = item.text.ifBlank { "تذكير" }
+                )
+
+            ActionKind.SMS -> {
+                val sent = SmsSender.send(context, item.number, item.text)
+                Notifier.show(
+                    context,
+                    item.id,
+                    if (sent) "📱 تم إرسال رسالتك إلى ${item.name}" else "⚠️ تعذر إرسال الرسالة إلى ${item.name}",
+                    item.text
+                )
+            }
+
+            ActionKind.CALL -> {
+                val canCall = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.CALL_PHONE
+                ) == PackageManager.PERMISSION_GRANTED
+                val callIntent = Intent(
+                    if (canCall) Intent.ACTION_CALL else Intent.ACTION_DIAL,
+                    Uri.fromParts("tel", item.number, null)
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val pending = PendingIntent.getActivity(
+                    context, item.id, callIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                Notifier.show(
+                    context, item.id,
+                    "📞 حان موعد الاتصال بـ ${item.name}",
+                    "اضغط هنا للاتصال: ${item.number}",
+                    pending
+                )
+            }
+        }
+    }
+
+    fun missed(context: Context, item: ScheduledItem) {
+        val label = when (item.kind) {
+            ActionKind.REMINDER -> "⏰ فاتك تذكير"
+            ActionKind.SMS -> "⚠️ لم تُرسل الرسالة المجدولة إلى ${item.name} (فات موعدها)"
+            ActionKind.CALL -> "⚠️ فاتك الاتصال المجدول بـ ${item.name}"
+        }
+        Notifier.show(context, item.id, label, item.text.ifBlank { item.name })
     }
 }
 
@@ -524,7 +675,8 @@ object Scheduler {
                         whenMillis = o.optLong("at"),
                         name = o.optString("name"),
                         number = o.optString("number"),
-                        text = o.optString("text")
+                        text = o.optString("text"),
+                        repeatMs = o.optLong("rep", 0L)
                     )
                 )
             }
@@ -544,14 +696,16 @@ object Scheduler {
                     .put("name", it.name)
                     .put("number", it.number)
                     .put("text", it.text)
+                    .put("rep", it.repeatMs)
             )
         }
         prefs.edit().putString(KEY, array.toString()).apply()
     }
 
-    fun add(context: Context, prefs: SharedPreferences, item: ScheduledItem) {
+    /** يعيد null عند النجاح أو نص الخطأ. */
+    fun add(context: Context, prefs: SharedPreferences, item: ScheduledItem): String? {
         write(prefs, list(prefs) + item)
-        schedule(context, item)
+        return schedule(context, item)
     }
 
     fun cancel(context: Context, prefs: SharedPreferences, id: Int) {
@@ -569,19 +723,27 @@ object Scheduler {
         write(prefs, list(prefs).filter { it.id != id })
     }
 
+    /** بعد تنفيذ عنصر: التكراري يُجدول لموعده القادم، وغير التكراري يُحذف. */
+    fun afterFire(context: Context, prefs: SharedPreferences, item: ScheduledItem) {
+        if (item.repeatMs <= 0) {
+            removeFromStore(prefs, item.id)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val steps = ((now + 1000 - item.whenMillis) / item.repeatMs) + 1
+        val updated = item.copy(whenMillis = item.whenMillis + steps * item.repeatMs)
+        write(prefs, list(prefs).filter { it.id != item.id } + updated)
+        schedule(context, updated)
+    }
+
     fun rescheduleAll(context: Context, prefs: SharedPreferences) {
         val now = System.currentTimeMillis()
         list(prefs).forEach { item ->
             if (item.whenMillis > now + 2000) {
                 schedule(context, item)
             } else {
-                val label = when (item.kind) {
-                    ActionKind.REMINDER -> "⏰ فاتك تذكير (كان الجهاز مغلقاً)"
-                    ActionKind.SMS -> "⚠️ لم تُرسل الرسالة المجدولة إلى ${item.name} (كان الجهاز مغلقاً)"
-                    ActionKind.CALL -> "⚠️ فاتك الاتصال المجدول بـ ${item.name}"
-                }
-                Notifier.show(context, item.id, label, item.text.ifBlank { item.name })
-                removeFromStore(prefs, item.id)
+                ActionRunner.missed(context, item)
+                afterFire(context, prefs, item)
             }
         }
     }
@@ -593,6 +755,8 @@ object Scheduler {
             .putExtra("name", item.name)
             .putExtra("number", item.number)
             .putExtra("text", item.text)
+            .putExtra("at", item.whenMillis)
+            .putExtra("rep", item.repeatMs)
         return PendingIntent.getBroadcast(
             context,
             item.id,
@@ -601,22 +765,26 @@ object Scheduler {
         )
     }
 
-    fun schedule(context: Context, item: ScheduledItem) {
-        runCatching {
+    fun schedule(context: Context, item: ScheduledItem): String? {
+        return try {
             val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pending = pendingFor(context, item)
-            val canExact = Build.VERSION.SDK_INT < 31 || manager.canScheduleExactAlarms()
-            if (canExact) {
-                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, item.whenMillis, pending)
-            } else {
-                // لا يحتاج صلاحية ويعمل بدقة حتى في وضع توفير الطاقة
-                val show = PendingIntent.getActivity(
-                    context,
-                    0,
-                    Intent(context, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                manager.setAlarmClock(AlarmManager.AlarmClockInfo(item.whenMillis, show), pending)
+            // setAlarmClock لا يحتاج صلاحية المنبهات الدقيقة، ولا يتأخر في وضع توفير الطاقة
+            val show = PendingIntent.getActivity(
+                context,
+                0,
+                Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            manager.setAlarmClock(AlarmManager.AlarmClockInfo(item.whenMillis, show), pending)
+            null
+        } catch (e: Exception) {
+            try {
+                val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, item.whenMillis, pendingFor(context, item))
+                null
+            } catch (e2: Exception) {
+                e2.message ?: e2.javaClass.simpleName
             }
         }
     }

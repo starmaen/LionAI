@@ -1,52 +1,57 @@
 package com.lion.ai
 
-import android.Manifest
-import android.app.PendingIntent
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import androidx.core.content.ContextCompat
 
 class ScheduledActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getIntExtra("id", 0)
-        val kind = ActionKind.fromKey(intent.getStringExtra("kind") ?: "reminder")
-        val name = intent.getStringExtra("name").orEmpty()
-        val number = intent.getStringExtra("number").orEmpty()
-        val text = intent.getStringExtra("text").orEmpty()
+        val at = intent.getLongExtra("at", 0L)
+        // إن نفّذه فاحص التطبيق المفتوح قبل المنبه فلا نكرره
+        if (!FiredTracker.mark(id, at)) return
+        val item = ScheduledItem(
+            id = id,
+            kind = ActionKind.fromKey(intent.getStringExtra("kind") ?: "reminder"),
+            whenMillis = if (at > 0) at else System.currentTimeMillis(),
+            name = intent.getStringExtra("name").orEmpty(),
+            number = intent.getStringExtra("number").orEmpty(),
+            text = intent.getStringExtra("text").orEmpty(),
+            repeatMs = intent.getLongExtra("rep", 0L)
+        )
+        ActionRunner.fire(context, item)
+        runCatching { Scheduler.afterFire(context, SecurePrefs.get(context), item) }
+    }
+}
 
-        when (kind) {
-            ActionKind.REMINDER ->
-                Notifier.show(context, id, "⏰ تذكير", text.ifBlank { "تذكير" })
+/** أزرار الإشعار: «بعد 10 دقائق» و«تم». */
+class ReminderActionReceiver : BroadcastReceiver() {
+    companion object {
+        const val ACTION_SNOOZE = "com.lion.ai.SNOOZE"
+        const val ACTION_DONE = "com.lion.ai.DONE"
+    }
 
-            ActionKind.SMS -> {
-                val sent = SmsSender.send(context, number, text)
-                Notifier.show(
+    override fun onReceive(context: Context, intent: Intent) {
+        val id = intent.getIntExtra("id", 0)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(id)
+        if (intent.action == ACTION_SNOOZE) {
+            val minutes = intent.getIntExtra("minutes", 10).coerceAtLeast(1)
+            val text = intent.getStringExtra("text").orEmpty()
+            runCatching {
+                Scheduler.add(
                     context,
-                    id,
-                    if (sent) "📱 تم إرسال رسالتك إلى $name" else "⚠️ تعذر إرسال الرسالة إلى $name",
-                    text
+                    SecurePrefs.get(context),
+                    ScheduledItem(
+                        Scheduler.newId(),
+                        ActionKind.REMINDER,
+                        System.currentTimeMillis() + minutes * 60_000L,
+                        "", "", text
+                    )
                 )
-            }
-
-            ActionKind.CALL -> {
-                val canCall = ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.CALL_PHONE
-                ) == PackageManager.PERMISSION_GRANTED
-                val callIntent = Intent(
-                    if (canCall) Intent.ACTION_CALL else Intent.ACTION_DIAL,
-                    Uri.fromParts("tel", number, null)
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val pending = PendingIntent.getActivity(
-                    context, id, callIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                Notifier.show(context, id, "📞 حان موعد الاتصال بـ $name", "اضغط هنا للاتصال: $number", pending)
             }
         }
-        runCatching { Scheduler.removeFromStore(SecurePrefs.get(context), id) }
     }
 }
 

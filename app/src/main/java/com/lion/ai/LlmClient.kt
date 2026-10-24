@@ -34,16 +34,53 @@ object LlmClient {
     private const val INTENT_PROMPT = """أنت محلّل أوامر لتطبيق هاتف. حوّل طلب المستخدم إلى JSON فقط، بدون شرح وبدون Markdown.
 الوقت الحالي: {NOW}
 الصيغة:
-{"intent":"reminder|sms|call|none","recipient":"الاسم أو الرقم كما ذكره المستخدم أو فارغ","message":"النص النهائي","delay_minutes":رقم أو null,"at":"yyyy-MM-dd HH:mm" أو null}
+{"intent":"reminder|sms|call|none","recipient":"الاسم أو الرقم كما ذكره المستخدم أو فارغ","message":"النص النهائي","delay_minutes":رقم أو null,"at":"yyyy-MM-dd HH:mm" أو null,"repeat_minutes":رقم أو null}
 القواعد:
 - reminder: تذكير المستخدم بشيء. message = ما يجب تذكيره به بصيغة المخاطب (مثل: اشرب الدواء).
 - sms: إرسال رسالة لشخص. message = نص الرسالة كما سيقرؤه المستلم مباشرة بصيغة المخاطب (حوّل الغائب إلى مخاطب، مثل: "اخبر احمد ان ياتي هنا الساعة 5" يصبح "تعال إلى هنا الساعة 5"). لا تضف معلومات لم يذكرها المستخدم.
 - call: اتصال هاتفي بشخص. message فارغ.
 - الوقت النسبي: ربع ساعة=15، نصف ساعة=30، ساعة=60، دقيقتان=2، ساعتان=120 ... ضعه في delay_minutes.
 - الوقت المحدد (الساعة 7 صباحاً، غداً الساعة 9 مساءً ...) ضعه في at بتوقيت الجهاز وبنظام 24 ساعة. إذا لم يُذكر صباحاً أو مساءً فاختر أقرب وقت قادم.
+- التكرار للتذكير فقط: "كل يوم/يومياً"=1440، "كل ساعة"=60، "كل أسبوع"=10080، "كل 30 دقيقة"=30 ضعه في repeat_minutes، وإن ذُكر وقت محدد (كل يوم الساعة 8 صباحاً) ضعه في at أيضاً.
 - إن لم يُذكر وقت فاجعل delay_minutes و at يساويان null (التنفيذ فوري للرسالة والاتصال).
 - إن لم يكن الطلب تذكيراً أو رسالة أو اتصالاً فعلياً (مثل سؤال عن كيفية الإرسال) فاجعل intent=none.
+- لا تترجم أبداً: اكتب message بنفس لغة المستخدم تماماً (العربية تبقى عربية).
 - الرد JSON واحد فقط."""
+
+    /** هل الموديل الحالي يقرأ الصور؟ (OpenRouter يعتمد على الموديل، وخطأ المزود يُعرض إن لم يدعمها) */
+    fun supportsVision(provider: String, model: String): Boolean = when (provider) {
+        "gemini", "openai", "claude", "deepseek", "openrouter" -> true
+        "groq" -> (model.ifBlank { providerInfo("groq").defaultModel }).contains("llama-4")
+        else -> false
+    }
+
+    fun planImageEdit(
+        userText: String,
+        apiKey: String,
+        provider: String,
+        model: String,
+        accountId: String
+    ): String? {
+        val reply = ask(userText, apiKey, provider, emptyList(), model, accountId, null, IMAGE_EDIT_PROMPT)
+        if (isErrorReply(reply)) return null
+        return stripThinking(reply)
+    }
+
+    private const val IMAGE_EDIT_PROMPT = """أنت مخطط تعديل صور. حوّل طلب المستخدم إلى JSON فقط بدون شرح وبدون Markdown:
+{"ops":[{"op":"...","value":رقم,"text":"..."}]}
+العمليات المتاحة بالضبط:
+- rotate: value بالدرجات (90 أو -90 أو 180)
+- flip_h (قلب أفقي) ، flip_v (قلب رأسي)
+- brightness: value من -100 إلى 100 (تفتيح موجب، تغميق سالب)
+- contrast: value من -100 إلى 100
+- saturation: value من -100 إلى 100 (-100 يعني أبيض وأسود)
+- grayscale (أبيض وأسود) ، sepia (بني قديم) ، invert (عكس الألوان)
+- blur: value من 1 إلى 25 (تمويه)
+- sharpen (زيادة الحدة)
+- crop: text بنسبة العرض:الارتفاع مثل "1:1" أو "4:3" أو "16:9" أو "9:16"
+- resize: value أكبر ضلع بالبكسل (مثل 1080)
+- text: text النص المراد كتابته، value موضعه (1 أعلى، 2 وسط، 3 أسفل)، وأضف "color":"white|black|yellow|red" اختيارياً
+رتّب العمليات بالترتيب المنطقي. إن لم يمكن تنفيذ الطلب بهذه العمليات (مثل إضافة أو حذف عنصر في الصورة) فأعد {"ops":[],"note":"سبب قصير بالعربية"}."""
 
     fun isErrorReply(reply: String): Boolean =
         reply.startsWith("⚠️") || reply.startsWith("🔑") || reply.startsWith("⏳") ||
@@ -60,7 +97,10 @@ object LlmClient {
         model: String,
         accountId: String
     ): String? {
-        val prompt = "اكتب عنواناً لهذه المحادثة.\n\nالمستخدم: ${userText.take(400)}\nالمساعد: ${assistantText.take(400)}"
+        val arabic = userText.any { it in '\u0600'..'\u06FF' }
+        val langNote = if (arabic) "اكتب العنوان بالعربية.\n" else ""
+        val prompt = "اكتب عنواناً لهذه المحادثة.\n" + langNote +
+            "\nالمستخدم: ${userText.take(400)}\nالمساعد: ${assistantText.take(400)}"
         val reply = ask(prompt, apiKey, provider, emptyList(), model, accountId, null, TITLE_PROMPT)
         if (isErrorReply(reply)) return null
         val line = stripThinking(reply).lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null

@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.telephony.SmsManager
@@ -43,6 +44,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -112,6 +114,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -205,6 +208,9 @@ fun LionApp() {
     var renameText by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<ChatMeta?>(null) }
     var autoSendTrigger by remember { mutableStateOf(0) }
+    var showEditor by remember { mutableStateOf(false) }
+    var editorImage by remember { mutableStateOf<ImageAttachment?>(null) }
+    var editAfterPick by remember { mutableStateOf(false) }
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
     var autoSpeak by remember { mutableStateOf(prefs.getBoolean("auto_speak", false)) }
     var attachment by remember { mutableStateOf<Attachment?>(null) }
@@ -284,6 +290,23 @@ fun LionApp() {
         }
     }
 
+    fun shareChat(meta: ChatMeta) {
+        val text = buildString {
+            append(meta.title).append("\n\n")
+            ChatRepository.load(prefs, meta.id).forEach {
+                append(if (it.isUser) "👤 " else "🦁 ").append(it.text).append("\n\n")
+            }
+        }
+        runCatching {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, meta.title)
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            context.startActivity(Intent.createChooser(send, "مشاركة المحادثة"))
+        }
+    }
+
     fun requestContacts() {
         scope.launch {
             contacts = withContext(Dispatchers.IO) { loadContactsFromDevice(context) }
@@ -321,6 +344,10 @@ fun LionApp() {
                 val result = withContext(Dispatchers.IO) { Attachments.read(context, uri) }
                 if (result.attachment != null) {
                     attachment = result.attachment
+                    imageAttachment = null
+                } else if (result.image != null) {
+                    imageAttachment = result.image
+                    attachment = null
                 } else {
                     attachment = null
                     messages = messages + Message(
@@ -341,10 +368,15 @@ fun LionApp() {
                 val result = withContext(Dispatchers.IO) {
                     Attachments.readImage(context, uri)
                 }
-                if (result.image != null) {
+                if (result.image != null && editAfterPick) {
+                    editAfterPick = false
+                    editorImage = result.image
+                    showEditor = true
+                } else if (result.image != null) {
                     imageAttachment = result.image
                     attachment = null
                 } else {
+                    editAfterPick = false
                     messages = messages + Message(
                         result.error ?: "⚠️ تعذر قراءة الصورة.",
                         false
@@ -468,11 +500,12 @@ fun LionApp() {
             if (kind == ActionKind.SMS && !hasPermission(Manifest.permission.SEND_SMS)) {
                 return "⚠️ صلاحية إرسال الرسائل غير ممنوحة. فعّلها من إعدادات التطبيق في النظام ثم أعد الطلب."
             }
-            Scheduler.add(
+            val scheduleError = Scheduler.add(
                 context, prefs,
                 ScheduledItem(Scheduler.newId(), kind, triggerAt, r.name, r.number, text)
             )
             scheduledItems = Scheduler.list(prefs)
+            if (scheduleError != null) return "⚠️ تعذرت جدولة المنبه: $scheduleError"
             return if (kind == ActionKind.SMS) {
                 "✅ سأرسل الرسالة إلى ${r.name} ${TimeFmt.whenText(triggerAt)}."
             } else {
@@ -516,15 +549,23 @@ fun LionApp() {
                     return
                 }
                 val text = a.message.ifBlank { "تذكير" }
-                Scheduler.add(
+                val scheduleError = Scheduler.add(
                     context, prefs,
-                    ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, at, "", "", text)
+                    ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, at, "", "", text, a.repeatMs)
                 )
                 scheduledItems = Scheduler.list(prefs)
+                if (scheduleError != null) {
+                    reply("⚠️ تعذرت جدولة التذكير: $scheduleError")
+                    return
+                }
                 val notices = NotificationManagerCompat.from(context).areNotificationsEnabled()
+                val firstTime = !prefs.getBoolean("reminder_hint_shown", false)
+                if (firstTime) prefs.edit().putBoolean("reminder_hint_shown", true).apply()
                 reply(
                     "✅ سأذكّرك ${TimeFmt.whenText(at)}:\n$text" +
-                        if (notices) "" else "\n⚠️ الإشعارات معطلة من إعدادات النظام."
+                        (if (a.repeatMs > 0) "\n🔁 ${RepeatFmt.label(a.repeatMs)}" else "") +
+                        (if (notices) "" else "\n⚠️ الإشعارات معطلة من إعدادات النظام.") +
+                        (if (firstTime) "\n\n💡 إن لم يصلك التنبيه في موعده: الإعدادات ← 🔔 التنبيهات ← اختبار." else "")
                 )
             }
 
@@ -616,10 +657,9 @@ fun LionApp() {
         if (text.isEmpty() && file == null && image == null) return
 
         val provider = selectedProvider
-        val visionProviders = setOf("gemini", "deepseek", "openai", "claude")
-        if (image != null && provider !in visionProviders) {
+        if (image != null && !LlmClient.supportsVision(provider, providerCredentials().second)) {
             messages = messages + Message(
-                "⚠️ المزود الحالي لا يقرأ الصور. اختر Gemini أو DeepSeek أو OpenAI أو Claude من زر الموديل أسفل مربع الكتابة.",
+                "⚠️ الموديل الحالي لا يقرأ الصور. اختر Gemini أو Claude أو OpenAI أو DeepSeek، أو Groq بموديل llama-4-scout، أو OpenRouter بموديل يدعم الصور — من زر المزود أسفل مربع الكتابة. (محرر الصور من القائمة الجانبية يعمل مع أي مزود.)",
                 false
             )
             saveCurrent()
@@ -701,6 +741,56 @@ fun LionApp() {
 
     LaunchedEffect(autoSendTrigger) {
         if (autoSendTrigger > 0) sendMessage()
+    }
+
+    // احتياط: أثناء فتح التطبيق نفحص المواعيد بأنفسنا (إشعار + قراءة صوتية) دون انتظار المنبه
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(3000)
+            val now = System.currentTimeMillis()
+            val due = Scheduler.list(prefs).filter { it.whenMillis <= now }
+            if (due.isNotEmpty()) {
+                due.forEach { item ->
+                    if (FiredTracker.mark(item.id, item.whenMillis)) {
+                        if (now - item.whenMillis > 10 * 60_000L) {
+                            ActionRunner.missed(context, item)
+                        } else {
+                            ActionRunner.fire(context, item)
+                            if (item.kind == ActionKind.REMINDER) {
+                                tts?.speak("تذكير: " + item.text, TextToSpeech.QUEUE_ADD, null, null)
+                            }
+                        }
+                    }
+                    if (item.repeatMs > 0) {
+                        Scheduler.afterFire(context, prefs, item)
+                    } else {
+                        Scheduler.cancel(context, prefs, item.id)
+                    }
+                }
+                scheduledItems = Scheduler.list(prefs)
+            }
+        }
+    }
+
+    val editing = editorImage
+    if (showEditor && editing != null) {
+        ImageEditorScreen(
+            initial = editing,
+            planEdit = { request ->
+                val (apiKey, model, accountId) = providerCredentials()
+                val provider = selectedProvider
+                withContext(Dispatchers.IO) {
+                    LlmClient.planImageEdit(request, apiKey, provider, model, accountId)
+                }
+            },
+            onBack = { showEditor = false },
+            onUse = { edited ->
+                imageAttachment = edited
+                attachment = null
+                showEditor = false
+            }
+        )
+        return
     }
 
     if (showSettings) {
@@ -938,6 +1028,19 @@ fun LionApp() {
                     ) {
                         Text("⏰ المجدولات (${scheduledItems.size})", color = Color.White)
                     }
+                    Button(
+                        onClick = {
+                            editAfterPick = true
+                            imageLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A2E4A))
+                    ) {
+                        Text("🖼️ محرر الصور", color = Color.White)
+                    }
                     Spacer(Modifier.height(6.dp))
 
                     LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -959,7 +1062,8 @@ fun LionApp() {
                                     if (currentChat == meta.id) startNewChat()
                                     refreshChats()
                                 },
-                                onDelete = { deleteTarget = meta }
+                                onDelete = { deleteTarget = meta },
+                                onShare = { shareChat(meta) }
                             )
                         }
                         if (archivedChats.isNotEmpty()) {
@@ -992,7 +1096,8 @@ fun LionApp() {
                                             ChatRepository.setArchived(prefs, meta.id, false)
                                             refreshChats()
                                         },
-                                        onDelete = { deleteTarget = meta }
+                                        onDelete = { deleteTarget = meta },
+                                        onShare = { shareChat(meta) }
                                     )
                                 }
                             }
@@ -1087,11 +1192,51 @@ fun LionApp() {
                             maxLines = 1,
                             modifier = Modifier.weight(1f)
                         )
+                        if (image != null) {
+                            TextButton(onClick = {
+                                editorImage = image
+                                showEditor = true
+                            }) {
+                                Text("✏️ تعديل", color = Color(0xFFFFB800), fontSize = 12.sp)
+                            }
+                        }
                         IconButton(onClick = {
                             attachment = null
                             imageAttachment = null
                         }) {
                             Icon(Icons.Filled.Close, "إزالة المرفق", tint = Color(0xFFFF8C00))
+                        }
+                    }
+                    val quickPrompts = if (image != null) {
+                        listOf(
+                            "📝 صف الصورة" to "صف هذه الصورة بالتفصيل.",
+                            "🔤 استخرج النص" to "استخرج كل النص الظاهر في هذه الصورة كما هو.",
+                            "🌐 ترجم النص" to "استخرج النص الظاهر في الصورة ثم ترجمه إلى العربية.",
+                            "🔍 حلّل" to "حلّل هذه الصورة: العناصر والألوان والسياق وأي تفاصيل مهمة.",
+                            "💡 اقترح تحسيناً" to "كيف يمكن تحسين هذه الصورة أو التصميم؟ اقترح تعديلات عملية."
+                        )
+                    } else {
+                        listOf(
+                            "📄 لخّص" to "لخّص هذا الملف في نقاط واضحة.",
+                            "🔎 استخرج الأهم" to "استخرج أهم المعلومات والأرقام من هذا الملف.",
+                            "🌐 ترجم" to "ترجم محتوى هذا الملف إلى العربية.",
+                            "🛠 راجع" to "راجع هذا الملف وأخبرني بالأخطاء والتحسينات الممكنة."
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        quickPrompts.forEach { (label, prompt) ->
+                            TextButton(
+                                onClick = { input = prompt },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                            ) {
+                                Text(label, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                            }
                         }
                     }
                 }
@@ -1279,6 +1424,7 @@ fun SettingsScreen(
     onSave: () -> Unit
 ) {
     val uriHandler = LocalUriHandler.current
+    val ctx = LocalContext.current
     var provider by remember {
         mutableStateOf(prefs.getString("provider", "gemini") ?: "gemini")
     }
@@ -1584,6 +1730,53 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = Color(0xFF2A2A2A))
+            Spacer(Modifier.height(8.dp))
+            Text("🔔 التنبيهات والتذكيرات", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+            var alarmStatus by remember { mutableStateOf("") }
+            Text(
+                if (Notifier.enabled(ctx)) "الإشعارات: مفعّلة في النظام ✅" else "الإشعارات: معطّلة في النظام ❌ — فعّلها من الزر أدناه",
+                color = Color(0xFFB0B0B0),
+                fontSize = 12.sp
+            )
+            TextButton(onClick = {
+                val ok = Notifier.show(ctx, 7001, "🔔 اختبار", "إذا ظهر لك هذا الإشعار فالتنبيهات تعمل بشكل سليم.")
+                alarmStatus = if (ok) "تم إرسال إشعار تجريبي. هل ظهر؟" else "⚠️ تعذر إرسال الإشعار (تحقق من صلاحية الإشعارات)."
+            }) { Text("🔔 اختبار إشعار الآن", color = Color(0xFFFFB800), fontSize = 13.sp) }
+            TextButton(onClick = {
+                val err = Scheduler.add(
+                    ctx, prefs,
+                    ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, System.currentTimeMillis() + 15_000L, "", "", "تذكير تجريبي ✅")
+                )
+                alarmStatus = if (err == null) {
+                    "سيصلك تذكير تجريبي بعد 15 ثانية. أغلق التطبيق أو اقفل الشاشة لاختبار الخلفية."
+                } else {
+                    "⚠️ تعذرت الجدولة: $err"
+                }
+            }) { Text("⏱ اختبار تذكير بعد 15 ثانية", color = Color(0xFFFFB800), fontSize = 13.sp) }
+            TextButton(onClick = {
+                runCatching {
+                    ctx.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                    )
+                }
+            }) { Text("⚙️ إعدادات إشعارات التطبيق", color = Color(0xFFFFB800), fontSize = 13.sp) }
+            TextButton(onClick = {
+                runCatching {
+                    ctx.startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.parse("package:" + ctx.packageName)
+                        )
+                    )
+                }
+            }) { Text("🔋 استثناء التطبيق من توفير البطارية", color = Color(0xFFFFB800), fontSize = 13.sp) }
+            if (alarmStatus.isNotBlank()) {
+                Text(alarmStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+            }
+
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -1734,7 +1927,8 @@ fun ChatRow(
     onRename: () -> Unit,
     onAutoTitle: () -> Unit,
     onArchiveToggle: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShare: () -> Unit = {}
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -1767,6 +1961,13 @@ fun ChatRow(
                     onClick = {
                         menu = false
                         onRename()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("📤 مشاركة المحادثة") },
+                    onClick = {
+                        menu = false
+                        onShare()
                     }
                 )
                 DropdownMenuItem(
@@ -1840,7 +2041,12 @@ fun ScheduledScreen(
                                 ActionKind.CALL -> "📞 اتصال بـ ${item.name}"
                             }
                             Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text(TimeFmt.whenText(item.whenMillis), color = Color(0xFFFFB800), fontSize = 12.sp)
+                            Text(
+                                TimeFmt.whenText(item.whenMillis) +
+                                    if (item.repeatMs > 0) "  🔁 ${RepeatFmt.label(item.repeatMs)}" else "",
+                                color = Color(0xFFFFB800),
+                                fontSize = 12.sp
+                            )
                             if (item.text.isNotBlank()) {
                                 Text(item.text, color = Color(0xFFB0B0B0), fontSize = 13.sp, maxLines = 3)
                             }
