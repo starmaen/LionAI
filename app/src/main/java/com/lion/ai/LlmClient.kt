@@ -37,7 +37,8 @@ object LlmClient {
     private const val SYSTEM_PROMPT =
         "أنت Lion AI، مساعد ذكي عربي متعدد الاستخدامات. أجب دائماً بالعربية الفصحى المبسطة ولا تجب بالإنجليزية إلا إذا كتب المستخدم بها أو طلبها، " +
             "وكن دقيقاً ومباشراً. عند كتابة الكود استخدم كتل Markdown مع تحديد اللغة، " +
-            "واشرح الخطوات باختصار. لا تخترع معلومات؛ إن لم تكن متأكداً فقل ذلك."
+            "واشرح الخطوات باختصار. لا تخترع معلومات؛ إن لم تكن متأكداً فقل ذلك. " +
+            "قد تتضمن المحادثة ردوداً سابقة من نماذج أخرى؛ تابع الحوار بسلاسة كأنه واحد ولا تذكر ذلك إلا إن سُئلت."
 
     private const val TITLE_PROMPT =
         "أنت تكتب عناوين قصيرة للمحادثات. أجب بالعنوان فقط: من 2 إلى 5 كلمات بلغة المستخدم، " +
@@ -151,7 +152,7 @@ object LlmClient {
     ): String {
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
-        if (apiKey.isBlank()) {
+        if (apiKey.isBlank() && !providerInfo(provider).keyless) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
         }
         if (provider == "cloudflare" && accountId.isBlank()) {
@@ -193,14 +194,6 @@ object LlmClient {
                     endpoint("deepseek", "https://api.deepseek.com/chat/completions"), apiKey, model, turns, message,
                     omitTemperature = true, maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
-                "mistral" -> callOpenAiCompatible(
-                    endpoint("mistral", "https://api.mistral.ai/v1/chat/completions"), apiKey, model, turns, message,
-                    maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
-                )
-                "together" -> callOpenAiCompatible(
-                    endpoint("together", "https://api.together.xyz/v1/chat/completions"), apiKey, model, turns, message,
-                    maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
-                )
                 "openai" -> callOpenAiCompatible(
                     endpoint("openai", "https://api.openai.com/v1/chat/completions"), apiKey, model, turns, message,
                     tokenParam = "max_completion_tokens", omitTemperature = true,
@@ -212,7 +205,17 @@ object LlmClient {
                 )
                 "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
                 "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
-                else -> "⚠️ مزود غير معروف: $provider"
+                else -> {
+                    val info = PROVIDERS.firstOrNull { it.id == provider }
+                    if (info == null || info.endpoint.isBlank()) {
+                        "⚠️ مزود غير معروف: $provider"
+                    } else {
+                        callOpenAiCompatible(
+                            endpoint(provider, info.endpoint), apiKey, model, turns, message,
+                            maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                        )
+                    }
+                }
             }
         } catch (e: LlmException) {
             when (e.status) {
@@ -281,7 +284,8 @@ object LlmClient {
             .put(tokenParam, maxTokens)
         if (!omitTemperature) body.put("temperature", TEMPERATURE)
 
-        val headers = mutableMapOf("Authorization" to "Bearer $apiKey")
+        val headers = mutableMapOf<String, String>()
+        if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"
         headers.putAll(extraHeaders)
 
         val response = postJson(url, headers, body)
@@ -587,18 +591,6 @@ object LlmClient {
                 idsOf(json.optJSONArray("result"), "name")
             }
 
-            "mistral" -> {
-                requireKey(apiKey)
-                idsOf(getJson("https://api.mistral.ai/v1/models", bearer).optJSONArray("data"), "id")
-                    .filterNot { it.contains("embed") || it.contains("moderation") || it.contains("ocr") }
-            }
-
-            "together" -> {
-                requireKey(apiKey)
-                idsOf(getJsonArray("https://api.together.xyz/v1/models", bearer), "id")
-                    .filter { it.contains("Free", ignoreCase = true) }
-            }
-
             "deepseek" -> {
                 requireKey(apiKey)
                 idsOf(getJson("https://api.deepseek.com/models", bearer).optJSONArray("data"), "id")
@@ -619,33 +611,27 @@ object LlmClient {
                 idsOf(json.optJSONArray("data"), "id")
             }
 
+            "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "ollama" -> {
+                val info = providerInfo(provider)
+                if (!info.keyless) requireKey(apiKey)
+                val url = info.endpoint.removeSuffix("/chat/completions") + "/models"
+                val headers = if (apiKey.isNotBlank()) bearer else emptyMap()
+                val found = idsOf(getJson(url, headers).optJSONArray("data"), "id")
+                when (provider) {
+                    "kilo" -> found.filter { it.endsWith(":free") || it.startsWith("kilo-auto/free") }
+                    "mistral" -> found.filterNot {
+                        val n = it.lowercase()
+                        n.contains("embed") || n.contains("moderation") || n.contains("ocr") || n.contains("voxtral")
+                    }
+                    "zai" -> found.filter { it.lowercase().contains("glm") }
+                    "llm7" -> (listOf("default", "fast") + found).distinct()
+                    else -> found
+                }
+            }
+
             else -> emptyList()
         }
         return ids.distinct().sorted().take(100)
-    }
-
-    private fun getJsonArray(url: String, headers: Map<String, String>): JSONArray {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = CONNECT_TIMEOUT
-            readTimeout = 30_000
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", USER_AGENT)
-            headers.forEach { (name, value) -> setRequestProperty(name, value) }
-        }
-        try {
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (status !in 200..299) {
-                val json = runCatching { JSONObject(raw) }.getOrNull()
-                throw LlmException(status, errorMessage(json, raw))
-            }
-            return runCatching { JSONArray(raw) }.getOrNull() ?: JSONArray()
-        } finally {
-            connection.disconnect()
-        }
     }
 
     private fun getJson(url: String, headers: Map<String, String>): JSONObject {

@@ -665,7 +665,8 @@ fun ImageEditorScreen(
     initial: ImageAttachment,
     planEdit: suspend (String) -> String?,
     onBack: () -> Unit,
-    onUse: (ImageAttachment) -> Unit
+    onUse: (ImageAttachment) -> Unit,
+    autoInstruction: String? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -843,6 +844,17 @@ fun ImageEditorScreen(
                     }
                 }
             }
+        }
+    }
+
+    // طلب قادم من المحادثة (مثل «فتّح الصورة وحوّلها لأبيض وأسود») يُنفَّذ تلقائياً عند فتح المحرر
+    var autoRan by remember { mutableStateOf(false) }
+    LaunchedEffect(current) {
+        if (!autoRan && current != null && !autoInstruction.isNullOrBlank()) {
+            autoRan = true
+            tool = "words"
+            instruction = autoInstruction
+            runInstruction()
         }
     }
 

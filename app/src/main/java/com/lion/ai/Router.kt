@@ -1,0 +1,146 @@
+package com.lion.ai
+
+import android.content.SharedPreferences
+
+/** أنواع المهام التي يميّزها العقل المركزي. */
+enum class TaskKind(val label: String) {
+    FAST("سؤال سريع"),
+    GENERAL("سؤال عام"),
+    CODE("برمجة"),
+    REASONING("استدلال وحساب"),
+    WRITING("كتابة وترجمة"),
+    VISION("تحليل صورة"),
+    IMAGE_EDIT("تعديل صورة"),
+    LONG_DOC("ملف طويل")
+}
+
+data class Route(val provider: String, val model: String)
+
+object ImageIntent {
+    private val EDIT = Regex(
+        "(عدل|تعديل|فتح|فتحي|غمق|اقتص|قص |دور|ادر |قلب|فلتر|ابيض واسود|سيبيا|ضبابي|موه|تمويه|حده|حسن (ال)?(صوره|جوده)|" +
+            "كبر|صغر|غير حجم|اكتب على|اضف نص|ارسم|حول (ال)?صوره|edit|crop|rotate|filter|brighten|resize)"
+    )
+
+    fun looksLikeEdit(text: String): Boolean = EDIT.containsMatchIn(TextNorm.forMatch(text))
+}
+
+/**
+ * العقل المركزي: يصنّف السؤال محلياً (فوراً وبدون استهلاك طلب) ثم يختار أنسب موديل
+ * من المزودات المتاحة لديك (التي لها مفتاح أو لا تحتاج مفتاحاً)، ويجرّب البديل عند الفشل.
+ */
+object SmartRouter {
+    private val CODE_WORDS = Regex(
+        "(كود|برمج|سكربت|دال[ةه]|دوال|خطا برمجي|compile|exception|stack ?trace|\\bbug\\b|debug|function|" +
+            "\\bclass\\b|\\bimport\\b|\\bdef\\b|\\bfun\\b|public static|select .* from|\\bnpm\\b|\\bpip\\b|gradle|\\bgit\\b|docker|" +
+            "\\bapi\\b|json|html|\\bcss\\b|python|kotlin|java|javascript|typescript|c\\+\\+|php|\\bsql\\b|react|flutter|" +
+            "android studio|regex|تعبير نمطي|مكتب[ةه] برمجي|مشروع برمجي|ليب|لارافيل|django|node)"
+    )
+    private val CODE_EXT = setOf(
+        "kt", "kts", "java", "py", "js", "ts", "tsx", "jsx", "c", "cpp", "h", "cs", "go", "rs", "rb", "php",
+        "sh", "gradle", "sql", "css", "html", "vue", "swift", "dart", "yml", "yaml", "json", "xml"
+    )
+    private val REASONING_WORDS = Regex(
+        "(حل (ال)?مسال|حل (ال)?معادل|معادل|احسب|احتسب|برهن|اثبت|برهان|تكامل|تفاضل|احتمال|مصفوف|خطو[هة] بخطو[هة]|" +
+            "فكر بعمق|منطق|لغز|math|prove|equation|derivative|integral|puzzle)"
+    )
+    private val MATH_EXPR = Regex("\\d+\\s*[+\\-*/^=×÷]\\s*\\d+")
+    private val WRITING_WORDS = Regex(
+        "(ترجم|ترجمه|لخص|تلخيص|اكتب (لي )?(مقال|قصه|رساله|خطاب|قصيده|بريد|تقرير|سيره|اعلان)|صياغه|اعد صياغه|" +
+            "صحح (ال)?(نص|لغويا|املائيا)|translate|summarize|rewrite|essay|proofread)"
+    )
+
+    fun classify(text: String, hasImage: Boolean, attachmentChars: Int, attachmentName: String?): TaskKind {
+        val t = TextNorm.forMatch(text)
+        if (hasImage) return if (ImageIntent.looksLikeEdit(text)) TaskKind.IMAGE_EDIT else TaskKind.VISION
+        if (attachmentChars > 14_000) return TaskKind.LONG_DOC
+        val ext = attachmentName?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        if (text.contains("```") || CODE_WORDS.containsMatchIn(t) || (ext in CODE_EXT && attachmentChars > 0)) {
+            return TaskKind.CODE
+        }
+        if (REASONING_WORDS.containsMatchIn(t) || MATH_EXPR.containsMatchIn(t)) return TaskKind.REASONING
+        if (WRITING_WORDS.containsMatchIn(t)) return TaskKind.WRITING
+        return if (text.length <= 220 && attachmentChars == 0) TaskKind.FAST else TaskKind.GENERAL
+    }
+
+    private fun r(provider: String, model: String) = Route(provider, model)
+
+    /** قوائم الأفضلية لكل نوع مهمة (من الأفضل إلى الأقل). تُصفّى حسب المزودات المتاحة لديك. */
+    fun candidates(kind: TaskKind): List<Route> = when (kind) {
+        TaskKind.FAST -> listOf(
+            r("groq", "openai/gpt-oss-20b"), r("gemini", "gemini-3.5-flash-lite"), r("mistral", "mistral-small-latest"),
+            r("kilo", "kilo-auto/free"), r("llm7", "fast"), r("nvidia", "openai/gpt-oss-20b"),
+            r("cloudflare", "@cf/openai/gpt-oss-20b"), r("ollama", "gpt-oss:20b"),
+            r("openrouter", "nvidia/nemotron-nano-9b-v2:free"), r("zai", "glm-4.7-flash"),
+            r("opencode", "big-pickle"), r("ovh", "gpt-oss-20b"), r("deepseek", "deepseek-flash")
+        )
+        TaskKind.GENERAL -> listOf(
+            r("gemini", "gemini-3.8-flash"), r("groq", "openai/gpt-oss-120b"), r("mistral", "mistral-medium-latest"),
+            r("nvidia", "nvidia/nemotron-3-super-120b-a12b"), r("ollama", "gpt-oss:120b"), r("zai", "glm-4.7-flash"),
+            r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
+            r("cohere", "command-a-03-2025"), r("cloudflare", "@cf/openai/gpt-oss-120b"), r("opencode", "big-pickle"),
+            r("llm7", "default"), r("ovh", "gpt-oss-120b"), r("deepseek", "deepseek-flash"),
+            r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna")
+        )
+        TaskKind.CODE -> listOf(
+            r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
+            r("opencode", "big-pickle"), r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
+            r("kilo", "poolside/laguna-s-2.1:free"), r("openrouter", "cohere/north-mini-code:free"),
+            r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+            r("cohere", "north-mini-code-1-0"), r("ollama", "deepseek-v4-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
+            r("llm7", "default"), r("ovh", "gpt-oss-120b")
+        )
+        TaskKind.REASONING -> listOf(
+            r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
+            r("groq", "openai/gpt-oss-120b"), r("gemini", "gemini-3.8-flash"), r("ollama", "deepseek-v4-flash"),
+            r("nvidia", "nvidia/nemotron-3-super-120b-a12b"), r("zai", "glm-4.7-flash"),
+            r("cloudflare", "@cf/openai/gpt-oss-120b"), r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"),
+            r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"), r("llm7", "DeepSeek-V4-Flash-0731"),
+            r("cohere", "command-a-03-2025"), r("ovh", "gpt-oss-120b")
+        )
+        TaskKind.WRITING -> listOf(
+            r("claude", "claude-sonnet-5-5"), r("gemini", "gemini-3.8-flash"), r("openai", "gpt-6-luna"),
+            r("mistral", "mistral-medium-latest"), r("cohere", "command-a-03-2025"), r("groq", "openai/gpt-oss-120b"),
+            r("ollama", "gpt-oss:120b"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+            r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("zai", "glm-4.7-flash"),
+            r("llm7", "default"), r("ovh", "gpt-oss-120b")
+        )
+        TaskKind.VISION -> listOf(
+            r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
+            r("mistral", "mistral-small-latest"), r("zai", "glm-4.6v-flash"),
+            r("openrouter", "google/gemma-4-31b-it:free"), r("kilo", "stepfun/step-3.7-flash:free"),
+            r("cloudflare", "@cf/meta/llama-4-scout-17b-16e-instruct"), r("ovh", "Qwen3.8-27B")
+        )
+        TaskKind.IMAGE_EDIT -> listOf(
+            r("gemini", "gemini-3.8-flash"), r("groq", "openai/gpt-oss-120b"), r("claude", "claude-haiku-5-5"),
+            r("mistral", "mistral-small-latest"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+            r("kilo", "kilo-auto/free"), r("llm7", "default"), r("ollama", "gpt-oss:120b"), r("ovh", "gpt-oss-120b")
+        )
+        TaskKind.LONG_DOC -> listOf(
+            r("gemini", "gemini-3.8-flash"), r("kilo", "nvidia/nemotron-3.5-lightning:free"),
+            r("openrouter", "nvidia/nemotron-3.5-lightning:free"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+            r("ollama", "deepseek-v4-flash"), r("mistral", "mistral-medium-latest"), r("claude", "claude-sonnet-5-5"),
+            r("llm7", "DeepSeek-V4-Flash-0731")
+        )
+    }
+
+    fun available(prefs: SharedPreferences, provider: String): Boolean {
+        val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
+        val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
+        if (provider == "cloudflare" && (prefs.getString("cf_account_id", "") ?: "").isBlank()) return false
+        return info.keyless || key.isNotEmpty()
+    }
+
+    /** المسارات المتاحة فعلاً بالترتيب، موديل واحد لكل مزود، بحد أقصى 4 محاولات. */
+    fun plan(prefs: SharedPreferences, kind: TaskKind): List<Route> =
+        candidates(kind)
+            .filter { available(prefs, it.provider) }
+            .distinctBy { it.provider }
+            .take(4)
+
+    fun label(route: Route, kind: TaskKind?): String {
+        val info = providerInfo(route.provider)
+        val model = route.model.ifBlank { info.defaultModel }
+        return info.shortName + " · " + model + (kind?.let { " · " + it.label } ?: "")
+    }
+}

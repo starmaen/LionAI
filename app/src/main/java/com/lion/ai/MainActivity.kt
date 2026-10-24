@@ -132,7 +132,8 @@ data class Message(
     val isUser: Boolean,
     val ytUrl: String? = null,
     val ytmUrl: String? = null,
-    val pending: PendingAction? = null
+    val pending: PendingAction? = null,
+    val via: String? = null
 )
 
 data class Contact(val name: String, val number: String, val normalized: String? = null)
@@ -208,6 +209,8 @@ fun LionApp() {
     var renameText by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<ChatMeta?>(null) }
     var autoSendTrigger by remember { mutableStateOf(0) }
+    var autoRoute by remember { mutableStateOf(prefs.getBoolean("auto_route", true)) }
+    var editorInstruction by remember { mutableStateOf<String?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var editorImage by remember { mutableStateOf<ImageAttachment?>(null) }
     var editAfterPick by remember { mutableStateOf(false) }
@@ -260,14 +263,16 @@ fun LionApp() {
         }
     }
 
-    fun providerCredentials(): Triple<String, String, String> {
-        val provider = selectedProvider
-        return Triple(
-            prefs.getString("api_key_$provider", "") ?: "",
-            prefs.getString("model_$provider", "") ?: "",
-            prefs.getString("cf_account_id", "") ?: ""
-        )
-    }
+    fun keyOf(provider: String): String = prefs.getString("api_key_$provider", "") ?: ""
+
+    fun accountId(): String = prefs.getString("cf_account_id", "") ?: ""
+
+    fun manualRoute(): Route =
+        Route(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
+
+    /** الوضع التلقائي: العقل المركزي يرتّب المسارات المتاحة. اليدوي: المزود الذي اخترته فقط. */
+    fun planFor(kind: TaskKind): List<Route> =
+        if (autoRoute) SmartRouter.plan(prefs, kind).ifEmpty { listOf(manualRoute()) } else listOf(manualRoute())
 
     fun generateTitle(chatId: String, force: Boolean) {
         if (!force && !prefs.getBoolean("smart_titles", true)) return
@@ -277,11 +282,12 @@ fun LionApp() {
         val list = ChatRepository.load(prefs, chatId)
         val firstUser = list.firstOrNull { it.isUser }?.text ?: return
         val firstReply = list.firstOrNull { !it.isUser && !LlmClient.isErrorReply(it.text) }?.text ?: return
-        val provider = selectedProvider
-        val (apiKey, model, accountId) = providerCredentials()
+        val route = planFor(TaskKind.FAST).first()
+        val apiKey = keyOf(route.provider)
+        val account = accountId()
         scope.launch {
             val title = withContext(Dispatchers.IO) {
-                LlmClient.generateTitle(firstUser, firstReply, apiKey, provider, model, accountId)
+                LlmClient.generateTitle(firstUser, firstReply, apiKey, route.provider, route.model, account)
             }
             if (!title.isNullOrBlank()) {
                 ChatRepository.setAiTitle(prefs, chatId, title)
@@ -628,21 +634,37 @@ fun LionApp() {
         history: List<ChatTurn>,
         image: ImageAttachment?,
         ytUrl: String?,
-        ytmUrl: String?
+        ytmUrl: String?,
+        kind: TaskKind
     ) {
-        val provider = selectedProvider
-        val (apiKey, model, accountId) = providerCredentials()
+        val plan = planFor(kind)
+        val auto = autoRoute
         loading = true
         scope.launch {
-            val reply = withContext(Dispatchers.IO) {
-                LlmClient.ask(prompt, apiKey, provider, history, model, accountId, image)
+            var reply = ""
+            var used: Route? = null
+            val failed = mutableListOf<String>()
+            for (route in plan) {
+                val r = withContext(Dispatchers.IO) {
+                    LlmClient.ask(prompt, keyOf(route.provider), route.provider, history, route.model, accountId(), image)
+                }
+                reply = r
+                if (!LlmClient.isErrorReply(r)) {
+                    used = route
+                    break
+                }
+                failed.add(providerInfo(route.provider).shortName)
             }
-            appendToChat(chatId, Message(reply, false, ytUrl, ytmUrl))
+            if (used == null && failed.size > 1) {
+                reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
+            }
+            val via = used?.let { SmartRouter.label(it, if (auto) kind else null) }
+            appendToChat(chatId, Message(reply, false, ytUrl, ytmUrl, via = via))
             loading = false
             if (autoSpeak && chatId == currentChat) {
                 tts?.speak(reply.take(500), TextToSpeech.QUEUE_FLUSH, null, null)
             }
-            if (!LlmClient.isErrorReply(reply)) {
+            if (used != null) {
                 val replies = ChatRepository.load(prefs, chatId)
                     .count { !it.isUser && !LlmClient.isErrorReply(it.text) }
                 if (replies == 1) generateTitle(chatId, false)
@@ -657,10 +679,12 @@ fun LionApp() {
         val image = imageAttachment
         if (text.isEmpty() && file == null && image == null) return
 
-        val provider = selectedProvider
-        if (image != null && !LlmClient.supportsVision(provider, providerCredentials().second)) {
+        val kind = SmartRouter.classify(text, image != null, file?.text?.length ?: 0, file?.name)
+        if (!autoRoute && image != null && kind != TaskKind.IMAGE_EDIT &&
+            !LlmClient.supportsVision(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
+        ) {
             messages = messages + Message(
-                "⚠️ الموديل الحالي لا يقرأ الصور. اختر Gemini أو Claude أو OpenAI أو DeepSeek، أو Groq بموديل llama-4-scout، أو OpenRouter بموديل يدعم الصور — من زر المزود أسفل مربع الكتابة. (محرر الصور من القائمة الجانبية يعمل مع أي مزود.)",
+                "⚠️ الموديل الحالي لا يقرأ الصور. فعّل «🧠 تلقائي» من زر المزود أسفل مربع الكتابة (يختار موديلاً يقرأ الصور)، أو اختر Gemini أو Claude أو OpenAI أو Mistral. (محرر الصور في القائمة الجانبية يعمل مع أي مزود.)",
                 false
             )
             saveCurrent()
@@ -690,9 +714,10 @@ fun LionApp() {
             prompt = "اشرح محتوى هذه الصورة بالتفصيل."
         }
 
-        val history = messages.map {
-            ChatTurn(if (it.isUser) "user" else "assistant", it.text)
-        }
+        // نستبعد رسائل الخطأ حتى لا تربك النموذج التالي، ويستمر الحوار كما هو حتى لو تبدّل النموذج
+        val history = messages
+            .filterNot { !it.isUser && LlmClient.isErrorReply(it.text) }
+            .map { ChatTurn(if (it.isUser) "user" else "assistant", it.text) }
 
         val chatId = currentChat
         messages = messages + Message(displayText, true)
@@ -700,6 +725,21 @@ fun LionApp() {
         attachment = null
         imageAttachment = null
         saveCurrent()
+
+        if (image != null && kind == TaskKind.IMAGE_EDIT) {
+            appendToChat(
+                chatId,
+                Message(
+                    "🖼️ فتحت محرر الصور وسأنفّذ طلبك: «$text»\nيمكنك تعديل النتيجة يدوياً ثم حفظها أو إرسالها للتحليل.",
+                    false,
+                    via = "العقل المركزي · " + kind.label
+                )
+            )
+            editorImage = image
+            editorInstruction = text
+            showEditor = true
+            return
+        }
 
         val keywords = listOf("أغنية", "اغنية", "أغني", "اغني", "شغل", "موسيقى", "song", "music")
         val wantsMusic = keywords.any { text.contains(it, ignoreCase = true) }
@@ -720,24 +760,24 @@ fun LionApp() {
         if (file == null && image == null && ActionDetector.looksLikeCommand(text)) {
             loading = true
             scope.launch {
-                val (apiKey, model, accountId) = providerCredentials()
+                val route = planFor(TaskKind.GENERAL).first()
                 if (contacts.isEmpty() && hasPermission(Manifest.permission.READ_CONTACTS)) {
                     contacts = withContext(Dispatchers.IO) { loadContactsFromDevice(context) }
                 }
                 val parsed = withContext(Dispatchers.IO) {
-                    ActionResolver.resolve(text, apiKey, provider, model, accountId)
+                    ActionResolver.resolve(text, keyOf(route.provider), route.provider, route.model, accountId())
                 }
                 loading = false
                 if (parsed != null) {
                     handleAction(chatId, parsed)
                 } else {
-                    runChat(chatId, prompt, history, image, ytUrl, ytmUrl)
+                    runChat(chatId, prompt, history, image, ytUrl, ytmUrl, kind)
                 }
             }
             return
         }
 
-        runChat(chatId, prompt, history, image, ytUrl, ytmUrl)
+        runChat(chatId, prompt, history, image, ytUrl, ytmUrl, kind)
     }
 
     LaunchedEffect(autoSendTrigger) {
@@ -783,18 +823,26 @@ fun LionApp() {
     if (showEditor && editing != null) {
         ImageEditorScreen(
             initial = editing,
+            autoInstruction = editorInstruction,
             planEdit = { request ->
-                val (apiKey, model, accountId) = providerCredentials()
-                val provider = selectedProvider
-                withContext(Dispatchers.IO) {
-                    LlmClient.planImageEdit(request, apiKey, provider, model, accountId)
+                var result: String? = null
+                for (route in planFor(TaskKind.IMAGE_EDIT).take(3)) {
+                    result = withContext(Dispatchers.IO) {
+                        LlmClient.planImageEdit(request, keyOf(route.provider), route.provider, route.model, accountId())
+                    }
+                    if (result != null) break
                 }
+                result
             },
-            onBack = { showEditor = false },
+            onBack = {
+                showEditor = false
+                editorInstruction = null
+            },
             onUse = { edited ->
                 imageAttachment = edited
                 attachment = null
                 showEditor = false
+                editorInstruction = null
             }
         )
         return
@@ -811,11 +859,13 @@ fun LionApp() {
             onBack = {
                 showSettings = false
                 LlmClient.reloadOverrides(prefs)
+                autoRoute = prefs.getBoolean("auto_route", true)
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
             },
             onSave = {
                 showSettings = false
                 LlmClient.reloadOverrides(prefs)
+                autoRoute = prefs.getBoolean("auto_route", true)
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
             }
         )
@@ -864,6 +914,35 @@ fun LionApp() {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            prefs.edit().putBoolean("auto_route", true).apply()
+                            autoRoute = true
+                            showModelSheet = false
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = autoRoute,
+                        onClick = {
+                            prefs.edit().putBoolean("auto_route", true).apply()
+                            autoRoute = true
+                            showModelSheet = false
+                        },
+                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("🧠 تلقائي (العقل المركزي)", color = Color(0xFFFFB800), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "يختار الأنسب لكل سؤال (سريع، برمجة، صور...) ويجرّب بديلاً إذا فشل، والحوار يبقى واحداً",
+                            color = Color(0xFF9A9A9A),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
                 PROVIDERS.forEach { info ->
                     val configured = (prefs.getString("model_${info.id}", "") ?: "")
                         .ifBlank { info.defaultModel }
@@ -873,16 +952,20 @@ fun LionApp() {
                             .clickable {
                                 prefs.edit().putString("provider", info.id).apply()
                                 selectedProvider = info.id
+                                prefs.edit().putBoolean("auto_route", false).apply()
+                                autoRoute = false
                                 showModelSheet = false
                             }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = selectedProvider == info.id,
+                            selected = !autoRoute && selectedProvider == info.id,
                             onClick = {
                                 prefs.edit().putString("provider", info.id).apply()
                                 selectedProvider = info.id
+                                prefs.edit().putBoolean("auto_route", false).apply()
+                                autoRoute = false
                                 showModelSheet = false
                             },
                             colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
@@ -1049,16 +1132,6 @@ fun LionApp() {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A2E4A))
                     ) {
                         Text("🖼️ محرر الصور", color = Color.White)
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", providerInfo(selectedProvider).webviewUrl))
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
-                    ) {
-                        Text("🌐 Arena AI (مفتوح مجاناً)", color = Color.White)
                     }
                     Spacer(Modifier.height(6.dp))
 
@@ -1271,15 +1344,6 @@ fun LionApp() {
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                             .navigationBarsPadding()
                     ) {
-                        if (providerInfo(selectedProvider).webviewUrl != null) {
-                            Button(
-                                onClick = { context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", providerInfo(selectedProvider).webviewUrl)) },
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
-                            ) {
-                                Text("🌐 فتح دردشة ${providerInfo(selectedProvider).shortName} المفتوحة (بدون مفتاح)", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold)
-                            }
-                        }
                         OutlinedTextField(
                             value = input,
                             onValueChange = { input = it },
@@ -1324,7 +1388,7 @@ fun LionApp() {
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    providerInfo(selectedProvider).shortName,
+                                    if (autoRoute) "🧠 تلقائي" else providerInfo(selectedProvider).shortName,
                                     color = Color(0xFFFFB800),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
@@ -1338,13 +1402,7 @@ fun LionApp() {
                             }
                             Spacer(Modifier.width(2.dp))
                             FilledIconButton(
-                                onClick = {
-                                    if (providerInfo(selectedProvider).webviewUrl != null) {
-                                        context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", providerInfo(selectedProvider).webviewUrl))
-                                    } else {
-                                        sendMessage()
-                                    }
-                                },
+                                onClick = { sendMessage() },
                                 enabled = !loading && (
                                     input.isNotBlank() || attachment != null || imageAttachment != null
                                 ),
@@ -1480,6 +1538,7 @@ fun SettingsScreen(
         mutableStateOf(prefs.getString("cf_account_id", "") ?: "")
     }
     var smartTitles by remember { mutableStateOf(prefs.getBoolean("smart_titles", true)) }
+    var autoRouteSetting by remember { mutableStateOf(prefs.getBoolean("auto_route", true)) }
     val settingsScope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var modelMenuOpen by remember { mutableStateOf(false) }
@@ -1506,6 +1565,7 @@ fun SettingsScreen(
         editor.putString("cf_account_id", accountId)
         editor.putBoolean("auto_speak", autoSpeak)
         editor.putBoolean("smart_titles", smartTitles)
+        editor.putBoolean("auto_route", autoRouteSetting)
         editor.putBoolean("confirm_actions", confirmActions)
         editor.apply()
     }
@@ -1745,7 +1805,7 @@ fun SettingsScreen(
                 Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
             }
 
-            if (provider in setOf("groq", "openrouter", "opencode", "deepseek", "openai")) {
+            if (current.endpoint.isNotBlank() || provider in setOf("groq", "openrouter", "opencode", "deepseek", "openai")) {
                 Spacer(Modifier.height(8.dp))
                 Text("عنوان وسيط (اختياري)", color = Color.White, fontSize = 13.sp)
                 OutlinedTextField(
@@ -1772,6 +1832,13 @@ fun SettingsScreen(
                 )
             }
 
+            if (current.keyless) {
+                Text(
+                    "✅ هذا المزود يعمل بدون مفتاح. المفتاح اختياري لرفع الحدود فقط.",
+                    color = Color(0xFF7CC47C),
+                    fontSize = 12.sp
+                )
+            }
             if (current.modelHint.isNotBlank()) {
                 Text(current.modelHint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
             }
@@ -1822,6 +1889,24 @@ fun SettingsScreen(
                 Column {
                     Text("تأكيد قبل إرسال الرسائل والاتصال", color = Color.White)
                     Text("يُنصح بإبقائه مفعّلاً لتفادي إرسال لشخص خاطئ", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = autoRouteSetting,
+                    onCheckedChange = { autoRouteSetting = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("🧠 العقل المركزي (اختيار النموذج تلقائياً)", color = Color.White)
+                    Text(
+                        "يصنّف سؤالك ويختار الأنسب من المزودات المتاحة لديك، ويجرّب بديلاً عند الفشل. أطفئه لاستعمال المزود المحدد يدوياً.",
+                        color = Color(0xFF9A9A9A),
+                        fontSize = 11.sp
+                    )
                 }
             }
 
@@ -1955,6 +2040,10 @@ fun Bubble(
                             }
                         }
                     }
+                }
+                if (!message.isUser && message.via != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("🧠 " + message.via, color = Color(0xFF7A7A7A), fontSize = 10.sp)
                 }
                 val pending = message.pending
                 if (pending != null) {

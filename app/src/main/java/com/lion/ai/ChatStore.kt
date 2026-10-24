@@ -18,6 +18,7 @@ object ChatStore {
                 .put("user", message.isUser)
             message.ytUrl?.let { item.put("yt", it) }
             message.ytmUrl?.let { item.put("ytm", it) }
+            message.via?.let { item.put("via", it) }
             array.put(item)
         }
         return array.toString()
@@ -35,7 +36,8 @@ object ChatStore {
                     text = text,
                     isUser = item.optBoolean("user", false),
                     ytUrl = item.optString("yt", "").takeIf { it.isNotBlank() },
-                    ytmUrl = item.optString("ytm", "").takeIf { it.isNotBlank() }
+                    ytmUrl = item.optString("ytm", "").takeIf { it.isNotBlank() },
+                    via = item.optString("via", "").takeIf { it.isNotBlank() }
                 )
             }
         } catch (e: Exception) {
