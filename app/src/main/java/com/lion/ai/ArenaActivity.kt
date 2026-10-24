@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -27,9 +28,22 @@ class ArenaActivity : Activity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val FILE_CHOOSER_RESULT_CODE = 1001
 
+    private fun getNavBarHeight(): Int {
+        var result = 0
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        if (resourceId > 0) {
+            result = resources.getDimensionPixelSize(resourceId)
+        }
+        return if (result > 0) result else TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 48f, resources.displayMetrics
+        ).toInt()
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val navBarHeight = getNavBarHeight()
 
         val rootLayout = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#121212"))
@@ -39,11 +53,14 @@ class ArenaActivity : Activity() {
             )
         }
 
+        // تقليص ارتفاع الـ WebView للأعلى بمقدار شريط النظام السفلي تماماً لئلا يغطيه أبداً
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
-            )
+            ).apply {
+                bottomMargin = navBarHeight
+            }
         }
 
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -145,23 +162,20 @@ class ArenaActivity : Activity() {
                 try {
                     Object.defineProperty(navigator, 'webdriver', { get: () => false });
                     
-                    // حقن كود CSS لإبعاد صندوق الكتابة عن حافة الشاشة السفلية
                     if (!document.getElementById('lion-bottom-fix')) {
                         const style = document.createElement('style');
                         style.id = 'lion-bottom-fix';
                         style.innerHTML = `
                             body, html {
-                                padding-bottom: env(safe-area-inset-bottom, 35px) !important;
+                                padding-bottom: 40px !important;
                             }
-                            /* رفع شريط الإدخال السفلي قليلاً لئلا يغطيه نظام أندرويد */
-                            form, div.sticky, div.fixed {
-                                margin-bottom: env(safe-area-inset-bottom, 25px) !important;
+                            div.fixed, div.sticky {
+                                bottom: 10px !important;
                             }
                         `;
                         document.head.appendChild(style);
                     }
 
-                    // إزالة نافذة الشروط وأي خطأ أحمر تلقائياً
                     window.__lionRemoveModal = function() {
                         const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"], div.fixed.inset-0');
                         dialogs.forEach(el => {
