@@ -224,6 +224,8 @@ fun LionApp() {
     }
     var showModelSheet by remember { mutableStateOf(false) }
     val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showWebSheet by remember { mutableStateOf(false) }
+    val webSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun refreshChats() {
         chatMetas = ChatRepository.all(prefs)
@@ -905,6 +907,7 @@ fun LionApp() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(bottom = 12.dp)
             ) {
                 Text(
@@ -943,7 +946,7 @@ fun LionApp() {
                         )
                     }
                 }
-                PROVIDERS.forEach { info ->
+                PROVIDERS.filter { it.webviewUrl == null }.forEach { info ->
                     val configured = (prefs.getString("model_${info.id}", "") ?: "")
                         .ifBlank { info.defaultModel }
                     Row(
@@ -1014,6 +1017,50 @@ fun LionApp() {
                         color = Color(0xFFFFB800),
                         fontSize = 13.sp
                     )
+                }
+            }
+        }
+    }
+
+    if (showWebSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showWebSheet = false },
+            sheetState = webSheetState,
+            containerColor = Color(0xFF1A1A1A)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 12.dp)
+            ) {
+                Text(
+                    "دردشات الويب المجانية (بدون مفتاح)",
+                    color = Color(0xFFFFB800),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                PROVIDERS.filter { it.webviewUrl != null }.forEach { info ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showWebSheet = false
+                                context.startActivity(
+                                    Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
+                                )
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🌐", fontSize = 18.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(info.label, color = Color.White, fontSize = 14.sp)
+                            Text(info.tagline, color = Color(0xFF9A9A9A), fontSize = 11.sp, maxLines = 1)
+                        }
+                    }
                 }
             }
         }
@@ -1413,6 +1460,12 @@ fun LionApp() {
                                     tint = Color(0xFFFFB800),
                                     modifier = Modifier.size(20.dp)
                                 )
+                            }
+                            IconButton(
+                                onClick = { showWebSheet = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Text("🌐", fontSize = 16.sp)
                             }
                             Spacer(Modifier.width(2.dp))
                             FilledIconButton(
