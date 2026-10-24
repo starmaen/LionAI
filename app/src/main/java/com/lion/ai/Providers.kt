@@ -71,6 +71,61 @@ val PROVIDERS = listOf(
         webviewUrl = "https://chat.deepseek.com"
     ),
     ProviderInfo(
+        id = "gemini_web",
+        label = "Google Gemini (دردشة ويب)",
+        tagline = "مجاني بالكامل — دردشة Gemini الرسمية من جوجل",
+        docsUrl = "https://gemini.google.com/app",
+        defaultModel = "default",
+        shortName = "Gemini Web",
+        modelHint = "دردشة Gemini الرسمية من جوجل؛ مجانية وتحتاج تسجيل دخول بحساب جوجل داخل الصفحة نفسها.",
+        models = listOf("default"),
+        webviewUrl = "https://gemini.google.com/app"
+    ),
+    ProviderInfo(
+        id = "copilot_web",
+        label = "Microsoft Copilot (بدون مفتاح)",
+        tagline = "مجاني بالكامل — دردشة Copilot الرسمية من مايكروسوفت",
+        docsUrl = "https://copilot.microsoft.com",
+        defaultModel = "default",
+        shortName = "Copilot",
+        modelHint = "دردشة Copilot الرسمية من مايكروسوفت، مجانية بالكامل ولا تحتاج اشتراكاً.",
+        models = listOf("default"),
+        webviewUrl = "https://copilot.microsoft.com"
+    ),
+    ProviderInfo(
+        id = "github_copilot_web",
+        label = "GitHub Copilot (بدون مفتاح)",
+        tagline = "مجاني محدود — دردشة Copilot داخل GitHub",
+        docsUrl = "https://github.com/copilot",
+        defaultModel = "default",
+        shortName = "GitHub Copilot",
+        modelHint = "دردشة GitHub Copilot تحتاج تسجيل دخول بحساب GitHub؛ تتوفر حصة مجانية محدودة شهرياً دون اشتراك.",
+        models = listOf("default"),
+        webviewUrl = "https://github.com/copilot"
+    ),
+    ProviderInfo(
+        id = "claude_web",
+        label = "Claude.ai (بدون مفتاح)",
+        tagline = "مجاني بحصة يومية — دردشة Claude الرسمية",
+        docsUrl = "https://claude.ai",
+        defaultModel = "default",
+        shortName = "Claude Web",
+        modelHint = "دردشة Claude الرسمية من Anthropic؛ تحتاج تسجيل دخول وتوفر حصة مجانية يومية.",
+        models = listOf("default"),
+        webviewUrl = "https://claude.ai"
+    ),
+    ProviderInfo(
+        id = "chatgpt_web",
+        label = "ChatGPT (بدون مفتاح)",
+        tagline = "مجاني بحصة محدودة — دردشة ChatGPT الرسمية",
+        docsUrl = "https://chatgpt.com",
+        defaultModel = "default",
+        shortName = "ChatGPT",
+        modelHint = "دردشة ChatGPT الرسمية من OpenAI؛ تحتاج تسجيل دخول وتوفر حصة مجانية محدودة.",
+        models = listOf("default"),
+        webviewUrl = "https://chatgpt.com"
+    ),
+    ProviderInfo(
         id = "gemini",
         label = "Google Gemini",
         tagline = "Free Tier — gemini-3.8-flash مجاني",

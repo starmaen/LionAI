@@ -39,11 +39,23 @@ class ArenaActivity : Activity() {
         ).toInt()
     }
 
+    private fun getStatusBarHeight(): Int {
+        var result = 0
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        if (resourceId > 0) {
+            result = resources.getDimensionPixelSize(resourceId)
+        }
+        return if (result > 0) result else TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 24f, resources.displayMetrics
+        ).toInt()
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val navBarHeight = getNavBarHeight()
+        val statusBarHeight = getStatusBarHeight()
 
         val rootLayout = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#121212"))
@@ -59,6 +71,7 @@ class ArenaActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             ).apply {
+                topMargin = statusBarHeight
                 bottomMargin = navBarHeight
             }
         }
@@ -68,7 +81,9 @@ class ArenaActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 6,
                 Gravity.TOP
-            )
+            ).apply {
+                topMargin = statusBarHeight
+            }
             max = 100
         }
 
