@@ -24,13 +24,18 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug --stacktrace
+    - name: Build signed release APK
+      run: ./gradlew assembleRelease --stacktrace
 
-    - name: Upload Debug APK
+    - name: Show signing certificate (must be identical on every build)
+      run: |
+        APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
+        "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/*.apk | grep -E "SHA-256|Signer #1" || true
+
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: LionAI-Debug-APK
-        path: app/build/outputs/apk/debug/*.apk
+        name: LionAI-APK
+        path: app/build/outputs/apk/release/*.apk
         if-no-files-found: error
-        retention-days: 14
+        retention-days: 30

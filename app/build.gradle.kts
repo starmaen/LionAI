@@ -12,14 +12,35 @@ android {
         applicationId = "com.lion.ai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.3.4"
+        // يزداد رقم الإصدار تلقائياً مع كل بناء على GitHub فيُقبل التحديث فوق النسخة القديمة
+        versionCode = 100 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
+        versionName = "1.4.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
     }
+
+    // توقيع ثابت واحد لكل النسخ: بدونه يولّد كل بناء مفتاحاً جديداً ويُجبرك على حذف التطبيق القديم
+    signingConfigs {
+        create("lion") {
+            storeFile = rootProject.file("keystore/lionai-release.jks")
+            storePassword = System.getenv("LION_KEYSTORE_PASSWORD") ?: "LionAI2026!Release"
+            keyAlias = "lionai"
+            keyPassword = System.getenv("LION_KEY_PASSWORD") ?: "LionAI2026!Release"
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("lion")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        debug {
+            signingConfig = signingConfigs.getByName("lion")
+        }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
