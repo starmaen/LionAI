@@ -16,6 +16,16 @@ data class ProviderInfo(
 
 val PROVIDERS = listOf(
     ProviderInfo(
+        id = "arena",
+        label = "Arena AI (مفتوح بدون مفتاح)",
+        tagline = "مباشر ومجاني بالكامل — يعمل بدون مفتاح API",
+        docsUrl = "https://arena.ai/text/direct?model_a=max",
+        defaultModel = "max",
+        shortName = "Arena AI",
+        modelHint = "هذا المزود لا يحتاج إلى مفتاح API؛ يفتح منصة Arena AI مباشرة داخل التطبيق للاستفادة من أقوى النماذج مجاناً.",
+        models = listOf("max")
+    ),
+    ProviderInfo(
         id = "gemini",
         label = "Google Gemini",
         tagline = "Free Tier — gemini-3.8-flash مجاني",

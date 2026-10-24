@@ -1050,6 +1050,16 @@ fun LionApp() {
                     ) {
                         Text("🖼️ محرر الصور", color = Color.White)
                     }
+                    Button(
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            context.startActivity(Intent(context, ArenaActivity::class.java))
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
+                    ) {
+                        Text("🌐 Arena AI (مفتوح مجاناً)", color = Color.White)
+                    }
                     Spacer(Modifier.height(6.dp))
 
                     LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -1261,6 +1271,15 @@ fun LionApp() {
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                             .navigationBarsPadding()
                     ) {
+                        if (selectedProvider == "arena") {
+                            Button(
+                                onClick = { context.startActivity(Intent(context, ArenaActivity::class.java)) },
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
+                            ) {
+                                Text("🌐 فتح دردشة Arena AI المفتوحة (بدون مفتاح)", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold)
+                            }
+                        }
                         OutlinedTextField(
                             value = input,
                             onValueChange = { input = it },
@@ -1319,7 +1338,13 @@ fun LionApp() {
                             }
                             Spacer(Modifier.width(2.dp))
                             FilledIconButton(
-                                onClick = { sendMessage() },
+                                onClick = {
+                                    if (selectedProvider == "arena") {
+                                        context.startActivity(Intent(context, ArenaActivity::class.java))
+                                    } else {
+                                        sendMessage()
+                                    }
+                                },
                                 enabled = !loading && (
                                     input.isNotBlank() || attachment != null || imageAttachment != null
                                 ),

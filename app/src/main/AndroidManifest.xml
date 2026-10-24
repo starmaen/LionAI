@@ -68,5 +68,6 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+            <activity android:name=".ArenaActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" />
     </application>
 </manifest>
