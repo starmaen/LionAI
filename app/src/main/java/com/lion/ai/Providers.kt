@@ -10,8 +10,8 @@ data class ProviderInfo(
     val needsAccountId: Boolean = false,
     val shortName: String = label,
     val modelHint: String = "",
-    /** قائمة جاهزة تعمل بدون إنترنت؛ زر «تحديث» في الإعدادات يجلب القائمة الحالية. */
-    val models: List<String> = emptyList()
+    val models: List<String> = emptyList(),
+    val webviewUrl: String? = null
 )
 
 val PROVIDERS = listOf(
@@ -20,10 +20,55 @@ val PROVIDERS = listOf(
         label = "Arena AI (مفتوح بدون مفتاح)",
         tagline = "مباشر ومجاني بالكامل — يعمل بدون مفتاح API",
         docsUrl = "https://arena.ai/text/direct?model_a=max",
-        defaultModel = "max",
+        defaultModel = "default",
         shortName = "Arena AI",
         modelHint = "هذا المزود لا يحتاج إلى مفتاح API؛ يفتح منصة Arena AI مباشرة داخل التطبيق للاستفادة من أقوى النماذج مجاناً.",
-        models = listOf("max")
+        models = listOf("default"),
+        webviewUrl = "https://arena.ai/text/direct?model_a=max"
+    ),
+    ProviderInfo(
+        id = "duckduckgo_web",
+        label = "DuckDuckGo AI Chat (بدون مفتاح)",
+        tagline = "مجاني بالكامل وبدون تسجيل دخول — عدة نماذج",
+        docsUrl = "https://duckduckgo.com/aichat",
+        defaultModel = "default",
+        shortName = "DuckDuckGo AI",
+        modelHint = "دردشة مجانية بالكامل بدون أي تسجيل دخول أو مفتاح، تتيح التبديل بين عدة نماذج داخل الصفحة نفسها.",
+        models = listOf("default"),
+        webviewUrl = "https://duckduckgo.com/aichat"
+    ),
+    ProviderInfo(
+        id = "qwen_web",
+        label = "Qwen Chat (بدون مفتاح)",
+        tagline = "مجاني — نماذج Qwen القوية داخل متصفح مدمج",
+        docsUrl = "https://chat.qwen.ai",
+        defaultModel = "default",
+        shortName = "Qwen Chat",
+        modelHint = "دردشة Qwen الرسمية مجانية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة نفسها لتفعيل كامل الميزات.",
+        models = listOf("default"),
+        webviewUrl = "https://chat.qwen.ai"
+    ),
+    ProviderInfo(
+        id = "mistral_web",
+        label = "Mistral Le Chat (بدون مفتاح)",
+        tagline = "مجاني — دردشة Mistral الرسمية",
+        docsUrl = "https://chat.mistral.ai",
+        defaultModel = "default",
+        shortName = "Le Chat",
+        modelHint = "دردشة Mistral الرسمية مجانية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة نفسها.",
+        models = listOf("default"),
+        webviewUrl = "https://chat.mistral.ai"
+    ),
+    ProviderInfo(
+        id = "deepseek_web",
+        label = "DeepSeek Chat (بدون مفتاح)",
+        tagline = "مجاني — دردشة DeepSeek الرسمية",
+        docsUrl = "https://chat.deepseek.com",
+        defaultModel = "default",
+        shortName = "DeepSeek Chat",
+        modelHint = "دردشة DeepSeek الرسمية مجانية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة نفسها.",
+        models = listOf("default"),
+        webviewUrl = "https://chat.deepseek.com"
     ),
     ProviderInfo(
         id = "gemini",
@@ -85,6 +130,26 @@ val PROVIDERS = listOf(
         defaultModel = "north-mini-code-1-0",
         modelHint = "مفتاح Trial يسمح بموديلات Cohere ضمن 1000 طلب شهرياً. «تحديث» يعرض موديلات الدردشة المتاحة لمفتاحك.",
         models = listOf("north-mini-code-1-0", "command-a-03-2025", "command-r7b-12-2024")
+    ),
+    ProviderInfo(
+        id = "mistral",
+        label = "Mistral AI (API)",
+        tagline = "مجاني — La Plateforme، موديلات مفتوحة",
+        docsUrl = "https://docs.mistral.ai/deployment/laplateforme/overview/",
+        defaultModel = "mistral-small-latest",
+        shortName = "Mistral",
+        modelHint = "مفتاح مجاني من console.mistral.ai. «تحديث» يعرض موديلات حسابك؛ بعضها مجاني وبعضها مدفوع حسب الخطة.",
+        models = listOf("mistral-small-latest", "open-mistral-nemo", "pixtral-12b-2409")
+    ),
+    ProviderInfo(
+        id = "together",
+        label = "Together AI",
+        tagline = "موديلات -Free مجانية بالكامل بدون رصيد",
+        docsUrl = "https://docs.together.ai/docs/serverless-models",
+        defaultModel = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+        shortName = "Together",
+        modelHint = "الموديلات المنتهية بـ -Free مجانية تماماً بدون رصيد. «تحديث» يجلب القائمة الحالية ويُظهر المجانية منها.",
+        models = listOf("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free")
     ),
     ProviderInfo(
         id = "cloudflare",

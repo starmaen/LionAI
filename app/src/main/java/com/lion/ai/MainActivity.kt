@@ -1053,7 +1053,7 @@ fun LionApp() {
                     Button(
                         onClick = {
                             scope.launch { drawerState.close() }
-                            context.startActivity(Intent(context, ArenaActivity::class.java))
+                            context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", providerInfo(selectedProvider).webviewUrl))
                         },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
@@ -1271,13 +1271,13 @@ fun LionApp() {
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                             .navigationBarsPadding()
                     ) {
-                        if (selectedProvider == "arena") {
+                        if (providerInfo(selectedProvider).webviewUrl != null) {
                             Button(
-                                onClick = { context.startActivity(Intent(context, ArenaActivity::class.java)) },
+                                onClick = { context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", providerInfo(selectedProvider).webviewUrl)) },
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
                             ) {
-                                Text("🌐 فتح دردشة Arena AI المفتوحة (بدون مفتاح)", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold)
+                                Text("🌐 فتح دردشة ${providerInfo(selectedProvider).shortName} المفتوحة (بدون مفتاح)", color = Color(0xFF0D0D0D), fontWeight = FontWeight.Bold)
                             }
                         }
                         OutlinedTextField(
@@ -1339,8 +1339,8 @@ fun LionApp() {
                             Spacer(Modifier.width(2.dp))
                             FilledIconButton(
                                 onClick = {
-                                    if (selectedProvider == "arena") {
-                                        context.startActivity(Intent(context, ArenaActivity::class.java))
+                                    if (providerInfo(selectedProvider).webviewUrl != null) {
+                                        context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", providerInfo(selectedProvider).webviewUrl))
                                     } else {
                                         sendMessage()
                                     }

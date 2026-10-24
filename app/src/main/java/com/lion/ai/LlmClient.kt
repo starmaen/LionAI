@@ -193,6 +193,14 @@ object LlmClient {
                     endpoint("deepseek", "https://api.deepseek.com/chat/completions"), apiKey, model, turns, message,
                     omitTemperature = true, maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
+                "mistral" -> callOpenAiCompatible(
+                    endpoint("mistral", "https://api.mistral.ai/v1/chat/completions"), apiKey, model, turns, message,
+                    maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                )
+                "together" -> callOpenAiCompatible(
+                    endpoint("together", "https://api.together.xyz/v1/chat/completions"), apiKey, model, turns, message,
+                    maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                )
                 "openai" -> callOpenAiCompatible(
                     endpoint("openai", "https://api.openai.com/v1/chat/completions"), apiKey, model, turns, message,
                     tokenParam = "max_completion_tokens", omitTemperature = true,
@@ -579,6 +587,18 @@ object LlmClient {
                 idsOf(json.optJSONArray("result"), "name")
             }
 
+            "mistral" -> {
+                requireKey(apiKey)
+                idsOf(getJson("https://api.mistral.ai/v1/models", bearer).optJSONArray("data"), "id")
+                    .filterNot { it.contains("embed") || it.contains("moderation") || it.contains("ocr") }
+            }
+
+            "together" -> {
+                requireKey(apiKey)
+                idsOf(getJsonArray("https://api.together.xyz/v1/models", bearer), "id")
+                    .filter { it.contains("Free", ignoreCase = true) }
+            }
+
             "deepseek" -> {
                 requireKey(apiKey)
                 idsOf(getJson("https://api.deepseek.com/models", bearer).optJSONArray("data"), "id")
@@ -602,6 +622,30 @@ object LlmClient {
             else -> emptyList()
         }
         return ids.distinct().sorted().take(100)
+    }
+
+    private fun getJsonArray(url: String, headers: Map<String, String>): JSONArray {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = CONNECT_TIMEOUT
+            readTimeout = 30_000
+            useCaches = false
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", USER_AGENT)
+            headers.forEach { (name, value) -> setRequestProperty(name, value) }
+        }
+        try {
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                val json = runCatching { JSONObject(raw) }.getOrNull()
+                throw LlmException(status, errorMessage(json, raw))
+            }
+            return runCatching { JSONArray(raw) }.getOrNull() ?: JSONArray()
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun getJson(url: String, headers: Map<String, String>): JSONObject {
