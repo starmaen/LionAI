@@ -11,7 +11,9 @@ data class ProviderInfo(
     val shortName: String = label,
     val modelHint: String = "",
     val models: List<String> = emptyList(),
-    val webviewUrl: String? = null
+    val webviewUrl: String? = null,
+    val keyless: Boolean = false,
+    val endpoint: String = ""
 )
 
 val PROVIDERS = listOf(
@@ -25,6 +27,7 @@ val PROVIDERS = listOf(
         shortName = "Arena AI",
         modelHint = "يفتح منصة Arena AI داخل التطبيق للاستفادة من أقوى النماذج مجاناً.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://arena.ai/submitPrompt?mode=direct-battle&modality=chat&prompt=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7&selectedModel=019f19f2-41f1-7c6d-9891-48d02fd9952c"
     ),
     ProviderInfo(
@@ -36,6 +39,7 @@ val PROVIDERS = listOf(
         shortName = "DuckDuckGo AI",
         modelHint = "دردشة مجانية بدون تسجيل دخول أو مفتاح، تتيح التبديل بين عدة نماذج داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://duckduckgo.com/aichat"
     ),
     ProviderInfo(
@@ -47,6 +51,7 @@ val PROVIDERS = listOf(
         shortName = "Gemini Web",
         modelHint = "دردشة Gemini الرسمية؛ تحتاج تسجيل دخول بحساب جوجل داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://gemini.google.com/app"
     ),
     ProviderInfo(
@@ -58,6 +63,7 @@ val PROVIDERS = listOf(
         shortName = "Copilot",
         modelHint = "دردشة Copilot الرسمية من مايكروسوفت، مجانية ولا تحتاج اشتراكاً.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://copilot.microsoft.com"
     ),
     ProviderInfo(
@@ -69,6 +75,7 @@ val PROVIDERS = listOf(
         shortName = "GitHub Copilot",
         modelHint = "تحتاج تسجيل دخول بحساب GitHub، وتتوفر حصة مجانية محدودة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://github.com/copilot"
     ),
     ProviderInfo(
@@ -80,6 +87,7 @@ val PROVIDERS = listOf(
         shortName = "Claude Web",
         modelHint = "دردشة Claude الرسمية من Anthropic؛ تحتاج تسجيل دخول وتوفر حصة يومية.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://claude.ai"
     ),
     ProviderInfo(
@@ -91,6 +99,7 @@ val PROVIDERS = listOf(
         shortName = "DeepSeek Chat",
         modelHint = "دردشة DeepSeek الرسمية مجانية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://chat.deepseek.com"
     ),
     ProviderInfo(
@@ -102,6 +111,7 @@ val PROVIDERS = listOf(
         shortName = "ChatGPT",
         modelHint = "دردشة ChatGPT الرسمية من OpenAI؛ تحتاج تسجيل دخول وتوفر حصة محدودة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://chatgpt.com"
     ),
     ProviderInfo(
@@ -113,6 +123,7 @@ val PROVIDERS = listOf(
         shortName = "Le Chat",
         modelHint = "دردشة Mistral الرسمية مجانية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://chat.mistral.ai"
     ),
     ProviderInfo(
@@ -124,6 +135,7 @@ val PROVIDERS = listOf(
         shortName = "Qwen Chat",
         modelHint = "دردشة Qwen الرسمية مجانية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://chat.qwen.ai"
     ),
     ProviderInfo(
@@ -135,6 +147,7 @@ val PROVIDERS = listOf(
         shortName = "Perplexity",
         modelHint = "محرك بحث ذكي يعرض المصادر مع الإجابات؛ مجاني مع حدود استخدام.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://www.perplexity.ai"
     ),
     ProviderInfo(
@@ -146,6 +159,7 @@ val PROVIDERS = listOf(
         shortName = "Grok",
         modelHint = "دردشة Grok الرسمية من xAI؛ قد تحتاج تسجيل دخول داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://grok.com"
     ),
     ProviderInfo(
@@ -157,6 +171,7 @@ val PROVIDERS = listOf(
         shortName = "HuggingFace",
         modelHint = "منصة نماذج مفتوحة المصدر؛ قد تحتاج تسجيل دخول مجاني داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://huggingface.co/chat"
     ),
     ProviderInfo(
@@ -168,6 +183,7 @@ val PROVIDERS = listOf(
         shortName = "Poe",
         modelHint = "منصة تجمع عدة نماذج؛ قد تحتاج تسجيل دخول داخل الصفحة.",
         models = listOf("default"),
+        keyless = true,
         webviewUrl = "https://poe.com"
     ),
 
@@ -240,6 +256,7 @@ val PROVIDERS = listOf(
         docsUrl = "https://docs.mistral.ai/deployment/laplateforme/overview/",
         defaultModel = "mistral-small-latest",
         shortName = "Mistral",
+        endpoint = "https://api.mistral.ai/v1/chat/completions",
         modelHint = "مفتاح مجاني من console.mistral.ai. «تحديث» يعرض موديلات حسابك.",
         models = listOf("mistral-small-latest", "open-mistral-nemo", "pixtral-12b-2409")
     ),
@@ -250,6 +267,7 @@ val PROVIDERS = listOf(
         docsUrl = "https://docs.together.ai/docs/serverless-models",
         defaultModel = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
         shortName = "Together",
+        endpoint = "https://api.together.xyz/v1/chat/completions",
         modelHint = "الموديلات المنتهية بـ -Free مجانية تماماً. «تحديث» يجلب القائمة ويُظهر المجانية منها.",
         models = listOf("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free")
     ),
