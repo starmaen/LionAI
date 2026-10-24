@@ -14,6 +14,18 @@ data class ChatTurn(val role: String, val content: String)
 class LlmException(val status: Int, message: String) : Exception(message)
 
 object LlmClient {
+    /** عناوين وسيطة اختيارية (مثل وسيط Cloudflare Worker) تتجاوز العنوان الافتراضي لكل مزود. */
+    @Volatile
+    var endpointOverrides: Map<String, String> = emptyMap()
+
+    fun reloadOverrides(prefs: android.content.SharedPreferences) {
+        endpointOverrides = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
+    }
+
+    private fun endpoint(provider: String, default: String): String =
+        endpointOverrides[provider]?.takeIf { it.startsWith("http") } ?: default
+
+    private const val USER_AGENT = "LionAI/1.3 (Android)"
     private const val CONNECT_TIMEOUT = 20_000
     private const val READ_TIMEOUT = 120_000
     private const val MAX_TOKENS = 2048
@@ -36,7 +48,7 @@ object LlmClient {
 الصيغة:
 {"intent":"reminder|sms|call|none","recipient":"الاسم أو الرقم كما ذكره المستخدم أو فارغ","message":"النص النهائي","delay_minutes":رقم أو null,"at":"yyyy-MM-dd HH:mm" أو null,"repeat_minutes":رقم أو null}
 القواعد:
-- reminder: تذكير المستخدم بشيء. message = ما يجب تذكيره به بصيغة المخاطب (مثل: اشرب الدواء).
+- reminder: تذكير المستخدم بشيء. message = جملة تذكير واضحة وكاملة تُعرض عند حلول الموعد بصيغة المخاطب، تبدأ بـ «حان موعد ...» أو «عليك ... الآن»، وتحافظ على كلمات المهمة كما قالها المستخدم تماماً دون استبدال أي كلمة أو تغيير معناها. أمثلة: «ذكرني بعد دقيقة أن أشرب الدواء» ← «حان موعد شرب الدواء الآن». «ذكرني الساعة 5 بزيارة صديقي» ← «حان موعد زيارة صديقك الآن». «ذكرني بعد ساعة أن أتصل بأمي» ← «حان موعد الاتصال بأمك الآن».
 - sms: إرسال رسالة لشخص. message = نص الرسالة كما سيقرؤه المستلم مباشرة بصيغة المخاطب (حوّل الغائب إلى مخاطب، مثل: "اخبر احمد ان ياتي هنا الساعة 5" يصبح "تعال إلى هنا الساعة 5"). لا تضف معلومات لم يذكرها المستخدم.
 - call: اتصال هاتفي بشخص. message فارغ.
 - الوقت النسبي: ربع ساعة=15، نصف ساعة=30، ساعة=60، دقيقتان=2، ساعتان=120 ... ضعه في delay_minutes.
@@ -135,6 +147,8 @@ object LlmClient {
         image: ImageAttachment? = null,
         systemPrompt: String = SYSTEM_PROMPT
     ): String {
+        // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
+        val apiKey = apiKey.filterNot { it.isWhitespace() }
         if (apiKey.isBlank()) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
         }
@@ -159,26 +173,26 @@ object LlmClient {
                             message
                         }
                         callOpenAiCompatible(
-                            "https://opencode.ai/zen/v1/chat/completions", apiKey, model, turns, finalMessage,
+                            endpoint("opencode", "https://opencode.ai/zen/v1/chat/completions"), apiKey, model, turns, finalMessage,
                             maxTokens = OPENAI_MAX_TOKENS, image = null, systemPrompt = systemPrompt
                         )
                     }
                 }
                 "groq" -> callOpenAiCompatible(
-                    "https://api.groq.com/openai/v1/chat/completions", apiKey, model, turns, message,
-                    image = image, systemPrompt = systemPrompt
+                    endpoint("groq", "https://api.groq.com/openai/v1/chat/completions"), apiKey, model, turns, message,
+                    maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
                 "openrouter" -> callOpenAiCompatible(
-                    "https://openrouter.ai/api/v1/chat/completions", apiKey, model, turns, message,
+                    endpoint("openrouter", "https://openrouter.ai/api/v1/chat/completions"), apiKey, model, turns, message,
                     mapOf("HTTP-Referer" to "https://github.com/starmaen/LionAI", "X-Title" to "Lion AI"),
                     image = image, systemPrompt = systemPrompt
                 )
                 "deepseek" -> callOpenAiCompatible(
-                    "https://api.deepseek.com/chat/completions", apiKey, model, turns, message,
+                    endpoint("deepseek", "https://api.deepseek.com/chat/completions"), apiKey, model, turns, message,
                     omitTemperature = true, maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
                 "openai" -> callOpenAiCompatible(
-                    "https://api.openai.com/v1/chat/completions", apiKey, model, turns, message,
+                    endpoint("openai", "https://api.openai.com/v1/chat/completions"), apiKey, model, turns, message,
                     tokenParam = "max_completion_tokens", omitTemperature = true,
                     maxTokens = OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
@@ -192,13 +206,31 @@ object LlmClient {
             }
         } catch (e: LlmException) {
             when (e.status) {
-                401, 403 -> "🔑 المفتاح غير صالح أو لا يملك صلاحية لهذا الموديل (${e.status}).\n${e.message}"
-                404 -> "⚠️ الموديل «$model» غير متاح لهذا المفتاح. جرّب موديلاً آخر من الإعدادات."
+                401, 403 -> "🔑 المفتاح غير صالح أو لا يملك صلاحية لهذا الموديل (${e.status}).\n${e.message}" +
+                    regionHint(provider, e.message.orEmpty())
+                404 -> "⚠️ الموديل «$model» غير متاح لهذا المفتاح، أو أن المزود رفض الطلب. جرّب موديلاً آخر من الإعدادات." +
+                    regionHint(provider, e.message.orEmpty())
                 429 -> "⏳ تجاوزت حد الاستخدام المجاني مؤقتاً. انتظر قليلاً ثم أعد المحاولة.\n${e.message}"
                 else -> "⚠️ خطأ من المزود (${e.status}): ${e.message}"
             }
         } catch (e: Exception) {
             "⚠️ تعذر الاتصال بالمزود: ${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+
+    private fun regionHint(provider: String, message: String): String {
+        if (provider == "groq") {
+            return "\n\n💡 Groq يحجب طلبات الدول الخاضعة للعقوبات (يرد 403 أو 404 حتى مع مفتاح صحيح). " +
+                "جرّب تشغيل VPN بدولة أخرى، أو أدخل «عنوان وسيط» في الإعدادات، أو استخدم OpenCode / OpenRouter."
+        }
+        val blocked = message.contains("Access denied", ignoreCase = true) ||
+            message.contains("network settings", ignoreCase = true) ||
+            message.contains("not supported", ignoreCase = true) ||
+            message.contains("1010")
+        return if (blocked) {
+            "\n\n💡 يبدو أن المزود يرفض الاتصال من شبكتك أو منطقتك. جرّب VPN أو «عنوان وسيط» من الإعدادات."
+        } else {
+            ""
         }
     }
 
@@ -459,7 +491,8 @@ object LlmClient {
     }
 
     /** يجلب قائمة الموديلات الحالية من المزود. للمزودات المجانية يُرجع المجاني منها فقط حيث أمكن. */
-    fun listModels(provider: String, apiKey: String, accountId: String): List<String> {
+    fun listModels(provider: String, rawKey: String, accountId: String): List<String> {
+        val apiKey = rawKey.filterNot { it.isWhitespace() }
         val bearer = mapOf("Authorization" to "Bearer $apiKey")
         val ids: List<String> = when (provider) {
             "opencode" -> {
@@ -576,6 +609,7 @@ object LlmClient {
             readTimeout = 30_000
             useCaches = false
             setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", USER_AGENT)
             headers.forEach { (name, value) -> setRequestProperty(name, value) }
         }
         try {
@@ -603,6 +637,7 @@ object LlmClient {
             useCaches = false
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", USER_AGENT)
             headers.forEach { (name, value) -> setRequestProperty(name, value) }
         }
 

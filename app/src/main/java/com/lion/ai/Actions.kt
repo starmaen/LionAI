@@ -6,6 +6,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -77,8 +79,52 @@ fun Contact.toRecipient(): Recipient {
 }
 
 object TimeFmt {
+    fun clock(millis: Long): String =
+        SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar")).format(Date(millis))
+
     fun whenText(millis: Long): String =
         SimpleDateFormat("EEEE d MMMM، h:mm a", Locale.forLanguageTag("ar")).format(Date(millis))
+}
+
+/** يحوّل نص المهمة إلى جملة تذكير واضحة، ويتأكد أن رد النموذج لم يغيّر كلمات المستخدم. */
+object ReminderText {
+    private val VERBS = mapOf(
+        "اشرب" to "شرب", "اشربي" to "شرب", "تناول" to "تناول", "تناولي" to "تناول", "خذ" to "أخذ",
+        "زر" to "زيارة", "زور" to "زيارة", "اتصل" to "الاتصال", "اتصلي" to "الاتصال", "كلم" to "التحدث مع",
+        "اذهب" to "الذهاب", "روح" to "الذهاب", "ذاكر" to "المذاكرة", "اطفئ" to "إطفاء", "اغلق" to "إغلاق",
+        "افتح" to "فتح", "ارسل" to "إرسال", "اشتر" to "شراء", "احضر" to "إحضار", "اكتب" to "كتابة",
+        "راجع" to "مراجعة", "اقرا" to "قراءة", "اقرأ" to "قراءة", "نم" to "النوم", "استيقظ" to "الاستيقاظ",
+        "ادفع" to "دفع", "حضر" to "تحضير", "حضّر" to "تحضير", "صلي" to "الصلاة", "تمرن" to "التمرين"
+    )
+
+    fun compose(task: String): String {
+        val t = task.trim().trim('.', '،', ':')
+        if (t.isEmpty()) return "حان موعد التذكير"
+        val norm = TextNorm.forMatch(t)
+        if (norm.startsWith("حان") || norm.startsWith("عليك") || norm.contains("الان")) return t
+        val first = t.substringBefore(' ')
+        val rest = t.substringAfter(' ', "")
+        val masdar = VERBS[first] ?: VERBS[TextNorm.arabic(first)]
+        return if (masdar != null) {
+            "حان موعد " + masdar + (if (rest.isNotBlank()) " $rest" else "") + " الآن"
+        } else {
+            "حان موعد: $t"
+        }
+    }
+
+    private fun tokens(s: String): List<String> =
+        TextNorm.forMatch(s).split(' ', '،', ',', '.')
+            .map { it.removePrefix("ال") }
+            .filter { it.length >= 3 }
+
+    /** هل تحتفظ رسالة النموذج بكلمات المهمة الأصلية؟ (نتحقق من الأسماء لا من الفعل لأنه يتحول إلى مصدر) */
+    fun faithful(task: String, modelMessage: String): Boolean {
+        val all = tokens(task).filter { it !in setOf("ان", "انني", "اني") }
+        if (all.isEmpty()) return true
+        val wanted = if (all.size > 1) all.drop(1) else all
+        val target = TextNorm.forMatch(modelMessage)
+        return wanted.all { target.contains(it.take(maxOf(3, it.length - 1))) }
+    }
 }
 
 object TextNorm {
@@ -479,21 +525,34 @@ object ActionResolver {
                         val at = local?.triggerAt
                         if (at != null) fixed = fixed.copy(triggerAt = at)
                     }
+                    if (fixed.kind == ActionKind.REMINDER) {
+                        val task = local?.message.orEmpty()
+                        if (task.isNotBlank() && !ReminderText.faithful(task, fixed.message)) {
+                            fixed = fixed.copy(message = ReminderText.compose(task))
+                        }
+                    }
                     // إن كتب المستخدم بالعربية وترجم النموذج النص للإنجليزية نستعمل النص الأصلي
                     val userArabic = text.any { it in '\u0600'..'\u06FF' }
                     val modelArabic = fixed.message.any { it in '\u0600'..'\u06FF' }
                     if (userArabic && !modelArabic && fixed.message.isNotBlank() &&
                         local != null && local.kind == fixed.kind && local.message.isNotBlank()
                     ) {
-                        fixed = fixed.copy(message = local.message)
+                        fixed = fixed.copy(
+                            message = if (fixed.kind == ActionKind.REMINDER) ReminderText.compose(local.message) else local.message
+                        )
                     }
                     return fixed
                 }
                 if (result.valid) {
                     // النموذج قال "ليس أمراً": نقبل المحلل المحلي فقط إذا كان الأمر واضحاً تماماً
-                    return local?.takeIf { isClear(it) }
+                    return local?.takeIf { isClear(it) }?.let {
+                        if (it.kind == ActionKind.REMINDER) it.copy(message = ReminderText.compose(it.message)) else it
+                    }
                 }
             }
+        }
+        if (local != null && local.kind == ActionKind.REMINDER) {
+            return local.copy(message = ReminderText.compose(local.message))
         }
         return local
     }
@@ -530,49 +589,92 @@ object SmsSender {
     }
 }
 
+object AlarmIntents {
+    fun forReminder(context: Context, id: Int, text: String, at: Long): Intent =
+        Intent(context, AlarmActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra("id", id)
+            .putExtra("text", text)
+            .putExtra("at", at)
+}
+
 object Notifier {
-    // قناة جديدة: القنوات القديمة لا يمكن تعديل أهميتها بعد إنشائها، وقد تكون صامتة أو محظورة
-    private const val CHANNEL = "lion_reminders_v2"
+    // قناتان جديدتان: قناة منبّه بصوت المنبه الحقيقي، وقناة عادية للإشعارات الأخرى
+    private const val CHANNEL_ALARM = "lion_alarm_v3"
+    private const val CHANNEL_GENERAL = "lion_general_v3"
 
     fun enabled(context: Context): Boolean =
         androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
 
+    private fun ensureChannels(manager: NotificationManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val alarm = NotificationChannel(CHANNEL_ALARM, "منبه التذكيرات", NotificationManager.IMPORTANCE_HIGH)
+        alarm.description = "تذكيرات بصوت منبه وإشعار ظاهر على الشاشة"
+        alarm.enableVibration(true)
+        alarm.vibrationPattern = longArrayOf(0, 700, 400, 700, 400, 700)
+        alarm.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        alarm.setSound(
+            alarmUri,
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        )
+        manager.createNotificationChannel(alarm)
+
+        val general = NotificationChannel(CHANNEL_GENERAL, "إشعارات Lion AI", NotificationManager.IMPORTANCE_HIGH)
+        general.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        manager.createNotificationChannel(general)
+    }
+
+    /**
+     * alarmIntent != null يعني تذكيراً بصوت منبه: إشعار يظهر منبثقاً ويكرر الصوت،
+     * وعند قفل الشاشة تُفتح شاشة المنبه كاملة.
+     */
     fun show(
         context: Context,
         id: Int,
         title: String,
         text: String,
         contentIntent: PendingIntent? = null,
-        snoozeText: String? = null
+        snoozeText: String? = null,
+        alarmIntent: Intent? = null
     ): Boolean {
         return try {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(CHANNEL, "تذكيرات Lion AI", NotificationManager.IMPORTANCE_HIGH)
-                channel.description = "تنبيهات التذكيرات والرسائل المجدولة"
-                channel.enableVibration(true)
-                channel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                manager.createNotificationChannel(channel)
-            }
-            val content = contentIntent ?: PendingIntent.getActivity(
+            ensureChannels(manager)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            val alarmPending = alarmIntent?.let { PendingIntent.getActivity(context, id, it, flags) }
+            val content = contentIntent ?: alarmPending ?: PendingIntent.getActivity(
                 context,
                 id,
                 Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                flags
             )
-            val builder = NotificationCompat.Builder(context, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+            val builder = NotificationCompat.Builder(
+                context,
+                if (alarmIntent != null) CHANNEL_ALARM else CHANNEL_GENERAL
+            )
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentTitle(title)
-                .setContentText(text)
+                .setContentText(text.lineSequence().firstOrNull().orEmpty())
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setDefaults(NotificationCompat.DEFAULT_ALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setCategory(if (alarmIntent != null) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
                 .setContentIntent(content)
+                .setWhen(System.currentTimeMillis())
+                .setShowWhen(true)
                 .setAutoCancel(true)
+            if (alarmPending != null) {
+                builder.setFullScreenIntent(alarmPending, true)
+                builder.setTimeoutAfter(60_000L)
+            }
             if (snoozeText != null) {
                 fun action(code: Int, act: String, minutes: Int): PendingIntent =
                     PendingIntent.getBroadcast(
@@ -583,12 +685,17 @@ object Notifier {
                             .putExtra("id", id)
                             .putExtra("text", snoozeText)
                             .putExtra("minutes", minutes),
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        flags
                     )
                 builder.addAction(android.R.drawable.ic_menu_recent_history, "⏰ بعد 10 دقائق", action(1, ReminderActionReceiver.ACTION_SNOOZE, 10))
                 builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "✔ تم", action(2, ReminderActionReceiver.ACTION_DONE, 0))
             }
-            manager.notify(id, builder.build())
+            val notification = builder.build()
+            if (alarmIntent != null) {
+                // يكرر الصوت حتى يتفاعل المستخدم أو تنتهي المهلة
+                notification.flags = notification.flags or Notification.FLAG_INSISTENT
+            }
+            manager.notify(id, notification)
             true
         } catch (e: Exception) {
             false
@@ -607,11 +714,15 @@ object FiredTracker {
 object ActionRunner {
     fun fire(context: Context, item: ScheduledItem) {
         when (item.kind) {
-            ActionKind.REMINDER ->
+            ActionKind.REMINDER -> {
+                val task = item.text.ifBlank { "حان موعد التذكير" }
                 Notifier.show(
-                    context, item.id, "⏰ تذكير", item.text.ifBlank { "تذكير" },
-                    snoozeText = item.text.ifBlank { "تذكير" }
+                    context, item.id, "⏰ حان موعد التذكير",
+                    task + "\n🕐 الموعد: " + TimeFmt.clock(item.whenMillis),
+                    snoozeText = task,
+                    alarmIntent = AlarmIntents.forReminder(context, item.id, task, item.whenMillis)
                 )
+            }
 
             ActionKind.SMS -> {
                 val sent = SmsSender.send(context, item.number, item.text)

@@ -403,6 +403,7 @@ fun LionApp() {
     }
 
     LaunchedEffect(Unit) {
+        LlmClient.reloadOverrides(prefs)
         refreshChats()
         scheduledItems = Scheduler.list(prefs)
         openChat(currentChat)
@@ -757,7 +758,13 @@ fun LionApp() {
                         } else {
                             ActionRunner.fire(context, item)
                             if (item.kind == ActionKind.REMINDER) {
-                                tts?.speak("تذكير: " + item.text, TextToSpeech.QUEUE_ADD, null, null)
+                                runCatching {
+                                    context.startActivity(
+                                        AlarmIntents.forReminder(
+                                            context, item.id, item.text.ifBlank { "حان موعد التذكير" }, item.whenMillis
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -803,10 +810,12 @@ fun LionApp() {
             },
             onBack = {
                 showSettings = false
+                LlmClient.reloadOverrides(prefs)
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
             },
             onSave = {
                 showSettings = false
+                LlmClient.reloadOverrides(prefs)
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
             }
         )
@@ -1449,6 +1458,11 @@ fun SettingsScreen(
     val settingsScope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var modelMenuOpen by remember { mutableStateOf(false) }
+    val endpoints = remember {
+        mutableStateMapOf<String, String>().apply {
+            PROVIDERS.forEach { info -> put(info.id, prefs.getString("endpoint_" + info.id, "") ?: "") }
+        }
+    }
     val modelCache = remember {
         mutableStateMapOf<String, List<String>>().apply {
             PROVIDERS.forEach { info -> put(info.id, ModelCatalog.cached(prefs, info.id)) }
@@ -1461,7 +1475,8 @@ fun SettingsScreen(
     fun persist() {
         val editor = prefs.edit()
         editor.putString("provider", provider)
-        keys.forEach { (id, value) -> editor.putString("api_key_$id", value) }
+        keys.forEach { (id, value) -> editor.putString("api_key_$id", value.filterNot { it.isWhitespace() }) }
+        endpoints.forEach { (id, value) -> editor.putString("endpoint_$id", value.trim()) }
         models.forEach { (id, value) -> editor.putString("model_$id", value) }
         editor.putString("cf_account_id", accountId)
         editor.putBoolean("auto_speak", autoSpeak)
@@ -1677,6 +1692,61 @@ fun SettingsScreen(
                 Text(modelStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
             }
 
+            var testStatus by remember(provider) { mutableStateOf("") }
+            var testing by remember { mutableStateOf(false) }
+            TextButton(
+                enabled = !testing,
+                onClick = {
+                    testing = true
+                    testStatus = "⏳ أختبر المفتاح..."
+                    val pid = provider
+                    val key = keys[pid].orEmpty()
+                    val model = models[pid].orEmpty()
+                    val account = accountId
+                    // نحفظ العنوان الوسيط الحالي مؤقتاً ليشمله الاختبار
+                    LlmClient.endpointOverrides = LlmClient.endpointOverrides + (pid to endpoints[pid].orEmpty().trim())
+                    settingsScope.launch {
+                        val reply = withContext(Dispatchers.IO) {
+                            LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, pid, emptyList(), model, account)
+                        }
+                        testStatus = if (LlmClient.isErrorReply(reply)) reply else "✅ المفتاح والموديل يعملان. الرد: " + reply.take(80)
+                        testing = false
+                    }
+                }
+            ) {
+                Text("🧪 اختبار المفتاح والموديل", color = Color(0xFFFFB800), fontSize = 12.sp)
+            }
+            if (testStatus.isNotBlank()) {
+                Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+            }
+
+            if (provider in setOf("groq", "openrouter", "opencode", "deepseek", "openai")) {
+                Spacer(Modifier.height(8.dp))
+                Text("عنوان وسيط (اختياري)", color = Color.White, fontSize = 13.sp)
+                OutlinedTextField(
+                    value = endpoints[provider].orEmpty(),
+                    onValueChange = { endpoints[provider] = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = {
+                        Text("https://اسم-الوسيط.workers.dev/openai/v1/chat/completions", color = Color(0xFF707070), fontSize = 11.sp)
+                    },
+                    textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFFB800),
+                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFFFFB800)
+                    )
+                )
+                Text(
+                    "للشبكات التي يحجبها المزود: ضع رابط وسيط يمرّر الطلبات إليه (مثل Cloudflare Worker). اتركه فارغاً للاتصال المباشر.",
+                    color = Color(0xFF9A9A9A),
+                    fontSize = 11.sp
+                )
+            }
+
             if (current.modelHint.isNotBlank()) {
                 Text(current.modelHint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
             }
@@ -1747,14 +1817,14 @@ fun SettingsScreen(
             TextButton(onClick = {
                 val err = Scheduler.add(
                     ctx, prefs,
-                    ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, System.currentTimeMillis() + 15_000L, "", "", "تذكير تجريبي ✅")
+                    ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, System.currentTimeMillis() + 15_000L, "", "", "حان موعد اختبار المنبه ✅")
                 )
                 alarmStatus = if (err == null) {
                     "سيصلك تذكير تجريبي بعد 15 ثانية. أغلق التطبيق أو اقفل الشاشة لاختبار الخلفية."
                 } else {
                     "⚠️ تعذرت الجدولة: $err"
                 }
-            }) { Text("⏱ اختبار تذكير بعد 15 ثانية", color = Color(0xFFFFB800), fontSize = 13.sp) }
+            }) { Text("⏱ اختبار المنبه بعد 15 ثانية (صوت + شاشة)", color = Color(0xFFFFB800), fontSize = 13.sp) }
             TextButton(onClick = {
                 runCatching {
                     ctx.startActivity(
@@ -1763,6 +1833,18 @@ fun SettingsScreen(
                     )
                 }
             }) { Text("⚙️ إعدادات إشعارات التطبيق", color = Color(0xFFFFB800), fontSize = 13.sp) }
+            if (Build.VERSION.SDK_INT >= 34) {
+                TextButton(onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                Uri.parse("package:" + ctx.packageName)
+                            )
+                        )
+                    }
+                }) { Text("📲 السماح بالمنبه بملء الشاشة", color = Color(0xFFFFB800), fontSize = 13.sp) }
+            }
             TextButton(onClick = {
                 runCatching {
                     ctx.startActivity(
