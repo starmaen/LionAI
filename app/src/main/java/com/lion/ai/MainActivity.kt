@@ -950,11 +950,18 @@ fun LionApp() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                prefs.edit().putString("provider", info.id).apply()
-                                selectedProvider = info.id
-                                prefs.edit().putBoolean("auto_route", false).apply()
-                                autoRoute = false
-                                showModelSheet = false
+                                if (info.webviewUrl != null) {
+                                    showModelSheet = false
+                                    context.startActivity(
+                                        Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
+                                    )
+                                } else {
+                                    prefs.edit().putString("provider", info.id).apply()
+                                    selectedProvider = info.id
+                                    prefs.edit().putBoolean("auto_route", false).apply()
+                                    autoRoute = false
+                                    showModelSheet = false
+                                }
                             }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -962,17 +969,24 @@ fun LionApp() {
                         RadioButton(
                             selected = !autoRoute && selectedProvider == info.id,
                             onClick = {
-                                prefs.edit().putString("provider", info.id).apply()
-                                selectedProvider = info.id
-                                prefs.edit().putBoolean("auto_route", false).apply()
-                                autoRoute = false
-                                showModelSheet = false
+                                if (info.webviewUrl != null) {
+                                    showModelSheet = false
+                                    context.startActivity(
+                                        Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
+                                    )
+                                } else {
+                                    prefs.edit().putString("provider", info.id).apply()
+                                    selectedProvider = info.id
+                                    prefs.edit().putBoolean("auto_route", false).apply()
+                                    autoRoute = false
+                                    showModelSheet = false
+                                }
                             },
                             colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                info.label + (if (info.free) "  🟢" else "  🔵"),
+                                info.label + (if (info.webviewUrl != null) "  🌐" else if (info.free) "  🟢" else "  🔵"),
                                 color = Color.White,
                                 fontSize = 14.sp
                             )
