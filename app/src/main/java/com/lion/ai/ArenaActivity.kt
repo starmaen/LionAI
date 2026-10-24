@@ -92,13 +92,13 @@ class ArenaActivity : Activity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                injectBypassScript()
+                injectFixesScript()
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 CookieManager.getInstance().flush()
-                injectBypassScript()
+                injectFixesScript()
             }
         }
 
@@ -139,13 +139,29 @@ class ArenaActivity : Activity() {
         webView.loadUrl(targetUrl)
     }
 
-    private fun injectBypassScript() {
+    private fun injectFixesScript() {
         val js = """
             (function() {
                 try {
                     Object.defineProperty(navigator, 'webdriver', { get: () => false });
                     
-                    // دالة فورية لإزالة نافذة الشروط وأي خطأ أحمر
+                    // حقن كود CSS لإبعاد صندوق الكتابة عن حافة الشاشة السفلية
+                    if (!document.getElementById('lion-bottom-fix')) {
+                        const style = document.createElement('style');
+                        style.id = 'lion-bottom-fix';
+                        style.innerHTML = `
+                            body, html {
+                                padding-bottom: env(safe-area-inset-bottom, 35px) !important;
+                            }
+                            /* رفع شريط الإدخال السفلي قليلاً لئلا يغطيه نظام أندرويد */
+                            form, div.sticky, div.fixed {
+                                margin-bottom: env(safe-area-inset-bottom, 25px) !important;
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
+
+                    // إزالة نافذة الشروط وأي خطأ أحمر تلقائياً
                     window.__lionRemoveModal = function() {
                         const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"], div.fixed.inset-0');
                         dialogs.forEach(el => {
@@ -153,7 +169,6 @@ class ArenaActivity : Activity() {
                                 el.remove();
                             }
                         });
-                        // إزالة أي تراكب رمادي يمنع اللمس
                         const overlays = document.querySelectorAll('div[data-state="open"], div.bg-black\\/50');
                         overlays.forEach(el => {
                             if (!el.querySelector('textarea')) {
@@ -164,25 +179,15 @@ class ArenaActivity : Activity() {
                         document.body.style.overflow = 'auto';
                     };
 
-                    // مراقبة مستمرة لظهور النافذة وحذفها فوراً
                     if (!window.__lionObserverStarted) {
                         window.__lionObserverStarted = true;
-                        const observer = new MutationObserver((mutations) => {
+                        const observer = new MutationObserver(() => {
                             window.__lionRemoveModal();
                         });
                         observer.observe(document.body, { childList: true, subtree: true });
                     }
 
-                    // محاولة حذفها كل جزء من الثانية إن وجدت
                     setInterval(window.__lionRemoveModal, 200);
-
-                    // اعتراض زر Agree لمحاكاة النجاح وإخفاء النافذة قسراً
-                    document.addEventListener('click', function(e) {
-                        const t = e.target;
-                        if (t && (t.innerText === 'Agree' || t.id.includes('agree'))) {
-                            setTimeout(window.__lionRemoveModal, 100);
-                        }
-                    }, true);
 
                 } catch(e) {}
             })();
