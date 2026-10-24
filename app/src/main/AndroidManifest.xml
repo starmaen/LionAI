@@ -59,6 +59,11 @@
             android:turnScreenOn="true"
             android:theme="@style/Theme.LionAI" />
 
+        <activity
+            android:name=".ArenaActivity"
+            android:exported="false"
+            android:theme="@style/Theme.LionAI" />
+
         <receiver android:name=".ReminderReceiver" android:exported="false" />
         <receiver android:name=".ScheduledActionReceiver" android:exported="false" />
         <receiver android:name=".ReminderActionReceiver" android:exported="false" />
