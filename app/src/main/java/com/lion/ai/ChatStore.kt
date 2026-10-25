@@ -18,6 +18,8 @@ object ChatStore {
                 .put("user", message.isUser)
             message.ytUrl?.let { item.put("yt", it) }
             message.ytmUrl?.let { item.put("ytm", it) }
+            message.anghamiUrl?.let { item.put("angh", it) }
+            message.browserUrl?.let { item.put("browser", it) }
             message.via?.let { item.put("via", it) }
             array.put(item)
         }
@@ -37,6 +39,8 @@ object ChatStore {
                     isUser = item.optBoolean("user", false),
                     ytUrl = item.optString("yt", "").takeIf { it.isNotBlank() },
                     ytmUrl = item.optString("ytm", "").takeIf { it.isNotBlank() },
+                    anghamiUrl = item.optString("angh", "").takeIf { it.isNotBlank() },
+                    browserUrl = item.optString("browser", "").takeIf { it.isNotBlank() },
                     via = item.optString("via", "").takeIf { it.isNotBlank() }
                 )
             }

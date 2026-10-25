@@ -132,6 +132,8 @@ data class Message(
     val isUser: Boolean,
     val ytUrl: String? = null,
     val ytmUrl: String? = null,
+    val anghamiUrl: String? = null,
+    val browserUrl: String? = null,
     val pending: PendingAction? = null,
     val via: String? = null
 )
@@ -639,6 +641,8 @@ fun LionApp() {
         image: ImageAttachment?,
         ytUrl: String?,
         ytmUrl: String?,
+        anghamiUrl: String?,
+        browserUrl: String?,
         kind: TaskKind
     ) {
         val plan = planFor(kind)
@@ -663,7 +667,7 @@ fun LionApp() {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
             }
             val via = used?.let { SmartRouter.label(it, if (auto) kind else null) }
-            appendToChat(chatId, Message(reply, false, ytUrl, ytmUrl, via = via))
+            appendToChat(chatId, Message(reply, false, ytUrl, ytmUrl, anghamiUrl, browserUrl, via = via))
             loading = false
             if (autoSpeak && chatId == currentChat) {
                 tts?.speak(reply.take(500), TextToSpeech.QUEUE_FLUSH, null, null)
@@ -745,18 +749,31 @@ fun LionApp() {
             return
         }
 
-        val keywords = listOf("أغنية", "اغنية", "أغني", "اغني", "شغل", "موسيقى", "song", "music")
-        val wantsMusic = keywords.any { text.contains(it, ignoreCase = true) }
+        val musicKeywords = listOf("أغنية", "اغنية", "أغني", "اغني", "شغل", "موسيقى", "مغني", "مطرب", "فنان", "song", "music", "singer")
+        val videoKeywords = listOf("فيلم", "مسلسل", "فلم", "movie", "film", "series", "trailer", "اعلان فيلم")
+        val wantsMusic = musicKeywords.any { text.contains(it, ignoreCase = true) }
+        val wantsVideo = videoKeywords.any { text.contains(it, ignoreCase = true) }
+        val wantsMedia = wantsMusic || wantsVideo
         val query = text
-            .replace(Regex("(أريد|اريد|شغل|أغنية|اغنية|أغني|اغني|لي|موسيقى)"), "")
+            .replace(Regex("(أريد|اريد|شغل|أغنية|اغنية|أغني|اغني|لي|موسيقى|فيلم|مسلسل|فلم)"), "")
             .trim()
-        val ytUrl = if (wantsMusic && query.isNotEmpty()) {
+        val ytUrl = if (wantsMedia && query.isNotEmpty()) {
             "https://www.youtube.com/results?search_query=" + Uri.encode(query)
         } else {
             null
         }
         val ytmUrl = if (wantsMusic && query.isNotEmpty()) {
             "https://music.youtube.com/search?q=" + Uri.encode(query)
+        } else {
+            null
+        }
+        val anghamiUrl = if (wantsMusic && query.isNotEmpty()) {
+            "https://play.anghami.com/search/" + Uri.encode(query)
+        } else {
+            null
+        }
+        val browserUrl = if (wantsMedia && query.isNotEmpty()) {
+            "https://www.google.com/search?q=" + Uri.encode(query)
         } else {
             null
         }
@@ -775,13 +792,13 @@ fun LionApp() {
                 if (parsed != null) {
                     handleAction(chatId, parsed)
                 } else {
-                    runChat(chatId, prompt, history, image, ytUrl, ytmUrl, kind)
+                    runChat(chatId, prompt, history, image, ytUrl, ytmUrl, anghamiUrl, browserUrl, kind)
                 }
             }
             return
         }
 
-        runChat(chatId, prompt, history, image, ytUrl, ytmUrl, kind)
+        runChat(chatId, prompt, history, image, ytUrl, ytmUrl, anghamiUrl, browserUrl, kind)
     }
 
     LaunchedEffect(autoSendTrigger) {
@@ -2252,9 +2269,9 @@ fun Bubble(
                         }
                     }
                 }
-                if (message.ytUrl != null || message.ytmUrl != null) {
+                if (message.ytUrl != null || message.ytmUrl != null || message.anghamiUrl != null || message.browserUrl != null) {
                     Spacer(Modifier.height(8.dp))
-                    Row {
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                         if (message.ytUrl != null) {
                             Button(
                                 onClick = {
@@ -2272,8 +2289,8 @@ fun Bubble(
                             ) {
                                 Text("▶ يوتيوب", color = Color.White, fontSize = 12.sp)
                             }
+                            Spacer(Modifier.width(6.dp))
                         }
-                        Spacer(Modifier.width(6.dp))
                         if (message.ytmUrl != null) {
                             Button(
                                 onClick = {
@@ -2290,6 +2307,44 @@ fun Bubble(
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Text("🎵 YT Music", color = Color.White, fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        if (message.anghamiUrl != null) {
+                            Button(
+                                onClick = {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(message.anghamiUrl))
+                                        )
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF8B5CF6)
+                                ),
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("🎵 أنغامي", color = Color.White, fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        if (message.browserUrl != null) {
+                            Button(
+                                onClick = {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(message.browserUrl))
+                                        )
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF4285F4)
+                                ),
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("🌐 المتصفح", color = Color.White, fontSize = 12.sp)
                             }
                         }
                     }
