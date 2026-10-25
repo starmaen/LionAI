@@ -1,5 +1,12 @@
 package com.lion.ai
 
+/** تصنيف المزودات: API، دردشات ويب، وأدوات صور/صوت/فيديو. */
+enum class ProviderGroup(val title: String, val icon: String) {
+    API("مزودات API (مفتاح أو بدون مفتاح)", "🔑"),
+    WEB("دردشات الويب المجانية", "🌐"),
+    MEDIA("الصور والصوت والفيديو", "🎨")
+}
+
 data class ProviderInfo(
     val id: String,
     val label: String,
