@@ -259,10 +259,11 @@ fun Bubble(
                 val codeBlocks = if (!message.isUser) extractCodeBlocks(message.text) else emptyList()
                 val links = if (!message.isUser) extractLinks(message.text) else emptyList()
                 val cleanText = if (!message.isUser) removeCodeBlocks(message.text).trim() else message.text
+                val displayText = if (!message.isUser) AnswerGuard.sanitizeForDisplay(cleanText) else cleanText
                 
-                if (cleanText.isNotEmpty()) {
+                if (displayText.isNotEmpty()) {
                     Text(
-                        cleanText,
+                        displayText,
                         color = if (message.isUser) Color(0xFF0D0D0D) else Color.White,
                         fontSize = 15.sp
                     )

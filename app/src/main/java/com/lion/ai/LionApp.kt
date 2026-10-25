@@ -753,30 +753,62 @@ fun LionApp() {
         browserUrl: String?,
         kind: TaskKind
     ) {
+        val strict = SmartRouter.isStrict(kind)
+        val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
+        val systemPrompt = if (strict) LLM_FACT_PROMPT else LLM_SYSTEM_PROMPT
         val plan = planFor(kind)
         val auto = autoRoute
         loadingChats[chatId] = true
         scope.launch {
             var reply = ""
             var used: Route? = null
+            var fallback: Pair<Route, String>? = null
             val failed = mutableListOf<String>()
             val deadline = System.currentTimeMillis() + 90_000
             for (route in plan) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
                 val r = withContext(Dispatchers.IO) {
-                    LlmClient.ask(prompt, keyOf(route.provider), route.provider, history, route.model, accountId(), image)
+                    LlmClient.ask(
+                        message = prompt,
+                        apiKey = keyOf(route.provider),
+                        provider = route.provider,
+                        history = history,
+                        modelOverride = route.model,
+                        accountId = accountId(),
+                        image = image,
+                        systemPrompt = systemPrompt
+                    )
                 }
-                SmartRouter.record(route, !LlmClient.isErrorReply(r), System.currentTimeMillis() - started)
-                reply = r
-                if (!LlmClient.isErrorReply(r)) {
+                val error = LlmClient.isErrorReply(r)
+                val low = !error && AnswerGuard.isLowQuality(r, kind, prompt)
+                SmartRouter.record(route, !error && !low, System.currentTimeMillis() - started)
+                if (!error && !low) {
+                    reply = r
                     used = route
                     break
                 }
-                failed.add(providerInfo(route.provider).shortName)
+                if (!error && fallback == null) fallback = route to r
+                failed.add(providerInfo(route.provider).shortName + if (low) " (رد غير موثوق)" else "")
             }
-            if (reply.isBlank()) {
-                reply = "⚠️ انتهت المهلة قبل وصول رد. تحقق من الاتصال أو جرّب مزوداً آخر."
+            if (used == null) {
+                val f = fallback
+                val canUseFallback = !auto || !strict || !hasTrusted
+                if (f != null && f.second.isNotBlank() && canUseFallback) {
+                    reply = f.second
+                    used = f.first
+                    reply += if (!auto) {
+                        "\n\n⚠️ الرد من المزود المختار قد يكون غير موثوق؛ راجع التواريخ والأسماء قبل الاعتماد عليه."
+                    } else if (strict) {
+                        "\n\n⚠️ لم يتوفر مزود قوي لهذا السؤال؛ هذه إجابة من مزود مجاني. تحقق من التواريخ والأسماء قبل الاعتماد عليها."
+                    } else {
+                        "\n\n⚠️ قد تكون الإجابة غير موثوقة؛ أعد المحاولة أو اختر مزوداً أقوى."
+                    }
+                } else if (strict && hasTrusted) {
+                    reply = "⚠️ لم أجد إجابة موثوقة من المزودات القوية المتاحة، ولم أعرض إجابة من مزود ضعيف لتجنب معلومات خاطئة.\nجرّب لاحقاً أو أضف مفتاح Gemini أو Groq أو OpenAI أو Claude."
+                } else {
+                    reply = "⚠️ تعذر الوصول إلى مزود يرد حالياً. تحقق من الاتصال أو جرّب مزوداً آخر."
+                }
             }
             if (used == null && failed.size > 1) {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"

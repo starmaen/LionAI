@@ -14,7 +14,24 @@ class SmartRouterTest {
 
     @Test
     fun shortQuestionIsFast() {
-        assertEquals(TaskKind.FAST, SmartRouter.classify("ما عاصمة سوريا؟", false, 0, null))
+        assertEquals(TaskKind.FAST, SmartRouter.classify("قل مرحبا", false, 0, null))
+    }
+
+    @Test
+    fun capitalQuestionIsFactual() {
+        assertEquals(TaskKind.FACTUAL, SmartRouter.classify("ما عاصمة سوريا؟", false, 0, null))
+    }
+
+    @Test
+    fun filmQuestionIsFactual() {
+        assertEquals(TaskKind.FACTUAL, SmartRouter.classify("أفلام عادل إمام الأكثر شهرة", false, 0, null))
+    }
+
+    @Test
+    fun factualCandidatesStartWithTrustedProvider() {
+        assertEquals("gemini", SmartRouter.candidates(TaskKind.FACTUAL).first().provider)
+        assertTrue(SmartRouter.isTrustedFactual("gemini"))
+        assertFalse(SmartRouter.isTrustedFactual("llm7"))
     }
 
     @Test

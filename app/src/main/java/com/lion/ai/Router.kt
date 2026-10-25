@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 enum class TaskKind(val label: String) {
     FAST("سؤال سريع"),
     GENERAL("سؤال عام"),
+    FACTUAL("سؤال معرفي"),
     CODE("برمجة"),
     REASONING("استدلال وحساب"),
     WRITING("كتابة وترجمة"),
@@ -66,6 +67,13 @@ object SmartRouter {
         "(ترجم|ترجمه|لخص|تلخيص|اكتب (لي )?(مقال|قصه|رساله|خطاب|قصيده|بريد|تقرير|سيره|اعلان)|صياغه|اعد صياغه|" +
             "صحح (ال)?(نص|لغويا|املائيا)|translate|summarize|rewrite|essay|proofread)"
     )
+    /** أسئلة معرفية تحتاج دقة: تواريخ وأحداث وفنانون وأغانٍ وأفلام ووثائق. */
+    private val FACT_WORDS = Regex(
+        "(فيلم|افلام|سينما|مسلسل|ممثل|ممثله|فنان|فنانه|مغني|مطرب|اغنيه|اغاني|البوم|مخرج|مؤلف|مولف|رواي|" +
+            "وثيقه|وثائق|معاهده|اتفاقيه|دستور|قانون|بيان|تقرير|تاريخ|تواريخ|سنه|عام|ميلاد|وفاه|حدث|احداث|معركه|" +
+            "ثوره|اكتشاف|اختراع|جائزه|بطوله|كاس|عاصمه|رئيس|ملكه|ملك|دوله|من هو|من هي|ما هو|ما هي|متي|اين|" +
+            "\\bmovie\\b|\\bfilm\\b|\\bsinger\\b|\\bactor\\b|\\bhistory\\b|\\bdate\\b)"
+    )
 
     fun classify(text: String, hasImage: Boolean, attachmentChars: Int, attachmentName: String?): TaskKind {
         val t = TextNorm.forMatch(text)
@@ -77,6 +85,7 @@ object SmartRouter {
         }
         if (REASONING_WORDS.containsMatchIn(t) || MATH_EXPR.containsMatchIn(t)) return TaskKind.REASONING
         if (WRITING_WORDS.containsMatchIn(t)) return TaskKind.WRITING
+        if (FACT_WORDS.containsMatchIn(t)) return TaskKind.FACTUAL
         return if (text.length <= 220 && attachmentChars == 0) TaskKind.FAST else TaskKind.GENERAL
     }
 
@@ -100,6 +109,16 @@ object SmartRouter {
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("deepseek", "deepseek-flash"),
             r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna")
+        )
+        TaskKind.FACTUAL -> listOf(
+            r("gemini", "gemini-3.8-flash"), r("groq", "openai/gpt-oss-120b"),
+            r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
+            r("deepseek", "deepseek-flash"), r("mistral", "mistral-medium-latest"),
+            r("cohere", "command-a-03-2025"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+            r("zai", "glm-4.7-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
+            r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"),
+            r("kilo", "kilo-auto/free"), r("opencode", "big-pickle"), r("llm7", "default")
         )
         TaskKind.CODE -> listOf(
             r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
@@ -148,6 +167,20 @@ object SmartRouter {
         )
     }
 
+    /** مزودات نعتبرها قوية بما يكفي للأسئلة المعرفية الحساسة. */
+    private val TRUSTED_FACTUAL = setOf(
+        "gemini", "groq", "claude", "openai", "deepseek", "mistral",
+        "cohere", "nvidia", "zai", "cloudflare", "together", "ovh", "ollama"
+    )
+
+    fun isStrict(kind: TaskKind): Boolean = kind == TaskKind.FACTUAL || kind == TaskKind.LONG_DOC
+
+    fun isTrustedFactual(provider: String): Boolean = provider in TRUSTED_FACTUAL
+
+    /** هل يوجد مزود قوي متاح فعلاً لهذا النوع؟ */
+    fun hasTrusted(prefs: SharedPreferences, kind: TaskKind): Boolean =
+        isStrict(kind) && candidates(kind).any { available(prefs, it.provider) && isTrustedFactual(it.provider) }
+
     fun available(prefs: SharedPreferences, provider: String): Boolean {
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
         val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
@@ -161,9 +194,11 @@ object SmartRouter {
      * حتى لا يستهلك كل المحاولات (توازن دون التضحية بالتخصص).
      */
     fun plan(prefs: SharedPreferences, kind: TaskKind): List<Route> {
-        val routes = candidates(kind)
+        val availableRoutes = candidates(kind)
             .filter { available(prefs, it.provider) }
             .distinctBy { it.provider }
+        val trusted = if (isStrict(kind)) availableRoutes.filter { isTrustedFactual(it.provider) } else emptyList()
+        val routes = if (trusted.isNotEmpty()) trusted else availableRoutes
         val (healthy, failing) = routes.partition { (failures[it.provider] ?: 0) < 2 }
         val ordered = (healthy + failing).toMutableList()
         // توازن الاستجابة: إن كان الأفضل بطيئاً (>25ث) والثاني أسرع بوضوح، قدّم الثاني.
