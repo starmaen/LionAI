@@ -2069,6 +2069,34 @@ fun SettingsScreen(
     }
 }
 
+// استخراج كتل الكود من النص (Markdown style: ```lang ... ```)
+private fun extractCodeBlocks(text: String): List<Pair<String, String>> {
+    val blocks = mutableListOf<Pair<String, String>>()
+    val pattern = Regex("```([\\w]*)\\n([\\s\\S]*?)```")
+    pattern.findAll(text).forEach { match ->
+        val lang = match.groupValues[1].ifEmpty { "code" }
+        val code = match.groupValues[2].trim()
+        blocks.add(lang to code)
+    }
+    return blocks
+}
+
+// استخراج الروابط من النص
+private fun extractLinks(text: String): List<String> {
+    val links = mutableListOf<String>()
+    val pattern = Regex("https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+")
+    pattern.findAll(text).forEach { match ->
+        val url = match.value.trimEnd(')', ']', '}', ',', '.', ';', ':', '!')
+        if (url !in links) links.add(url)
+    }
+    return links
+}
+
+// إزالة كتل الكود من النص للعرض العادي
+private fun removeCodeBlocks(text: String): String {
+    return Regex("```[\\w]*\\n[\\s\\S]*?```").replace(text, "")
+}
+
 @Composable
 fun Bubble(
     message: Message,
@@ -2089,11 +2117,71 @@ fun Bubble(
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    message.text,
-                    color = if (message.isUser) Color(0xFF0D0D0D) else Color.White,
-                    fontSize = 15.sp
-                )
+                // عرض الأكواد في صناديق منفصلة
+                val codeBlocks = if (!message.isUser) extractCodeBlocks(message.text) else emptyList()
+                val links = if (!message.isUser) extractLinks(message.text) else emptyList()
+                val cleanText = if (!message.isUser) removeCodeBlocks(message.text).trim() else message.text
+                
+                if (cleanText.isNotEmpty()) {
+                    Text(
+                        cleanText,
+                        color = if (message.isUser) Color(0xFF0D0D0D) else Color.White,
+                        fontSize = 15.sp
+                    )
+                }
+                
+                // عرض كل كتلة كود في صندوق منفصل مع زر نسخ
+                codeBlocks.forEach { (lang, code) ->
+                    Spacer(Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("📝 $lang", color = Color(0xFFFFB800), fontSize = 11.sp)
+                                TextButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
+                                    },
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text("📋 نسخ", color = Color(0xFFFFB800), fontSize = 10.sp)
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                code,
+                                color = Color(0xFFB0B0B0),
+                                fontSize = 12.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                            )
+                        }
+                    }
+                }
+                
+                // عرض الروابط في بطاقات منفصلة
+                if (links.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    links.forEach { url ->
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                }
+                            },
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("🔗 $url", color = Color(0xFF64B5F6), fontSize = 11.sp, maxLines = 1)
+                        }
+                    }
+                }
                 if (message.ytUrl != null || message.ytmUrl != null) {
                     Spacer(Modifier.height(8.dp))
                     Row {
