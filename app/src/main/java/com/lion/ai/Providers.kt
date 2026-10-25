@@ -13,7 +13,8 @@ data class ProviderInfo(
     val models: List<String> = emptyList(),
     val webviewUrl: String? = null,
     val keyless: Boolean = false,
-    val endpoint: String = ""
+    val endpoint: String = "",
+    val category: String = "chat"
 )
 
 val PROVIDERS = listOf(
@@ -314,6 +315,164 @@ val PROVIDERS = listOf(
         free = false,
         shortName = "Claude",
         models = listOf("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
+    ),
+
+    // ===== استوديو الوسائط (صور/فيديو/صوت) — مواقع ويب بدون مفتاح =====
+    ProviderInfo(
+        id = "bing_create",
+        label = "Bing Image Creator (بدون مفتاح)",
+        tagline = "مجاني — توليد صور DALL-E من مايكروسوفت",
+        docsUrl = "https://www.bing.com/images/create",
+        defaultModel = "default",
+        shortName = "Bing Creator",
+        modelHint = "توليد صور بالذكاء الاصطناعي؛ يتطلب تسجيل دخول بحساب مايكروسوفت.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.bing.com/images/create",
+        category = "image"
+    ),
+    ProviderInfo(
+        id = "leonardo_web",
+        label = "Leonardo AI (بدون مفتاح)",
+        tagline = "مجاني — حصة يومية لتوليد وتعديل الصور",
+        docsUrl = "https://app.leonardo.ai",
+        defaultModel = "default",
+        shortName = "Leonardo",
+        modelHint = "منصة احترافية لتوليد وتحرير الصور؛ حصة يومية مجانية مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://app.leonardo.ai",
+        category = "image"
+    ),
+    ProviderInfo(
+        id = "ideogram_web",
+        label = "Ideogram (بدون مفتاح)",
+        tagline = "مجاني — ممتاز للنصوص داخل الصور والتصاميم",
+        docsUrl = "https://ideogram.ai",
+        defaultModel = "default",
+        shortName = "Ideogram",
+        modelHint = "يتميز بكتابة نصوص داخل الصور بدقة؛ حصة يومية مجانية مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://ideogram.ai",
+        category = "image"
+    ),
+    ProviderInfo(
+        id = "craiyon_web",
+        label = "Craiyon (بدون مفتاح)",
+        tagline = "مجاني تماماً — توليد صور بدون تسجيل",
+        docsUrl = "https://www.craiyon.com",
+        defaultModel = "default",
+        shortName = "Craiyon",
+        modelHint = "توليد صور مجاني بدون حساب؛ جودة أبسط لكنه سريع ومباشر.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.craiyon.com",
+        category = "image"
+    ),
+    ProviderInfo(
+        id = "perchance_img",
+        label = "Perchance Image (بدون مفتاح)",
+        tagline = "مجاني تماماً — توليد صور بدون حدود تقريباً",
+        docsUrl = "https://perchance.org/ai-text-to-image-generator",
+        defaultModel = "default",
+        shortName = "Perchance",
+        modelHint = "مولد صور مجاني بدون تسجيل دخول وبدون حدود صارمة.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://perchance.org/ai-text-to-image-generator",
+        category = "image"
+    ),
+    ProviderInfo(
+        id = "luma_web",
+        label = "Luma Dream Machine (بدون مفتاح)",
+        tagline = "مجاني — فيديو واقعي من نص أو صورة",
+        docsUrl = "https://dream-machine.lumalabs.ai",
+        defaultModel = "default",
+        shortName = "Luma",
+        modelHint = "توليد فيديو قصير عالي الجودة؛ حصة مجانية يومية مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://dream-machine.lumalabs.ai",
+        category = "video"
+    ),
+    ProviderInfo(
+        id = "kling_web",
+        label = "Kling AI (بدون مفتاح)",
+        tagline = "مجاني — فيديو وأنيميشن متقدم",
+        docsUrl = "https://app.klingai.com",
+        defaultModel = "default",
+        shortName = "Kling",
+        modelHint = "فيديو واقعي وأنيميشن؛ رصيد يومي مجاني مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://app.klingai.com",
+        category = "video"
+    ),
+    ProviderInfo(
+        id = "hailuo_web",
+        label = "Hailuo AI Video (بدون مفتاح)",
+        tagline = "مجاني — فيديو من MiniMax بجودة عالية",
+        docsUrl = "https://hailuoai.video",
+        defaultModel = "default",
+        shortName = "Hailuo",
+        modelHint = "توليد فيديو قصير؛ حصة مجانية يومية مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://hailuoai.video",
+        category = "video"
+    ),
+    ProviderInfo(
+        id = "pika_web",
+        label = "Pika (بدون مفتاح)",
+        tagline = "مجاني — مؤثرات وأنيميشن للفيديو",
+        docsUrl = "https://pika.art",
+        defaultModel = "default",
+        shortName = "Pika",
+        modelHint = "مؤثرات فيديو ممتعة وأنيميشن؛ حصة مجانية مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://pika.art",
+        category = "video"
+    ),
+    ProviderInfo(
+        id = "suno_web",
+        label = "Suno Music (بدون مفتاح)",
+        tagline = "مجاني — توليد أغانٍ وموسيقى كاملة",
+        docsUrl = "https://suno.com",
+        defaultModel = "default",
+        shortName = "Suno",
+        modelHint = "توليد أغانٍ بالكلمات واللحن؛ حصة يومية مجانية مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://suno.com",
+        category = "audio"
+    ),
+    ProviderInfo(
+        id = "udio_web",
+        label = "Udio Music (بدون مفتاح)",
+        tagline = "مجاني — موسيقى وأغانٍ بجودة استوديو",
+        docsUrl = "https://www.udio.com",
+        defaultModel = "default",
+        shortName = "Udio",
+        modelHint = "بديل قوي لـ Suno لتوليد الموسيقى؛ حصة مجانية مع تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.udio.com",
+        category = "audio"
+    ),
+    ProviderInfo(
+        id = "ttsmaker_web",
+        label = "TTSMaker صوت (بدون مفتاح)",
+        tagline = "مجاني تماماً — تحويل النص إلى كلام",
+        docsUrl = "https://ttsmaker.com",
+        defaultModel = "default",
+        shortName = "TTSMaker",
+        modelHint = "تحويل نصوص إلى صوت طبيعي بعشرات اللغات ومنها العربية؛ بدون تسجيل.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://ttsmaker.com",
+        category = "audio"
     )
 )
 

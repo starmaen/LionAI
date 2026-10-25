@@ -226,6 +226,8 @@ fun LionApp() {
     val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showWebSheet by remember { mutableStateOf(false) }
     val webSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showMediaSheet by remember { mutableStateOf(false) }
+    val mediaSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun refreshChats() {
         chatMetas = ChatRepository.all(prefs)
@@ -1041,7 +1043,7 @@ fun LionApp() {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
-                PROVIDERS.filter { it.webviewUrl != null }.forEach { info ->
+                PROVIDERS.filter { it.webviewUrl != null && it.category == "chat" }.forEach { info ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1060,6 +1062,68 @@ fun LionApp() {
                             Text(info.label, color = Color.White, fontSize = 14.sp)
                             Text(info.tagline, color = Color(0xFF9A9A9A), fontSize = 11.sp, maxLines = 1)
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showMediaSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showMediaSheet = false },
+            sheetState = mediaSheetState,
+            containerColor = Color(0xFF1A1A1A)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 12.dp)
+            ) {
+                Text(
+                    "استوديو الوسائط المجاني (بدون مفتاح)",
+                    color = Color(0xFFFFB800),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                val mediaSections = listOf(
+                    "🖼️ توليد وتعديل الصور" to "image",
+                    "🎬 فيديو وأنيميشن" to "video",
+                    "🎵 صوت وموسيقى" to "audio"
+                )
+                mediaSections.forEach { (sectionTitle, cat) ->
+                    val items = PROVIDERS.filter { it.category == cat }
+                    if (items.isNotEmpty()) {
+                        Text(
+                            sectionTitle,
+                            color = Color(0xFF7CC47C),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                        items.forEach { info ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showMediaSheet = false
+                                        context.startActivity(
+                                            Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
+                                        )
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("▫️", fontSize = 16.sp)
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(info.label, color = Color.White, fontSize = 14.sp)
+                                    Text(info.tagline, color = Color(0xFF9A9A9A), fontSize = 11.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = Color(0xFF2A2A2A))
                     }
                 }
             }
@@ -1466,6 +1530,12 @@ fun LionApp() {
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Text("🌐", fontSize = 16.sp)
+                            }
+                            IconButton(
+                                onClick = { showMediaSheet = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Text("🎬", fontSize = 16.sp)
                             }
                             Spacer(Modifier.width(2.dp))
                             FilledIconButton(
