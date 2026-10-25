@@ -33,7 +33,209 @@ data class ProviderInfo(
 }
 
 val PROVIDERS = listOf(
-    // ===== مواقع دردشة مدمجة (بدون مفتاح) =====
+    // ===== مزودات API (مفتاح أو بدون مفتاح) =====
+    ProviderInfo(
+        id = "gemini",
+        label = "Google Gemini (API)",
+        tagline = "Free Tier — gemini-3.8-flash مجاني",
+        docsUrl = "https://ai.google.dev/gemini-api/docs/pricing",
+        defaultModel = "gemini-3.8-flash",
+        shortName = "Gemini",
+        modelHint = "الموديلات المجانية تتغير، وبعض موديلات Pro مدفوعة. زر «تحديث» يعرض موديلات حسابك؛ راجع صفحة الأسعار.",
+        models = listOf("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite")
+    ),
+    ProviderInfo(
+        id = "opencode",
+        label = "OpenCode Zen",
+        tagline = "موديلات مجانية ممتازة للكود — المفتاح من opencode.ai/auth",
+        docsUrl = "https://opencode.ai/docs/zen/",
+        defaultModel = "big-pickle",
+        shortName = "OpenCode",
+        modelHint = "زر «تحديث» يعرض الموديلات المجانية الحالية فقط. تعمل هنا موديلات chat/completions.",
+        models = listOf(
+            "big-pickle",
+            "deepseek-v4-flash-free",
+            "minimax-m3-free",
+            "mimo-v2.5-free",
+            "nemotron-3-super-free"
+        )
+    ),
+    ProviderInfo(
+        id = "groq",
+        label = "Groq",
+        tagline = "خطة مجانية — gpt-oss-120b بسرعة عالية",
+        docsUrl = "https://console.groq.com/docs/rate-limits",
+        defaultModel = "openai/gpt-oss-120b",
+        modelHint = "كل موديلات Groq متاحة بالخطة المجانية ضمن حدود الطلبات اليومية لكل موديل.",
+        models = listOf(
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "meta-llama/llama-4-scout-17b-16e-instruct",
+            "groq/compound",
+            "groq/compound-mini"
+        )
+    ),
+    ProviderInfo(
+        id = "openrouter",
+        label = "OpenRouter",
+        tagline = "موديلات :free — 50 طلباً يومياً",
+        docsUrl = "https://openrouter.ai/docs/api-reference/limits",
+        defaultModel = "cohere/north-mini-code:free",
+        modelHint = "زر «تحديث» يجلب كل الموديلات المجانية (:free) الحالية، ولا يحتاج مفتاحاً للقائمة.",
+        models = listOf("cohere/north-mini-code:free")
+    ),
+    ProviderInfo(
+        id = "cohere",
+        label = "Cohere",
+        tagline = "مفتاح تجريبي مجاني — 1000 طلب شهرياً",
+        docsUrl = "https://docs.cohere.com/docs/rate-limits",
+        defaultModel = "north-mini-code-1-0",
+        modelHint = "مفتاح Trial يسمح بموديلات Cohere ضمن 1000 طلب شهرياً.",
+        models = listOf("north-mini-code-1-0", "command-a-03-2025", "command-r7b-12-2024")
+    ),
+    ProviderInfo(
+        id = "mistral",
+        label = "Mistral AI (API)",
+        tagline = "مجاني — La Plateforme، موديلات مفتوحة",
+        docsUrl = "https://docs.mistral.ai/deployment/laplateforme/overview/",
+        defaultModel = "mistral-small-latest",
+        shortName = "Mistral",
+        endpoint = "https://api.mistral.ai/v1/chat/completions",
+        modelHint = "مفتاح مجاني من console.mistral.ai. «تحديث» يعرض موديلات حسابك.",
+        models = listOf("mistral-small-latest", "open-mistral-nemo", "pixtral-12b-2409")
+    ),
+    ProviderInfo(
+        id = "together",
+        label = "Together AI",
+        tagline = "موديلات -Free مجانية بالكامل بدون رصيد",
+        docsUrl = "https://docs.together.ai/docs/serverless-models",
+        defaultModel = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+        shortName = "Together",
+        endpoint = "https://api.together.xyz/v1/chat/completions",
+        modelHint = "الموديلات المنتهية بـ -Free مجانية تماماً. «تحديث» يجلب القائمة ويُظهر المجانية منها.",
+        models = listOf("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free")
+    ),
+    ProviderInfo(
+        id = "cloudflare",
+        label = "Cloudflare Workers AI",
+        tagline = "10000 Neuron يومياً — يحتاج Account ID",
+        docsUrl = "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+        defaultModel = "@cf/openai/gpt-oss-120b",
+        needsAccountId = true,
+        shortName = "Cloudflare",
+        modelHint = "كل موديلات Workers AI تُحتسب من حصة 10000 Neuron المجانية يومياً.",
+        models = listOf(
+            "@cf/openai/gpt-oss-120b",
+            "@cf/openai/gpt-oss-20b",
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            "@cf/meta/llama-3.1-8b-instruct"
+        )
+    ),
+    ProviderInfo(
+        id = "deepseek",
+        label = "DeepSeek (API)",
+        tagline = "مدفوع رخيص — V4.1 Flash للكود",
+        docsUrl = "https://api-docs.deepseek.com/quick_start/pricing",
+        defaultModel = "deepseek-flash",
+        free = false,
+        models = listOf("deepseek-flash")
+    ),
+    ProviderInfo(
+        id = "openai",
+        label = "OpenAI (API)",
+        tagline = "مدفوع — يتطلب رصيداً",
+        docsUrl = "https://developers.openai.com/api/docs/models/all",
+        defaultModel = "gpt-6-luna",
+        free = false,
+        models = listOf("gpt-6-luna")
+    ),
+    ProviderInfo(
+        id = "claude",
+        label = "Anthropic Claude (API)",
+        tagline = "مدفوع — يتطلب رصيداً",
+        docsUrl = "https://platform.claude.com/docs/en/about-claude/models/overview",
+        defaultModel = "claude-sonnet-5-5",
+        free = false,
+        shortName = "Claude",
+        models = listOf("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
+    ),
+    ProviderInfo(
+        id = "kilo",
+        label = "Kilo Gateway (مجاني)",
+        tagline = "بوابة OpenAI-compatible — موديلات :free بدون مفتاح",
+        docsUrl = "https://kilo.ai/docs/gateway",
+        defaultModel = "kilo-auto/free",
+        shortName = "Kilo",
+        endpoint = "https://ai-gateway.kilo.ai/api/v1/chat/completions",
+        modelHint = "موديلات :free تعمل بدون مفتاح (حد 200 طلب/ساعة لكل IP)، وبالمفتاح ترتفع الحدود وتتاح موديلات أكثر.",
+        models = listOf("kilo-auto/free", "minimax/minimax-m2.7:free", "z-ai/glm-5:free"),
+        keyless = true
+    ),
+    ProviderInfo(
+        id = "llm7",
+        label = "LLM7.io (مجاني)",
+        tagline = "بدون مفتاح — OpenAI-compatible مع موديلات متعددة",
+        docsUrl = "https://docs.llm7.io",
+        defaultModel = "default",
+        shortName = "LLM7",
+        endpoint = "https://api.llm7.io/v1/chat/completions",
+        modelHint = "«default» أو «fast» يعملان مجاناً بدون مفتاح. الموديلات المتقدمة تحتاج توكن.",
+        models = listOf("default", "fast", "DeepSeek-V4-Flash-0731"),
+        keyless = true
+    ),
+    ProviderInfo(
+        id = "nvidia",
+        label = "NVIDIA NIM",
+        tagline = "خطة تجريبية مجانية — موديلات Nemotron وGPT-OSS",
+        docsUrl = "https://build.nvidia.com",
+        defaultModel = "nvidia/nemotron-3-super-120b-a12b",
+        shortName = "NVIDIA",
+        endpoint = "https://integrate.api.nvidia.com/v1/chat/completions",
+        modelHint = "مفتاح مجاني من build.nvidia.com. الاستخدام التجريبي قد يُسجَّل لتحسين الخدمة.",
+        models = listOf(
+            "nvidia/nemotron-3-super-120b-a12b",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
+        )
+    ),
+    ProviderInfo(
+        id = "ollama",
+        label = "Ollama Cloud",
+        tagline = "سحابي — موديلات مفتوحة عبر مفتاح API",
+        docsUrl = "https://docs.ollama.com/cloud",
+        defaultModel = "gpt-oss:120b",
+        shortName = "Ollama",
+        endpoint = "https://ollama.com/v1/chat/completions",
+        modelHint = "أنشئ مفتاحاً من ollama.com ثم الصقه هنا. لا يحتاج تثبيت Ollama محلياً.",
+        models = listOf("gpt-oss:120b", "gpt-oss:20b", "deepseek-v4-flash")
+    ),
+    ProviderInfo(
+        id = "ovh",
+        label = "OVHcloud AI Endpoints",
+        tagline = "مجاني (بحدود) — موديلات مفتوحة مستضافة في أوروبا",
+        docsUrl = "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
+        defaultModel = "gpt-oss-120b",
+        shortName = "OVH",
+        endpoint = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
+        modelHint = "يعمل بدون مفتاح بحدود أعلى للتحكم، أو بمفتاح OVH لرفع الحدود.",
+        models = listOf("gpt-oss-120b", "gpt-oss-20b", "Qwen3.8-27B"),
+        keyless = true
+    ),
+    ProviderInfo(
+        id = "zai",
+        label = "Z AI (Zhipu)",
+        tagline = "خطة مجانية محدودة — نماذج GLM",
+        docsUrl = "https://docs.z.ai",
+        defaultModel = "glm-4.7-flash",
+        shortName = "Z AI",
+        endpoint = "https://api.z.ai/api/paas/v4/chat/completions",
+        modelHint = "مفتاح من z.ai. موديلات flash أرخص/أسرع، وvision للصور.",
+        models = listOf("glm-4.7-flash", "glm-4.6v-flash")
+    ),
+
+    // ===== دردشات الويب المجانية (بدون مفتاح) =====
     ProviderInfo(
         id = "arena",
         label = "Arena AI (مفتوح بدون مفتاح)",
@@ -202,8 +404,6 @@ val PROVIDERS = listOf(
         keyless = true,
         webviewUrl = "https://poe.com"
     ),
-
-    // ===== دردشات ويب إضافية (مجانية، بلا مفتاح) =====
     ProviderInfo(
         id = "kimi_web",
         label = "Kimi (بدون مفتاح)",
@@ -301,210 +501,7 @@ val PROVIDERS = listOf(
         webviewUrl = "https://www.blackbox.ai"
     ),
 
-    // ===== مزودو API (تحتاج مفتاحاً في الإعدادات) =====
-    ProviderInfo(
-        id = "gemini",
-        label = "Google Gemini (API)",
-        tagline = "Free Tier — gemini-3.8-flash مجاني",
-        docsUrl = "https://ai.google.dev/gemini-api/docs/pricing",
-        defaultModel = "gemini-3.8-flash",
-        shortName = "Gemini",
-        modelHint = "الموديلات المجانية تتغير، وبعض موديلات Pro مدفوعة. زر «تحديث» يعرض موديلات حسابك؛ راجع صفحة الأسعار.",
-        models = listOf("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite")
-    ),
-    ProviderInfo(
-        id = "opencode",
-        label = "OpenCode Zen",
-        tagline = "موديلات مجانية ممتازة للكود — المفتاح من opencode.ai/auth",
-        docsUrl = "https://opencode.ai/docs/zen/",
-        defaultModel = "big-pickle",
-        shortName = "OpenCode",
-        modelHint = "زر «تحديث» يعرض الموديلات المجانية الحالية فقط. تعمل هنا موديلات chat/completions.",
-        models = listOf(
-            "big-pickle",
-            "deepseek-v4-flash-free",
-            "minimax-m3-free",
-            "mimo-v2.5-free",
-            "nemotron-3-super-free"
-        )
-    ),
-    ProviderInfo(
-        id = "groq",
-        label = "Groq",
-        tagline = "خطة مجانية — gpt-oss-120b بسرعة عالية",
-        docsUrl = "https://console.groq.com/docs/rate-limits",
-        defaultModel = "openai/gpt-oss-120b",
-        modelHint = "كل موديلات Groq متاحة بالخطة المجانية ضمن حدود الطلبات اليومية لكل موديل.",
-        models = listOf(
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "meta-llama/llama-4-scout-17b-16e-instruct",
-            "groq/compound",
-            "groq/compound-mini"
-        )
-    ),
-    ProviderInfo(
-        id = "openrouter",
-        label = "OpenRouter",
-        tagline = "موديلات :free — 50 طلباً يومياً",
-        docsUrl = "https://openrouter.ai/docs/api-reference/limits",
-        defaultModel = "cohere/north-mini-code:free",
-        modelHint = "زر «تحديث» يجلب كل الموديلات المجانية (:free) الحالية، ولا يحتاج مفتاحاً للقائمة.",
-        models = listOf("cohere/north-mini-code:free")
-    ),
-    ProviderInfo(
-        id = "cohere",
-        label = "Cohere",
-        tagline = "مفتاح تجريبي مجاني — 1000 طلب شهرياً",
-        docsUrl = "https://docs.cohere.com/docs/rate-limits",
-        defaultModel = "north-mini-code-1-0",
-        modelHint = "مفتاح Trial يسمح بموديلات Cohere ضمن 1000 طلب شهرياً.",
-        models = listOf("north-mini-code-1-0", "command-a-03-2025", "command-r7b-12-2024")
-    ),
-    ProviderInfo(
-        id = "mistral",
-        label = "Mistral AI (API)",
-        tagline = "مجاني — La Plateforme، موديلات مفتوحة",
-        docsUrl = "https://docs.mistral.ai/deployment/laplateforme/overview/",
-        defaultModel = "mistral-small-latest",
-        shortName = "Mistral",
-        endpoint = "https://api.mistral.ai/v1/chat/completions",
-        modelHint = "مفتاح مجاني من console.mistral.ai. «تحديث» يعرض موديلات حسابك.",
-        models = listOf("mistral-small-latest", "open-mistral-nemo", "pixtral-12b-2409")
-    ),
-    ProviderInfo(
-        id = "together",
-        label = "Together AI",
-        tagline = "موديلات -Free مجانية بالكامل بدون رصيد",
-        docsUrl = "https://docs.together.ai/docs/serverless-models",
-        defaultModel = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
-        shortName = "Together",
-        endpoint = "https://api.together.xyz/v1/chat/completions",
-        modelHint = "الموديلات المنتهية بـ -Free مجانية تماماً. «تحديث» يجلب القائمة ويُظهر المجانية منها.",
-        models = listOf("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free")
-    ),
-    ProviderInfo(
-        id = "cloudflare",
-        label = "Cloudflare Workers AI",
-        tagline = "10000 Neuron يومياً — يحتاج Account ID",
-        docsUrl = "https://developers.cloudflare.com/workers-ai/platform/pricing/",
-        defaultModel = "@cf/openai/gpt-oss-120b",
-        needsAccountId = true,
-        shortName = "Cloudflare",
-        modelHint = "كل موديلات Workers AI تُحتسب من حصة 10000 Neuron المجانية يومياً.",
-        models = listOf(
-            "@cf/openai/gpt-oss-120b",
-            "@cf/openai/gpt-oss-20b",
-            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-            "@cf/meta/llama-3.1-8b-instruct"
-        )
-    ),
-    ProviderInfo(
-        id = "deepseek",
-        label = "DeepSeek (API)",
-        tagline = "مدفوع رخيص — V4.1 Flash للكود",
-        docsUrl = "https://api-docs.deepseek.com/quick_start/pricing",
-        defaultModel = "deepseek-flash",
-        free = false,
-        models = listOf("deepseek-flash")
-    ),
-    ProviderInfo(
-        id = "openai",
-        label = "OpenAI (API)",
-        tagline = "مدفوع — يتطلب رصيداً",
-        docsUrl = "https://developers.openai.com/api/docs/models/all",
-        defaultModel = "gpt-6-luna",
-        free = false,
-        models = listOf("gpt-6-luna")
-    ),
-    ProviderInfo(
-        id = "claude",
-        label = "Anthropic Claude (API)",
-        tagline = "مدفوع — يتطلب رصيداً",
-        docsUrl = "https://platform.claude.com/docs/en/about-claude/models/overview",
-        defaultModel = "claude-sonnet-5-5",
-        free = false,
-        shortName = "Claude",
-        models = listOf("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
-    ),
-
-    ProviderInfo(
-        id = "kilo",
-        label = "Kilo Gateway (مجاني)",
-        tagline = "بوابة OpenAI-compatible — موديلات :free بدون مفتاح",
-        docsUrl = "https://kilo.ai/docs/gateway",
-        defaultModel = "kilo-auto/free",
-        shortName = "Kilo",
-        endpoint = "https://ai-gateway.kilo.ai/api/v1/chat/completions",
-        modelHint = "موديلات :free تعمل بدون مفتاح (حد 200 طلب/ساعة لكل IP)، وبالمفتاح ترتفع الحدود وتتاح موديلات أكثر.",
-        models = listOf("kilo-auto/free", "minimax/minimax-m2.7:free", "z-ai/glm-5:free"),
-        keyless = true
-    ),
-    ProviderInfo(
-        id = "llm7",
-        label = "LLM7.io (مجاني)",
-        tagline = "بدون مفتاح — OpenAI-compatible مع موديلات متعددة",
-        docsUrl = "https://docs.llm7.io",
-        defaultModel = "default",
-        shortName = "LLM7",
-        endpoint = "https://api.llm7.io/v1/chat/completions",
-        modelHint = "«default» أو «fast» يعملان مجاناً بدون مفتاح. الموديلات المتقدمة تحتاج توكن.",
-        models = listOf("default", "fast", "DeepSeek-V4-Flash-0731"),
-        keyless = true
-    ),
-    ProviderInfo(
-        id = "nvidia",
-        label = "NVIDIA NIM",
-        tagline = "خطة تجريبية مجانية — موديلات Nemotron وGPT-OSS",
-        docsUrl = "https://build.nvidia.com",
-        defaultModel = "nvidia/nemotron-3-super-120b-a12b",
-        shortName = "NVIDIA",
-        endpoint = "https://integrate.api.nvidia.com/v1/chat/completions",
-        modelHint = "مفتاح مجاني من build.nvidia.com. الاستخدام التجريبي قد يُسجَّل لتحسين الخدمة.",
-        models = listOf(
-            "nvidia/nemotron-3-super-120b-a12b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
-        )
-    ),
-    ProviderInfo(
-        id = "ollama",
-        label = "Ollama Cloud",
-        tagline = "سحابي — موديلات مفتوحة عبر مفتاح API",
-        docsUrl = "https://docs.ollama.com/cloud",
-        defaultModel = "gpt-oss:120b",
-        shortName = "Ollama",
-        endpoint = "https://ollama.com/v1/chat/completions",
-        modelHint = "أنشئ مفتاحاً من ollama.com ثم الصقه هنا. لا يحتاج تثبيت Ollama محلياً.",
-        models = listOf("gpt-oss:120b", "gpt-oss:20b", "deepseek-v4-flash")
-    ),
-    ProviderInfo(
-        id = "ovh",
-        label = "OVHcloud AI Endpoints",
-        tagline = "مجاني (بحدود) — موديلات مفتوحة مستضافة في أوروبا",
-        docsUrl = "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
-        defaultModel = "gpt-oss-120b",
-        shortName = "OVH",
-        endpoint = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
-        modelHint = "يعمل بدون مفتاح بحدود أعلى للتحكم، أو بمفتاح OVH لرفع الحدود.",
-        models = listOf("gpt-oss-120b", "gpt-oss-20b", "Qwen3.8-27B"),
-        keyless = true
-    ),
-    ProviderInfo(
-        id = "zai",
-        label = "Z AI (Zhipu)",
-        tagline = "خطة مجانية محدودة — نماذج GLM",
-        docsUrl = "https://docs.z.ai",
-        defaultModel = "glm-4.7-flash",
-        shortName = "Z AI",
-        endpoint = "https://api.z.ai/api/paas/v4/chat/completions",
-        modelHint = "مفتاح من z.ai. موديلات flash أرخص/أسرع، وvision للصور.",
-        models = listOf("glm-4.7-flash", "glm-4.6v-flash")
-    ),
-
-    // ===== استوديو الوسائط (صور/فيديو/صوت) — مواقع ويب بدون مفتاح =====
+    // ===== أدوات الصور والصوت والفيديو =====
     ProviderInfo(
         id = "bing_create",
         label = "Bing Image Creator (بدون مفتاح)",
