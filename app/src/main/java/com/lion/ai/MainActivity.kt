@@ -1622,6 +1622,11 @@ fun SettingsScreen(
     var confirmActions by remember { mutableStateOf(prefs.getBoolean("confirm_actions", true)) }
 
     val current = providerInfo(provider)
+    val versionName = remember {
+        runCatching {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: "1.4.0"
+    }
 
     fun persist() {
         val editor = prefs.edit()
@@ -2036,6 +2041,29 @@ fun SettingsScreen(
                 Text(alarmStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
             }
 
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider(color = Color(0xFF2A2A2A))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "الإصدار $versionName",
+                color = Color(0xFFB0B0B0),
+                fontSize = 13.sp
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "تطوير star syria",
+                color = Color(0xFFFFB800),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "starsyria2500@gmail.com",
+                color = Color(0xFFFFB800),
+                fontSize = 13.sp,
+                modifier = Modifier.clickable {
+                    runCatching { uriHandler.openUri("mailto:starsyria2500@gmail.com") }
+                }
+            )
             Spacer(Modifier.height(24.dp))
         }
     }
