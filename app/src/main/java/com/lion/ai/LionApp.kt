@@ -1034,237 +1034,60 @@ fun LionApp() {
     }
 
     if (showModelSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showModelSheet = false },
+        ModelPickerSheet(
             sheetState = modelSheetState,
-            containerColor = Color(0xFF1A1A1A)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(bottom = 12.dp)
-            ) {
-                Text(
-                    "اختر الموديل",
-                    color = Color(0xFFFFB800),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            prefs.edit().putBoolean("auto_route", true).apply()
-                            autoRoute = true
-                            showModelSheet = false
-                            syncActiveTab()
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = autoRoute,
-                        onClick = {
-                            prefs.edit().putBoolean("auto_route", true).apply()
-                            autoRoute = true
-                            showModelSheet = false
-                            syncActiveTab()
-                        },
-                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+            autoRoute = autoRoute,
+            selectedProvider = selectedProvider,
+            modelFor = { info ->
+                (prefs.getString("model_${info.id}", "") ?: "").ifBlank { info.defaultModel }
+            },
+            onDismiss = { showModelSheet = false },
+            onChooseAuto = {
+                prefs.edit().putBoolean("auto_route", true).apply()
+                autoRoute = true
+                showModelSheet = false
+                syncActiveTab()
+            },
+            onChooseProvider = { info ->
+                if (info.webviewUrl != null) {
+                    showModelSheet = false
+                    context.startActivity(
+                        Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
                     )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("🧠 تلقائي (العقل المركزي)", color = Color(0xFFFFB800), fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "يختار الأنسب لكل سؤال (سريع، برمجة، صور...) ويجرّب بديلاً إذا فشل، والحوار يبقى واحداً",
-                            color = Color(0xFF9A9A9A),
-                            fontSize = 11.sp
-                        )
-                    }
+                } else {
+                    prefs.edit().putString("provider", info.id).apply()
+                    selectedProvider = info.id
+                    prefs.edit().putBoolean("auto_route", false).apply()
+                    autoRoute = false
+                    showModelSheet = false
+                    syncActiveTab()
                 }
-                PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->
-                    val configured = (prefs.getString("model_${info.id}", "") ?: "")
-                        .ifBlank { info.defaultModel }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (info.webviewUrl != null) {
-                                    showModelSheet = false
-                                    context.startActivity(
-                                        Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
-                                    )
-                                } else {
-                                    prefs.edit().putString("provider", info.id).apply()
-                                    selectedProvider = info.id
-                                    prefs.edit().putBoolean("auto_route", false).apply()
-                                    autoRoute = false
-                                    showModelSheet = false
-                                    syncActiveTab()
-                                }
-                            }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = !autoRoute && selectedProvider == info.id,
-                            onClick = {
-                                if (info.webviewUrl != null) {
-                                    showModelSheet = false
-                                    context.startActivity(
-                                        Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
-                                    )
-                                } else {
-                                    prefs.edit().putString("provider", info.id).apply()
-                                    selectedProvider = info.id
-                                    prefs.edit().putBoolean("auto_route", false).apply()
-                                    autoRoute = false
-                                    showModelSheet = false
-                                    syncActiveTab()
-                                }
-                            },
-                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                info.label + (if (info.webviewUrl != null) "  🌐" else if (info.free) "  🟢" else "  🔵"),
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                configured,
-                                color = Color(0xFF9A9A9A),
-                                fontSize = 11.sp,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
-                HorizontalDivider(color = Color(0xFF2A2A2A))
-                TextButton(
-                    onClick = {
-                        showModelSheet = false
-                        showSettings = true
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                ) {
-                    Text(
-                        "⚙️ الإعدادات والمفاتيح وحدود الاستخدام",
-                        color = Color(0xFFFFB800),
-                        fontSize = 13.sp
-                    )
-                }
+            },
+            onOpenSettings = {
+                showModelSheet = false
+                showSettings = true
             }
-        }
+        )
     }
 
     if (showWebSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showWebSheet = false },
+        WebPickerSheet(
             sheetState = webSheetState,
-            containerColor = Color(0xFF1A1A1A)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(bottom = 12.dp)
-            ) {
-                Text(
-                    "دردشات الويب المجانية (بدون مفتاح)",
-                    color = Color(0xFFFFB800),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                PROVIDERS.filter { it.group == ProviderGroup.WEB }.forEach { info ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showWebSheet = false
-                                context.startActivity(
-                                    Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
-                                )
-                            }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("🌐", fontSize = 18.sp)
-                        Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(info.label, color = Color.White, fontSize = 14.sp)
-                            Text(info.tagline, color = Color(0xFF9A9A9A), fontSize = 11.sp, maxLines = 1)
-                        }
-                    }
-                }
+            onDismiss = { showWebSheet = false },
+            onOpen = { url ->
+                context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", url))
             }
-        }
+        )
     }
 
     if (showMediaSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showMediaSheet = false },
+        MediaPickerSheet(
             sheetState = mediaSheetState,
-            containerColor = Color(0xFF1A1A1A)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(bottom = 12.dp)
-            ) {
-                Text(
-                    "استوديو الوسائط المجاني (بدون مفتاح)",
-                    color = Color(0xFFFFB800),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                val mediaSections = listOf(
-                    "🖼️ توليد وتعديل الصور" to "image",
-                    "🎬 فيديو وأنيميشن" to "video",
-                    "🎵 صوت وموسيقى" to "audio"
-                )
-                mediaSections.forEach { (sectionTitle, cat) ->
-                    val items = PROVIDERS.filter { it.category == cat }
-                    if (items.isNotEmpty()) {
-                        Text(
-                            sectionTitle,
-                            color = Color(0xFF7CC47C),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                        )
-                        items.forEach { info ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showMediaSheet = false
-                                        context.startActivity(
-                                            Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
-                                        )
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("▫️", fontSize = 16.sp)
-                                Spacer(Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(info.label, color = Color.White, fontSize = 14.sp)
-                                    Text(info.tagline, color = Color(0xFF9A9A9A), fontSize = 11.sp, maxLines = 1)
-                                }
-                            }
-                        }
-                        HorizontalDivider(color = Color(0xFF2A2A2A))
-                    }
-                }
+            onDismiss = { showMediaSheet = false },
+            onOpen = { url ->
+                context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", url))
             }
-        }
+        )
     }
 
     LaunchedEffect(messages.size, loadingChats[currentChat]) {
@@ -1338,127 +1161,56 @@ fun LionApp() {
                 drawerContainerColor = Color(0xFF1A1A1A),
                 modifier = Modifier.width(300.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .statusBarsPadding()
-                        .navigationBarsPadding()
-                ) {
-                    Text(
-                        "💬 المحادثات",
-                        color = Color(0xFFFFB800),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    Button(
-                        onClick = {
-                            startNewChat()
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
-                    ) {
-                        Text("+ محادثة جديدة", color = Color(0xFF0D0D0D))
-                    }
-                    Button(
-                        onClick = {
-                            requestContacts()
-                            showContacts = true
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F))
-                    ) {
-                        Text("📇 جهات الاتصال (${contacts.size})", color = Color.White)
-                    }
-                    Button(
-                        onClick = {
-                            scheduledItems = Scheduler.list(prefs)
-                            showScheduled = true
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E4A2E))
-                    ) {
-                        Text("⏰ المجدولات (${scheduledItems.size})", color = Color.White)
-                    }
-                    Button(
-                        onClick = {
-                            editAfterPick = true
-                            imageLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A2E4A))
-                    ) {
-                        Text("🖼️ محرر الصور", color = Color.White)
-                    }
-                    Spacer(Modifier.height(6.dp))
-
-                    LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                        items(activeChats, key = { it.id }) { meta ->
-                            ChatRow(
-                                meta = meta,
-                                selected = meta.id == currentChat,
-                                onOpen = {
-                                    openChat(meta.id)
-                                    scope.launch { drawerState.close() }
-                                },
-                                onRename = {
-                                    renameText = meta.title
-                                    renameTarget = meta
-                                },
-                                onAutoTitle = { generateTitle(meta.id, true) },
-                                onArchiveToggle = {
-                                    ChatRepository.setArchived(prefs, meta.id, true)
-                                    if (currentChat == meta.id) startNewChat()
-                                    refreshChats()
-                                },
-                                onDelete = { deleteTarget = meta },
-                                onShare = { shareChat(meta) }
-                            )
-                        }
-                        if (archivedChats.isNotEmpty()) {
-                            item(key = "archive_header") {
-                                TextButton(
-                                    onClick = { showArchive = !showArchive },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        "📦 الأرشيف (${archivedChats.size}) " + if (showArchive) "▲" else "▼",
-                                        color = Color(0xFFB0B0B0)
-                                    )
-                                }
-                            }
-                            if (showArchive) {
-                                items(archivedChats, key = { "arch_" + it.id }) { meta ->
-                                    ChatRow(
-                                        meta = meta,
-                                        selected = false,
-                                        onOpen = {
-                                            openChat(meta.id)
-                                            scope.launch { drawerState.close() }
-                                        },
-                                        onRename = {
-                                            renameText = meta.title
-                                            renameTarget = meta
-                                        },
-                                        onAutoTitle = { generateTitle(meta.id, true) },
-                                        onArchiveToggle = {
-                                            ChatRepository.setArchived(prefs, meta.id, false)
-                                            refreshChats()
-                                        },
-                                        onDelete = { deleteTarget = meta },
-                                        onShare = { shareChat(meta) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                LionDrawerContent(
+                    activeChats = activeChats,
+                    archivedChats = archivedChats,
+                    currentChat = currentChat,
+                    contactsCount = contacts.size,
+                    scheduledCount = scheduledItems.size,
+                    showArchive = showArchive,
+                    onToggleArchive = { showArchive = !showArchive },
+                    onNewChat = {
+                        startNewChat()
+                        scope.launch { drawerState.close() }
+                    },
+                    onContacts = {
+                        requestContacts()
+                        showContacts = true
+                        scope.launch { drawerState.close() }
+                    },
+                    onScheduled = {
+                        scheduledItems = Scheduler.list(prefs)
+                        showScheduled = true
+                        scope.launch { drawerState.close() }
+                    },
+                    onImageEditor = {
+                        editAfterPick = true
+                        imageLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                        scope.launch { drawerState.close() }
+                    },
+                    onOpenChat = { id ->
+                        openChat(id)
+                        scope.launch { drawerState.close() }
+                    },
+                    onRename = { meta ->
+                        renameText = meta.title
+                        renameTarget = meta
+                    },
+                    onAutoTitle = { id -> generateTitle(id, true) },
+                    onArchive = { meta ->
+                        ChatRepository.setArchived(prefs, meta.id, true)
+                        if (currentChat == meta.id) startNewChat()
+                        refreshChats()
+                    },
+                    onUnarchive = { meta ->
+                        ChatRepository.setArchived(prefs, meta.id, false)
+                        refreshChats()
+                    },
+                    onDelete = { meta -> deleteTarget = meta },
+                    onShare = { meta -> shareChat(meta) }
+                )
             }
         }
     ) {
