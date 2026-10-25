@@ -20,6 +20,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.widget.TextView
 
 class ArenaActivity : Activity() {
 
@@ -87,8 +88,25 @@ class ArenaActivity : Activity() {
             max = 100
         }
 
+        // زر إغلاق مباشر: يعود للصفحة الرئيسية للتطبيق فوراً بضغطة واحدة
+        val density = resources.displayMetrics.density
+        val closeButton = TextView(this).apply {
+            text = "✕"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.parseColor("#99000000"))
+            layoutParams = FrameLayout.LayoutParams(
+                (34 * density).toInt(),
+                (34 * density).toInt(),
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            ).apply {
+                topMargin = statusBarHeight + (8 * density).toInt()
+            }
+        }
         rootLayout.addView(webView)
         rootLayout.addView(progressBar)
+        rootLayout.addView(closeButton)
         setContentView(rootLayout)
 
         val cookieManager = CookieManager.getInstance()
@@ -168,6 +186,8 @@ class ArenaActivity : Activity() {
 
         val targetUrl = intent.getStringExtra("ARENA_URL")
             ?: "https://arena.ai/text/direct?model_a=max"
+        closeButton.setOnClickListener { finish() }
+
         webView.loadUrl(targetUrl)
     }
 
