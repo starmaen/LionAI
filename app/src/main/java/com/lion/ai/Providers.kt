@@ -15,7 +15,15 @@ data class ProviderInfo(
     val keyless: Boolean = false,
     val endpoint: String = "",
     val category: String = "chat"
-)
+) {
+    /** التصنيف مشتق: بلا webviewUrl = API، ومع category غير chat = وسائط، وإلا ويب. */
+    val group: ProviderGroup
+        get() = when {
+            category != "chat" -> ProviderGroup.MEDIA
+            webviewUrl != null -> ProviderGroup.WEB
+            else -> ProviderGroup.API
+        }
+}
 
 val PROVIDERS = listOf(
     // ===== مواقع دردشة مدمجة (بدون مفتاح) =====
@@ -188,6 +196,104 @@ val PROVIDERS = listOf(
         webviewUrl = "https://poe.com"
     ),
 
+    // ===== دردشات ويب إضافية (مجانية، بلا مفتاح) =====
+    ProviderInfo(
+        id = "kimi_web",
+        label = "Kimi (بدون مفتاح)",
+        tagline = "مجاني — مساعد Moonshot AI بنافذة سياق كبيرة",
+        docsUrl = "https://www.kimi.com",
+        defaultModel = "default",
+        shortName = "Kimi",
+        modelHint = "دردشة Kimi الرسمية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.kimi.com"
+    ),
+    ProviderInfo(
+        id = "meta_web",
+        label = "Meta AI (بدون مفتاح)",
+        tagline = "مجاني — مساعد Meta داخل المتصفح",
+        docsUrl = "https://www.meta.ai",
+        defaultModel = "default",
+        shortName = "Meta AI",
+        modelHint = "دردشة Meta AI الرسمية؛ قد تحتاج تسجيل دخول بحساب Meta.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.meta.ai"
+    ),
+    ProviderInfo(
+        id = "zai_web",
+        label = "Z.ai Chat (بدون مفتاح)",
+        tagline = "مجاني — نماذج GLM من Zhipu",
+        docsUrl = "https://chat.z.ai",
+        defaultModel = "default",
+        shortName = "Z.ai",
+        modelHint = "دردشة Z.ai الرسمية بنماذج GLM؛ قد تحتاج تسجيل دخول.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://chat.z.ai"
+    ),
+    ProviderInfo(
+        id = "pi_web",
+        label = "Pi (بدون مفتاح)",
+        tagline = "مجاني — مساعد محادثة ودود من Inflection",
+        docsUrl = "https://pi.ai",
+        defaultModel = "default",
+        shortName = "Pi",
+        modelHint = "دردشة Pi الرسمية؛ مناسبة للحوار والكتابة والتلخيص.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://pi.ai"
+    ),
+    ProviderInfo(
+        id = "you_web",
+        label = "You.com (بدون مفتاح)",
+        tagline = "مجاني محدود — بحث ومساعد ذكي",
+        docsUrl = "https://you.com",
+        defaultModel = "default",
+        shortName = "You.com",
+        modelHint = "بحث ومساعد ذكي؛ مجاني مع حدود استخدام.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://you.com"
+    ),
+    ProviderInfo(
+        id = "phind_web",
+        label = "Phind (بدون مفتاح)",
+        tagline = "مجاني — مساعد برمجة وبحث تقني",
+        docsUrl = "https://www.phind.com",
+        defaultModel = "default",
+        shortName = "Phind",
+        modelHint = "مخصص للبرمجة والأسئلة التقنية؛ مجاني مع حدود.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.phind.com"
+    ),
+    ProviderInfo(
+        id = "aistudio_web",
+        label = "Google AI Studio (بدون مفتاح)",
+        tagline = "مجاني — تجربة نماذج Gemini مباشرة",
+        docsUrl = "https://aistudio.google.com",
+        defaultModel = "default",
+        shortName = "AI Studio",
+        modelHint = "واجهة Google AI Studio الرسمية؛ تحتاج تسجيل دخول بحساب جوجل.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://aistudio.google.com"
+    ),
+    ProviderInfo(
+        id = "blackbox_web",
+        label = "Blackbox AI (بدون مفتاح)",
+        tagline = "مجاني — مساعد برمجة وأكواد",
+        docsUrl = "https://www.blackbox.ai",
+        defaultModel = "default",
+        shortName = "Blackbox",
+        modelHint = "مساعد برمجة؛ مجاني مع حدود استخدام.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.blackbox.ai"
+    ),
+
     // ===== مزودو API (تحتاج مفتاحاً في الإعدادات) =====
     ProviderInfo(
         id = "gemini",
@@ -315,6 +421,80 @@ val PROVIDERS = listOf(
         free = false,
         shortName = "Claude",
         models = listOf("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
+    ),
+
+    ProviderInfo(
+        id = "kilo",
+        label = "Kilo Gateway (مجاني)",
+        tagline = "بوابة OpenAI-compatible — موديلات :free بدون مفتاح",
+        docsUrl = "https://kilo.ai/docs/gateway",
+        defaultModel = "kilo-auto/free",
+        shortName = "Kilo",
+        endpoint = "https://ai-gateway.kilo.ai/api/v1/chat/completions",
+        modelHint = "موديلات :free تعمل بدون مفتاح (حد 200 طلب/ساعة لكل IP)، وبالمفتاح ترتفع الحدود وتتاح موديلات أكثر.",
+        models = listOf("kilo-auto/free", "minimax/minimax-m2.7:free", "z-ai/glm-5:free"),
+        keyless = true
+    ),
+    ProviderInfo(
+        id = "llm7",
+        label = "LLM7.io (مجاني)",
+        tagline = "بدون مفتاح — OpenAI-compatible مع موديلات متعددة",
+        docsUrl = "https://docs.llm7.io",
+        defaultModel = "default",
+        shortName = "LLM7",
+        endpoint = "https://api.llm7.io/v1/chat/completions",
+        modelHint = "«default» أو «fast» يعملان مجاناً بدون مفتاح. الموديلات المتقدمة تحتاج توكن.",
+        models = listOf("default", "fast", "DeepSeek-V4-Flash-0731"),
+        keyless = true
+    ),
+    ProviderInfo(
+        id = "nvidia",
+        label = "NVIDIA NIM",
+        tagline = "خطة تجريبية مجانية — موديلات Nemotron وGPT-OSS",
+        docsUrl = "https://build.nvidia.com",
+        defaultModel = "nvidia/nemotron-3-super-120b-a12b",
+        shortName = "NVIDIA",
+        endpoint = "https://integrate.api.nvidia.com/v1/chat/completions",
+        modelHint = "مفتاح مجاني من build.nvidia.com. الاستخدام التجريبي قد يُسجَّل لتحسين الخدمة.",
+        models = listOf(
+            "nvidia/nemotron-3-super-120b-a12b",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
+        )
+    ),
+    ProviderInfo(
+        id = "ollama",
+        label = "Ollama Cloud",
+        tagline = "سحابي — موديلات مفتوحة عبر مفتاح API",
+        docsUrl = "https://docs.ollama.com/cloud",
+        defaultModel = "gpt-oss:120b",
+        shortName = "Ollama",
+        endpoint = "https://ollama.com/v1/chat/completions",
+        modelHint = "أنشئ مفتاحاً من ollama.com ثم الصقه هنا. لا يحتاج تثبيت Ollama محلياً.",
+        models = listOf("gpt-oss:120b", "gpt-oss:20b", "deepseek-v4-flash")
+    ),
+    ProviderInfo(
+        id = "ovh",
+        label = "OVHcloud AI Endpoints",
+        tagline = "مجاني (بحدود) — موديلات مفتوحة مستضافة في أوروبا",
+        docsUrl = "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
+        defaultModel = "gpt-oss-120b",
+        shortName = "OVH",
+        endpoint = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
+        modelHint = "يعمل بدون مفتاح بحدود أعلى للتحكم، أو بمفتاح OVH لرفع الحدود.",
+        models = listOf("gpt-oss-120b", "gpt-oss-20b", "Qwen3.8-27B"),
+        keyless = true
+    ),
+    ProviderInfo(
+        id = "zai",
+        label = "Z AI (Zhipu)",
+        tagline = "خطة مجانية محدودة — نماذج GLM",
+        docsUrl = "https://docs.z.ai",
+        defaultModel = "glm-4.7-flash",
+        shortName = "Z AI",
+        endpoint = "https://api.z.ai/api/paas/v4/chat/completions",
+        modelHint = "مفتاح من z.ai. موديلات flash أرخص/أسرع، وvision للصور.",
+        models = listOf("glm-4.7-flash", "glm-4.6v-flash")
     ),
 
     // ===== استوديو الوسائط (صور/فيديو/صوت) — مواقع ويب بدون مفتاح =====
@@ -473,6 +653,84 @@ val PROVIDERS = listOf(
         keyless = true,
         webviewUrl = "https://ttsmaker.com",
         category = "audio"
+    ),
+    ProviderInfo(
+        id = "playground",
+        label = "Playground AI",
+        tagline = "مجاني محدود — توليد صور وتصميم",
+        docsUrl = "https://playground.com",
+        defaultModel = "default",
+        shortName = "Playground",
+        modelHint = "توليد وتحرير صور؛ حصة مجانية يومية.",
+        models = listOf("default"),
+        keyless = true,
+        category = "image",
+        webviewUrl = "https://playground.com"
+    ),
+    ProviderInfo(
+        id = "recraft",
+        label = "Recraft",
+        tagline = "مجاني محدود — صور ورسوم متجهة",
+        docsUrl = "https://www.recraft.ai",
+        defaultModel = "default",
+        shortName = "Recraft",
+        modelHint = "توليد صور وSVG؛ حصة مجانية محدودة.",
+        models = listOf("default"),
+        keyless = true,
+        category = "image",
+        webviewUrl = "https://www.recraft.ai"
+    ),
+    ProviderInfo(
+        id = "firefly",
+        label = "Adobe Firefly",
+        tagline = "مجاني محدود — توليد صور من Adobe",
+        docsUrl = "https://firefly.adobe.com",
+        defaultModel = "default",
+        shortName = "Firefly",
+        modelHint = "توليد صور رسمي من Adobe؛ يحتاج حساب Adobe.",
+        models = listOf("default"),
+        keyless = true,
+        category = "image",
+        webviewUrl = "https://firefly.adobe.com"
+    ),
+    ProviderInfo(
+        id = "pollinations",
+        label = "Pollinations",
+        tagline = "مجاني بالكامل — صور من النص بدون مفتاح",
+        docsUrl = "https://pollinations.ai",
+        defaultModel = "default",
+        shortName = "Pollinations",
+        modelHint = "توليد صور مجاني وسريع؛ لا يحتاج حساباً.",
+        models = listOf("default"),
+        keyless = true,
+        category = "image",
+        webviewUrl = "https://pollinations.ai"
+    ),
+    ProviderInfo(
+        id = "elevenlabs",
+        label = "ElevenLabs",
+        tagline = "مجاني محدود — تحويل النص إلى صوت",
+        docsUrl = "https://elevenlabs.io",
+        defaultModel = "default",
+        shortName = "ElevenLabs",
+        modelHint = "أصوات واقعية متعددة اللغات؛ حصة مجانية شهرية.",
+        models = listOf("default"),
+        keyless = true,
+        category = "audio",
+        webviewUrl = "https://elevenlabs.io"
+    ),
+    ProviderInfo(
+        id = "runway",
+        label = "Runway",
+        tagline = "مجاني محدود — فيديو وتحرير إبداعي",
+        docsUrl = "https://app.runwayml.com",
+        defaultModel = "default",
+        shortName = "Runway",
+        modelHint = "توليد فيديو وتحرير؛ يحتاج حساباً وحصة مجانية محدودة.",
+        models = listOf("default"),
+        keyless = true,
+        category = "video",
+        webviewUrl = "https://app.runwayml.com"
     )
 )
 

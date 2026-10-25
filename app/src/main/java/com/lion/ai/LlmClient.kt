@@ -22,12 +22,17 @@ object LlmClient {
         endpointOverrides = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
     }
 
-    private fun endpoint(provider: String, default: String): String =
-        endpointOverrides[provider]?.takeIf { it.startsWith("http") } ?: default
+    private fun endpoint(provider: String, default: String): String {
+        val custom = endpointOverrides[provider]?.trim().orEmpty()
+        val safe = custom.startsWith("https://") ||
+            custom.startsWith("http://localhost") ||
+            custom.startsWith("http://127.0.0.1")
+        return if (custom.isNotEmpty() && safe) custom else default
+    }
 
-    private const val USER_AGENT = "LionAI/1.3 (Android)"
-    private const val CONNECT_TIMEOUT = 20_000
-    private const val READ_TIMEOUT = 120_000
+    private const val USER_AGENT = "LionAI/1.6 (Android)"
+    private const val CONNECT_TIMEOUT = 10_000
+    private const val READ_TIMEOUT = 60_000
     private const val MAX_TOKENS = 2048
     private const val GEMINI_MAX_TOKENS = 8192
     private const val CLAUDE_MAX_TOKENS = 8192
@@ -62,7 +67,8 @@ object LlmClient {
 
     /** هل الموديل الحالي يقرأ الصور؟ (OpenRouter يعتمد على الموديل، وخطأ المزود يُعرض إن لم يدعمها) */
     fun supportsVision(provider: String, model: String): Boolean = when (provider) {
-        "gemini", "openai", "claude", "deepseek", "openrouter" -> true
+        "gemini", "openai", "claude", "deepseek", "openrouter",
+        "mistral", "cloudflare", "zai", "ollama", "together", "nvidia", "ovh" -> true
         "groq" -> (model.ifBlank { providerInfo("groq").defaultModel }).contains("llama-4")
         else -> false
     }
@@ -611,7 +617,12 @@ object LlmClient {
                 idsOf(json.optJSONArray("data"), "id")
             }
 
-            "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "ollama" -> {
+            "ollama" -> {
+                requireKey(apiKey)
+                idsOf(getJson("https://ollama.com/api/tags", bearer).optJSONArray("models"), "name")
+            }
+
+            "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "together" -> {
                 val info = providerInfo(provider)
                 if (!info.keyless) requireKey(apiKey)
                 val url = info.endpoint.removeSuffix("/chat/completions") + "/models"

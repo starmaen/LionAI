@@ -21,10 +21,14 @@ object ChatRepository {
     private const val KEY_META = "chats_meta_v2"
     const val DEFAULT_TITLE = "محادثة جديدة"
 
+    /** كاش في الذاكرة: يمنع فك تشفير/تحليل JSON كامل عند كل رسالة أو تبديل محادثة. */
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, List<Message>>()
+
     fun newId(): String = "chat_" + System.currentTimeMillis()
 
     fun load(prefs: SharedPreferences, id: String): List<Message> =
-        ChatStore.decode(prefs.getString("chat_$id", "") ?: "")
+        cache[id] ?: ChatStore.decode(prefs.getString("chat_$id", "") ?: "")
+            .also { if (it.isNotEmpty()) cache[id] = it }
 
     fun all(prefs: SharedPreferences): List<ChatMeta> =
         read(prefs).sortedByDescending { it.updatedAt }
@@ -33,7 +37,11 @@ object ChatRepository {
         read(prefs).firstOrNull { it.id == id }
 
     fun save(prefs: SharedPreferences, id: String, messages: List<Message>) {
-        if (messages.isEmpty()) return
+        if (messages.isEmpty()) {
+            cache.remove(id)
+            return
+        }
+        cache[id] = messages
         prefs.edit().putString("chat_$id", ChatStore.encode(messages)).apply()
         val list = read(prefs)
         val index = list.indexOfFirst { it.id == id }
@@ -87,6 +95,7 @@ object ChatRepository {
     }
 
     fun delete(prefs: SharedPreferences, id: String) {
+        cache.remove(id)
         val list = read(prefs).filter { it.id != id }
         val legacyIds = (prefs.getString("chat_ids", "") ?: "")
             .split(",")

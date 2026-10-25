@@ -30,6 +30,23 @@ object ImageIntent {
  * من المزودات المتاحة لديك (التي لها مفتاح أو لا تحتاج مفتاحاً)، ويجرّب البديل عند الفشل.
  */
 object SmartRouter {
+    /** صحة المزودات: عدد الإخفاقات المتتالية وزمن الاستجابة المتوسط (توازن + تجنّب المتعطل). */
+    private val failures = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val latencyMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    fun record(route: Route, success: Boolean, elapsedMs: Long) {
+        val key = route.provider
+        if (success) {
+            failures.remove(key)
+            val old = latencyMs[key]
+            latencyMs[key] = if (old == null) elapsedMs else (old * 3 + elapsedMs) / 4
+        } else {
+            failures[key] = (failures[key] ?: 0) + 1
+        }
+    }
+
+    fun latency(provider: String): Long = latencyMs[provider] ?: 0L
+
     private val CODE_WORDS = Regex(
         "(كود|برمج|سكربت|دال[ةه]|دوال|خطا برمجي|compile|exception|stack ?trace|\\bbug\\b|debug|function|" +
             "\\bclass\\b|\\bimport\\b|\\bdef\\b|\\bfun\\b|public static|select .* from|\\bnpm\\b|\\bpip\\b|gradle|\\bgit\\b|docker|" +
@@ -79,7 +96,9 @@ object SmartRouter {
             r("nvidia", "nvidia/nemotron-3-super-120b-a12b"), r("ollama", "gpt-oss:120b"), r("zai", "glm-4.7-flash"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
             r("cohere", "command-a-03-2025"), r("cloudflare", "@cf/openai/gpt-oss-120b"), r("opencode", "big-pickle"),
-            r("llm7", "default"), r("ovh", "gpt-oss-120b"), r("deepseek", "deepseek-flash"),
+            r("llm7", "default"), r("ovh", "gpt-oss-120b"),
+            r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("deepseek", "deepseek-flash"),
             r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna")
         )
         TaskKind.CODE -> listOf(
@@ -88,6 +107,7 @@ object SmartRouter {
             r("kilo", "poolside/laguna-s-2.1:free"), r("openrouter", "cohere/north-mini-code:free"),
             r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("cohere", "north-mini-code-1-0"), r("ollama", "deepseek-v4-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
+            r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("llm7", "default"), r("ovh", "gpt-oss-120b")
         )
         TaskKind.REASONING -> listOf(
@@ -96,20 +116,24 @@ object SmartRouter {
             r("nvidia", "nvidia/nemotron-3-super-120b-a12b"), r("zai", "glm-4.7-flash"),
             r("cloudflare", "@cf/openai/gpt-oss-120b"), r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"),
             r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"), r("llm7", "DeepSeek-V4-Flash-0731"),
-            r("cohere", "command-a-03-2025"), r("ovh", "gpt-oss-120b")
+            r("cohere", "command-a-03-2025"), r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("ovh", "gpt-oss-120b")
         )
         TaskKind.WRITING -> listOf(
             r("claude", "claude-sonnet-5-5"), r("gemini", "gemini-3.8-flash"), r("openai", "gpt-6-luna"),
             r("mistral", "mistral-medium-latest"), r("cohere", "command-a-03-2025"), r("groq", "openai/gpt-oss-120b"),
             r("ollama", "gpt-oss:120b"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("zai", "glm-4.7-flash"),
-            r("llm7", "default"), r("ovh", "gpt-oss-120b")
+            r("llm7", "default"), r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("ovh", "gpt-oss-120b")
         )
         TaskKind.VISION -> listOf(
             r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
             r("mistral", "mistral-small-latest"), r("zai", "glm-4.6v-flash"),
             r("openrouter", "google/gemma-4-31b-it:free"), r("kilo", "stepfun/step-3.7-flash:free"),
-            r("cloudflare", "@cf/meta/llama-4-scout-17b-16e-instruct"), r("ovh", "Qwen3.8-27B")
+            r("cloudflare", "@cf/meta/llama-4-scout-17b-16e-instruct"),
+            r("nvidia", "meta/llama-3.2-90b-vision-instruct"),
+            r("ovh", "Qwen3.8-27B")
         )
         TaskKind.IMAGE_EDIT -> listOf(
             r("gemini", "gemini-3.8-flash"), r("groq", "openai/gpt-oss-120b"), r("claude", "claude-haiku-5-5"),
@@ -131,12 +155,29 @@ object SmartRouter {
         return info.keyless || key.isNotEmpty()
     }
 
-    /** المسارات المتاحة فعلاً بالترتيب، موديل واحد لكل مزود، بحد أقصى 4 محاولات. */
-    fun plan(prefs: SharedPreferences, kind: TaskKind): List<Route> =
-        candidates(kind)
+    /**
+     * المسارات المتاحة فعلاً بالترتيب، موديل واحد لكل مزود، بحد أقصى 4 محاولات.
+     * يُبقي ترتيب التخصص كما هو، لكنه يؤخّر المزود الذي فشل مرتين متتاليتين
+     * حتى لا يستهلك كل المحاولات (توازن دون التضحية بالتخصص).
+     */
+    fun plan(prefs: SharedPreferences, kind: TaskKind): List<Route> {
+        val routes = candidates(kind)
             .filter { available(prefs, it.provider) }
             .distinctBy { it.provider }
-            .take(4)
+        val (healthy, failing) = routes.partition { (failures[it.provider] ?: 0) < 2 }
+        val ordered = (healthy + failing).toMutableList()
+        // توازن الاستجابة: إن كان الأفضل بطيئاً (>25ث) والثاني أسرع بوضوح، قدّم الثاني.
+        if (ordered.size >= 2) {
+            val first = latency(ordered[0].provider)
+            val second = latency(ordered[1].provider)
+            if (first > 25_000 && second > 0 && second <= 20_000) {
+                val tmp = ordered[0]
+                ordered[0] = ordered[1]
+                ordered[1] = tmp
+            }
+        }
+        return ordered.take(4)
+    }
 
     fun label(route: Route, kind: TaskKind?): String {
         val info = providerInfo(route.provider)

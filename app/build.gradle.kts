@@ -12,9 +12,10 @@ android {
         applicationId = "com.lion.ai"
         minSdk = 26
         targetSdk = 35
-        // يزداد رقم الإصدار تلقائياً مع كل بناء على GitHub فيُقبل التحديث فوق النسخة القديمة
-        versionCode = 100 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
-        versionName = "1.4.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        // رقم إصدار متزايد دائماً (حتى في البناء المحلي) حتى يُقبل التحديث فوق أي نسخة سابقة
+        // دون حذف التطبيق، فتبقى المفاتيح والمحادثات محفوظة.
+        versionCode = (System.currentTimeMillis() / 1000L).toInt()
+        versionName = "1.6.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
     }
 
     // توقيع ثابت واحد لكل النسخ: بدونه يولّد كل بناء مفتاحاً جديداً ويُجبرك على حذف التطبيق القديم

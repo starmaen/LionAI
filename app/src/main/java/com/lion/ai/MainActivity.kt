@@ -141,6 +141,20 @@ data class Message(
 
 data class Contact(val name: String, val number: String, val normalized: String? = null)
 
+/** نافذة سياق ذكية: آخر الرسائل ضمن ميزانية أحرف، فتقلّ مدة الطلب وحجمه بلا فقدان سياق مهم. */
+private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): List<ChatTurn> {
+    val picked = ArrayDeque<ChatTurn>()
+    var used = 0
+    for (m in messages.asReversed()) {
+        if (!m.isUser && LlmClient.isErrorReply(m.text)) continue
+        val turn = ChatTurn(if (m.isUser) "user" else "assistant", m.text)
+        if (picked.isNotEmpty() && used + turn.content.length > maxChars) break
+        used += turn.content.length
+        picked.addFirst(turn)
+    }
+    return picked.toList()
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -225,7 +239,14 @@ fun LionApp() {
     var selectedProvider by remember {
         mutableStateOf(prefs.getString("provider", "gemini") ?: "gemini")
     }
-    var tabs by remember { mutableStateOf(TabsStore.load(prefs)) }
+    var tabs by remember {
+        mutableStateOf(
+            TabsStore.load(prefs).map { tab ->
+                if (providerInfo(tab.provider).group == ProviderGroup.API) tab
+                else tab.copy(provider = "gemini", autoRoute = true)
+            }
+        )
+    }
     var activeTabId by remember { mutableStateOf(TabsStore.loadActive(prefs)) }
     val tabDrafts = remember { mutableStateMapOf<String, String>() }
     val tabAttachments = remember { mutableStateMapOf<String, Attachment?>() }
@@ -244,7 +265,7 @@ fun LionApp() {
                 id = TabsStore.newId(),
                 name = "محادثة 1",
                 chatId = currentChat,
-                provider = selectedProvider,
+                provider = if (providerInfo(selectedProvider).group == ProviderGroup.API) selectedProvider else "gemini",
                 autoRoute = autoRoute
             )
         )
@@ -269,7 +290,8 @@ fun LionApp() {
 
     fun syncActiveTab() {
         val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
-        val updated = tab.copy(provider = selectedProvider, autoRoute = autoRoute)
+        val provider = if (providerInfo(selectedProvider).group == ProviderGroup.API) selectedProvider else tab.provider
+        val updated = tab.copy(provider = provider, autoRoute = autoRoute)
         tabs = tabs.map { if (it.id == updated.id) updated else it }
         TabsStore.save(prefs, tabs)
     }
@@ -292,9 +314,10 @@ fun LionApp() {
         stashStateFor(activeTabId)
         activeTabId = tabId
         TabsStore.saveActive(prefs, tabId)
-        selectedProvider = tab.provider
+        val provider = if (providerInfo(tab.provider).group == ProviderGroup.API) tab.provider else "gemini"
+        selectedProvider = provider
         autoRoute = tab.autoRoute
-        prefs.edit().putString("provider", tab.provider).putBoolean("auto_route", tab.autoRoute).apply()
+        prefs.edit().putString("provider", provider).putBoolean("auto_route", tab.autoRoute).apply()
         messages = ChatRepository.load(prefs, tab.chatId)
         currentChat = tab.chatId
         restoreStateFor(tabId)
@@ -304,11 +327,12 @@ fun LionApp() {
     fun addTab() {
         if (tabs.size >= TabsStore.MAX_TABS) return
         val chatId = ChatRepository.newId()
+        val provider = if (providerInfo(selectedProvider).group == ProviderGroup.API) selectedProvider else "gemini"
         val tab = ChatTab(
             id = TabsStore.newId(),
-            name = if (autoRoute) "🧠 تلقائي" else providerInfo(selectedProvider).shortName,
+            name = if (autoRoute) "🧠 تلقائي" else providerInfo(provider).shortName,
             chatId = chatId,
-            provider = selectedProvider,
+            provider = provider,
             autoRoute = autoRoute
         )
         stashStateFor(activeTabId)
@@ -337,9 +361,10 @@ fun LionApp() {
             val target = tabs.getOrNull(index.coerceAtMost(tabs.size - 1)) ?: tabs.first()
             activeTabId = target.id
             TabsStore.saveActive(prefs, target.id)
-            selectedProvider = target.provider
+            val provider = if (providerInfo(target.provider).group == ProviderGroup.API) target.provider else "gemini"
+            selectedProvider = provider
             autoRoute = target.autoRoute
-            prefs.edit().putString("provider", target.provider).putBoolean("auto_route", target.autoRoute).apply()
+            prefs.edit().putString("provider", provider).putBoolean("auto_route", target.autoRoute).apply()
             messages = ChatRepository.load(prefs, target.chatId)
             currentChat = target.chatId
             restoreStateFor(target.id)
@@ -401,8 +426,23 @@ fun LionApp() {
 
     fun accountId(): String = prefs.getString("cf_account_id", "") ?: ""
 
-    fun manualRoute(): Route =
-        Route(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
+    fun manualRoute(): Route {
+        val selected = providerInfo(selectedProvider)
+        val selectedReady = selected.group == ProviderGroup.API &&
+            (selected.keyless || keyOf(selectedProvider).isNotBlank())
+        if (selectedReady) {
+            return Route(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
+        }
+        // لا نسمح بأن يعلق الوضع اليدوي على مزود ويب/وسائط أو مزود بلا مفتاح.
+        val fallback = PROVIDERS.firstOrNull {
+            it.group == ProviderGroup.API && (it.keyless || keyOf(it.id).isNotBlank())
+        }
+        return if (fallback != null) {
+            Route(fallback.id, prefs.getString("model_${fallback.id}", "") ?: "")
+        } else {
+            Route(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
+        }
+    }
 
     /** الوضع التلقائي: العقل المركزي يرتّب المسارات المتاحة. اليدوي: المزود الذي اخترته فقط. */
     fun planFor(kind: TaskKind): List<Route> =
@@ -780,16 +820,23 @@ fun LionApp() {
             var reply = ""
             var used: Route? = null
             val failed = mutableListOf<String>()
+            val deadline = System.currentTimeMillis() + 90_000
             for (route in plan) {
+                if (System.currentTimeMillis() > deadline) break
+                val started = System.currentTimeMillis()
                 val r = withContext(Dispatchers.IO) {
                     LlmClient.ask(prompt, keyOf(route.provider), route.provider, history, route.model, accountId(), image)
                 }
+                SmartRouter.record(route, !LlmClient.isErrorReply(r), System.currentTimeMillis() - started)
                 reply = r
                 if (!LlmClient.isErrorReply(r)) {
                     used = route
                     break
                 }
                 failed.add(providerInfo(route.provider).shortName)
+            }
+            if (reply.isBlank()) {
+                reply = "⚠️ انتهت المهلة قبل وصول رد. تحقق من الاتصال أو جرّب مزوداً آخر."
             }
             if (used == null && failed.size > 1) {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
@@ -850,10 +897,9 @@ fun LionApp() {
             prompt = "اشرح محتوى هذه الصورة بالتفصيل."
         }
 
-        // نستبعد رسائل الخطأ حتى لا تربك النموذج التالي، ويستمر الحوار كما هو حتى لو تبدّل النموذج
-        val history = messages
-            .filterNot { !it.isUser && LlmClient.isErrorReply(it.text) }
-            .map { ChatTurn(if (it.isUser) "user" else "assistant", it.text) }
+        // نستبعد رسائل الخطأ حتى لا تربك النموذج التالي، ونرسل آخر 12000 حرف فقط للسرعة
+        // مع الحفاظ على بداية الحوار الصحيحة (الرسالة الأولى من المستخدم).
+        val history = windowedHistory(messages)
 
         val chatId = currentChat
         messages = messages + Message(displayText, true)
@@ -1097,7 +1143,7 @@ fun LionApp() {
                         )
                     }
                 }
-                PROVIDERS.filter { it.webviewUrl == null }.forEach { info ->
+                PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->
                     val configured = (prefs.getString("model_${info.id}", "") ?: "")
                         .ifBlank { info.defaultModel }
                     Row(
@@ -1194,7 +1240,7 @@ fun LionApp() {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
-                PROVIDERS.filter { it.webviewUrl != null && it.category == "chat" }.forEach { info ->
+                PROVIDERS.filter { it.group == ProviderGroup.WEB }.forEach { info ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1540,7 +1586,7 @@ fun LionApp() {
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    itemsIndexed(messages) { index, message ->
+                    itemsIndexed(messages, key = { index, _ -> "$currentChat:$index" }) { index, message ->
                         Bubble(
                             message, context, tts, index,
                             onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) }
@@ -1819,18 +1865,22 @@ fun SettingsScreen(
     val uriHandler = LocalUriHandler.current
     val ctx = LocalContext.current
     var provider by remember {
-        mutableStateOf(prefs.getString("provider", "gemini") ?: "gemini")
+        mutableStateOf(
+            (prefs.getString("provider", "gemini") ?: "gemini").let {
+                if (providerInfo(it).group == ProviderGroup.API) it else "gemini"
+            }
+        )
     }
     val keys = remember {
         mutableStateMapOf<String, String>().apply {
-            PROVIDERS.forEach { info ->
+            PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->
                 put(info.id, prefs.getString("api_key_${info.id}", "") ?: "")
             }
         }
     }
     val models = remember {
         mutableStateMapOf<String, String>().apply {
-            PROVIDERS.forEach { info ->
+            PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->
                 put(info.id, prefs.getString("model_${info.id}", "") ?: "")
             }
         }
@@ -1845,12 +1895,16 @@ fun SettingsScreen(
     var modelMenuOpen by remember { mutableStateOf(false) }
     val endpoints = remember {
         mutableStateMapOf<String, String>().apply {
-            PROVIDERS.forEach { info -> put(info.id, prefs.getString("endpoint_" + info.id, "") ?: "") }
+            PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->
+                put(info.id, prefs.getString("endpoint_" + info.id, "") ?: "")
+            }
         }
     }
     val modelCache = remember {
         mutableStateMapOf<String, List<String>>().apply {
-            PROVIDERS.forEach { info -> put(info.id, ModelCatalog.cached(prefs, info.id)) }
+            PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->
+                put(info.id, ModelCatalog.cached(prefs, info.id))
+            }
         }
     }
     var confirmActions by remember { mutableStateOf(prefs.getBoolean("confirm_actions", true)) }
@@ -1932,27 +1986,70 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             Text("المزود:", color = Color.White, fontWeight = FontWeight.Bold)
-            PROVIDERS.forEach { info ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { provider = info.id }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = provider == info.id,
-                        onClick = { provider = info.id },
-                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            info.label + (if (info.free) "  🟢" else "  🔵"),
-                            color = Color.White
+            ProviderGroup.values().forEach { group ->
+                val groupProviders = PROVIDERS.filter { it.group == group }
+                if (groupProviders.isEmpty()) return@forEach
+                Text(
+                    "${group.icon} ${group.title}",
+                    color = Color(0xFFFFB800),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                )
+                groupProviders.forEach { info ->
+                    val isApi = info.group == ProviderGroup.API
+                    val openOrSelect: () -> Unit = {
+                        if (isApi) {
+                            provider = info.id
+                        } else {
+                            info.webviewUrl?.let { url ->
+                                runCatching {
+                                    ctx.startActivity(
+                                        Intent(ctx, ArenaActivity::class.java).putExtra("ARENA_URL", url)
+                                    )
+                                }
+                            }
+                            Unit
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { openOrSelect() }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isApi && provider == info.id,
+                            onClick = { openOrSelect() },
+                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
                         )
-                        Text(info.tagline, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                info.label + when {
+                                    !isApi -> "  " + if (info.group == ProviderGroup.MEDIA) "🎨" else "🌐"
+                                    info.free -> "  🟢"
+                                    else -> "  🔵"
+                                },
+                                color = Color.White
+                            )
+                            Text(
+                                if (isApi) info.tagline else info.tagline + " — يُفتح داخل التطبيق",
+                                color = Color(0xFFB0B0B0),
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
+            }
+
+            if (current.group != ProviderGroup.API) {
+                Text(
+                    "هذا مزود ويب/وسائط: يُفتح داخل التطبيق من هنا أو من زر 🌐، ولا يحتاج مفتاحاً.",
+                    color = Color(0xFF7CC47C),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
 
             Spacer(Modifier.height(16.dp))
