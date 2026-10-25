@@ -1270,198 +1270,50 @@ fun LionApp() {
                         onAdd = { addTab() }
                     )
                 }
-                LazyColumn(
-                    state = listState,
+                LionMessageList(
+                    messages = messages,
+                    currentChat = currentChat,
+                    loading = loadingChats[currentChat] == true,
+                    listState = listState,
+                    context = context,
+                    tts = tts,
+                    onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(messages, key = { index, _ -> "$currentChat:$index" }) { index, message ->
-                        Bubble(
-                            message, context, tts, index,
-                            onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) }
-                        )
-                    }
-                    if (loadingChats[currentChat] == true) {
-                        item {
-                            Text(
-                                "... يفكر",
-                                color = Color(0xFFB0B0B0),
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
-                    }
-                }
+                        .padding(12.dp)
+                )
 
-                val file = attachment
-                val image = imageAttachment
-                if (file != null || image != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            if (file != null) "📎 ${file.name}" else "🖼️ ${image?.name.orEmpty()}",
-                            color = Color(0xFFFFB800),
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            modifier = Modifier.weight(1f)
+                LionInputBar(
+                    attachment = attachment,
+                    imageAttachment = imageAttachment,
+                    input = input,
+                    onInputChange = { input = it },
+                    autoRoute = autoRoute,
+                    providerLabel = providerInfo(selectedProvider).shortName,
+                    sending = loadingChats[currentChat] == true,
+                    canSend = input.isNotBlank() || attachment != null || imageAttachment != null,
+                    onEditImage = { img ->
+                        editorImage = img
+                        showEditor = true
+                    },
+                    onClearAttachment = {
+                        attachment = null
+                        imageAttachment = null
+                    },
+                    onQuickPrompt = { input = it },
+                    onAttachFile = { fileLauncher.launch("*/*") },
+                    onAttachImage = {
+                        imageLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
-                        if (image != null) {
-                            TextButton(onClick = {
-                                editorImage = image
-                                showEditor = true
-                            }) {
-                                Text("✏️ تعديل", color = Color(0xFFFFB800), fontSize = 12.sp)
-                            }
-                        }
-                        IconButton(onClick = {
-                            attachment = null
-                            imageAttachment = null
-                        }) {
-                            Icon(Icons.Filled.Close, "إزالة المرفق", tint = Color(0xFFFF8C00))
-                        }
-                    }
-                    val quickPrompts = if (image != null) {
-                        listOf(
-                            "📝 صف الصورة" to "صف هذه الصورة بالتفصيل.",
-                            "🔤 استخرج النص" to "استخرج كل النص الظاهر في هذه الصورة كما هو.",
-                            "🌐 ترجم النص" to "استخرج النص الظاهر في الصورة ثم ترجمه إلى العربية.",
-                            "🔍 حلّل" to "حلّل هذه الصورة: العناصر والألوان والسياق وأي تفاصيل مهمة.",
-                            "💡 اقترح تحسيناً" to "كيف يمكن تحسين هذه الصورة أو التصميم؟ اقترح تعديلات عملية."
-                        )
-                    } else {
-                        listOf(
-                            "📄 لخّص" to "لخّص هذا الملف في نقاط واضحة.",
-                            "🔎 استخرج الأهم" to "استخرج أهم المعلومات والأرقام من هذا الملف.",
-                            "🌐 ترجم" to "ترجم محتوى هذا الملف إلى العربية.",
-                            "🛠 راجع" to "راجع هذا الملف وأخبرني بالأخطاء والتحسينات الممكنة."
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        quickPrompts.forEach { (label, prompt) ->
-                            TextButton(
-                                onClick = { input = prompt },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                            ) {
-                                Text(label, color = Color(0xFFB0B0B0), fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-
-                Surface(
-                    color = Color(0xFF161616),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
-                            .navigationBarsPadding()
-                    ) {
-                        OutlinedTextField(
-                            value = input,
-                            onValueChange = { input = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = {
-                                Text(
-                                    "اكتب رسالتك...",
-                                    color = Color(0xFF7A7A7A),
-                                    fontSize = 14.sp
-                                )
-                            },
-                            textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                            maxLines = 4,
-                            shape = RoundedCornerShape(18.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFFFFB800),
-                                unfocusedBorderColor = Color(0xFF2A2A2A),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = Color(0xFFFFB800)
-                            )
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            InputAction(Icons.Filled.AttachFile, "ملف") {
-                                fileLauncher.launch("*/*")
-                            }
-                            InputAction(Icons.Filled.Image, "صورة") {
-                                imageLauncher.launch(
-                                    PickVisualMediaRequest(
-                                        ActivityResultContracts.PickVisualMedia.ImageOnly
-                                    )
-                                )
-                            }
-                            InputAction(Icons.Filled.Mic, "صوت") { startVoice() }
-                            Spacer(Modifier.weight(1f))
-                            TextButton(
-                                onClick = { showModelSheet = true },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    if (autoRoute) "🧠 تلقائي" else providerInfo(selectedProvider).shortName,
-                                    color = Color(0xFFFFB800),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Icon(
-                                    Icons.Filled.ArrowDropDown,
-                                    "اختيار الموديل",
-                                    tint = Color(0xFFFFB800),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            IconButton(
-                                onClick = { showWebSheet = true },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Text("🌐", fontSize = 16.sp)
-                            }
-                            IconButton(
-                                onClick = { showMediaSheet = true },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Text("🎬", fontSize = 16.sp)
-                            }
-                            Spacer(Modifier.width(2.dp))
-                            FilledIconButton(
-                                onClick = { sendMessage() },
-                                enabled = loadingChats[currentChat] != true && (
-                                    input.isNotBlank() || attachment != null || imageAttachment != null
-                                ),
-                                modifier = Modifier.size(42.dp),
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = Color(0xFFFFB800),
-                                    contentColor = Color(0xFF0D0D0D),
-                                    disabledContainerColor = Color(0xFF3A3A3A),
-                                    disabledContentColor = Color(0xFF7A7A7A)
-                                )
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    "إرسال",
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                    },
+                    onVoice = { startVoice() },
+                    onChooseModel = { showModelSheet = true },
+                    onOpenWeb = { showWebSheet = true },
+                    onOpenMedia = { showMediaSheet = true },
+                    onSend = { sendMessage() }
+                )
             }
         }
     }
