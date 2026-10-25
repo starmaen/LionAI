@@ -50,6 +50,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachFile
@@ -203,7 +204,7 @@ fun LionApp() {
     var showArchive by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var input by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
+    val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
     var chatMetas by remember { mutableStateOf(listOf<ChatMeta>()) }
     var scheduledItems by remember { mutableStateOf(listOf<ScheduledItem>()) }
@@ -224,12 +225,38 @@ fun LionApp() {
     var selectedProvider by remember {
         mutableStateOf(prefs.getString("provider", "gemini") ?: "gemini")
     }
+    var tabs by remember { mutableStateOf(TabsStore.load(prefs)) }
+    var activeTabId by remember { mutableStateOf(TabsStore.loadActive(prefs)) }
+    val tabDrafts = remember { mutableStateMapOf<String, String>() }
+    val tabAttachments = remember { mutableStateMapOf<String, Attachment?>() }
+    val tabImages = remember { mutableStateMapOf<String, ImageAttachment?>() }
     var showModelSheet by remember { mutableStateOf(false) }
     val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showWebSheet by remember { mutableStateOf(false) }
     val webSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showMediaSheet by remember { mutableStateOf(false) }
     val mediaSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // علامات التبويب: نضمن وجود علامة نشطة واحدة على الأقل عند الإقلاع
+    if (tabs.isEmpty()) {
+        tabs = listOf(
+            ChatTab(
+                id = TabsStore.newId(),
+                name = "محادثة 1",
+                chatId = currentChat,
+                provider = selectedProvider,
+                autoRoute = autoRoute
+            )
+        )
+        activeTabId = tabs.first().id
+        TabsStore.save(prefs, tabs)
+        TabsStore.saveActive(prefs, activeTabId)
+    }
+    if (tabs.none { it.id == activeTabId }) {
+        activeTabId = tabs.first().id
+        TabsStore.saveActive(prefs, activeTabId)
+    }
+    val activeTab = tabs.first { it.id == activeTabId }
 
     fun refreshChats() {
         chatMetas = ChatRepository.all(prefs)
@@ -240,6 +267,97 @@ fun LionApp() {
         refreshChats()
     }
 
+    fun syncActiveTab() {
+        val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
+        val updated = tab.copy(provider = selectedProvider, autoRoute = autoRoute)
+        tabs = tabs.map { if (it.id == updated.id) updated else it }
+        TabsStore.save(prefs, tabs)
+    }
+
+    fun stashStateFor(tabId: String) {
+        tabDrafts[tabId] = input
+        tabAttachments[tabId] = attachment
+        tabImages[tabId] = imageAttachment
+    }
+
+    fun restoreStateFor(tabId: String) {
+        input = tabDrafts[tabId] ?: ""
+        attachment = tabAttachments[tabId]
+        imageAttachment = tabImages[tabId]
+    }
+
+    fun switchTab(tabId: String) {
+        if (tabId == activeTabId) return
+        val tab = tabs.firstOrNull { it.id == tabId } ?: return
+        stashStateFor(activeTabId)
+        activeTabId = tabId
+        TabsStore.saveActive(prefs, tabId)
+        selectedProvider = tab.provider
+        autoRoute = tab.autoRoute
+        prefs.edit().putString("provider", tab.provider).putBoolean("auto_route", tab.autoRoute).apply()
+        messages = ChatRepository.load(prefs, tab.chatId)
+        currentChat = tab.chatId
+        restoreStateFor(tabId)
+        prefs.edit().putString("last_chat", tab.chatId).apply()
+    }
+
+    fun addTab() {
+        if (tabs.size >= TabsStore.MAX_TABS) return
+        val chatId = ChatRepository.newId()
+        val tab = ChatTab(
+            id = TabsStore.newId(),
+            name = if (autoRoute) "🧠 تلقائي" else providerInfo(selectedProvider).shortName,
+            chatId = chatId,
+            provider = selectedProvider,
+            autoRoute = autoRoute
+        )
+        stashStateFor(activeTabId)
+        tabs = tabs + tab
+        activeTabId = tab.id
+        TabsStore.save(prefs, tabs)
+        TabsStore.saveActive(prefs, tab.id)
+        messages = emptyList()
+        currentChat = chatId
+        input = ""
+        attachment = null
+        imageAttachment = null
+        prefs.edit().putString("last_chat", chatId).apply()
+    }
+
+    fun closeTab(tabId: String) {
+        if (tabs.size <= 1) return
+        val index = tabs.indexOfFirst { it.id == tabId }
+        if (index < 0) return
+        tabs = tabs.filterNot { it.id == tabId }
+        tabDrafts.remove(tabId)
+        tabAttachments.remove(tabId)
+        tabImages.remove(tabId)
+        TabsStore.save(prefs, tabs)
+        if (activeTabId == tabId) {
+            val target = tabs.getOrNull(index.coerceAtMost(tabs.size - 1)) ?: tabs.first()
+            activeTabId = target.id
+            TabsStore.saveActive(prefs, target.id)
+            selectedProvider = target.provider
+            autoRoute = target.autoRoute
+            prefs.edit().putString("provider", target.provider).putBoolean("auto_route", target.autoRoute).apply()
+            messages = ChatRepository.load(prefs, target.chatId)
+            currentChat = target.chatId
+            restoreStateFor(target.id)
+            prefs.edit().putString("last_chat", target.chatId).apply()
+        }
+    }
+
+    fun detachChatFromTabs(chatId: String) {
+        if (tabs.none { it.chatId == chatId }) return
+        if (tabs.all { it.chatId == chatId }) {
+            // كل العلامات كانت على هذه المحادثة: نربطها بالمحادثة الحالية الجديدة
+            tabs = tabs.map { it.copy(chatId = currentChat) }
+            TabsStore.save(prefs, tabs)
+        } else {
+            tabs.filter { it.chatId == chatId }.forEach { closeTab(it.id) }
+        }
+    }
+
     fun openChat(id: String) {
         messages = ChatRepository.load(prefs, id)
         currentChat = id
@@ -247,6 +365,11 @@ fun LionApp() {
         attachment = null
         imageAttachment = null
         prefs.edit().putString("last_chat", id).apply()
+        val tab = tabs.firstOrNull { it.id == activeTabId }
+        if (tab != null && tab.chatId != id) {
+            tabs = tabs.map { if (it.id == tab.id) it.copy(chatId = id) else it }
+            TabsStore.save(prefs, tabs)
+        }
     }
 
     fun startNewChat() {
@@ -257,6 +380,11 @@ fun LionApp() {
         attachment = null
         imageAttachment = null
         prefs.edit().putString("last_chat", id).apply()
+        val tab = tabs.firstOrNull { it.id == activeTabId }
+        if (tab != null && tab.chatId != id) {
+            tabs = tabs.map { if (it.id == tab.id) it.copy(chatId = id) else it }
+            TabsStore.save(prefs, tabs)
+        }
     }
 
     fun appendToChat(chatId: String, message: Message) {
@@ -418,7 +546,7 @@ fun LionApp() {
         LlmClient.reloadOverrides(prefs)
         refreshChats()
         scheduledItems = Scheduler.list(prefs)
-        openChat(currentChat)
+        openChat(activeTab.chatId)
 
         val permissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
@@ -647,7 +775,7 @@ fun LionApp() {
     ) {
         val plan = planFor(kind)
         val auto = autoRoute
-        loading = true
+        loadingChats[chatId] = true
         scope.launch {
             var reply = ""
             var used: Route? = null
@@ -668,7 +796,7 @@ fun LionApp() {
             }
             val via = used?.let { SmartRouter.label(it, if (auto) kind else null) }
             appendToChat(chatId, Message(reply, false, ytUrl, ytmUrl, anghamiUrl, browserUrl, via = via))
-            loading = false
+            loadingChats[chatId] = false
             if (autoSpeak && chatId == currentChat) {
                 tts?.speak(reply.take(500), TextToSpeech.QUEUE_FLUSH, null, null)
             }
@@ -681,7 +809,7 @@ fun LionApp() {
     }
 
     fun sendMessage() {
-        if (loading) return
+        if (loadingChats[currentChat] == true) return
         val text = input.trim()
         val file = attachment
         val image = imageAttachment
@@ -779,7 +907,7 @@ fun LionApp() {
         }
 
         if (file == null && image == null && ActionDetector.looksLikeCommand(text)) {
-            loading = true
+            loadingChats[chatId] = true
             scope.launch {
                 val route = planFor(TaskKind.GENERAL).first()
                 if (contacts.isEmpty() && hasPermission(Manifest.permission.READ_CONTACTS)) {
@@ -788,7 +916,7 @@ fun LionApp() {
                 val parsed = withContext(Dispatchers.IO) {
                     ActionResolver.resolve(text, keyOf(route.provider), route.provider, route.model, accountId())
                 }
-                loading = false
+                loadingChats[chatId] = false
                 if (parsed != null) {
                     handleAction(chatId, parsed)
                 } else {
@@ -882,12 +1010,14 @@ fun LionApp() {
                 LlmClient.reloadOverrides(prefs)
                 autoRoute = prefs.getBoolean("auto_route", true)
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+                syncActiveTab()
             },
             onSave = {
                 showSettings = false
                 LlmClient.reloadOverrides(prefs)
                 autoRoute = prefs.getBoolean("auto_route", true)
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+                syncActiveTab()
             }
         )
         return
@@ -943,6 +1073,7 @@ fun LionApp() {
                             prefs.edit().putBoolean("auto_route", true).apply()
                             autoRoute = true
                             showModelSheet = false
+                            syncActiveTab()
                         }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -953,6 +1084,7 @@ fun LionApp() {
                             prefs.edit().putBoolean("auto_route", true).apply()
                             autoRoute = true
                             showModelSheet = false
+                            syncActiveTab()
                         },
                         colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
                     )
@@ -983,6 +1115,7 @@ fun LionApp() {
                                     prefs.edit().putBoolean("auto_route", false).apply()
                                     autoRoute = false
                                     showModelSheet = false
+                                    syncActiveTab()
                                 }
                             }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -1002,6 +1135,7 @@ fun LionApp() {
                                     prefs.edit().putBoolean("auto_route", false).apply()
                                     autoRoute = false
                                     showModelSheet = false
+                                    syncActiveTab()
                                 }
                             },
                             colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
@@ -1147,8 +1281,8 @@ fun LionApp() {
         }
     }
 
-    LaunchedEffect(messages.size, loading) {
-        val count = messages.size + if (loading) 1 else 0
+    LaunchedEffect(messages.size, loadingChats[currentChat]) {
+        val count = messages.size + if (loadingChats[currentChat] == true) 1 else 0
         if (count > 0) listState.animateScrollToItem(count - 1)
     }
 
@@ -1197,6 +1331,7 @@ fun LionApp() {
                 TextButton(onClick = {
                     ChatRepository.delete(prefs, deleting.id)
                     if (currentChat == deleting.id) startNewChat()
+                    detachChatFromTabs(deleting.id)
                     refreshChats()
                     deleteTarget = null
                 }) { Text("حذف", color = Color(0xFFE94560)) }
@@ -1367,6 +1502,9 @@ fun LionApp() {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { addTab() }) {
+                            Icon(Icons.Filled.Add, "علامة تبويب جديدة", tint = Color(0xFFFFB800))
+                        }
                         IconButton(onClick = { tts?.stop() }) {
                             Icon(Icons.Filled.VolumeOff, "إيقاف القراءة", tint = Color(0xFFFFB800))
                         }
@@ -1385,6 +1523,15 @@ fun LionApp() {
                     .background(Color(0xFF0D0D0D))
                     .imePadding()
             ) {
+                if (tabs.size > 1) {
+                    TabsBar(
+                        tabs = tabs,
+                        activeTabId = activeTabId,
+                        onSelect = { switchTab(it) },
+                        onClose = { closeTab(it) },
+                        onAdd = { addTab() }
+                    )
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -1399,7 +1546,7 @@ fun LionApp() {
                             onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) }
                         )
                     }
-                    if (loading) {
+                    if (loadingChats[currentChat] == true) {
                         item {
                             Text(
                                 "... يفكر",
@@ -1557,7 +1704,7 @@ fun LionApp() {
                             Spacer(Modifier.width(2.dp))
                             FilledIconButton(
                                 onClick = { sendMessage() },
-                                enabled = !loading && (
+                                enabled = loadingChats[currentChat] != true && (
                                     input.isNotBlank() || attachment != null || imageAttachment != null
                                 ),
                                 modifier = Modifier.size(42.dp),
