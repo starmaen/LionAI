@@ -21,6 +21,39 @@ data class ToolCall(val name: String, val args: JSONObject, val raw: String)
 
 data class ToolResult(val name: String, val output: String, val ok: Boolean)
 
+data class ToolAuditEntry(
+    val at: Long,
+    val name: String,
+    val ok: Boolean,
+    val summary: String
+)
+
+/** سجل مختصر لآخر عمليات الأدوات لعرضه في شاشة أدوات المطوّر. */
+object ToolAudit {
+    private const val LIMIT = 60
+    private val entries = ArrayDeque<ToolAuditEntry>()
+
+    fun add(name: String, ok: Boolean, output: String) {
+        synchronized(entries) {
+            entries.addFirst(
+                ToolAuditEntry(
+                    System.currentTimeMillis(),
+                    name,
+                    ok,
+                    output.replace(Regex("\\s+"), " ").trim().take(220)
+                )
+            )
+            while (entries.size > LIMIT) entries.removeLast()
+        }
+    }
+
+    fun recent(limit: Int = 20): List<ToolAuditEntry> = synchronized(entries) {
+        entries.take(limit.coerceIn(1, LIMIT))
+    }
+
+    fun clear() = synchronized(entries) { entries.clear() }
+}
+
 class ToolContext(
     val context: Context,
     val prefs: SharedPreferences,
@@ -89,6 +122,12 @@ object AiTools {
         Def("file_zip_read", ToolGroup.FILES, """{"path":"project.zip","entry":"README.md"}""", "قراءة مدخل من ZIP"),
         Def("file_zip_create", ToolGroup.FILES, """{"target":"project.zip","sources":["src","README.md"]}""", "إنشاء ZIP", true),
         Def("file_unzip", ToolGroup.FILES, """{"path":"project.zip","target":"project","overwrite":false}""", "فك ضغط ZIP داخل مساحة العمل", true),
+        Def("file_append", ToolGroup.FILES, """{"path":"notes.txt","content":"..."}""", "إضافة نص إلى نهاية ملف", true),
+        Def("file_move", ToolGroup.FILES, """{"from":"old.txt","to":"new.txt","overwrite":false}""", "نقل/إعادة تسمية ملف أو مجلد", true),
+        Def("file_copy", ToolGroup.FILES, """{"from":"a.kt","to":"b.kt","overwrite":false}""", "نسخ ملف أو مجلد", true),
+        Def("file_tree", ToolGroup.FILES, """{"path":"","max_files":300}""", "شجرة ملفات المشروع كاملة", ),
+        Def("file_checksum", ToolGroup.FILES, """{"path":"app.apk","algorithm":"sha256"}""", "بصمة MD5/SHA1/SHA256 لملف"),
+        Def("file_diff", ToolGroup.FILES, """{"first":"old.kt","second":"new.kt"}""", "مقارنة ملفين وإظهار الفروق"),
 
         // Database
         Def("db_list", ToolGroup.DATABASE, "{}", "قواعد SQLite الموجودة"),
@@ -102,6 +141,8 @@ object AiTools {
         Def("code_analyze", ToolGroup.CODE, """{"name":"Main.kt","code":"..."}""", "تحليل كود نصي: مقاييس/تعقيد/TODO/اعتماديات"),
         Def("code_analyze_file", ToolGroup.CODE, """{"path":"src/Main.kt"}""", "تحليل ملف من مساحة العمل"),
         Def("code_project_analyze", ToolGroup.CODE, """{"path":"","max_files":80}""", "تحليل مشروع كامل في مساحة العمل"),
+        Def("code_patch", ToolGroup.CODE, """{"path":"Main.kt","find":"...","replace":"...","all":false}""", "تعديل دقيق: استبدال نص داخل ملف (مع نسخة احتياطية)", true),
+        Def("code_review", ToolGroup.CODE, """{"path":"","max_files":30}""", "مراجعة آلية سريعة للمشروع واكتشاف المخاطر"),
 
         // Utilities
         Def("util_json", ToolGroup.UTIL, """{"text":"{...}","indent":2}""", "تنسيق/التحقق من JSON"),
@@ -111,9 +152,17 @@ object AiTools {
         Def("util_regex", ToolGroup.UTIL, """{"pattern":"\\\\d+","text":"...","ignore_case":false}""", "اختبار تعبير نمطي"),
         Def("util_uuid", ToolGroup.UTIL, "{}", "UUID جديد"),
         Def("util_timestamp", ToolGroup.UTIL, "{}", "الوقت الحالي Unix/ISO"),
+        Def("util_jwt", ToolGroup.UTIL, """{"token":"..."}""", "فك JWT وقراءة الحقول والانتهاء (بدون تحقق)"),
+        Def("util_cron", ToolGroup.UTIL, """{"cron":"0 9 * * *"}""", "شرح تعبير Cron وتوقع التنفيذ القادم"),
+        Def("util_diff", ToolGroup.UTIL, """{"first":"...","second":"..."}""", "مقارنة نصين وإظهار الفروق"),
+        Def("util_csv", ToolGroup.UTIL, """{"text":"a,b\n1,2","query":"SELECT * LIMIT 10"}""", "تحليل CSV واستعلام بسيط"),
+        Def("util_slug", ToolGroup.UTIL, """{"text":"..."}""", "إنشاء slug آمن من نص"),
+        Def("util_color", ToolGroup.UTIL, """{"color":"#FFB800"}""", "تحويل لون HEX إلى RGB/HSL"),
+        Def("util_regex_replace", ToolGroup.UTIL, """{"pattern":"\\d+","text":"a1b2","replacement":"#","ignore_case":false}""", "استبدال بتعبير نمطي"),
 
         // Connectors
         Def("connectors_status", ToolGroup.CONNECTORS, "{}", "حالة الموصلات والحسابات المربوطة"),
+        Def("connectors_test", ToolGroup.CONNECTORS, "{}", "اختبار فعلي لصلاحية كل الموصلات المربوطة"),
         Def("drive_search", ToolGroup.CONNECTORS, """{"query":"تقرير","max":10}""", "بحث في ملفات Google Drive", connector = "google_drive"),
         Def("drive_open", ToolGroup.CONNECTORS, """{"url_or_id":"https://drive.google.com/drive/folders/...","max_chars":12000}""", "فتح رابط/معرّف ملف أو مجلد Drive وعرض محتواه", connector = "google_drive"),
         Def("drive_list", ToolGroup.CONNECTORS, """{"max":50,"folder_id":""}""", "أحدث ملفات Drive أو محتويات مجلد", connector = "google_drive"),
@@ -126,11 +175,22 @@ object AiTools {
         Def("drive_rename", ToolGroup.CONNECTORS, """{"file_id":"...","name":"الاسم الجديد"}""", "إعادة تسمية ملف", true, "google_drive"),
         Def("drive_copy", ToolGroup.CONNECTORS, """{"file_id":"...","name":"نسخة","folder_id":""}""", "نسخ ملف", true, "google_drive"),
         Def("drive_trash", ToolGroup.CONNECTORS, """{"file_id":"...","permanent":false}""", "نقل ملف إلى السلة أو حذفه نهائياً", true, "google_drive"),
+        Def("drive_meta", ToolGroup.CONNECTORS, """{"file_id":"..."}""", "بيانات ملف Drive والمالك والصلاحيات", connector = "google_drive"),
         Def("gmail_search", ToolGroup.CONNECTORS, """{"query":"from:someone","max":10}""", "بحث في Gmail", connector = "gmail"),
-        Def("gmail_read", ToolGroup.CONNECTORS, """{"message_id":"...","max_chars":12000}""", "قراءة رسالة بريد كاملة", connector = "gmail"),
-        Def("gmail_send", ToolGroup.CONNECTORS, """{"to":"a@b.com","subject":"...","body":"...","cc":"","bcc":"","html":false}""", "إرسال بريد إلكتروني", true, "gmail"),
-        Def("calendar_list", ToolGroup.CONNECTORS, """{"days":7,"max":20}""", "المواعيد القادمة", connector = "google_calendar"),
-        Def("calendar_create", ToolGroup.CONNECTORS, """{"summary":"اجتماع","start":"2026-10-27T10:00:00+03:00","end":"","description":"","location":"","timezone":"Asia/Riyadh"}""", "إنشاء موعد", true, "google_calendar"),
+        Def("gmail_read", ToolGroup.CONNECTORS, """{"message_id":"...","max_chars":12000}""", "قراءة رسالة بريد كاملة مع قائمة المرفقات", connector = "gmail"),
+        Def("gmail_send", ToolGroup.CONNECTORS, """{"to":"a@b.com","subject":"...","body":"...","cc":"","bcc":"","html":false,"from":"","attachments":["downloads/a.pdf"],"thread_id":"","in_reply_to":""}""", "إرسال بريد إلكتروني (يدعم المرفقات والرد على محادثة)", true, "gmail"),
+        Def("gmail_draft", ToolGroup.CONNECTORS, """{"to":"a@b.com","subject":"...","body":"...","cc":"","bcc":"","html":false,"from":"","attachments":[]}""", "حفظ رسالة كمسودة بدل إرسالها", true, "gmail"),
+        Def("gmail_labels", ToolGroup.CONNECTORS, "{}", "تسميات Gmail ومعرّفاتها", connector = "gmail"),
+        Def("gmail_modify", ToolGroup.CONNECTORS, """{"message_id":"...","add":["UNREAD"],"remove":["INBOX"]}""", "تعديل تسميات رسالة (قراءة/أرشفة/نجمة)", true, "gmail"),
+        Def("gmail_trash", ToolGroup.CONNECTORS, """{"message_id":"...","permanent":false}""", "نقل رسالة إلى المهملات أو حذفها نهائياً", true, "gmail"),
+        Def("gmail_attachment", ToolGroup.CONNECTORS, """{"message_id":"...","attachment_id":"...","name":"file.pdf"}""", "تنزيل مرفق Gmail إلى مساحة العمل", true, "gmail"),
+        Def("gmail_profile", ToolGroup.CONNECTORS, "{}", "بيانات حساب Gmail وإحصاءات الرسائل", connector = "gmail"),
+        Def("calendar_list", ToolGroup.CONNECTORS, """{"days":7,"max":20,"calendar_id":"primary"}""", "المواعيد القادمة", connector = "google_calendar"),
+        Def("calendar_calendars", ToolGroup.CONNECTORS, "{}", "قائمة التقاويم ومعرّفاتها", connector = "google_calendar"),
+        Def("calendar_create", ToolGroup.CONNECTORS, """{"summary":"اجتماع","start":"2026-10-27T10:00:00+03:00","end":"","description":"","location":"","timezone":"Asia/Riyadh","attendees":["a@b.com"],"calendar_id":"primary"}""", "إنشاء موعد", true, "google_calendar"),
+        Def("calendar_update", ToolGroup.CONNECTORS, """{"event_id":"...","summary":"","start":"","end":"","description":"","location":"","timezone":"","calendar_id":"primary"}""", "تعديل موعد موجود", true, "google_calendar"),
+        Def("calendar_delete", ToolGroup.CONNECTORS, """{"event_id":"...","calendar_id":"primary"}""", "حذف موعد", true, "google_calendar"),
+        Def("calendar_quick_add", ToolGroup.CONNECTORS, """{"text":"اجتماع غداً الساعة 10"}""", "إنشاء موعد بلغة طبيعية", true, "google_calendar"),
         Def("notion_search", ToolGroup.CONNECTORS, """{"query":"...","max":10}""", "بحث في Notion", connector = "notion"),
         Def("notion_read", ToolGroup.CONNECTORS, """{"page_id":"...","max_chars":12000}""", "قراءة صفحة Notion", connector = "notion"),
         Def("notion_create", ToolGroup.CONNECTORS, """{"parent_page":"...","title":"...","content":"..."}""", "إنشاء صفحة Notion", true, "notion"),
@@ -145,7 +205,8 @@ object AiTools {
     private val byName = defs.associateBy { it.name }
 
     private val MARKER = Regex("\\[\\[TOOL\\]\\](.*?)\\[\\[/TOOL\\]\\]", RegexOption.DOT_MATCHES_ALL)
-    private val FENCE = Regex("```(?:tool|json|ai-tool)\\s*(\\{.*?\\})\\s*```", RegexOption.DOT_MATCHES_ALL)
+    private val TOOL_TAG = Regex("<tool_call>(.*?)</tool_call>", RegexOption.DOT_MATCHES_ALL)
+    private val FENCE = Regex("```(?:tool|json|ai-tool)?\\s*(\\{.*?\\})\\s*```", RegexOption.DOT_MATCHES_ALL)
 
     fun token(prefs: SharedPreferences): String =
         (prefs.getString("github_token", "") ?: "").trim()
@@ -174,7 +235,8 @@ object AiTools {
         val files = Regex(
             "(\\.zip\\b|\\.csv\\b|\\.json\\b|\\.ya?ml\\b|\\.xml\\b|\\.txt\\b|\\.kt\\b|\\.java\\b|\\.py\\b|\\.js\\b|" +
                 "ملف|ملفات|مجلد|مشروع|مساحة العمل|workspace|zip|أرشيف|ارشيف|csv|yaml|xml|احفظ|أحفظ|اكتب ملف|أنشئ ملف|انشئ ملف|اقرأ ملف|قراءة ملف|" +
-                "ابحث في الملفات|ابحث في المشروع|بحث في الملفات|بحث في الكود|grep|فك الضغط|فك ضغط|استخرج الملفات|استخراج الملفات)"
+                "ابحث في الملفات|ابحث في المشروع|بحث في الملفات|بحث في الكود|grep|فك الضغط|فك ضغط|استخرج الملفات|استخراج الملفات|" +
+                "شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين)"
         )
         if (files.containsMatchIn(t)) groups.add(ToolGroup.FILES)
         val db = Regex("(sql|sqlite|database|قاعدة بيانات|قواعد بيانات|جدول بيانات|استعلام|جدول|قاعدة|db\\b)")
@@ -187,14 +249,18 @@ object AiTools {
                 "android|kotlin|python|javascript|typescript|flutter|gradle|تطبيق|تطبيقات|مشروع برمجي|تعديل التطبيق|تطوير)"
         )
         if (code.containsMatchIn(t)) groups.add(ToolGroup.CODE)
-        val util = Regex("(base64|hash|sha256|sha1|md5|uuid|timestamp|regex|تعبير نمطي|json|url encode|url decode|تنسيق نص)")
+        val util = Regex(
+            "(base64|hash|sha256|sha1|md5|uuid|timestamp|regex|تعبير نمطي|json|url encode|url decode|تنسيق نص|" +
+                "jwt|cron|diff|قارن|مقارنة|csv|slug|لون|color|استبدال|regex replace)"
+        )
         if (util.containsMatchIn(t)) groups.add(ToolGroup.UTIL)
         val connectors = Regex(
             "(google drive|drive|gmail|email|e-mail|mail|calendar|notion|slack|connector|webhook|" +
-                "درايف|جوجل درايف|بريد|بريد إلكتروني|بريد الكتروني|ايميل|إيميل|جيميل|" +
-                "تقويم|مواعيد|calendar|اجتماع|نوشن|نوتيون|سلاك|موصل|موصلات|خدمة خارجية|تكامل|ربط حساب)"
+                "درايف|جوجل درايف|بريد|بريد إلكتروني|بريد الكتروني|ايميل|إيميل|جيميل|بريدي|رسائلي|" +
+                "تقويم|مواعيد|calendar|اجتماع|نوشن|نوتيون|سلاك|موصل|موصلات|خدمة خارجية|تكامل|ربط حساب|" +
+                "docs\\.google\\.com|drive\\.google\\.com|mail\\.google\\.com|calendar\\.google\\.com)"
         )
-        if (connectors.containsMatchIn(t)) {
+        if (connectors.containsMatchIn(t) || Connectors.extractDriveId(text) != null) {
             groups.add(ToolGroup.CONNECTORS)
         }
         return groups
@@ -242,6 +308,15 @@ object AiTools {
         builder.append("لا تكتب أو تحذف أو تدفع إلى GitHub، ولا ترسل بريداً أو رسالة Slack، ولا ترفع إلى Drive، ولا تنشئ مواعيد أو صفحات، إلا إذا طلب المستخدم ذلك صراحة. ")
         builder.append("إذا أرسل المستخدم رابط Google Drive أو معرّف ملف/مجلد، استخدم drive_open مباشرة بدلاً من drive_search. ")
         builder.append("بعد انتهاء الأدوات أجب بالعربية بملخص واضح وخطوات ما فعلته.\n")
+        if (ToolGroup.CONNECTORS in groups) {
+            val connected = ConnectorAuth.all.filter { ConnectorAuth.isConnected(prefs, it.id) }
+            if (connected.isEmpty()) {
+                builder.append("ملاحظة: لا يوجد أي موصل مربوط حالياً. أخبر المستخدم بلطف أن يفتح «الموصلات» ويربط Google Drive أو Gmail أو التقويم، ثم تابع إن أمكن ببقية الأدوات. لا تدّعِ الوصول إلى بياناته.\n")
+            } else {
+                builder.append("الموصلات المربوطة: ").append(connected.joinToString("، ") { it.name })
+                    .append(". استخدمها عند الحاجة إلى بيانات حقيقية بدل التخمين.\n")
+            }
+        }
         ToolGroup.values().filter { it in groups }.forEach { group ->
             builder.append("\n[").append(group.icon).append(' ').append(group.label).append("]\n")
             available.filter { it.group == group }.forEach { def ->
@@ -255,15 +330,38 @@ object AiTools {
 
     fun parseCalls(text: String): List<ToolCall> {
         val found = mutableListOf<ToolCall>()
-        val blocks = MARKER.findAll(text).map { it.groupValues[1] }.toMutableList()
+        val blocks = mutableListOf<String>()
+        MARKER.findAll(text).forEach { blocks.add(it.groupValues[1]) }
+        TOOL_TAG.findAll(text).forEach { blocks.add(it.groupValues[1]) }
+        FENCE.findAll(text).forEach { blocks.add(it.groupValues[1]) }
         if (blocks.isEmpty()) {
-            FENCE.findAll(text).forEach { match -> blocks.add(match.groupValues[1]) }
+            // بعض النماذج ترسل JSON عارياً بلا سياج.
+            val start = text.indexOf('{')
+            val end = text.lastIndexOf('}')
+            if (start >= 0 && end > start) blocks.add(text.substring(start, end + 1))
         }
         blocks.forEach { raw ->
-            val json = runCatching { JSONObject(raw.trim()) }.getOrNull() ?: return@forEach
-            val name = json.optString("tool").ifBlank { json.optString("name") }
-            val args = json.optJSONObject("args") ?: json.optJSONObject("arguments") ?: JSONObject()
-            if (byName.containsKey(name)) found.add(ToolCall(name, args, raw))
+            val trimmed = raw.trim()
+            val candidates = mutableListOf<JSONObject>()
+            runCatching { JSONObject(trimmed) }.getOrNull()?.let { candidates.add(it) }
+            runCatching { org.json.JSONArray(trimmed) }.getOrNull()?.let { array ->
+                for (i in 0 until array.length()) array.optJSONObject(i)?.let { candidates.add(it) }
+            }
+            if (candidates.isEmpty()) return@forEach
+            candidates.forEach { json ->
+                val name = json.optString("tool").ifBlank { json.optString("name") }
+                    .ifBlank { json.optJSONObject("function")?.optString("name").orEmpty() }
+                val rawArgs = json.opt("args") ?: json.opt("arguments")
+                    ?: json.optJSONObject("function")?.opt("arguments")
+                val args = when (rawArgs) {
+                    is JSONObject -> rawArgs
+                    is String -> runCatching { JSONObject(rawArgs) }.getOrDefault(JSONObject())
+                    else -> JSONObject()
+                }
+                if (byName.containsKey(name) && found.none { it.name == name && it.args.toString() == args.toString() }) {
+                    found.add(ToolCall(name, args, trimmed))
+                }
+            }
         }
         return found
     }
@@ -273,7 +371,7 @@ object AiTools {
         if (def.write && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
         }
-        return try {
+        val result = try {
             val output = run(ctx, call.name, call.args)
             ToolResult(call.name, output.take(16_000), true)
         } catch (e: GitHubException) {
@@ -281,6 +379,8 @@ object AiTools {
         } catch (e: Exception) {
             ToolResult(call.name, "❌ ${e.message ?: e.javaClass.simpleName}", false)
         }
+        ToolAudit.add(call.name, result.ok, result.output)
+        return result
     }
 
     private fun repoOf(ctx: ToolContext, args: JSONObject): Pair<String, String> {
@@ -567,6 +667,14 @@ object AiTools {
                 }
                 "الموصلات:\n$list"
             }
+            "connectors_test" -> {
+                val connected = ConnectorAuth.all.filter { ConnectorAuth.isConnected(ctx.prefs, it.id) }
+                if (connected.isEmpty()) "لا توجد موصلات مربوطة بعد. افتح شاشة الموصلات واربط حساباً."
+                else connected.joinToString("\n") { def ->
+                    runCatching { ConnectorAuth.test(ctx.prefs, def.id) }
+                        .getOrElse { "❌ ${def.name}: ${it.message ?: it.javaClass.simpleName}" }
+                }
+            }
             "drive_search" -> {
                 val query = args.optString("query").ifBlank { args.optString("q") }.trim()
                 val id = Connectors.extractDriveId(query)
@@ -584,7 +692,7 @@ object AiTools {
             )
             "drive_read" -> Connectors.driveRead(ctx, req(args, "file_id"), int(args, "max_chars", 12_000))
             "drive_download" -> Connectors.driveDownload(
-                ctx, req(args, "file_id"), args.optString("name")
+                ctx, req(args, "file_id"), args.optString("name"), args.optString("export_mime")
             )
             "drive_upload" -> Connectors.driveUpload(
                 ctx, req(args, "name"), args.optString("path"), args.optString("content"),
@@ -601,6 +709,7 @@ object AiTools {
             "drive_trash" -> Connectors.driveTrash(
                 ctx, req(args, "file_id"), args.optBoolean("permanent", false)
             )
+            "drive_meta" -> Connectors.driveMeta(ctx, req(args, "file_id"))
             "drive_update" -> Connectors.driveUpdate(
                 ctx, req(args, "file_id"), args.optString("content"),
                 args.optString("path"), args.optString("mime")
@@ -610,13 +719,46 @@ object AiTools {
             "gmail_send" -> Connectors.gmailSend(
                 ctx, req(args, "to"), args.optString("subject", "(بدون موضوع)"),
                 req(args, "body"), args.optString("cc"), args.optString("bcc"),
-                args.optBoolean("html", false)
+                args.optBoolean("html", false), args.optString("from"),
+                stringList(args.optJSONArray("attachments")), args.optString("thread_id"),
+                args.optString("in_reply_to")
             )
-            "calendar_list" -> Connectors.calendarList(ctx, int(args, "days", 7), int(args, "max", 20))
+            "gmail_draft" -> Connectors.gmailDraft(
+                ctx, req(args, "to"), args.optString("subject", "(بدون موضوع)"),
+                req(args, "body"), args.optString("cc"), args.optString("bcc"),
+                args.optBoolean("html", false), args.optString("from"),
+                stringList(args.optJSONArray("attachments"))
+            )
+            "gmail_labels" -> Connectors.gmailLabels(ctx)
+            "gmail_modify" -> Connectors.gmailModify(
+                ctx, req(args, "message_id"),
+                stringList(args.optJSONArray("add")), stringList(args.optJSONArray("remove"))
+            )
+            "gmail_trash" -> Connectors.gmailTrash(
+                ctx, req(args, "message_id"), args.optBoolean("permanent", false)
+            )
+            "gmail_attachment" -> Connectors.gmailAttachment(
+                ctx, req(args, "message_id"), req(args, "attachment_id"), args.optString("name")
+            )
+            "gmail_profile" -> Connectors.gmailProfile(ctx)
+            "calendar_list" -> Connectors.calendarList(
+                ctx, int(args, "days", 7), int(args, "max", 20), args.optString("calendar_id", "primary")
+            )
+            "calendar_calendars" -> Connectors.calendarCalendars(ctx)
             "calendar_create" -> Connectors.calendarCreate(
                 ctx, req(args, "summary"), req(args, "start"), args.optString("end"),
-                args.optString("description"), args.optString("location"), args.optString("timezone")
+                args.optString("description"), args.optString("location"), args.optString("timezone"),
+                stringList(args.optJSONArray("attendees")), args.optString("calendar_id", "primary")
             )
+            "calendar_update" -> Connectors.calendarUpdate(
+                ctx, req(args, "event_id"), args.optString("summary"), args.optString("start"),
+                args.optString("end"), args.optString("description"), args.optString("location"),
+                args.optString("timezone"), args.optString("calendar_id", "primary")
+            )
+            "calendar_delete" -> Connectors.calendarDelete(
+                ctx, req(args, "event_id"), args.optString("calendar_id", "primary")
+            )
+            "calendar_quick_add" -> Connectors.calendarQuickAdd(ctx, req(args, "text"))
             "notion_search" -> Connectors.notionSearch(ctx, args.optString("query"), int(args, "max", 10))
             "notion_read" -> Connectors.notionRead(ctx, req(args, "page_id"), int(args, "max_chars", 12_000))
             "notion_create" -> Connectors.notionCreate(
@@ -734,6 +876,35 @@ object AiTools {
                 )
                 "✅ استُخرج $count ملفاً"
             }
+            "file_append" -> {
+                val entry = FileTools.append(ctx.context, req(args, "path"), args.optString("content"))
+                "✅ أُضيف إلى ${entry.path} (${entry.size} بايت)"
+            }
+            "file_move" -> {
+                val entry = FileTools.move(
+                    ctx.context, req(args, "from"), req(args, "to"), args.optBoolean("overwrite", false)
+                )
+                "✅ نُقل إلى ${entry.path}"
+            }
+            "file_copy" -> {
+                val entry = FileTools.copy(
+                    ctx.context, req(args, "from"), req(args, "to"), args.optBoolean("overwrite", false)
+                )
+                "✅ نُسخ إلى ${entry.path}"
+            }
+            "file_tree" -> {
+                val entries = FileTools.walk(ctx.context, args.optString("path"), int(args, "max_files", 300).coerceIn(1, 5000))
+                if (entries.isEmpty()) "المجلد فارغ."
+                else entries.joinToString("\n") { (if (it.directory) "📁 " else "📄 ") + it.path + if (!it.directory) " (${it.size})" else "" }
+            }
+            "file_checksum" -> {
+                val path = req(args, "path")
+                val value = FileTools.checksum(ctx.context, path, args.optString("algorithm", "sha256"))
+                "🔐 ${args.optString("algorithm", "sha256").uppercase()} $path\n$value"
+            }
+            "file_diff" -> FileTools.diff(
+                ctx.context, req(args, "first"), req(args, "second")
+            ).take(16_000)
 
             "db_list" -> DatabaseTools.list(ctx.context).joinToString("\n") { "• $it" }.ifBlank { "لا توجد قواعد بيانات." }
             "db_schema" -> DatabaseTools.schema(ctx.context, req(args, "db"))
@@ -762,6 +933,36 @@ object AiTools {
                 val path = req(args, "path")
                 val info = FileTools.read(ctx.context, path)
                 if (info.binary) "الملف ثنائي" else CodeAnalyzer.report(CodeAnalyzer.analyze(path, info.text))
+            }
+            "code_patch" -> {
+                val path = req(args, "path")
+                val find = req(args, "find")
+                val replace = args.optString("replace")
+                val info = FileTools.read(ctx.context, path, maxBytes = 4_000_000)
+                if (info.binary) throw IllegalArgumentException("الملف ثنائي ولا يمكن تعديله نصياً")
+                val occurrences = Regex.escape(find).let { Regex(it) }.findAll(info.text).count()
+                if (occurrences == 0) throw IllegalArgumentException("لم أجد النص المطلوب في $path")
+                val updated = if (args.optBoolean("all", false)) info.text.replace(find, replace)
+                else info.text.replaceFirst(find, replace)
+                runCatching {
+                    FileTools.write(ctx.context, ".lion-backup/" + path.replace('/', '_') + ".bak", info.text)
+                }
+                FileTools.write(ctx.context, path, updated)
+                "✅ عُدّل $path ($occurrences موضع) — احتُفظ بنسخة احتياطية"
+            }
+            "code_review" -> {
+                val entries = FileTools.walk(ctx.context, args.optString("path"), int(args, "max_files", 30).coerceIn(1, 100))
+                val files = entries.asSequence()
+                    .filter { CodeAnalyzer.languageFor(it.path) != "غير معروف" }
+                    .mapNotNull { entry ->
+                        runCatching {
+                            val info = FileTools.read(ctx.context, entry.path)
+                            if (info.binary) null else entry.path to info.text
+                        }.getOrNull()
+                    }
+                    .toList()
+                if (files.isEmpty()) "لا ملفات كود للمراجعة."
+                else CodeAnalyzer.projectReport(files) + "\n\n🔎 راجع أيضاً: الأسرار المكشوفة، الاعتماديات غير المثبتة، وعدم معالجة الأخطاء."
             }
             "code_project_analyze" -> {
                 val root = FileTools.walk(ctx.context, args.optString("path"), maxFiles = 1500)
@@ -826,8 +1027,49 @@ object AiTools {
                 val now = System.currentTimeMillis()
                 "Unix ms: $now\nUnix s: ${now / 1000}\nISO: ${java.time.Instant.ofEpochMilli(now)}"
             }
+            "util_jwt" -> {
+                val token = req(args, "token").removePrefix("Bearer ").trim()
+                val parts = token.split('.')
+                if (parts.size < 2) throw IllegalArgumentException("JWT غير صالح")
+                fun decode(part: String): String = String(
+                    java.util.Base64.getUrlDecoder().decode(part + "=".repeat((4 - part.length % 4) % 4)),
+                    Charsets.UTF_8
+                )
+                val header = decode(parts[0])
+                val payload = decode(parts[1])
+                val exp = runCatching { JSONObject(payload).optLong("exp", 0L) }.getOrDefault(0L)
+                val expiry = if (exp > 0) java.time.Instant.ofEpochSecond(exp).toString() else "غير محدد"
+                "Header:\n$header\n\nPayload:\n$payload\n\nExpiry: $expiry"
+            }
+            "util_cron" -> {
+                val cron = req(args, "cron").trim().split(Regex("\\s+"))
+                if (cron.size != 5) throw IllegalArgumentException("Cron يجب أن يكون 5 حقول")
+                val next = com.lion.ai.UtilTools.nextCron(cron)
+                "التعبير: ${cron.joinToString(" ")}\n" + com.lion.ai.UtilTools.describeCron(cron) +
+                    if (next != null) "\nأقرب تنفيذ (تقريبي): $next" else ""
+            }
+            "util_diff" -> com.lion.ai.UtilTools.diffText(req(args, "first"), req(args, "second")).take(16_000)
+            "util_csv" -> com.lion.ai.UtilTools.csv(req(args, "text"), args.optString("query"))
+            "util_slug" -> req(args, "text")
+                .lowercase()
+                .replace(Regex("[^\\p{L}\\p{N}]+"), "-")
+                .trim('-')
+                .take(80)
+                .ifBlank { "item" }
+            "util_color" -> com.lion.ai.UtilTools.color(req(args, "color"))
+            "util_regex_replace" -> {
+                val options = if (args.optBoolean("ignore_case", false)) setOf(RegexOption.IGNORE_CASE) else emptySet()
+                Regex(req(args, "pattern"), options)
+                    .replace(req(args, "text"), args.optString("replacement"))
+                    .take(16_000)
+            }
             else -> "❌ أداة غير معروفة: $name"
         }
+    }
+
+    private fun stringList(array: org.json.JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { array.optString(it).trim().takeIf { value -> value.isNotBlank() } }
     }
 
     private fun task(args: JSONObject, key: String): String =

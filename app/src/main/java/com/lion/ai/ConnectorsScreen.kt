@@ -43,7 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -63,6 +65,7 @@ fun ConnectorsScreen(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var version by remember { mutableStateOf(0) }
     var busyId by remember { mutableStateOf("") }
@@ -134,12 +137,32 @@ fun ConnectorsScreen(
             item {
                 SectionCard(title = "🔑 إعداد Google OAuth", subtitle = "مطلوب مرة واحدة لربط Drive وGmail وCalendar") {
                     Text(
-                        "أنشئ OAuth Client من نوع Desktop app في Google Cloud Console، وفعّل Drive API وGmail API وCalendar API، " +
-                            "ثم ألصق Client ID وSecret هنا. التطبيق يستخدم PKCE مع redirect محلي (127.0.0.1) آمن. " +
-                            "أضف بريدك كـ Test user في شاشة OAuth consent screen إن كان التطبيق غير منشور.",
+                        "الطريقة المضمونة: أنشئ OAuth Client من نوع Desktop app في Google Cloud Console، وفعّل Drive API وGmail API وCalendar API، " +
+                            "ثم ألصق Client ID وSecret هنا. التطبيق يستخدم PKCE مع redirect محلي ثابت (127.0.0.1) — لا يحتاج تسجيل رابط لنوع Desktop.",
                         color = Color(0xFF9C9C9C),
                         fontSize = 11.sp
                     )
+                    Text(
+                        "إن أنشأت العميل من نوع Web application، أضف هذا الرابط حرفياً في Authorized redirect URIs:",
+                        color = Color(0xFF9C9C9C),
+                        fontSize = 11.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            ConnectorAuth.defaultRedirectUri,
+                            color = Color(0xFF7CD992),
+                            fontSize = 11.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = {
+                            clipboard.setText(AnnotatedString(ConnectorAuth.defaultRedirectUri))
+                            message = "✅ نُسخ رابط إعادة التوجيه"
+                        }) { Text("نسخ", color = Color(0xFFFFB800), fontSize = 11.sp) }
+                    }
                     OutlinedTextField(
                         value = googleId,
                         onValueChange = { googleId = it },
@@ -159,7 +182,8 @@ fun ConnectorsScreen(
                         Button(
                             onClick = {
                                 ConnectorAuth.saveGoogleClient(prefs, googleId, googleSecret)
-                                message = "✅ حُفظ إعداد Google"
+                                message = "✅ حُفظ إعداد Google — اضغط «ربط الحساب» أسفل"
+                                version++
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
                         ) { Text("حفظ الإعداد", color = Color(0xFF0D0D0D)) }
@@ -172,6 +196,9 @@ fun ConnectorsScreen(
                         TextButton(onClick = {
                             runCatching { uriHandler.openUri("https://console.cloud.google.com/apis/library") }
                         }) { Text("تفعيل الـ APIs", color = Color(0xFFFFB800), fontSize = 11.sp) }
+                        TextButton(onClick = {
+                            runCatching { uriHandler.openUri("https://console.cloud.google.com/apis/credentials/consent") }
+                        }) { Text("شاشة الموافقة", color = Color(0xFFFFB800), fontSize = 11.sp) }
                     }
                     TextButton(onClick = { showGoogleGuide = !showGoogleGuide }) {
                         Text(
@@ -188,8 +215,10 @@ fun ConnectorsScreen(
                                 "4) في Data access أضف الصلاحيات: drive وgmail.modify وgmail.send وcalendar (حسب ما تريد).\n" +
                                 "5) APIs & Services ← Credentials ← Create Credentials ← OAuth client ID ← Application type: Desktop app ← Create.\n" +
                                 "6) انسخ Client ID وClient secret والصقهما هنا ثم اضغط حفظ الإعداد، ثم اضغط ربط الحساب.\n" +
-                                "لا تحتاج إلى إضافة Redirect URI يدوياً؛ التطبيق يستخدم 127.0.0.1 مؤقتاً.\n" +
-                                "إن ظهرت رسالة أن التطبيق غير موثّق، اضغط Advanced ثم المتابعة، أو أضف حسابك كـ Test user.",
+                                "لا تحتاج إلى إضافة Redirect URI يدوياً لنوع Desktop؛ التطبيق يستخدم 127.0.0.1 بمنفذ ثابت " +
+                                "(${ConnectorAuth.DEFAULT_REDIRECT_PORT}).\n" +
+                                "إن ظهرت رسالة أن التطبيق غير موثّق، اضغط Advanced ثم المتابعة، أو أضف حسابك كـ Test user.\n" +
+                                "ملاحظة مهمة: في وضع Testing تنتهي صلاحية ربط الحساب بعد 7 أيام؛ لنشر التطبيق اضغط Publish app.",
                             color = Color(0xFFD0D0D0),
                             fontSize = 11.sp
                         )
@@ -211,10 +240,17 @@ fun ConnectorsScreen(
                                 ConnectorAuth.connect(context, prefs, def.id)
                             }
                         },
+                        onTest = {
+                            run(def.id) { ConnectorAuth.test(prefs, def.id) }
+                        },
                         onDisconnect = {
-                            ConnectorAuth.disconnect(prefs, def.id)
-                            version++
-                            message = "تم فصل ${def.name}"
+                            scope.launch {
+                                busyId = def.id
+                                ConnectorAuth.revoke(prefs, def.id)
+                                busyId = ""
+                                version++
+                                message = "تم فصل ${def.name}"
+                            }
                         }
                     )
                 }
@@ -316,6 +352,7 @@ private fun ConnectorRow(
     busy: Boolean,
     anyBusy: Boolean,
     onConnect: () -> Unit,
+    onTest: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     val tick = version
@@ -336,7 +373,10 @@ private fun ConnectorRow(
             if (busy) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color(0xFFFFB800), strokeWidth = 2.dp)
             } else if (connected) {
-                OutlinedButton(onClick = onDisconnect, enabled = !anyBusy) { Text("فصل", color = Color(0xFFFF8A8A)) }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedButton(onClick = onTest, enabled = !anyBusy) { Text("اختبار", color = Color(0xFF7CD992)) }
+                    OutlinedButton(onClick = onDisconnect, enabled = !anyBusy) { Text("فصل", color = Color(0xFFFF8A8A)) }
+                }
             } else {
                 Button(
                     onClick = onConnect,
@@ -351,6 +391,17 @@ private fun ConnectorRow(
                 color = Color(0xFFFFB800),
                 fontSize = 11.sp
             )
+        }
+        if (connected) {
+            val expiry = ConnectorAuth.expiresAt(prefs, def.id)
+            if (expiry > 0 && def.auth == AuthType.GOOGLE) {
+                val minutes = ((expiry - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0)
+                Text(
+                    if (minutes > 0) "الوصول صالح ~$minutes دقيقة (يتجدد تلقائياً)" else "يتجدد الوصول تلقائياً عند الاستخدام",
+                    color = Color(0xFF858585),
+                    fontSize = 10.sp
+                )
+            }
         }
     }
 }

@@ -99,6 +99,7 @@ fun DevToolsScreen(
                 "db" -> DatabaseToolTab(context)
                 "code" -> CodeToolTab(context)
                 "manager" -> ToolManagerTab(prefs, onOpenGitHub, onOpenSettings)
+                "audit" -> ToolAuditTab()
             }
         }
     }
@@ -123,6 +124,7 @@ private fun ToolsHome(
             ToolCard("🔍", "محلل الكود", "مقاييس، دوال، كلاسات، Imports، تعقيد، TODO/FIXME، وملاحظات") { onTab("code") }
             ToolCard("🚀", "Git Push", "إنشاء/تعديل الملفات وإنشاء الفروع وPRs من شاشة GitHub") { onOpenGitHub() }
             ToolCard("🧠", "مدير الأدوات", "حالة Function Calling، صلاحيات الكتابة، وربط الأدوات بالمحادثة") { onTab("manager") }
+            ToolCard("📜", "سجل الأدوات", "آخر ما نفّذه الذكاء الاصطناعي من أدوات ونتائجها") { onTab("audit") }
             ToolCard("⚙️", "إعدادات الذكاء", "التوكن، المستودع الافتراضي، تشغيل الأدوات والكتابة") { onOpenSettings() }
         }
     }
@@ -569,6 +571,48 @@ private fun CodeToolTab(context: Context) {
         ) { Text("🔍 تحليل", color = T_DARK) }
         Spacer(Modifier.height(8.dp))
         if (report.isNotBlank()) Text(report.take(60_000), color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+    }
+}
+
+@Composable
+private fun ToolAuditTab() {
+    var version by remember { mutableStateOf(0) }
+    val entries = remember(version) { ToolAudit.recent(40) }
+    val formatter = remember { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()) }
+    LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("سجل تنفيذ الأدوات", color = T_GOLD, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = { ToolAudit.clear(); version++ }) { Text("مسح", color = T_RED) }
+                TextButton(onClick = { version++ }) { Text("تحديث", color = T_GOLD) }
+            }
+            Text("يعرض آخر 40 عملية. السجل محلي فقط.", color = T_MUTED, fontSize = 11.sp)
+            Spacer(Modifier.height(8.dp))
+        }
+        if (entries.isEmpty()) {
+            item { Text("لا توجد عمليات بعد. استخدم المحادثة أو الأدوات لتظهر هنا.", color = T_MUTED, fontSize = 13.sp) }
+        }
+        items(entries.size) { index ->
+            val entry = entries[index]
+            Card(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = T_CARD)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (entry.ok) "✅" else "❌", fontSize = 14.sp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(entry.name, color = if (entry.ok) T_GREEN else T_RED, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Spacer(Modifier.weight(1f))
+                        Text(formatter.format(java.util.Date(entry.at)), color = T_MUTED, fontSize = 10.sp)
+                    }
+                    if (entry.summary.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(entry.summary, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+        }
     }
 }
 

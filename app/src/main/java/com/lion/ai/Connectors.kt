@@ -23,6 +23,7 @@ object Connectors {
     private const val CALENDAR = "https://www.googleapis.com/calendar/v3"
     private const val NOTION = "https://api.notion.com/v1"
     private const val SLACK = "https://slack.com/api"
+    private const val ALL_DRIVES = "supportsAllDrives=true&includeItemsFromAllDrives=true"
 
     data class Response(val code: Int, val body: String, val contentType: String)
 
@@ -30,7 +31,17 @@ object Connectors {
 
     private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
-    private fun quote(value: String): String = value.replace("\\", "\\\\").replace("'", "\\'")
+    private fun url(base: String, vararg params: Pair<String, String>): String {
+        val query = params
+            .filter { it.second.isNotBlank() }
+            .joinToString("&") { enc(it.first) + "=" + enc(it.second) }
+        if (query.isBlank()) return base
+        return base + (if (base.contains('?')) "&" else "?") + query
+    }
+
+    private fun quote(value: String): String = value
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
 
     private fun safeUrl(raw: String): URL {
         val url = URL(raw)
@@ -138,21 +149,36 @@ object Connectors {
 
     fun extractDriveId(raw: String): String? {
         val text = raw.trim()
-        val fromUrl = Regex("""(?:/folders/|/file/d/|[?&]id=)([A-Za-z0-9_-]{10,})""").find(text)?.groupValues?.get(1)
-        if (!fromUrl.isNullOrBlank()) return fromUrl
+        val path = Regex(
+            """/(?:folders|file/d|document/d|spreadsheets/d|presentation/d|forms/d|drawings/d|d)/([A-Za-z0-9_-]{10,})"""
+        ).find(text)?.groupValues?.get(1)
+        if (!path.isNullOrBlank()) return path
+        val query = Regex("""[?&]id=([A-Za-z0-9_-]{10,})""").find(text)?.groupValues?.get(1)
+        if (!query.isNullOrBlank()) return query
         return text.takeIf { it.matches(Regex("[A-Za-z0-9_-]{20,}")) }
     }
 
     suspend fun driveOpen(ctx: ToolContext, raw: String, maxChars: Int): String {
         val id = extractDriveId(raw) ?: return driveSearch(ctx, raw, 10)
         val metaRes = ensureOk(
-            google(ctx, "google_drive", "GET", "$DRIVE/files/$id?fields=id,name,mimeType,size,parents,webViewLink"),
+            google(
+                ctx, "google_drive", "GET",
+                url(
+                    "$DRIVE/files/$id",
+                    "fields" to "id,name,mimeType,size,parents,webViewLink,shortcutDetails",
+                    "supportsAllDrives" to "true"
+                )
+            ),
             "Drive"
         )
         val meta = JSONObject(metaRes.body)
         val mime = meta.optString("mimeType")
         val name = meta.optString("name")
         val link = meta.optString("webViewLink")
+        if (mime == "application/vnd.google-apps.shortcut") {
+            val target = meta.optJSONObject("shortcutDetails")?.optString("targetId").orEmpty()
+            if (target.isNotBlank()) return "🔗 اختصار إلى ملف آخر:\n\n" + driveOpen(ctx, target, maxChars)
+        }
         if (mime.startsWith("application/vnd.google-apps.folder")) {
             val listing = driveList(ctx, 100, id)
             return "📁 $name\n$link\n\n$listing"
@@ -163,17 +189,23 @@ object Connectors {
     suspend fun driveMove(ctx: ToolContext, fileId: String, folderId: String, name: String): String {
         val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
         val dest = extractDriveId(folderId) ?: throw IllegalArgumentException("معرّف المجلد غير صالح")
-        val meta = ensureOk(google(ctx, "google_drive", "GET", "$DRIVE/files/$id?fields=id,name,parents"), "Drive")
+        val meta = ensureOk(
+            google(ctx, "google_drive", "GET", url("$DRIVE/files/$id", "fields" to "id,name,parents", "supportsAllDrives" to "true")),
+            "Drive"
+        )
         val parents = JSONObject(meta.body).optJSONArray("parents") ?: JSONArray()
         val remove = (0 until parents.length()).mapNotNull { parents.optString(it).takeIf { p -> p.isNotBlank() } }
             .joinToString(",")
-        val url = buildString {
-            append("$DRIVE/files/$id?addParents=$dest&fields=id,name,parents,webViewLink")
-            if (remove.isNotBlank()) append("&removeParents=").append(enc(remove))
-        }
+        val target = url(
+            "$DRIVE/files/$id",
+            "addParents" to dest,
+            "removeParents" to remove,
+            "fields" to "id,name,parents,webViewLink",
+            "supportsAllDrives" to "true"
+        )
         val payload = JSONObject()
         if (name.isNotBlank()) payload.put("name", name)
-        ensureOk(google(ctx, "google_drive", "PATCH", url, payload.toString()), "Drive")
+        ensureOk(google(ctx, "google_drive", "PATCH", target, payload.toString()), "Drive")
         return "✅ نُقل الملف إلى المجلد المحدد${if (name.isNotBlank()) " باسم $name" else ""}"
     }
 
@@ -181,7 +213,14 @@ object Connectors {
         val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
         if (name.isBlank()) throw IllegalArgumentException("الاسم الجديد مطلوب")
         val payload = JSONObject().put("name", name)
-        ensureOk(google(ctx, "google_drive", "PATCH", "$DRIVE/files/$id?fields=id,name", payload.toString()), "Drive")
+        ensureOk(
+            google(
+                ctx, "google_drive", "PATCH",
+                url("$DRIVE/files/$id", "fields" to "id,name", "supportsAllDrives" to "true"),
+                payload.toString()
+            ),
+            "Drive"
+        )
         return "✅ أُعيدت تسمية الملف إلى $name"
     }
 
@@ -192,7 +231,15 @@ object Connectors {
         val dest = extractDriveId(folderId)
         if (dest != null) payload.put("parents", JSONArray().put(dest))
         val res = ensureOk(
-            google(ctx, "google_drive", "POST", "$DRIVE/files/$id/copy?fields=id,name,webViewLink", payload.toString()),
+            google(
+                ctx, "google_drive", "POST",
+                url(
+                    "$DRIVE/files/$id/copy",
+                    "fields" to "id,name,webViewLink",
+                    "supportsAllDrives" to "true"
+                ),
+                payload.toString()
+            ),
             "Drive"
         )
         val json = JSONObject(res.body)
@@ -202,17 +249,30 @@ object Connectors {
     suspend fun driveTrash(ctx: ToolContext, fileId: String, permanent: Boolean): String {
         val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
         if (permanent) {
-            ensureOk(google(ctx, "google_drive", "DELETE", "$DRIVE/files/$id"), "Drive")
+            ensureOk(
+                google(ctx, "google_drive", "DELETE", url("$DRIVE/files/$id", "supportsAllDrives" to "true")),
+                "Drive"
+            )
             return "✅ حُذف الملف نهائياً"
         }
         val payload = JSONObject().put("trashed", true)
-        ensureOk(google(ctx, "google_drive", "PATCH", "$DRIVE/files/$id?fields=id", payload.toString()), "Drive")
+        ensureOk(
+            google(
+                ctx, "google_drive", "PATCH",
+                url("$DRIVE/files/$id", "fields" to "id", "supportsAllDrives" to "true"),
+                payload.toString()
+            ),
+            "Drive"
+        )
         return "✅ نُقل الملف إلى سلة المهملات"
     }
 
     suspend fun driveUpdate(ctx: ToolContext, fileId: String, content: String, path: String, mime: String): String {
         val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
-        val meta = ensureOk(google(ctx, "google_drive", "GET", "$DRIVE/files/$id?fields=id,name,mimeType"), "Drive")
+        val meta = ensureOk(
+            google(ctx, "google_drive", "GET", url("$DRIVE/files/$id", "fields" to "id,name,mimeType", "supportsAllDrives" to "true")),
+            "Drive"
+        )
         val info = JSONObject(meta.body)
         val type = info.optString("mimeType")
         if (type.startsWith("application/vnd.google-apps")) {
@@ -222,68 +282,159 @@ object Connectors {
         if (bytes.isEmpty()) throw IllegalArgumentException("المحتوى فارغ")
         val contentType = mime.ifBlank { type.ifBlank { "text/plain" } }
         val token = ConnectorAuth.token(ctx.prefs, "google_drive")
-        val res = uploadBytes("$DRIVE_UPLOAD/files/$id?uploadType=media", token, bytes, contentType)
+        val res = uploadBytes(
+            url("$DRIVE_UPLOAD/files/$id", "uploadType" to "media", "supportsAllDrives" to "true"),
+            token, bytes, contentType
+        )
         ensureOk(res, "Drive")
         return "✅ حُدّث محتوى ${info.optString("name")} (${FileTools.formatSize(bytes.size.toLong())})"
     }
 
     suspend fun driveSearch(ctx: ToolContext, query: String, max: Int): String {
-        val q = "(name contains '${quote(query)}' or fullText contains '${quote(query)}') and trashed = false"
-        val url = "$DRIVE/files?q=${enc(q)}&pageSize=${max.coerceIn(1, 50)}" +
-            "&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)&orderBy=modifiedTime desc"
-        val res = ensureOk(google(ctx, "google_drive", "GET", url), "Drive")
+        val limit = max.coerceIn(1, 50)
+        val escaped = quote(query.trim())
+        val q = "(name contains '$escaped' or fullText contains '$escaped') and trashed = false"
+        val target = url(
+            "$DRIVE/files",
+            "q" to q,
+            "pageSize" to limit.toString(),
+            "fields" to "files(id,name,mimeType,size,modifiedTime,webViewLink),nextPageToken",
+            "orderBy" to "modifiedTime desc"
+        ) + "&" + ALL_DRIVES
+        val res = ensureOk(google(ctx, "google_drive", "GET", target), "Drive")
         val files = JSONObject(res.body).optJSONArray("files") ?: JSONArray()
         if (files.length() == 0) return "لا توجد ملفات مطابقة."
         return (0 until files.length()).joinToString("\n") { index ->
             val f = files.optJSONObject(index) ?: JSONObject()
-            "• ${f.optString("name")} [${f.optString("mimeType").substringAfterLast('.')}] " +
+            val icon = if (f.optString("mimeType").startsWith("application/vnd.google-apps.folder")) "📁" else "📄"
+            "$icon ${f.optString("name")} [${shortMime(f.optString("mimeType"))}] " +
                 "id=${f.optString("id")} — ${f.optString("modifiedTime")}\n  ${f.optString("webViewLink")}"
         }
     }
 
     suspend fun driveList(ctx: ToolContext, max: Int, folderId: String = ""): String {
-        val folderQuery = if (folderId.isBlank()) "" else
-            "&q=${enc("'" + folderId + "' in parents and trashed = false")}&orderBy=name"
-        val order = if (folderId.isBlank()) "&orderBy=modifiedTime desc" else ""
-        val url = "$DRIVE/files?pageSize=${max.coerceIn(1, 200)}" +
-            "$order&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)$folderQuery"
-        val res = ensureOk(google(ctx, "google_drive", "GET", url), "Drive")
+        val limit = max.coerceIn(1, 200)
+        val params = mutableListOf(
+            "pageSize" to limit.toString(),
+            "fields" to "files(id,name,mimeType,size,modifiedTime,webViewLink),nextPageToken"
+        )
+        if (folderId.isBlank()) {
+            params.add("orderBy" to "modifiedTime desc")
+        } else {
+            val fid = extractDriveId(folderId) ?: throw IllegalArgumentException("معرّف المجلد غير صالح")
+            params.add("q" to "'$fid' in parents and trashed = false")
+            params.add("orderBy" to "folder,name")
+        }
+        val target = url("$DRIVE/files", *params.toTypedArray()) + "&" + ALL_DRIVES
+        val res = ensureOk(google(ctx, "google_drive", "GET", target), "Drive")
         val files = JSONObject(res.body).optJSONArray("files") ?: JSONArray()
-        if (files.length() == 0) return "Drive فارغ."
+        if (files.length() == 0) return if (folderId.isBlank()) "Drive فارغ." else "المجلد فارغ."
         return (0 until files.length()).joinToString("\n") { index ->
             val f = files.optJSONObject(index) ?: JSONObject()
-            "• ${f.optString("name")} (${FileTools.formatSize(f.optLong("size"))}) id=${f.optString("id")} — ${f.optString("modifiedTime")}"
+            val folder = f.optString("mimeType").startsWith("application/vnd.google-apps.folder")
+            (if (folder) "📁 " else "📄 ") + f.optString("name") +
+                (if (folder) "" else " (${FileTools.formatSize(f.optLong("size"))})") +
+                " id=${f.optString("id")} — ${f.optString("modifiedTime")}"
         }
     }
 
-    suspend fun driveDownload(ctx: ToolContext, fileId: String, name: String): String {
+    suspend fun driveDownload(ctx: ToolContext, fileId: String, name: String, exportMime: String = ""): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
         val metaRes = ensureOk(
-            google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId?fields=id,name,mimeType,size"),
+            google(
+                ctx, "google_drive", "GET",
+                url("$DRIVE/files/$id", "fields" to "id,name,mimeType,size", "supportsAllDrives" to "true")
+            ),
             "Drive"
         )
         val meta = JSONObject(metaRes.body)
         val mime = meta.optString("mimeType")
-        if (mime.startsWith("application/vnd.google-apps")) {
-            val target = FileTools.file(ctx.context, "downloads/" + safeName(name.ifBlank { meta.optString("name") + ".txt" }))
-            val text = ensureOk(
-                google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId/export?mimeType=text/plain"),
-                "Drive"
-            ).body
-            target.parentFile?.mkdirs()
-            target.writeText(text)
-            return "✅ نُزّل ${FileTools.relative(ctx.context, target)} (${FileTools.formatSize(target.length())})"
+        val displayName = meta.optString("name").ifBlank { "drive-file" }
+        if (mime.startsWith("application/vnd.google-apps.folder")) {
+            throw IllegalArgumentException("هذا مجلد وليس ملفاً؛ استخدم drive_list لعرض محتوياته")
         }
-        val raw = name.ifBlank { meta.optString("name") }
-        val target = FileTools.file(ctx.context, "downloads/" + safeName(raw))
+        if (mime.startsWith("application/vnd.google-apps")) {
+            val chosen = exportMime.ifBlank { defaultExportMime(mime) }
+            val extension = extensionFor(chosen, displayName)
+            val rawName = name.ifBlank { displayName + extension }
+            val target = uniqueFile(FileTools.file(ctx.context, "downloads/" + safeName(rawName)))
+            target.parentFile?.mkdirs()
+            val isText = chosen.startsWith("text/") || chosen.contains("json") ||
+                chosen.contains("xml") || chosen == "application/vnd.google-apps.script+json"
+            if (isText) {
+                val text = ensureOk(
+                    google(ctx, "google_drive", "GET", url("$DRIVE/files/$id/export", "mimeType" to chosen)),
+                    "Drive"
+                ).body
+                target.writeText(text)
+            } else {
+                val token = ConnectorAuth.token(ctx.prefs, "google_drive")
+                downloadBytes(
+                    url("$DRIVE/files/$id/export", "mimeType" to chosen),
+                    token, target, 50_000_000L
+                )
+            }
+            return "✅ نُزّل ${FileTools.relative(ctx.context, target)} (${FileTools.formatSize(target.length())}) بصيغة $chosen"
+        }
+        val rawName = name.ifBlank { displayName }
+        val target = uniqueFile(FileTools.file(ctx.context, "downloads/" + safeName(rawName)))
         target.parentFile?.mkdirs()
         val token = ConnectorAuth.token(ctx.prefs, "google_drive")
-        val bytes = downloadBytes("$DRIVE/files/$fileId?alt=media", token, target, 50_000_000L)
+        val bytes = downloadBytes(
+            url("$DRIVE/files/$id", "alt" to "media", "supportsAllDrives" to "true"),
+            token, target, 50_000_000L
+        )
         return "✅ نُزّل ${FileTools.relative(ctx.context, target)} (${FileTools.formatSize(bytes)})"
     }
 
+    private fun defaultExportMime(googleMime: String): String = when (googleMime) {
+        "application/vnd.google-apps.spreadsheet" -> "text/csv"
+        "application/vnd.google-apps.presentation" -> "text/plain"
+        "application/vnd.google-apps.drawing" -> "image/png"
+        "application/vnd.google-apps.script" -> "application/vnd.google-apps.script+json"
+        else -> "text/plain"
+    }
+
+    private fun extensionFor(mime: String, name: String): String {
+        val fromName = name.substringAfterLast('.', "")
+        if (fromName.isNotBlank() && fromName.length <= 5) return ""
+        return when (mime) {
+            "text/plain" -> ".txt"
+            "text/csv" -> ".csv"
+            "text/html" -> ".html"
+            "application/pdf" -> ".pdf"
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> ".docx"
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> ".xlsx"
+            "image/png" -> ".png"
+            "application/zip" -> ".zip"
+            else -> ".bin"
+        }
+    }
+
+    private fun uniqueFile(file: java.io.File): java.io.File {
+        if (!file.exists()) return file
+        val base = file.nameWithoutExtension
+        val ext = file.extension
+        var index = 2
+        while (true) {
+            val candidate = java.io.File(file.parentFile, "$base-$index${if (ext.isBlank()) "" else ".$ext"}")
+            if (!candidate.exists()) return candidate
+            index++
+        }
+    }
+
+    private fun shortMime(mime: String): String = when {
+        mime.startsWith("application/vnd.google-apps.folder") -> "مجلد"
+        mime.startsWith("application/vnd.google-apps.document") -> "Google Doc"
+        mime.startsWith("application/vnd.google-apps.spreadsheet") -> "Google Sheet"
+        mime.startsWith("application/vnd.google-apps.presentation") -> "Google Slides"
+        mime.startsWith("application/vnd.google-apps") -> "Google"
+        else -> mime.substringAfterLast('.', "ملف")
+    }
+
     private fun safeName(raw: String): String {
-        val cleaned = raw.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").trim('_', '.')
-        return cleaned.ifBlank { "drive-file" }.take(90)
+        val cleaned = raw.replace(Regex("[^\p{L}\p{N}._-]+"), "_").trim('_', '.')
+        return cleaned.ifBlank { "drive-file" }.take(120)
     }
 
     private suspend fun downloadBytes(url: String, token: String, target: java.io.File, maxBytes: Long): Long {
@@ -327,8 +478,16 @@ object Connectors {
     }
 
     suspend fun driveRead(ctx: ToolContext, fileId: String, maxChars: Int): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
         val metaRes = ensureOk(
-            google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId?fields=id,name,mimeType,size,webViewLink"),
+            google(
+                ctx, "google_drive", "GET",
+                url(
+                    "$DRIVE/files/$id",
+                    "fields" to "id,name,mimeType,size,webViewLink",
+                    "supportsAllDrives" to "true"
+                )
+            ),
             "Drive"
         )
         val meta = JSONObject(metaRes.body)
@@ -336,19 +495,27 @@ object Connectors {
         val name = meta.optString("name")
         val link = meta.optString("webViewLink")
         val max = maxChars.coerceIn(1000, 30_000)
-        val looksText = mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") ||
-            mime.contains("csv") || mime.contains("javascript") || mime.startsWith("application/vnd.google-apps")
-        if (!looksText) {
-            return "📄 $name ($mime, ${FileTools.formatSize(meta.optLong("size"))})\n$link\nملف ثنائي؛ استخدم رابط العرض أو نزّله بأداة أخرى."
+        if (mime.startsWith("application/vnd.google-apps.folder")) {
+            return "📁 $name\n$link\n\n" + driveList(ctx, 100, id)
         }
-        val text = if (mime.startsWith("application/vnd.google-apps")) {
+        val googleDoc = mime.startsWith("application/vnd.google-apps")
+        val looksText = googleDoc || mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") ||
+            mime.contains("csv") || mime.contains("javascript") || mime.contains("x-yaml")
+        if (!looksText) {
+            return "📄 $name ($mime, ${FileTools.formatSize(meta.optLong("size"))})\n$link\n" +
+                "ملف ثنائي؛ استخدم drive_download لنزيله إلى مساحة العمل."
+        }
+        val text = if (googleDoc) {
             ensureOk(
-                google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId/export?mimeType=text/plain"),
+                google(
+                    ctx, "google_drive", "GET",
+                    url("$DRIVE/files/$id/export", "mimeType" to defaultExportMime(mime))
+                ),
                 "Drive"
             ).body
         } else {
             ensureOk(
-                google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId?alt=media"),
+                google(ctx, "google_drive", "GET", url("$DRIVE/files/$id", "alt" to "media")),
                 "Drive"
             ).body
         }
@@ -356,11 +523,45 @@ object Connectors {
             if (text.length > max) "\n… [اقتُطع]" else ""
     }
 
+    suspend fun driveMeta(ctx: ToolContext, fileId: String): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
+        val res = ensureOk(
+            google(
+                ctx, "google_drive", "GET",
+                url(
+                    "$DRIVE/files/$id",
+                    "fields" to "id,name,mimeType,size,createdTime,modifiedTime,webViewLink,parents,owners(displayName,emailAddress),shared,capabilities(canEdit,canShare),shortcutDetails",
+                    "supportsAllDrives" to "true"
+                )
+            ),
+            "Drive"
+        )
+        val f = JSONObject(res.body)
+        val owner = f.optJSONArray("owners")?.optJSONObject(0)
+        return buildString {
+            append("📄 ").append(f.optString("name")).append('\n')
+            append("id=").append(f.optString("id")).append('\n')
+            append("النوع: ").append(shortMime(f.optString("mimeType"))).append('\n')
+            append("الحجم: ").append(FileTools.formatSize(f.optLong("size"))).append('\n')
+            append("أُنشئ: ").append(f.optString("createdTime")).append('\n')
+            append("عُدّل: ").append(f.optString("modifiedTime")).append('\n')
+            if (owner != null) append("المالك: ").append(owner.optString("displayName"))
+                .append(" <").append(owner.optString("emailAddress")).append(">\n")
+            append("مشترك: ").append(if (f.optBoolean("shared")) "نعم" else "لا").append('\n')
+            append("رابط: ").append(f.optString("webViewLink"))
+        }
+    }
+
     suspend fun driveMkdir(ctx: ToolContext, name: String, folderId: String): String {
         val metadata = JSONObject().put("name", name).put("mimeType", "application/vnd.google-apps.folder")
-        if (folderId.isNotBlank()) metadata.put("parents", JSONArray().put(folderId))
+        val parent = extractDriveId(folderId)
+        if (parent != null) metadata.put("parents", JSONArray().put(parent))
         val res = ensureOk(
-            google(ctx, "google_drive", "POST", "$DRIVE/files?fields=id,name,webViewLink", metadata.toString()),
+            google(
+                ctx, "google_drive", "POST",
+                url("$DRIVE/files", "fields" to "id,name,webViewLink") + "&" + ALL_DRIVES,
+                metadata.toString()
+            ),
             "Drive"
         )
         val json = JSONObject(res.body)
@@ -375,32 +576,78 @@ object Connectors {
         mime: String,
         folderId: String
     ): String {
+        if (name.isBlank()) throw IllegalArgumentException("اسم الملف مطلوب")
         val bytes = if (path.isNotBlank()) bytesOf(ctx, path) else content.toByteArray(Charsets.UTF_8)
         if (bytes.isEmpty()) throw IllegalArgumentException("الملف فارغ أو لم تحدد content/path")
         val contentType = mime.ifBlank { mimeOf(name) }
         val metadata = JSONObject().put("name", name).put("mimeType", contentType)
-        if (folderId.isNotBlank()) metadata.put("parents", JSONArray().put(folderId))
-        val created = ensureOk(
-            google(ctx, "google_drive", "POST", "$DRIVE/files?fields=id,name,webViewLink", metadata.toString()),
+        val parent = extractDriveId(folderId)
+        if (parent != null) metadata.put("parents", JSONArray().put(parent))
+        val token = ConnectorAuth.token(ctx.prefs, "google_drive")
+        val res = ensureOk(
+            uploadMultipart(
+                url(
+                    "$DRIVE_UPLOAD/files",
+                    "uploadType" to "multipart",
+                    "fields" to "id,name,webViewLink",
+                    "supportsAllDrives" to "true"
+                ),
+                token, metadata, bytes, contentType
+            ),
             "Drive"
         )
-        val createdJson = JSONObject(created.body)
-        val id = createdJson.optString("id")
-        val link = createdJson.optString("webViewLink")
-        val url = "$DRIVE_UPLOAD/files/$id?uploadType=media"
-        val token = ConnectorAuth.token(ctx.prefs, "google_drive")
-        val res = uploadBytes(url, token, bytes, contentType)
-        ensureOk(res, "Drive")
-        return "✅ رُفع $name (${FileTools.formatSize(bytes.size.toLong())}) إلى Drive\n$link"
+        val json = JSONObject(res.body)
+        return "✅ رُفع $name (${FileTools.formatSize(bytes.size.toLong())}) إلى Drive\n${json.optString("webViewLink")}"
     }
 
-    private fun uploadBytes(url: String, token: String, bytes: ByteArray, contentType: String): Response {
-        val conn = safeUrl(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "PATCH"
+    private fun uploadMultipart(
+        target: String,
+        token: String,
+        metadata: JSONObject,
+        bytes: ByteArray,
+        contentType: String
+    ): Response {
+        val boundary = "lion_" + java.util.UUID.randomUUID().toString().replace("-", "")
+        val head = "--$boundary\r\n" +
+            "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+            metadata.toString() + "\r\n" +
+            "--$boundary\r\n" +
+            "Content-Type: $contentType\r\n\r\n"
+        val tail = "\r\n--$boundary--\r\n"
+        val headBytes = head.toByteArray(Charsets.UTF_8)
+        val tailBytes = tail.toByteArray(Charsets.UTF_8)
+        val conn = safeUrl(target).openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
         conn.doOutput = true
         conn.instanceFollowRedirects = false
         conn.connectTimeout = 20_000
-        conn.readTimeout = 60_000
+        conn.readTimeout = 120_000
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
+        conn.setFixedLengthStreamingMode(headBytes.size + bytes.size + tailBytes.size)
+        conn.outputStream.use { out ->
+            out.write(headBytes)
+            out.write(bytes)
+            out.write(tailBytes)
+        }
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        return Response(code, stream?.bufferedReader()?.use { it.readText() }.orEmpty(), conn.contentType.orEmpty())
+    }
+
+    private fun uploadBytes(
+        target: String,
+        token: String,
+        bytes: ByteArray,
+        contentType: String,
+        method: String = "PATCH"
+    ): Response {
+        val conn = safeUrl(target).openConnection() as HttpURLConnection
+        conn.requestMethod = method
+        conn.doOutput = true
+        conn.instanceFollowRedirects = false
+        conn.connectTimeout = 20_000
+        conn.readTimeout = 120_000
         conn.setRequestProperty("Authorization", "Bearer $token")
         conn.setRequestProperty("Content-Type", contentType)
         conn.setFixedLengthStreamingMode(bytes.size)
@@ -412,10 +659,47 @@ object Connectors {
 
     // ---------------- Gmail ----------------
 
+    private fun gmailHeaders(json: JSONObject): Map<String, String> {
+        val headers = json.optJSONObject("payload")?.optJSONArray("headers") ?: return emptyMap()
+        val out = mutableMapOf<String, String>()
+        for (i in 0 until headers.length()) {
+            val h = headers.optJSONObject(i) ?: continue
+            out[h.optString("name").lowercase()] = h.optString("value")
+        }
+        return out
+    }
+
+    private data class GmailAttachment(val name: String, val mime: String, val id: String, val size: Long)
+
+    private fun gmailAttachments(payload: JSONObject?): List<GmailAttachment> {
+        if (payload == null) return emptyList()
+        val out = mutableListOf<GmailAttachment>()
+        fun walk(part: JSONObject) {
+            val filename = part.optString("filename")
+            val attachmentId = part.optJSONObject("body")?.optString("attachmentId").orEmpty()
+            if (filename.isNotBlank() && attachmentId.isNotBlank()) {
+                out.add(
+                    GmailAttachment(
+                        filename,
+                        part.optString("mimeType", "application/octet-stream"),
+                        attachmentId,
+                        part.optJSONObject("body")?.optLong("size", 0L) ?: 0L
+                    )
+                )
+            }
+            val children = part.optJSONArray("parts") ?: return
+            for (i in 0 until children.length()) {
+                children.optJSONObject(i)?.let { walk(it) }
+            }
+        }
+        walk(payload)
+        return out
+    }
+
     suspend fun gmailSearch(ctx: ToolContext, query: String, max: Int): String {
-        val limit = max.coerceIn(1, 15)
-        val url = "$GMAIL/messages?q=${enc(query)}&maxResults=$limit"
-        val res = ensureOk(google(ctx, "gmail", "GET", url), "Gmail")
+        val limit = max.coerceIn(1, 20)
+        val target = url("$GMAIL/messages", "q" to query, "maxResults" to limit.toString())
+        val res = ensureOk(google(ctx, "gmail", "GET", target), "Gmail")
         val messages = JSONObject(res.body).optJSONArray("messages") ?: JSONArray()
         if (messages.length() == 0) return "لا توجد رسائل مطابقة."
         val lines = mutableListOf<String>()
@@ -425,7 +709,8 @@ object Connectors {
                 val d = ensureOk(
                     google(
                         ctx, "gmail", "GET",
-                        "$GMAIL/messages/$id?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date"
+                        url("$GMAIL/messages/$id", "format" to "metadata") +
+                            "&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date"
                     ),
                     "Gmail"
                 )
@@ -433,45 +718,44 @@ object Connectors {
             } catch (e: Exception) {
                 null
             }
-            val headers = detail?.optJSONObject("payload")?.optJSONArray("headers")
-            fun header(name: String): String {
-                if (headers == null) return ""
-                for (i in 0 until headers.length()) {
-                    val h = headers.optJSONObject(i) ?: continue
-                    if (h.optString("name").equals(name, true)) return h.optString("value")
-                }
-                return ""
-            }
+            val headers = detail?.let { gmailHeaders(it) }.orEmpty()
             val snippet = detail?.optString("snippet").orEmpty()
             lines.add(
-                "• ${header("Subject").ifBlank { "(بدون موضوع)" }}\n  من: ${header("From")} — ${header("Date")}\n  id=$id\n  ${snippet.take(160)}"
+                "• ${headers["subject"].orEmpty().ifBlank { "(بدون موضوع)" }}\n" +
+                    "  من: ${headers["from"].orEmpty()} — ${headers["date"].orEmpty()}\n" +
+                    "  id=$id\n  ${snippet.take(160)}"
             )
         }
         return lines.joinToString("\n")
     }
 
     suspend fun gmailRead(ctx: ToolContext, messageId: String, maxChars: Int): String {
-        val res = ensureOk(google(ctx, "gmail", "GET", "$GMAIL/messages/$messageId?format=full"), "Gmail")
+        val res = ensureOk(
+            google(ctx, "gmail", "GET", url("$GMAIL/messages/$messageId", "format" to "full")),
+            "Gmail"
+        )
         val json = JSONObject(res.body)
+        val headers = gmailHeaders(json)
         val payload = json.optJSONObject("payload")
-        val headers = payload?.optJSONArray("headers")
-        fun header(name: String): String {
-            if (headers == null) return ""
-            for (i in 0 until headers.length()) {
-                val h = headers.optJSONObject(i) ?: continue
-                if (h.optString("name").equals(name, true)) return h.optString("value")
-            }
-            return ""
-        }
         val body = extractGmailBody(payload)
+        val attachments = gmailAttachments(payload)
         val max = maxChars.coerceIn(1000, 30_000)
         return buildString {
-            append("✉️ ").append(header("Subject").ifBlank { "(بدون موضوع)" }).append('\n')
-            append("من: ").append(header("From")).append('\n')
-            append("إلى: ").append(header("To")).append('\n')
-            append("التاريخ: ").append(header("Date")).append("\n\n")
+            append("✉️ ").append(headers["subject"].orEmpty().ifBlank { "(بدون موضوع)" }).append('\n')
+            append("من: ").append(headers["from"].orEmpty()).append('\n')
+            append("إلى: ").append(headers["to"].orEmpty()).append('\n')
+            append("التاريخ: ").append(headers["date"].orEmpty()).append('\n')
+            append("threadId: ").append(json.optString("threadId")).append("\n\n")
             append(if (body.isBlank()) json.optString("snippet") else body.take(max))
             if (body.length > max) append("\n… [اقتُطع]")
+            if (attachments.isNotEmpty()) {
+                append("\n\n📎 المرفقات (${attachments.size}):\n")
+                attachments.forEach { a ->
+                    append("- ").append(a.name).append(" (").append(a.mime).append(", ")
+                        .append(FileTools.formatSize(a.size)).append(") attachmentId=")
+                        .append(a.id).append('\n')
+                }
+            }
         }
     }
 
@@ -488,12 +772,86 @@ object Connectors {
         var html = ""
         for (i in 0 until parts.length()) {
             val part = parts.optJSONObject(i) ?: continue
+            val partMime = part.optString("mimeType")
             val value = extractGmailBody(part)
-            if (part.optString("mimeType") == "text/plain" && value.isNotBlank()) plain = value
-            if (part.optString("mimeType") == "text/html" && value.isNotBlank()) html = value
+            if (partMime == "text/plain" && value.isNotBlank()) plain = value
+            if (partMime == "text/html" && value.isNotBlank()) html = value
             if (plain.isBlank() && html.isBlank() && value.isNotBlank()) plain = value
         }
         return plain.ifBlank { html }
+    }
+
+    private fun gmailEncodeHeader(value: String): String {
+        val clean = value.replace("\r", " ").replace("\n", " ").trim()
+        if (clean.all { it.code in 32..126 }) return clean
+        return "=?UTF-8?B?" + Base64.getEncoder().encodeToString(clean.toByteArray(Charsets.UTF_8)) + "?="
+    }
+
+    private fun gmailFilename(name: String): String {
+        val clean = name.replace("\r", " ").replace("\n", " ").replace("\"", "").trim()
+        if (clean.all { it.code in 32..126 }) return "\"$clean\""
+        val encoded = URLEncoder.encode(clean, "UTF-8").replace("+", "%20")
+        return "\"$clean\"; filename*=UTF-8''$encoded"
+    }
+
+    private fun buildGmailMime(
+        ctx: ToolContext,
+        to: String,
+        subject: String,
+        body: String,
+        cc: String,
+        bcc: String,
+        html: Boolean,
+        from: String,
+        attachments: List<String>,
+        inReplyTo: String
+    ): String {
+        val recipients = to.split(',', ';').map { it.trim() }.filter { it.isNotBlank() }
+        if (recipients.isEmpty() || recipients.any { !it.contains("@") }) {
+            throw IllegalArgumentException("حدد بريداً صالحاً في to")
+        }
+        val boundary = "lion_" + java.util.UUID.randomUUID().toString().replace("-", "")
+        val builder = StringBuilder()
+        if (from.isNotBlank()) builder.append("From: ").append(gmailEncodeHeader(from)).append("\r\n")
+        builder.append("To: ").append(recipients.joinToString(", ")).append("\r\n")
+        if (cc.isNotBlank()) builder.append("Cc: ").append(cc.replace("\r", " ").replace("\n", " ")).append("\r\n")
+        if (bcc.isNotBlank()) builder.append("Bcc: ").append(bcc.replace("\r", " ").replace("\n", " ")).append("\r\n")
+        builder.append("Subject: ").append(gmailEncodeHeader(subject)).append("\r\n")
+        if (inReplyTo.isNotBlank()) {
+            val clean = inReplyTo.replace("\r", " ").replace("\n", " ").trim()
+            builder.append("In-Reply-To: ").append(clean).append("\r\n")
+            builder.append("References: ").append(clean).append("\r\n")
+        }
+        builder.append("MIME-Version: 1.0\r\n")
+        val content = if (html) "text/html" else "text/plain"
+        if (attachments.isEmpty()) {
+            builder.append("Content-Type: ").append(content).append("; charset=UTF-8\r\n")
+            builder.append("Content-Transfer-Encoding: base64\r\n\r\n")
+            builder.append(Base64.getMimeEncoder(76, "\r\n".toByteArray()).encodeToString(body.toByteArray(Charsets.UTF_8)))
+        } else {
+            builder.append("Content-Type: multipart/mixed; boundary=\"").append(boundary).append("\"\r\n\r\n")
+            builder.append("--").append(boundary).append("\r\n")
+            builder.append("Content-Type: ").append(content).append("; charset=UTF-8\r\n")
+            builder.append("Content-Transfer-Encoding: base64\r\n\r\n")
+            builder.append(Base64.getMimeEncoder(76, "\r\n".toByteArray()).encodeToString(body.toByteArray(Charsets.UTF_8)))
+            builder.append("\r\n")
+            attachments.forEach { rawPath ->
+                val file = FileTools.file(ctx.context, rawPath)
+                if (!file.isFile) throw IllegalArgumentException("المرفق غير موجود: $rawPath")
+                if (file.length() > 20_000_000L) throw IllegalArgumentException("المرفق أكبر من 20MB: ${file.name}")
+                val mime = mimeOf(file.name)
+                builder.append("--").append(boundary).append("\r\n")
+                builder.append("Content-Type: ").append(mime).append("; name=")
+                    .append(gmailFilename(file.name)).append("\r\n")
+                builder.append("Content-Disposition: attachment; filename=")
+                    .append(gmailFilename(file.name)).append("\r\n")
+                builder.append("Content-Transfer-Encoding: base64\r\n\r\n")
+                builder.append(Base64.getMimeEncoder(76, "\r\n".toByteArray()).encodeToString(file.readBytes()))
+                builder.append("\r\n")
+            }
+            builder.append("--").append(boundary).append("--\r\n")
+        }
+        return builder.toString()
     }
 
     suspend fun gmailSend(
@@ -503,55 +861,133 @@ object Connectors {
         body: String,
         cc: String,
         bcc: String,
-        html: Boolean
+        html: Boolean,
+        from: String = "",
+        attachments: List<String> = emptyList(),
+        threadId: String = "",
+        inReplyTo: String = ""
     ): String {
-        val recipients = to.split(',', ';').map { it.trim() }.filter { it.isNotBlank() }
-        if (recipients.isEmpty() || recipients.any { !it.contains("@") }) {
-            throw IllegalArgumentException("حدد بريداً صالحاً في to")
-        }
-        fun clean(value: String) = value.replace("\r", " ").replace("\n", " ").trim()
-        val mime = buildString {
-            append("To: ").append(recipients.joinToString(", ")).append("\r\n")
-            if (cc.isNotBlank()) append("Cc: ").append(clean(cc)).append("\r\n")
-            if (bcc.isNotBlank()) append("Bcc: ").append(clean(bcc)).append("\r\n")
-            append("Subject: =?UTF-8?B?")
-                .append(Base64.getEncoder().encodeToString(clean(subject).toByteArray(Charsets.UTF_8)))
-                .append("?=\r\n")
-            append("MIME-Version: 1.0\r\n")
-            append("Content-Type: ").append(if (html) "text/html" else "text/plain")
-                .append("; charset=UTF-8\r\n")
-            append("Content-Transfer-Encoding: base64\r\n\r\n")
-            append(Base64.getMimeEncoder(76, "\r\n".toByteArray()).encodeToString(body.toByteArray(Charsets.UTF_8)))
-        }
+        val mime = buildGmailMime(ctx, to, subject, body, cc, bcc, html, from, attachments, inReplyTo)
         val raw = Base64.getUrlEncoder().withoutPadding().encodeToString(mime.toByteArray(Charsets.UTF_8))
         val payload = JSONObject().put("raw", raw)
+        if (threadId.isNotBlank()) payload.put("threadId", threadId)
         val res = ensureOk(
             google(ctx, "gmail", "POST", "$GMAIL/messages/send", payload.toString()),
             "Gmail"
         )
         val json = JSONObject(res.body)
-        return "✅ أُرسلت الرسالة إلى ${recipients.joinToString(", ")}\nid=${json.optString("id")}"
+        val recipients = to.split(',', ';').map { it.trim() }.filter { it.isNotBlank() }
+        return "✅ أُرسلت الرسالة إلى ${recipients.joinToString(", ")}\nid=${json.optString("id")} threadId=${json.optString("threadId")}"
+    }
+
+    suspend fun gmailDraft(
+        ctx: ToolContext,
+        to: String,
+        subject: String,
+        body: String,
+        cc: String,
+        bcc: String,
+        html: Boolean,
+        from: String = "",
+        attachments: List<String> = emptyList()
+    ): String {
+        val mime = buildGmailMime(ctx, to, subject, body, cc, bcc, html, from, attachments, "")
+        val raw = Base64.getUrlEncoder().withoutPadding().encodeToString(mime.toByteArray(Charsets.UTF_8))
+        val res = ensureOk(
+            google(ctx, "gmail", "POST", "$GMAIL/drafts", JSONObject().put("message", JSONObject().put("raw", raw)).toString()),
+            "Gmail"
+        )
+        val json = JSONObject(res.body)
+        return "✅ حُفظت مسودة\ndraftId=${json.optString("id")} messageId=${json.optJSONObject("message")?.optString("id").orEmpty()}"
+    }
+
+    suspend fun gmailLabels(ctx: ToolContext): String {
+        val res = ensureOk(google(ctx, "gmail", "GET", "$GMAIL/labels"), "Gmail")
+        val labels = JSONObject(res.body).optJSONArray("labels") ?: JSONArray()
+        if (labels.length() == 0) return "لا توجد تسميات."
+        return (0 until labels.length()).joinToString("\n") { index ->
+            val l = labels.optJSONObject(index) ?: JSONObject()
+            "• ${l.optString("name")} (${l.optString("type")}) id=${l.optString("id")}"
+        }
+    }
+
+    suspend fun gmailModify(ctx: ToolContext, messageId: String, add: List<String>, remove: List<String>): String {
+        val payload = JSONObject()
+        if (add.isNotEmpty()) payload.put("addLabelIds", JSONArray(add))
+        if (remove.isNotEmpty()) payload.put("removeLabelIds", JSONArray(remove))
+        if (add.isEmpty() && remove.isEmpty()) throw IllegalArgumentException("حدد تسميات للإضافة أو الإزالة")
+        ensureOk(google(ctx, "gmail", "POST", "$GMAIL/messages/$messageId/modify", payload.toString()), "Gmail")
+        return "✅ حُدّثت تسميات الرسالة $messageId"
+    }
+
+    suspend fun gmailTrash(ctx: ToolContext, messageId: String, permanent: Boolean): String {
+        if (permanent) {
+            ensureOk(google(ctx, "gmail", "DELETE", "$GMAIL/messages/$messageId"), "Gmail")
+            return "✅ حُذفت الرسالة نهائياً"
+        }
+        ensureOk(google(ctx, "gmail", "POST", "$GMAIL/messages/$messageId/trash", "{}"), "Gmail")
+        return "✅ نُقلت الرسالة إلى المهملات"
+    }
+
+    suspend fun gmailAttachment(ctx: ToolContext, messageId: String, attachmentId: String, name: String): String {
+        val res = ensureOk(
+            google(ctx, "gmail", "GET", "$GMAIL/messages/$messageId/attachments/$attachmentId"),
+            "Gmail"
+        )
+        val data = JSONObject(res.body).optString("data")
+        if (data.isBlank()) throw IllegalStateException("لم تُرجع Gmail بيانات المرفق")
+        val bytes = Base64.getUrlDecoder().decode(data)
+        val target = uniqueFile(FileTools.file(ctx.context, "downloads/" + safeName(name.ifBlank { "gmail-attachment" })))
+        target.parentFile?.mkdirs()
+        target.writeBytes(bytes)
+        return "✅ نُزّل ${FileTools.relative(ctx.context, target)} (${FileTools.formatSize(bytes.size.toLong())})"
+    }
+
+    suspend fun gmailProfile(ctx: ToolContext): String {
+        val res = ensureOk(google(ctx, "gmail", "GET", "$GMAIL/profile"), "Gmail")
+        val json = JSONObject(res.body)
+        return "📧 ${json.optString("emailAddress")}\nالرسائل: ${json.optInt("messagesTotal")} — " +
+            "المحادثات: ${json.optInt("threadsTotal")}"
     }
 
     // ---------------- Google Calendar ----------------
 
-    suspend fun calendarList(ctx: ToolContext, days: Int, max: Int): String {
+    suspend fun calendarList(ctx: ToolContext, days: Int, max: Int, calendarId: String = "primary"): String {
         val now = Instant.now()
         val end = now.plusSeconds(days.coerceIn(1, 365) * 86400L)
-        val url = "$CALENDAR/calendars/primary/events?timeMin=${enc(now.toString())}&timeMax=${enc(end.toString())}" +
-            "&singleEvents=true&orderBy=startTime&maxResults=${max.coerceIn(1, 50)}"
-        val res = ensureOk(google(ctx, "google_calendar", "GET", url), "Calendar")
+        val target = url(
+            "$CALENDAR/calendars/${enc(calendarId.ifBlank { "primary" })}/events",
+            "timeMin" to now.toString(),
+            "timeMax" to end.toString(),
+            "singleEvents" to "true",
+            "orderBy" to "startTime",
+            "maxResults" to max.coerceIn(1, 50).toString()
+        )
+        val res = ensureOk(google(ctx, "google_calendar", "GET", target), "Calendar")
         val events = JSONObject(res.body).optJSONArray("items") ?: JSONArray()
         if (events.length() == 0) return "لا توجد مواعيد قادمة."
         return (0 until events.length()).joinToString("\n") { index ->
             val e = events.optJSONObject(index) ?: JSONObject()
             val start = e.optJSONObject("start")?.let { it.optString("dateTime").ifBlank { it.optString("date") } }.orEmpty()
             val location = e.optString("location")
+            val meet = e.optString("hangoutLink")
             buildString {
                 append("• ").append(e.optString("summary").ifBlank { "(بدون عنوان)" }).append(" — ").append(start)
                 if (location.isNotBlank()) append("\n  📍 ").append(location)
+                if (meet.isNotBlank()) append("\n  🔗 ").append(meet)
                 append("\n  id=").append(e.optString("id"))
             }
+        }
+    }
+
+    suspend fun calendarCalendars(ctx: ToolContext): String {
+        val res = ensureOk(google(ctx, "google_calendar", "GET", "$CALENDAR/users/me/calendarList"), "Calendar")
+        val items = JSONObject(res.body).optJSONArray("items") ?: JSONArray()
+        if (items.length() == 0) return "لا توجد تقاويم."
+        return (0 until items.length()).joinToString("\n") { index ->
+            val c = items.optJSONObject(index) ?: JSONObject()
+            val primary = if (c.optBoolean("primary")) " ⭐" else ""
+            "• ${c.optString("summary")}$primary — id=${c.optString("id")} (${c.optString("timeZone")})"
         }
     }
 
@@ -562,7 +998,9 @@ object Connectors {
         end: String,
         description: String,
         location: String,
-        timezone: String
+        timezone: String,
+        attendees: List<String> = emptyList(),
+        calendarId: String = "primary"
     ): String {
         if (summary.isBlank()) throw IllegalArgumentException("العنوان مطلوب")
         val startObj = calendarTime(start)
@@ -577,8 +1015,80 @@ object Connectors {
             .put("end", endObj)
         if (description.isNotBlank()) payload.put("description", description)
         if (location.isNotBlank()) payload.put("location", location)
+        if (attendees.isNotEmpty()) {
+            payload.put("attendees", JSONArray().also { array ->
+                attendees.filter { it.contains("@") }.forEach { array.put(JSONObject().put("email", it)) }
+            })
+        }
         val res = ensureOk(
-            google(ctx, "google_calendar", "POST", "$CALENDAR/calendars/primary/events", payload.toString()),
+            google(
+                ctx, "google_calendar", "POST",
+                "$CALENDAR/calendars/${enc(calendarId.ifBlank { "primary" })}/events", payload.toString()
+            ),
+            "Calendar"
+        )
+        val json = JSONObject(res.body)
+        return "✅ أُنشئ الموعد: ${json.optString("summary")}\n${json.optString("htmlLink")}"
+    }
+
+    suspend fun calendarUpdate(
+        ctx: ToolContext,
+        eventId: String,
+        summary: String,
+        start: String,
+        end: String,
+        description: String,
+        location: String,
+        timezone: String,
+        calendarId: String = "primary"
+    ): String {
+        if (eventId.isBlank()) throw IllegalArgumentException("event_id مطلوب")
+        val payload = JSONObject()
+        if (summary.isNotBlank()) payload.put("summary", summary)
+        if (start.isNotBlank()) {
+            val value = calendarTime(start)
+            if (timezone.isNotBlank()) value.put("timeZone", timezone)
+            payload.put("start", value)
+        }
+        if (end.isNotBlank()) {
+            val value = calendarTime(end)
+            if (timezone.isNotBlank()) value.put("timeZone", timezone)
+            payload.put("end", value)
+        }
+        if (description.isNotBlank()) payload.put("description", description)
+        if (location.isNotBlank()) payload.put("location", location)
+        if (payload.length() == 0) throw IllegalArgumentException("لا يوجد تغيير")
+        val res = ensureOk(
+            google(
+                ctx, "google_calendar", "PATCH",
+                "$CALENDAR/calendars/${enc(calendarId.ifBlank { "primary" })}/events/${enc(eventId)}",
+                payload.toString()
+            ),
+            "Calendar"
+        )
+        val json = JSONObject(res.body)
+        return "✅ حُدّث الموعد: ${json.optString("summary")}\n${json.optString("htmlLink")}"
+    }
+
+    suspend fun calendarDelete(ctx: ToolContext, eventId: String, calendarId: String = "primary"): String {
+        if (eventId.isBlank()) throw IllegalArgumentException("event_id مطلوب")
+        ensureOk(
+            google(
+                ctx, "google_calendar", "DELETE",
+                "$CALENDAR/calendars/${enc(calendarId.ifBlank { "primary" })}/events/${enc(eventId)}"
+            ),
+            "Calendar"
+        )
+        return "✅ حُذف الموعد $eventId"
+    }
+
+    suspend fun calendarQuickAdd(ctx: ToolContext, text: String): String {
+        if (text.isBlank()) throw IllegalArgumentException("نص الموعد مطلوب")
+        val res = ensureOk(
+            google(
+                ctx, "google_calendar", "POST",
+                url("$CALENDAR/calendars/primary/events/quickAdd", "text" to text)
+            ),
             "Calendar"
         )
         val json = JSONObject(res.body)

@@ -171,6 +171,89 @@ object FileTools {
         return Entry(relative(context, file), file.length(), false)
     }
 
+    fun append(context: Context, path: String, content: String): Entry {
+        val file = resolve(context, path)
+        file.parentFile?.mkdirs()
+        file.appendText(content, Charsets.UTF_8)
+        return Entry(relative(context, file), file.length(), false)
+    }
+
+    fun move(context: Context, from: String, to: String, overwrite: Boolean = false): Entry {
+        val source = resolve(context, from)
+        val target = resolve(context, to)
+        if (!source.exists()) throw IllegalArgumentException("المصدر غير موجود: $from")
+        if (target.exists() && !overwrite) throw IllegalArgumentException("الهدف موجود مسبقاً: $to (مرّر overwrite=true للاستبدال)")
+        target.parentFile?.mkdirs()
+        if (target.exists()) target.deleteRecursively()
+        if (!source.renameTo(target)) {
+            if (source.isDirectory) source.copyRecursively(target, overwrite = true) else source.copyTo(target, overwrite = true)
+            source.deleteRecursively()
+        }
+        return Entry(relative(context, target), if (target.isDirectory) 0L else target.length(), target.isDirectory)
+    }
+
+    fun copy(context: Context, from: String, to: String, overwrite: Boolean = false): Entry {
+        val source = resolve(context, from)
+        val target = resolve(context, to)
+        if (!source.exists()) throw IllegalArgumentException("المصدر غير موجود: $from")
+        if (target.exists() && !overwrite) throw IllegalArgumentException("الهدف موجود مسبقاً: $to (مرّر overwrite=true للاستبدال)")
+        target.parentFile?.mkdirs()
+        if (target.exists()) target.deleteRecursively()
+        if (source.isDirectory) source.copyRecursively(target, overwrite = true) else source.copyTo(target, overwrite = true)
+        return Entry(relative(context, target), if (target.isDirectory) 0L else target.length(), target.isDirectory)
+    }
+
+    fun checksum(context: Context, path: String, algorithm: String = "sha256"): String {
+        val file = resolve(context, path)
+        if (!file.isFile) throw IllegalArgumentException("الملف غير موجود: $path")
+        val name = when (algorithm.lowercase()) {
+            "md5" -> "MD5"
+            "sha1", "sha-1" -> "SHA-1"
+            else -> "SHA-256"
+        }
+        val digest = java.security.MessageDigest.getInstance(name)
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** فرق نصي مبسّط (LCS) بين ملفين أو نصين داخل مساحة العمل. */
+    fun diff(context: Context, first: String, second: String, maxLines: Int = 1200): String {
+        val left = read(context, first).text.lines()
+        val right = read(context, second).text.lines()
+        if (left.size > maxLines || right.size > maxLines) {
+            return "الملفان كبيران للفرق التفصيلي (${left.size} × ${right.size} سطر). استخدم مقارنة Checksum أو قسّم الملف."
+        }
+        val n = left.size
+        val m = right.size
+        val lcs = Array(n + 1) { IntArray(m + 1) }
+        for (i in n - 1 downTo 0) {
+            for (j in m - 1 downTo 0) {
+                lcs[i][j] = if (left[i] == right[j]) lcs[i + 1][j + 1] + 1
+                else maxOf(lcs[i + 1][j], lcs[i][j + 1])
+            }
+        }
+        val out = StringBuilder()
+        var i = 0
+        var j = 0
+        while (i < n && j < m) {
+            when {
+                left[i] == right[j] -> { out.append("  ").append(left[i]).append('\n'); i++; j++ }
+                lcs[i + 1][j] >= lcs[i][j + 1] -> { out.append("- ").append(left[i]).append('\n'); i++ }
+                else -> { out.append("+ ").append(right[j]).append('\n'); j++ }
+            }
+        }
+        while (i < n) { out.append("- ").append(left[i]).append('\n'); i++ }
+        while (j < m) { out.append("+ ").append(right[j]).append('\n'); j++ }
+        return out.toString().ifBlank { "لا فروق." }
+    }
+
     fun delete(context: Context, path: String, recursive: Boolean = false): Boolean {
         val file = resolve(context, path)
         if (!file.exists()) return false
