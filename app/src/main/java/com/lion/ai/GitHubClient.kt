@@ -4,6 +4,7 @@ import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.io.File
 import java.net.URL
 import java.net.URLEncoder
 
@@ -64,6 +65,31 @@ object GitHubClient {
     )
 
     data class Comment(val user: String, val body: String, val createdAt: String)
+
+    data class WorkflowRun(
+        val id: Long,
+        val number: Int,
+        val name: String,
+        val workflowId: Long,
+        val status: String,
+        val conclusion: String,
+        val branch: String,
+        val event: String,
+        val htmlUrl: String,
+        val createdAt: String
+    )
+
+    data class WorkflowJob(
+        val id: Long,
+        val name: String,
+        val status: String,
+        val conclusion: String,
+        val startedAt: String,
+        val completedAt: String,
+        val steps: List<Pair<String, String>>
+    )
+
+    data class Artifact(val id: Long, val name: String, val size: Long, val expired: Boolean, val createdAt: String)
 
     private fun encode(value: String): String =
         URLEncoder.encode(value, "UTF-8").replace("+", "%20")
@@ -463,17 +489,321 @@ object GitHubClient {
         }
     }
 
-    fun workflowRuns(token: String, owner: String, repo: String): List<String> {
-        val raw = request("/repos/${encode(owner)}/${encode(repo)}/actions/runs?per_page=10", token)
+    private fun workflowRunFromJson(o: JSONObject): WorkflowRun = WorkflowRun(
+        id = o.optLong("id"),
+        number = o.optInt("run_number"),
+        name = o.optString("name").ifBlank { o.optString("display_title") },
+        workflowId = o.optLong("workflow_id"),
+        status = o.optString("status"),
+        conclusion = o.optString("conclusion").ifBlank { "—" },
+        branch = o.optString("head_branch"),
+        event = o.optString("event"),
+        htmlUrl = o.optString("html_url"),
+        createdAt = o.optString("created_at")
+    )
+
+    fun listWorkflowRuns(
+        token: String,
+        owner: String,
+        repo: String,
+        perPage: Int = 10,
+        workflowId: Long? = null
+    ): List<WorkflowRun> {
+        val safe = perPage.coerceIn(1, 50)
+        val base = if (workflowId != null) {
+            "/repos/${encode(owner)}/${encode(repo)}/actions/workflows/$workflowId/runs"
+        } else {
+            "/repos/${encode(owner)}/${encode(repo)}/actions/runs"
+        }
+        val raw = request("$base?per_page=$safe", token)
         val array = JSONObject(raw).optJSONArray("workflow_runs") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::workflowRunFromJson) }
+    }
+
+    fun workflowRuns(token: String, owner: String, repo: String): List<String> =
+        listWorkflowRuns(token, owner, repo).map {
+            "#${it.number} ${it.name} [${it.branch}] — ${it.status}/${it.conclusion}"
+        }
+
+    fun listWorkflows(token: String, owner: String, repo: String): List<Pair<Long, String>> {
+        val raw = request("/repos/${encode(owner)}/${encode(repo)}/actions/workflows?per_page=50", token)
+        val array = JSONObject(raw).optJSONArray("workflows") ?: return emptyList()
         return (0 until array.length()).mapNotNull { index ->
             val o = array.optJSONObject(index) ?: return@mapNotNull null
-            val status = o.optString("status")
-            val conclusion = o.optString("conclusion").ifBlank { "—" }
-            val name = o.optString("name")
-            val branch = o.optString("head_branch")
-            "#${o.optInt("run_number")} $name [$branch] — $status/$conclusion"
+            o.optLong("id").takeIf { it > 0 }?.let { it to o.optString("name", "workflow") }
         }
+    }
+
+    fun listRunJobs(token: String, owner: String, repo: String, runId: Long): List<WorkflowJob> {
+        val raw = request(
+            "/repos/${encode(owner)}/${encode(repo)}/actions/runs/$runId/jobs?per_page=50",
+            token
+        )
+        val array = JSONObject(raw).optJSONArray("jobs") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val o = array.optJSONObject(index) ?: return@mapNotNull null
+            val steps = o.optJSONArray("steps")?.let { list ->
+                (0 until list.length()).mapNotNull { stepIndex ->
+                    val step = list.optJSONObject(stepIndex) ?: return@mapNotNull null
+                    step.optString("name") to step.optString("conclusion").ifBlank { step.optString("status") }
+                }
+            }.orEmpty()
+            WorkflowJob(
+                id = o.optLong("id"),
+                name = o.optString("name"),
+                status = o.optString("status"),
+                conclusion = o.optString("conclusion").ifBlank { "—" },
+                startedAt = o.optString("started_at"),
+                completedAt = o.optString("completed_at"),
+                steps = steps
+            )
+        }
+    }
+
+    private fun fetchBytes(path: String, token: String, maxBytes: Int): ByteArray {
+        var current = URL(if (path.startsWith("http")) path else API + path)
+        var hops = 0
+        while (hops < 6) {
+            val connection = (current.openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                connectTimeout = 15_000
+                readTimeout = 60_000
+                useCaches = false
+                setRequestProperty("User-Agent", UA)
+                if (current.host == "api.github.com") {
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("Authorization", "Bearer ${token.trim()}")
+                    setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                }
+            }
+            try {
+                val status = connection.responseCode
+                if (status in 300..399) {
+                    val location = connection.getHeaderField("Location")
+                        ?: throw GitHubException(status, "تحويل بلا عنوان")
+                    current = URL(location)
+                    hops++
+                    continue
+                }
+                if (status !in 200..299) {
+                    val raw = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                    throw GitHubException(status, raw.take(300).ifBlank { "فشل الطلب ($status)" })
+                }
+                val output = java.io.ByteArrayOutputStream()
+                connection.inputStream.use { input ->
+                    val buffer = ByteArray(8192)
+                    var total = 0
+                    while (total < maxBytes) {
+                        val read = input.read(buffer, 0, minOf(buffer.size, maxBytes - total))
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                        total += read
+                    }
+                }
+                return output.toByteArray()
+            } finally {
+                connection.disconnect()
+            }
+        }
+        throw GitHubException(508, "عدد تحويلات كبير")
+    }
+
+    fun jobLog(token: String, owner: String, repo: String, jobId: Long, maxBytes: Int = 800_000): String {
+        val bytes = fetchBytes(
+            "/repos/${encode(owner)}/${encode(repo)}/actions/jobs/$jobId/logs",
+            token,
+            maxBytes.coerceIn(10_000, 2_000_000)
+        )
+        return String(bytes, Charsets.UTF_8)
+    }
+
+    fun rerunRun(token: String, owner: String, repo: String, runId: Long) {
+        request("/repos/${encode(owner)}/${encode(repo)}/actions/runs/$runId/rerun", token, "POST")
+    }
+
+    fun cancelRun(token: String, owner: String, repo: String, runId: Long) {
+        request("/repos/${encode(owner)}/${encode(repo)}/actions/runs/$runId/cancel", token, "POST")
+    }
+
+    fun dispatchWorkflow(
+        token: String,
+        owner: String,
+        repo: String,
+        workflowId: Long,
+        ref: String,
+        inputs: Map<String, String> = emptyMap()
+    ) {
+        val body = JSONObject().put("ref", ref.ifBlank { getRepo(token, owner, repo).defaultBranch })
+        if (inputs.isNotEmpty()) {
+            val obj = JSONObject()
+            inputs.forEach { (key, value) -> obj.put(key, value) }
+            body.put("inputs", obj)
+        }
+        request("/repos/${encode(owner)}/${encode(repo)}/actions/workflows/$workflowId/dispatches", token, "POST", body)
+    }
+
+    fun listArtifacts(token: String, owner: String, repo: String, runId: Long): List<Artifact> {
+        val raw = request("/repos/${encode(owner)}/${encode(repo)}/actions/runs/$runId/artifacts", token)
+        val array = JSONObject(raw).optJSONArray("artifacts") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val o = array.optJSONObject(index) ?: return@mapNotNull null
+            Artifact(
+                id = o.optLong("id"),
+                name = o.optString("name"),
+                size = o.optLong("size_in_bytes"),
+                expired = o.optBoolean("expired"),
+                createdAt = o.optString("created_at")
+            )
+        }
+    }
+
+    private fun downloadTo(path: String, token: String, target: File, maxBytes: Long): File {
+        var current = URL(if (path.startsWith("http")) path else API + path)
+        var hops = 0
+        while (hops < 6) {
+            val connection = (current.openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                connectTimeout = 15_000
+                readTimeout = 120_000
+                useCaches = false
+                setRequestProperty("User-Agent", UA)
+                if (current.host == "api.github.com") {
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("Authorization", "Bearer ${token.trim()}")
+                    setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                }
+            }
+            try {
+                val status = connection.responseCode
+                if (status in 300..399) {
+                    val location = connection.getHeaderField("Location")
+                        ?: throw GitHubException(status, "تحويل بلا عنوان")
+                    current = URL(location)
+                    hops++
+                    continue
+                }
+                if (status !in 200..299) {
+                    throw GitHubException(status, "فشل التنزيل ($status)")
+                }
+                target.parentFile?.mkdirs()
+                var total = 0L
+                connection.inputStream.use { input ->
+                    target.outputStream().use { output ->
+                        val buffer = ByteArray(16_384)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            total += read
+                            if (total > maxBytes) throw IllegalStateException("الملف أكبر من الحد المسموح")
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+                return target
+            } finally {
+                connection.disconnect()
+            }
+        }
+        throw GitHubException(508, "عدد تحويلات كبير")
+    }
+
+    fun downloadArtifact(
+        token: String,
+        owner: String,
+        repo: String,
+        artifactId: Long,
+        target: File
+    ): File = downloadTo(
+        "/repos/${encode(owner)}/${encode(repo)}/actions/artifacts/$artifactId/zip",
+        token,
+        target,
+        120L * 1024 * 1024
+    )
+
+    fun downloadRepoZip(
+        token: String,
+        owner: String,
+        repo: String,
+        ref: String,
+        target: File
+    ): File {
+        val branch = ref.ifBlank { getRepo(token, owner, repo).defaultBranch }
+        return downloadTo(
+            "/repos/${encode(owner)}/${encode(repo)}/zipball/${encode(branch)}",
+            token,
+            target,
+            200L * 1024 * 1024
+        )
+    }
+
+    private fun safeRepoPath(path: String): String {
+        val clean = path.trim().removePrefix("/")
+        if (clean.isBlank() || clean.split('/').any { it.isBlank() || it == ".." || it == "." }) {
+            throw IllegalArgumentException("مسار ملف غير صالح: $path")
+        }
+        return clean
+    }
+
+    /** إنشاء commit واحد لعدة ملفات وحذف دفعة واحدة عبر Git Data API. */
+    fun commitFiles(
+        token: String,
+        owner: String,
+        repo: String,
+        branch: String,
+        message: String,
+        files: Map<String, String>,
+        deletions: List<String> = emptyList()
+    ): String {
+        if (files.isEmpty() && deletions.isEmpty()) throw IllegalArgumentException("لا توجد تغييرات")
+        val targetBranch = branch.ifBlank { getRepo(token, owner, repo).defaultBranch }
+        val repoPath = "/repos/${encode(owner)}/${encode(repo)}"
+        val refRaw = request("$repoPath/git/ref/heads/${encode(targetBranch)}", token)
+        val headSha = JSONObject(refRaw).optJSONObject("object")?.optString("sha").orEmpty()
+        if (headSha.isBlank()) throw GitHubException(404, "الفرع غير موجود: $targetBranch")
+        val commitRaw = request("$repoPath/git/commits/$headSha", token)
+        val baseTree = JSONObject(commitRaw).optJSONObject("tree")?.optString("sha").orEmpty()
+        val tree = JSONArray()
+        files.forEach { (rawPath, content) ->
+            val path = safeRepoPath(rawPath)
+            val blob = JSONObject(
+                request(
+                    "$repoPath/git/blobs", token, "POST",
+                    JSONObject().put("content", content).put("encoding", "utf-8")
+                )
+            )
+            tree.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("mode", "100644")
+                    .put("type", "blob")
+                    .put("sha", blob.optString("sha"))
+            )
+        }
+        deletions.forEach { rawPath ->
+            tree.put(
+                JSONObject()
+                    .put("path", safeRepoPath(rawPath))
+                    .put("mode", "100644")
+                    .put("type", "blob")
+                    .put("sha", JSONObject.NULL)
+            )
+        }
+        val treeBody = JSONObject().put("tree", tree)
+        if (baseTree.isNotBlank()) treeBody.put("base_tree", baseTree)
+        val newTree = JSONObject(request("$repoPath/git/trees", token, "POST", treeBody))
+            .optString("sha")
+        val parents = JSONArray().put(headSha)
+        val commitBody = JSONObject()
+            .put("message", message.ifBlank { "تحديث من Lion AI" })
+            .put("tree", newTree)
+            .put("parents", parents)
+        val newCommit = JSONObject(request("$repoPath/git/commits", token, "POST", commitBody))
+            .optString("sha")
+        request(
+            "$repoPath/git/refs/heads/${encode(targetBranch)}", token, "PATCH",
+            JSONObject().put("sha", newCommit).put("force", false)
+        )
+        return newCommit
     }
 
     fun languages(token: String, owner: String, repo: String): Map<String, Long> {

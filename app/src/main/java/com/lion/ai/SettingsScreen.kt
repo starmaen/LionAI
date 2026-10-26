@@ -744,6 +744,12 @@ fun SettingsScreen(
                 color = Color(0xFFB0B0B0),
                 fontSize = 12.sp
             )
+            Text(
+                "أفضل إعداد: اترك «تشغيل الأدوات» و«السماح بالكتابة» مفعّلين. المستودع الافتراضي اختياري ويسهّل أوامر مثل «عدّل README». " +
+                    "أزرار الفتح روابط اختصار فقط. لبناء Actions أضف صلاحية Actions (أو workflow) للتوكن.",
+                color = Color(0xFF8F8F8F),
+                fontSize = 11.sp
+            )
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { githubAgent = !githubAgent }.padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -793,7 +799,7 @@ fun SettingsScreen(
                 )
             )
             Text(
-                "الصلاحيات المقترحة: repo (أو Contents + Issues + Pull requests) وread:user. يُخزَّن التوكن مشفّراً على الجهاز فقط.",
+                "الصلاحيات المقترحة: repo + workflow (أو Contents + Issues + Pull requests + Actions) وread:user. يُخزَّن التوكن مشفّراً على الجهاز فقط.",
                 color = Color(0xFF9A9A9A),
                 fontSize = 11.sp
             )

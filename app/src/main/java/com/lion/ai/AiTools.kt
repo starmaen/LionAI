@@ -3,6 +3,7 @@ package com.lion.ai
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONObject
+import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -57,7 +58,17 @@ object AiTools {
         Def("github_create_pr", ToolGroup.GITHUB, """{"repo":"owner/name","title":"...","head":"feature","base":"main","body":""}""", "إنشاء Pull Request", true),
         Def("github_search_repos", ToolGroup.GITHUB, """{"query":"kotlin android","per_page":10}""", "بحث المستودعات"),
         Def("github_search_code", ToolGroup.GITHUB, """{"query":"repo:owner/name keyword"}""", "بحث داخل الكود"),
-        Def("github_workflow_runs", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "حالة GitHub Actions"),
+        Def("github_workflow_runs", ToolGroup.GITHUB, """{"repo":"owner/name","per_page":10}""", "أحدث عمليات GitHub Actions"),
+        Def("github_list_workflows", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "ملفات workflows ومعرّفاتها"),
+        Def("github_workflow_jobs", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "وظائف وخطوات عملية بناء"),
+        Def("github_job_log", ToolGroup.GITHUB, """{"repo":"owner/name","job_id":456,"max_chars":12000}""", "سجل وظيفة بناء لمعرفة سبب الفشل"),
+        Def("github_rerun", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "إعادة تشغيل عملية بناء", true),
+        Def("github_cancel", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "إلغاء عملية بناء جارية", true),
+        Def("github_dispatch", ToolGroup.GITHUB, """{"repo":"owner/name","workflow_id":123,"ref":"main","inputs":{}}""", "بدء workflow يدوياً (بناء الآن)", true),
+        Def("github_list_artifacts", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "مخرجات البناء (APK وغيرها)"),
+        Def("github_download_artifact", ToolGroup.GITHUB, """{"repo":"owner/name","artifact_id":123,"name":"LionAI.zip"}""", "تنزيل مخرج بناء إلى مساحة العمل", true),
+        Def("github_clone", ToolGroup.GITHUB, """{"repo":"owner/name","ref":"main","target":"repos/owner/name"}""", "تنزيل المستودع كامل وفك ضغطه في مساحة العمل", true),
+        Def("github_commit_files", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","message":"...","files":[{"path":"a.kt","content":"..."}],"delete":["old.txt"]}""", "commit واحد لعدة ملفات (تعديل/إنشاء/حذف)", true),
 
         // Web
         Def("web_fetch", ToolGroup.WEB, """{"url":"https://...","links":true,"max_chars":12000}""", "جلب صفحة واستخراج النص والروابط والصور"),
@@ -120,7 +131,8 @@ object AiTools {
         val groups = mutableSetOf<ToolGroup>()
         val github = Regex(
             "(github|git\\b|repo|repository|pull request|\\bpr\\b|issue|commit|branch|workflow|actions|readme|" +
-                "مستودع|مستودعات|ريبو|فرع|فروع|كوميت|بلاغ|بلاغات|طلب سحب|سحب|دفع|رفع|شجرة الملفات|ملفات المشروع|جيت هاب|غيث هاب)"
+                "مستودع|مستودعات|ريبو|فرع|فروع|كوميت|بلاغ|بلاغات|طلب سحب|سحب|دفع|رفع|شجرة الملفات|ملفات المشروع|جيت هاب|غيث هاب|" +
+                "workflow|workflows|بناء التطبيق|سجل البناء|إعادة البناء|اعادة البناء|rerun|dispatch|artifacts|مخرجات البناء|apk)"
         )
         if (github.containsMatchIn(t) && githubReady(prefs)) groups.add(ToolGroup.GITHUB)
         val web = Regex(
@@ -400,8 +412,106 @@ object AiTools {
             }
             "github_workflow_runs" -> {
                 val (owner, repo) = repoOf(ctx, args)
-                val runs = GitHubClient.workflowRuns(token, owner, repo)
-                if (runs.isEmpty()) "لا توجد عمليات بناء." else runs.joinToString("\n") { "• $it" }
+                val runs = GitHubClient.listWorkflowRuns(token, owner, repo, int(args, "per_page", 10))
+                if (runs.isEmpty()) "لا توجد عمليات بناء." else runs.joinToString("\n") {
+                    "• #${it.number} ${it.name} [${it.branch}] — ${it.status}/${it.conclusion} (id=${it.id})\n  ${it.htmlUrl}"
+                }
+            }
+            "github_list_workflows" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val items = GitHubClient.listWorkflows(token, owner, repo)
+                if (items.isEmpty()) "لا توجد workflows." else items.joinToString("\n") { "• ${it.second} — id=${it.first}" }
+            }
+            "github_workflow_jobs" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val jobs = GitHubClient.listRunJobs(token, owner, repo, args.optLong("run_id", 0L))
+                if (jobs.isEmpty()) "لا توجد وظائف." else jobs.joinToString("\n\n") { job ->
+                    buildString {
+                        append("• ").append(job.name).append(" — ").append(job.status).append('/').append(job.conclusion)
+                        append(" (id=").append(job.id).append(")\n")
+                        job.steps.forEach { (step, result) -> append("   - ").append(step).append(": ").append(result).append('\n') }
+                    }.trimEnd()
+                }
+            }
+            "github_job_log" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val log = GitHubClient.jobLog(token, owner, repo, args.optLong("job_id", 0L))
+                log.take(int(args, "max_chars", 12_000).coerceIn(2000, 30_000))
+            }
+            "github_rerun" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.rerunRun(token, owner, repo, args.optLong("run_id", 0L))
+                "✅ أُعيد تشغيل البناء"
+            }
+            "github_cancel" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.cancelRun(token, owner, repo, args.optLong("run_id", 0L))
+                "✅ أُلغي البناء"
+            }
+            "github_dispatch" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val inputs = args.optJSONObject("inputs")?.let { obj ->
+                    obj.keys().asSequence().associateWith { obj.optString(it) }
+                }.orEmpty()
+                GitHubClient.dispatchWorkflow(
+                    token, owner, repo, args.optLong("workflow_id", 0L),
+                    args.optString("ref"), inputs
+                )
+                "✅ بدأ تنفيذ workflow"
+            }
+            "github_list_artifacts" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val artifacts = GitHubClient.listArtifacts(token, owner, repo, args.optLong("run_id", 0L))
+                if (artifacts.isEmpty()) "لا توجد مخرجات." else artifacts.joinToString("\n") {
+                    "• ${it.name} (${FileTools.formatSize(it.size)}) id=${it.id}${if (it.expired) " — منتهي" else ""}"
+                }
+            }
+            "github_download_artifact" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val id = args.optLong("artifact_id", 0L)
+                val rawName = args.optString("name").ifBlank { "artifact-$id.zip" }
+                val safeName = rawName.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").take(80)
+                val target = File(File(FileTools.root(ctx.context), "downloads"), safeName)
+                val file = GitHubClient.downloadArtifact(token, owner, repo, id, target)
+                "✅ نُزّل ${FileTools.relative(ctx.context, file)} (${FileTools.formatSize(file.length())})"
+            }
+            "github_clone" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val zip = File(File(FileTools.root(ctx.context), "downloads"), "$repo.zip")
+                val file = GitHubClient.downloadRepoZip(token, owner, repo, args.optString("ref"), zip)
+                val target = args.optString("target").ifBlank { "repos/$owner/$repo" }
+                val count = FileTools.extractZip(
+                    ctx.context,
+                    FileTools.relative(ctx.context, file),
+                    target,
+                    args.optBoolean("overwrite", true),
+                    stripRoot = true
+                )
+                "✅ نُسخ $owner/$repo إلى $target ($count ملفاً)"
+            }
+            "github_commit_files" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val files = linkedMapOf<String, String>()
+                args.optJSONArray("files")?.let { array ->
+                    for (index in 0 until array.length()) {
+                        val o = array.optJSONObject(index) ?: continue
+                        val path = o.optString("path").trim()
+                        if (path.isNotBlank()) files[path] = o.optString("content")
+                    }
+                }
+                args.optJSONObject("files")?.let { obj ->
+                    obj.keys().forEach { key -> files[key] = obj.optString(key) }
+                }
+                val deletions = (args.optJSONArray("delete") ?: args.optJSONArray("deletions"))?.let { array ->
+                    (0 until array.length()).mapNotNull { array.optString(it).takeIf { value -> value.isNotBlank() } }
+                }.orEmpty()
+                if (files.isEmpty() && deletions.isEmpty()) throw IllegalArgumentException("حدد files أو delete")
+                val sha = GitHubClient.commitFiles(
+                    token, owner, repo, args.optString("branch"),
+                    args.optString("message", "تحديث من Lion AI"),
+                    files, deletions
+                )
+                "✅ أُنشئ commit ${sha.take(8)} (${files.size} ملف، ${deletions.size} حذف)"
             }
 
             "web_fetch" -> {

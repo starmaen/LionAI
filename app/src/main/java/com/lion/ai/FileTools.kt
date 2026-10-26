@@ -258,7 +258,13 @@ object FileTools {
     }
 
     /** فك ضغط ZIP داخل مساحة العمل مع منع الخروج عن الجذر (zip-slip). */
-    fun extractZip(context: Context, zipPath: String, target: String = "", overwrite: Boolean = false): Int {
+    fun extractZip(
+        context: Context,
+        zipPath: String,
+        target: String = "",
+        overwrite: Boolean = false,
+        stripRoot: Boolean = false
+    ): Int {
         val archive = resolve(context, zipPath)
         if (!archive.isFile) throw IllegalArgumentException("ملف ZIP غير موجود: $zipPath")
         val root = root(context).canonicalFile
@@ -267,16 +273,23 @@ object FileTools {
         var count = 0
         var totalBytes = 0L
         ZipFile(archive).use { zip ->
-            val entries = zip.entries()
-            while (entries.hasMoreElements()) {
+            val entries = zip.entries().toList()
+            val tops = entries.filter { !it.isDirectory }.map { it.name.substringBefore('/') }.distinct()
+            val rootPrefix = if (stripRoot && tops.size == 1 && entries.all { it.name.contains('/') }) {
+                tops.first() + "/"
+            } else {
+                ""
+            }
+            for (entry in entries) {
                 if (count >= 3000) break
-                val entry = entries.nextElement()
                 if (entry.isDirectory) continue
+                val rawName = entry.name.removePrefix(rootPrefix)
+                if (rawName.isBlank()) continue
                 val declared = if (entry.size > 0) entry.size else 0L
                 if (totalBytes + declared > 50_000_000L) {
                     throw IllegalArgumentException("الأرشيف أكبر من 50MB؛ تم إيقاف فك الضغط لحماية التخزين")
                 }
-                val out = File(targetDir, entry.name).canonicalFile
+                val out = File(targetDir, rawName).canonicalFile
                 if (out != root && !out.path.startsWith(root.path + File.separator)) {
                     throw IllegalArgumentException("مدخل غير آمن في الأرشيف: ${entry.name}")
                 }

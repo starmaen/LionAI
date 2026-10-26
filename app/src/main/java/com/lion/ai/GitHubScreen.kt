@@ -3,6 +3,7 @@ package com.lion.ai
 import android.content.SharedPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,12 +50,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,6 +74,7 @@ fun GitHubScreen(
     onOpenSettings: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val token = remember { (prefs.getString("github_token", "") ?: "").trim() }
     var repos by remember { mutableStateOf(listOf<GitHubClient.Repo>()) }
     var selected by remember { mutableStateOf<GitHubClient.Repo?>(null) }
@@ -103,6 +107,14 @@ fun GitHubScreen(
     var prBase by remember { mutableStateOf("") }
     var prBody by remember { mutableStateOf("") }
 
+    var runs by remember { mutableStateOf(listOf<GitHubClient.WorkflowRun>()) }
+    var workflows by remember { mutableStateOf(listOf<Pair<Long, String>>()) }
+    var selectedRun by remember { mutableStateOf<GitHubClient.WorkflowRun?>(null) }
+    var runJobs by remember { mutableStateOf(listOf<GitHubClient.WorkflowJob>()) }
+    var runLog by remember { mutableStateOf("") }
+    var runLogTitle by remember { mutableStateOf("") }
+    var actionsBusy by remember { mutableStateOf(false) }
+
     fun repoOwner(repo: GitHubClient.Repo): Pair<String, String> =
         GitHubClient.parseFullName(repo.fullName)
 
@@ -130,6 +142,139 @@ fun GitHubScreen(
                 repos = it
                 if (it.isEmpty()) status = "لا نتائج لهذا البحث."
             }.onFailure { status = "⚠️ ${it.message}" }
+            loading = false
+        }
+    }
+
+    fun loadRuns() {
+        val repo = selected ?: return
+        val (owner, name) = repoOwner(repo)
+        scope.launch {
+            loading = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching { GitHubClient.listWorkflowRuns(token, owner, name, 15) }
+            }
+            result.onSuccess { runs = it }.onFailure { status = "⚠️ ${it.message}" }
+            loading = false
+        }
+    }
+
+    fun openRun(run: GitHubClient.WorkflowRun) {
+        val repo = selected ?: return
+        val (owner, name) = repoOwner(repo)
+        selectedRun = run
+        runJobs = emptyList()
+        runLog = ""
+        runLogTitle = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { GitHubClient.listRunJobs(token, owner, name, run.id) }
+            }
+            result.onSuccess { runJobs = it }.onFailure { status = "⚠️ ${it.message}" }
+        }
+    }
+
+    fun showJobLog(job: GitHubClient.WorkflowJob) {
+        val repo = selected ?: return
+        val (owner, name) = repoOwner(repo)
+        scope.launch {
+            actionsBusy = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching { GitHubClient.jobLog(token, owner, name, job.id) }
+            }
+            result.onSuccess {
+                runLog = it
+                runLogTitle = job.name
+            }.onFailure { status = "⚠️ ${it.message}" }
+            actionsBusy = false
+        }
+    }
+
+    fun rerunSelected() {
+        val run = selectedRun ?: return
+        val repo = selected ?: return
+        val (owner, name) = repoOwner(repo)
+        scope.launch {
+            actionsBusy = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching { GitHubClient.rerunRun(token, owner, name, run.id) }
+            }
+            status = result.fold({ "✅ أُعيد تشغيل البناء" }, { "⚠️ ${it.message}" })
+            actionsBusy = false
+        }
+    }
+
+    fun cancelSelected() {
+        val run = selectedRun ?: return
+        val repo = selected ?: return
+        val (owner, name) = repoOwner(repo)
+        scope.launch {
+            actionsBusy = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching { GitHubClient.cancelRun(token, owner, name, run.id) }
+            }
+            status = result.fold({ "✅ أُلغي البناء" }, { "⚠️ ${it.message}" })
+            actionsBusy = false
+        }
+    }
+
+    fun startBuild() {
+        val repo = selected ?: return
+        val (owner, name) = repoOwner(repo)
+        scope.launch {
+            actionsBusy = true
+            status = "⏳ أبحث عن workflow..."
+            if (workflows.isEmpty()) {
+                workflows = withContext(Dispatchers.IO) {
+                    runCatching { GitHubClient.listWorkflows(token, owner, name) }.getOrDefault(emptyList())
+                }
+            }
+            val workflow = workflows.firstOrNull()
+            if (workflow == null) {
+                status = "⚠️ لا توجد workflows قابلة للتشغيل"
+                actionsBusy = false
+                return@launch
+            }
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    GitHubClient.dispatchWorkflow(token, owner, name, workflow.first, repo.defaultBranch)
+                }
+            }
+            result.onSuccess {
+                status = "✅ بدأ ${workflow.second} على ${repo.defaultBranch}"
+                delay(3000)
+                runs = withContext(Dispatchers.IO) {
+                    runCatching { GitHubClient.listWorkflowRuns(token, owner, name, 15) }
+                        .getOrDefault(runs)
+                }
+            }.onFailure { status = "⚠️ ${it.message}" }
+            actionsBusy = false
+        }
+    }
+
+    fun cloneRepo() {
+        val repo = selected ?: return
+        val (owner, name) = repoOwner(repo)
+        scope.launch {
+            loading = true
+            status = "⏳ جارٍ تنزيل المستودع إلى مساحة العمل..."
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val zip = FileTools.root(context).resolve("downloads/$name.zip")
+                    val downloaded = GitHubClient.downloadRepoZip(token, owner, name, repo.defaultBranch, zip)
+                    val target = "repos/$owner/$name"
+                    val count = FileTools.extractZip(
+                        context,
+                        FileTools.relative(context, downloaded),
+                        target,
+                        true,
+                        stripRoot = true
+                    )
+                    target to count
+                }
+            }
+            result.onSuccess { status = "✅ نُسخ ${it.first} (${it.second} ملفاً)" }
+                .onFailure { status = "⚠️ ${it.message}" }
             loading = false
         }
     }
@@ -239,6 +384,17 @@ fun GitHubScreen(
                 }
                 "prs" -> pulls = withContext(Dispatchers.IO) {
                     GitHubClient.listPulls(token, owner, name)
+                }
+                "actions" -> {
+                    runs = withContext(Dispatchers.IO) {
+                        GitHubClient.listWorkflowRuns(token, owner, name, 15)
+                    }
+                    if (workflows.isEmpty()) {
+                        workflows = withContext(Dispatchers.IO) {
+                            runCatching { GitHubClient.listWorkflows(token, owner, name) }
+                                .getOrDefault(emptyList())
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -351,10 +507,17 @@ fun GitHubScreen(
                     Text(repo.defaultBranch, color = MUTED, fontSize = 11.sp)
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     tabButton("📁 الملفات", mode == "files") { mode = "files"; path = ""; file = null }
                     tabButton("🐞 Issues", mode == "issues") { mode = "issues"; file = null }
                     tabButton("🔀 PRs", mode == "prs") { mode = "prs"; file = null }
+                    tabButton("⚙️ Actions", mode == "actions") { mode = "actions"; file = null }
+                }
+                TextButton(enabled = !loading, onClick = { cloneRepo() }) {
+                    Text("⬇️ نسخ المستودع إلى مساحة العمل", color = GOLD, fontSize = 12.sp)
                 }
                 Spacer(Modifier.height(8.dp))
 
@@ -546,6 +709,43 @@ fun GitHubScreen(
                             }
                         }
                     }
+
+                    "actions" -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("GitHub Actions", color = Color.White, modifier = Modifier.weight(1f))
+                            TextButton(enabled = !actionsBusy, onClick = { loadRuns() }) {
+                                Text("🔄", color = GOLD)
+                            }
+                            TextButton(enabled = !actionsBusy, onClick = { startBuild() }) {
+                                Text("▶️ بناء", color = GOLD, fontSize = 12.sp)
+                            }
+                        }
+                        if (runs.isEmpty()) Text("لا توجد عمليات بناء.", color = MUTED, fontSize = 12.sp)
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            items(runs, key = { it.id }) { run ->
+                                val icon = when (run.conclusion) {
+                                    "success" -> "✅"
+                                    "failure" -> "❌"
+                                    "cancelled" -> "⏹"
+                                    else -> "⏳"
+                                }
+                                Card(
+                                    Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { openRun(run) },
+                                    colors = CardDefaults.cardColors(containerColor = CARD)
+                                ) {
+                                    Column(Modifier.padding(10.dp)) {
+                                        Text("$icon #${run.number} ${run.name}", color = Color.White, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "${run.branch} · ${run.event} · ${run.status}/${run.conclusion}",
+                                            color = MUTED,
+                                            fontSize = 11.sp
+                                        )
+                                        Text(run.createdAt, color = MUTED, fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -693,6 +893,68 @@ fun GitHubScreen(
                 }) { Text("إنشاء", color = GOLD) }
             },
             dismissButton = { TextButton(onClick = { prDialog = false }) { Text("إلغاء", color = MUTED) } }
+        )
+    }
+
+    selectedRun?.let { run ->
+        AlertDialog(
+            onDismissRequest = { selectedRun = null },
+            containerColor = CARD,
+            title = { Text("⚙️ #${run.number} ${run.name}", color = GOLD, fontSize = 14.sp) },
+            text = {
+                Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        "${run.branch} · ${run.event} · ${run.status}/${run.conclusion}",
+                        color = Color.White,
+                        fontSize = 12.sp
+                    )
+                    if (runJobs.isEmpty()) {
+                        Text("⏳ جارٍ تحميل الوظائف...", color = MUTED, fontSize = 11.sp)
+                    }
+                    runJobs.forEach { job ->
+                        val icon = when (job.conclusion) {
+                            "success" -> "✅"
+                            "failure" -> "❌"
+                            else -> "⏳"
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().clickable { showJobLog(job) }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("$icon ${job.name}", color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                            Text("📜 السجل", color = GOLD, fontSize = 11.sp)
+                        }
+                        job.steps.take(10).forEach { (step, result) ->
+                            Text("   - $step: $result", color = MUTED, fontSize = 10.sp)
+                        }
+                    }
+                    if (runLog.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        HorizontalDivider(color = Color(0xFF2A2A2A))
+                        Spacer(Modifier.height(6.dp))
+                        Text("📜 $runLogTitle", color = GOLD, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            runLog.take(30_000),
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(enabled = !actionsBusy, onClick = { rerunSelected() }) {
+                        Text("🔁 إعادة", color = GOLD)
+                    }
+                    TextButton(enabled = !actionsBusy, onClick = { cancelSelected() }) {
+                        Text("⏹ إلغاء", color = Color(0xFFE94560))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedRun = null }) { Text("إغلاق", color = MUTED) }
+            }
         )
     }
 
