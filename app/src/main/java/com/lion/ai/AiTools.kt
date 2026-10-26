@@ -670,9 +670,18 @@ object AiTools {
             "connectors_test" -> {
                 val connected = ConnectorAuth.all.filter { ConnectorAuth.isConnected(ctx.prefs, it.id) }
                 if (connected.isEmpty()) "لا توجد موصلات مربوطة بعد. افتح شاشة الموصلات واربط حساباً."
-                else connected.joinToString("\n") { def ->
-                    runCatching { ConnectorAuth.test(ctx.prefs, def.id) }
-                        .getOrElse { "❌ ${def.name}: ${it.message ?: it.javaClass.simpleName}" }
+                else {
+                    val results = ArrayList<String>(connected.size)
+                    for (def in connected) {
+                        results.add(
+                            try {
+                                ConnectorAuth.test(ctx.prefs, def.id)
+                            } catch (e: Throwable) {
+                                "❌ ${def.name}: ${e.message ?: e.javaClass.simpleName}"
+                            }
+                        )
+                    }
+                    results.joinToString("\n")
                 }
             }
             "drive_search" -> {

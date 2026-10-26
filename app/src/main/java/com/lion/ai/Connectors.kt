@@ -433,7 +433,7 @@ object Connectors {
     }
 
     private fun safeName(raw: String): String {
-        val cleaned = raw.replace(Regex("[^\p{L}\p{N}._-]+"), "_").trim('_', '.')
+        val cleaned = raw.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").trim('_', '.')
         return cleaned.ifBlank { "drive-file" }.take(120)
     }
 
