@@ -809,12 +809,25 @@ fun LionApp() {
             } else {
                 prompt + "\n\n" + WebGrounding.contextBlock(sources)
             }
+            // عند توفر مصادر ويب، لا نتوقف عند أول 6 مسارات: نمنح أي مزود متاح آخر
+            // فرصة للاستناد إلى المصادر بدلاً من إظهار «لا توجد إجابة موثوقة».
+            val rescueRoutes = if (sources.isNotEmpty()) {
+                SmartRouter.candidates(kind)
+                    .filter { SmartRouter.available(prefs, it.provider) }
+                    .filterNot { candidate -> plan.any { it.provider == candidate.provider } }
+                    .distinctBy { it.provider }
+                    .sortedByDescending { SmartRouter.isReliableModel(it.provider, it.model) }
+                    .take(3)
+            } else {
+                emptyList()
+            }
+            val routesToTry = plan + rescueRoutes
             var reply = ""
             var used: Route? = null
             var fallback: Pair<Route, String>? = null
             val failed = mutableListOf<String>()
             val deadline = System.currentTimeMillis() + 90_000
-            for (route in plan) {
+            for (route in routesToTry) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
                 val r = withContext(Dispatchers.IO) {
@@ -842,11 +855,13 @@ fun LionApp() {
             }
             if (used == null) {
                 val f = fallback
-                val canUseFallback = !auto || !strict || !hasTrusted
+                val canUseFallback = sources.isNotEmpty() || !auto || !strict || !hasTrusted
                 if (f != null && f.second.isNotBlank() && canUseFallback) {
                     reply = f.second
                     used = f.first
-                    reply += if (!auto) {
+                    reply += if (sources.isNotEmpty() && auto && strict) {
+                        "\n\n✅ الإجابة مستندة إلى مصادر الويب أعلاه، لكنها من مزود أقل قوة من المعتاد؛ راجع التفاصيل الحساسة."
+                    } else if (!auto) {
                         "\n\n⚠️ الرد من المزود المختار قد يكون غير موثوق؛ راجع التواريخ والأسماء قبل الاعتماد عليه."
                     } else if (strict) {
                         "\n\n⚠️ لم يتوفر مزود قوي لهذا السؤال؛ هذه إجابة من مزود مجاني. تحقق من التواريخ والأسماء قبل الاعتماد عليها."
@@ -990,10 +1005,19 @@ fun LionApp() {
                 append("🖼️ ").append(image.name)
             }
         }
+        val fileText = file?.text.orEmpty()
+        val selectedFileText = if (file != null && fileText.length > 18_000) {
+            LocalRag.select(fileText, text.ifBlank { file.name })
+        } else {
+            fileText
+        }
         var prompt = if (file != null) {
             buildString {
                 if (text.isNotEmpty()) append(text).append("\n\n")
-                append("محتوى الملف (").append(file.name).append("):\n").append(file.text)
+                append("محتوى الملف (").append(file.name).append("):\n").append(selectedFileText)
+                if (selectedFileText.length < fileText.length) {
+                    append("\n\n[ملاحظة: الملف طويل، وأُرسلت المقاطع الأكثر صلة بالسؤال فقط.]")
+                }
             }
         } else {
             text

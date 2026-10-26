@@ -277,7 +277,7 @@ object SmartRouter {
                 ordered[1] = tmp
             }
         }
-        return ordered.take(if (mode == AnswerMode.FAST) 2 else 4)
+        return ordered.take(if (mode == AnswerMode.FAST) 2 else 6)
     }
 
     fun label(route: Route, kind: TaskKind?): String {
