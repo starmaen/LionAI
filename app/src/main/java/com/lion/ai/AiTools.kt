@@ -186,7 +186,7 @@ object AiTools {
                 "درايف|جوجل درايف|بريد|بريد إلكتروني|بريد الكتروني|ايميل|إيميل|جيميل|" +
                 "تقويم|مواعيد|calendar|اجتماع|نوشن|نوتيون|سلاك|موصل|موصلات|خدمة خارجية|تكامل|ربط حساب)"
         )
-        if (connectors.containsMatchIn(t) && ConnectorAuth.anyConnected(prefs)) {
+        if (connectors.containsMatchIn(t)) {
             groups.add(ToolGroup.CONNECTORS)
         }
         return groups

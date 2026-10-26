@@ -77,7 +77,8 @@ fun ConnectorsScreen(
         scope.launch {
             try {
                 val label = action()
-                message = "✅ تم ربط $id${if (label.isNotBlank()) " — $label" else ""}"
+                val prettyName = ConnectorAuth.find(id)?.name ?: id
+                message = "✅ تم ربط $prettyName${if (label.isNotBlank()) " — $label" else ""}"
                 version++
             } catch (e: Exception) {
                 message = "❌ ${e.message ?: e.javaClass.simpleName}"
@@ -133,7 +134,8 @@ fun ConnectorsScreen(
                 SectionCard(title = "🔑 إعداد Google OAuth", subtitle = "مطلوب مرة واحدة لربط Drive وGmail وCalendar") {
                     Text(
                         "أنشئ OAuth Client من نوع Desktop app في Google Cloud Console، وفعّل Drive API وGmail API وCalendar API، " +
-                            "ثم ألصق Client ID وSecret هنا. التطبيق يستخدم PKCE مع redirect محلي (127.0.0.1) آمن.",
+                            "ثم ألصق Client ID وSecret هنا. التطبيق يستخدم PKCE مع redirect محلي (127.0.0.1) آمن. " +
+                            "أضف بريدك كـ Test user في شاشة OAuth consent screen إن كان التطبيق غير منشور.",
                         color = Color(0xFF9C9C9C),
                         fontSize = 11.sp
                     )

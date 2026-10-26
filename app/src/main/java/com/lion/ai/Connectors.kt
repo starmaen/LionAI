@@ -208,12 +208,13 @@ object Connectors {
             google(ctx, "google_drive", "POST", "$DRIVE/files?fields=id,name,webViewLink", metadata.toString()),
             "Drive"
         )
-        val id = JSONObject(created.body).optString("id")
+        val createdJson = JSONObject(created.body)
+        val id = createdJson.optString("id")
+        val link = createdJson.optString("webViewLink")
         val url = "$DRIVE_UPLOAD/files/$id?uploadType=media"
         val token = ConnectorAuth.token(ctx.prefs, "google_drive")
         val res = uploadBytes(url, token, bytes, contentType)
         ensureOk(res, "Drive")
-        val link = runCatching { JSONObject(res.body).optString("webViewLink") }.getOrDefault("")
         return "✅ رُفع $name (${FileTools.formatSize(bytes.size.toLong())}) إلى Drive\n$link"
     }
 
