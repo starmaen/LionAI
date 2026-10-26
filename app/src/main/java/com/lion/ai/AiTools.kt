@@ -115,7 +115,9 @@ object AiTools {
         // Connectors
         Def("connectors_status", ToolGroup.CONNECTORS, "{}", "حالة الموصلات والحسابات المربوطة"),
         Def("drive_search", ToolGroup.CONNECTORS, """{"query":"تقرير","max":10}""", "بحث في ملفات Google Drive", connector = "google_drive"),
+        Def("drive_list", ToolGroup.CONNECTORS, """{"max":20}""", "أحدث ملفات Drive", connector = "google_drive"),
         Def("drive_read", ToolGroup.CONNECTORS, """{"file_id":"...","max_chars":12000}""", "قراءة محتوى ملف نصي من Drive", connector = "google_drive"),
+        Def("drive_download", ToolGroup.CONNECTORS, """{"file_id":"...","name":"file.pdf"}""", "تنزيل ملف من Drive إلى مساحة العمل", true, "google_drive"),
         Def("drive_upload", ToolGroup.CONNECTORS, """{"name":"report.txt","path":"","content":"...","mime":"text/plain","folder_id":""}""", "رفع ملف/نص إلى Drive", true, "google_drive"),
         Def("drive_mkdir", ToolGroup.CONNECTORS, """{"name":"مجلد","folder_id":""}""", "إنشاء مجلد في Drive", true, "google_drive"),
         Def("gmail_search", ToolGroup.CONNECTORS, """{"query":"from:someone","max":10}""", "بحث في Gmail", connector = "gmail"),
@@ -559,7 +561,11 @@ object AiTools {
                 "الموصلات:\n$list"
             }
             "drive_search" -> Connectors.driveSearch(ctx, req(args, "query"), int(args, "max", 10))
+            "drive_list" -> Connectors.driveList(ctx, int(args, "max", 20))
             "drive_read" -> Connectors.driveRead(ctx, req(args, "file_id"), int(args, "max_chars", 12_000))
+            "drive_download" -> Connectors.driveDownload(
+                ctx, req(args, "file_id"), args.optString("name")
+            )
             "drive_upload" -> Connectors.driveUpload(
                 ctx, req(args, "name"), args.optString("path"), args.optString("content"),
                 args.optString("mime"), args.optString("folder_id")

@@ -150,6 +150,88 @@ object Connectors {
         }
     }
 
+    suspend fun driveList(ctx: ToolContext, max: Int): String {
+        val url = "$DRIVE/files?pageSize=${max.coerceIn(1, 100)}" +
+            "&orderBy=modifiedTime desc&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)"
+        val res = ensureOk(google(ctx, "google_drive", "GET", url), "Drive")
+        val files = JSONObject(res.body).optJSONArray("files") ?: JSONArray()
+        if (files.length() == 0) return "Drive فارغ."
+        return (0 until files.length()).joinToString("\n") { index ->
+            val f = files.optJSONObject(index) ?: JSONObject()
+            "• ${f.optString("name")} (${FileTools.formatSize(f.optLong("size"))}) id=${f.optString("id")} — ${f.optString("modifiedTime")}"
+        }
+    }
+
+    suspend fun driveDownload(ctx: ToolContext, fileId: String, name: String): String {
+        val metaRes = ensureOk(
+            google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId?fields=id,name,mimeType,size"),
+            "Drive"
+        )
+        val meta = JSONObject(metaRes.body)
+        val mime = meta.optString("mimeType")
+        if (mime.startsWith("application/vnd.google-apps")) {
+            val target = FileTools.file(ctx.context, "downloads/" + safeName(name.ifBlank { meta.optString("name") + ".txt" }))
+            val text = ensureOk(
+                google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId/export?mimeType=text/plain"),
+                "Drive"
+            ).body
+            target.parentFile?.mkdirs()
+            target.writeText(text)
+            return "✅ نُزّل ${FileTools.relative(ctx.context, target)} (${FileTools.formatSize(target.length())})"
+        }
+        val raw = name.ifBlank { meta.optString("name") }
+        val target = FileTools.file(ctx.context, "downloads/" + safeName(raw))
+        target.parentFile?.mkdirs()
+        val token = ConnectorAuth.token(ctx.prefs, "google_drive")
+        val bytes = downloadBytes("$DRIVE/files/$fileId?alt=media", token, target, 50_000_000L)
+        return "✅ نُزّل ${FileTools.relative(ctx.context, target)} (${FileTools.formatSize(bytes)})"
+    }
+
+    private fun safeName(raw: String): String {
+        val cleaned = raw.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").trim('_', '.')
+        return cleaned.ifBlank { "drive-file" }.take(90)
+    }
+
+    private suspend fun downloadBytes(url: String, token: String, target: java.io.File, maxBytes: Long): Long {
+        var current = url
+        var bearer = token
+        var lastError = ""
+        repeat(5) {
+            val conn = safeUrl(current).openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 20_000
+            conn.readTimeout = 60_000
+            if (bearer.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $bearer")
+            val code = conn.responseCode
+            if (code in 300..399) {
+                val location = conn.getHeaderField("Location")
+                if (location.isNullOrBlank()) throw IllegalStateException("إعادة توجيه بلا عنوان")
+                current = location
+                bearer = ""
+                return@repeat
+            }
+            if (code !in 200..299) {
+                lastError = "Drive ${code}: " + conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty().take(300)
+                throw IllegalStateException(lastError)
+            }
+            conn.inputStream.use { input ->
+                target.outputStream().use { out ->
+                    val buffer = ByteArray(8192)
+                    var total = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        total += read
+                        if (total > maxBytes) throw IllegalArgumentException("الملف أكبر من 50MB")
+                        out.write(buffer, 0, read)
+                    }
+                    return total
+                }
+            }
+        }
+        throw IllegalStateException(lastError.ifBlank { "تعذر تنزيل الملف" })
+    }
+
     suspend fun driveRead(ctx: ToolContext, fileId: String, maxChars: Int): String {
         val metaRes = ensureOk(
             google(ctx, "google_drive", "GET", "$DRIVE/files/$fileId?fields=id,name,mimeType,size,webViewLink"),
@@ -650,6 +732,10 @@ object Connectors {
         val baseUrl = safeUrl(base)
         if (!parsed.host.equals(baseUrl.host, true)) {
             throw IllegalArgumentException("لا يمكن الخروج عن نطاق الخدمة المحددة")
+        }
+        val basePath = baseUrl.path.trimEnd('/')
+        if (basePath.isNotEmpty() && !parsed.path.startsWith(basePath)) {
+            throw IllegalArgumentException("لا يمكن الخروج عن مسار الخدمة المحدد")
         }
         val header = ctx.prefs.getString(ConnectorAuth.headerKey("generic"), "Authorization")
             .orEmpty().ifBlank { "Authorization" }
