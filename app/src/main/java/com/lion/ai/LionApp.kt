@@ -862,9 +862,79 @@ fun LionApp() {
             if (used == null && failed.size > 1) {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
             }
+            var consensusPercent = -1
+            if (used != null && kind == TaskKind.FACTUAL &&
+                prefs.getBoolean("consensus", false) &&
+                image == null && !prompt.contains("محتوى الملف (")
+            ) {
+                val usedRoute = used
+                if (usedRoute != null) {
+                    val secondRoute = plan.firstOrNull {
+                        it != usedRoute && SmartRouter.isReliableModel(it.provider, it.model)
+                    } ?: plan.firstOrNull { it != usedRoute }
+                    if (secondRoute != null) {
+                        val started = System.currentTimeMillis()
+                        val secondReply = withContext(Dispatchers.IO) {
+                            LlmClient.ask(
+                                message = llmPrompt,
+                                apiKey = keyOf(secondRoute.provider),
+                                provider = secondRoute.provider,
+                                history = history,
+                                modelOverride = secondRoute.model,
+                                accountId = accountId(),
+                                image = null,
+                                systemPrompt = systemPrompt
+                            )
+                        }
+                        val secondError = LlmClient.isErrorReply(secondReply)
+                        val secondLow = !secondError &&
+                            AnswerGuard.isLowQuality(secondReply, kind, prompt)
+                        SmartRouter.record(
+                            secondRoute,
+                            !secondError && !secondLow,
+                            System.currentTimeMillis() - started
+                        )
+                        if (!secondError && !secondLow && secondReply.isNotBlank()) {
+                            val percent = Consensus.compare(reply, secondReply)
+                            val synthesisMessage = buildString {
+                                append("السؤال:\n").append(prompt)
+                                if (sources.isNotEmpty()) {
+                                    append("\n\n").append(WebGrounding.contextBlock(sources))
+                                }
+                                append("\n\nالإجابة أ:\n").append(reply)
+                                append("\n\nالإجابة ب:\n").append(secondReply)
+                                append("\n\nأعد الإجابة النهائية الموحدة.")
+                            }
+                            val synthesized = withContext(Dispatchers.IO) {
+                                LlmClient.ask(
+                                    message = synthesisMessage,
+                                    apiKey = keyOf(usedRoute.provider),
+                                    provider = usedRoute.provider,
+                                    history = emptyList(),
+                                    modelOverride = usedRoute.model,
+                                    accountId = accountId(),
+                                    image = null,
+                                    systemPrompt = LLM_CONSENSUS_PROMPT + answerLengthSuffix() +
+                                        if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else ""
+                                )
+                            }
+                            consensusPercent = percent
+                            if (!LlmClient.isErrorReply(synthesized) &&
+                                !AnswerGuard.isLowQuality(synthesized, kind, prompt)
+                            ) {
+                                reply = synthesized
+                            } else {
+                                reply += "\n\n🧩 " + Consensus.label(percent) +
+                                    " (" + percent + "%) بين إجابتين؛ عُرضت الإجابة الأقوى."
+                            }
+                        }
+                    }
+                }
+            }
             val via = used?.let {
                 SmartRouter.label(it, if (auto) kind else null) +
-                    if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else ""
+                    (if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else "") +
+                    (if (consensusPercent >= 0) " · 🧩 " + consensusPercent + "%" else "")
             }
             val newMessage = Message(
                 reply,
