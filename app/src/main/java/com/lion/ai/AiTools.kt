@@ -233,7 +233,7 @@ object AiTools {
         builder.append("[[TOOL]]\n{\"tool\":\"اسم_الأداة\",\"args\":{...}}\n[[/TOOL]]\n")
         builder.append("ستتلقى نتيجة كل أداة ثم تتابع حتى تُنجز المهمة. لا تخترع نتائج. ")
         builder.append("لا تضع أسراراً في الملفات أو الردود. المسارات محصورة في مساحة عمل التطبيق. ")
-        builder.append("لا تكتب أو تحذف أو تدفع إلى GitHub إلا إذا طلب المستخدم ذلك صراحة. ")
+        builder.append("لا تكتب أو تحذف أو تدفع إلى GitHub، ولا ترسل بريداً أو رسالة Slack، ولا ترفع إلى Drive، ولا تنشئ مواعيد أو صفحات، إلا إذا طلب المستخدم ذلك صراحة. ")
         builder.append("بعد انتهاء الأدوات أجب بالعربية بملخص واضح وخطوات ما فعلته.\n")
         ToolGroup.values().filter { it in groups }.forEach { group ->
             builder.append("\n[").append(group.icon).append(' ').append(group.label).append("]\n")
