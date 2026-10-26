@@ -265,12 +265,17 @@ object FileTools {
         val targetDir = resolve(context, target.ifBlank { zipPath.substringBeforeLast('.', "unzipped") })
         targetDir.mkdirs()
         var count = 0
+        var totalBytes = 0L
         ZipFile(archive).use { zip ->
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
                 if (count >= 3000) break
                 val entry = entries.nextElement()
                 if (entry.isDirectory) continue
+                val declared = if (entry.size > 0) entry.size else 0L
+                if (totalBytes + declared > 50_000_000L) {
+                    throw IllegalArgumentException("الأرشيف أكبر من 50MB؛ تم إيقاف فك الضغط لحماية التخزين")
+                }
                 val out = File(targetDir, entry.name).canonicalFile
                 if (out != root && !out.path.startsWith(root.path + File.separator)) {
                     throw IllegalArgumentException("مدخل غير آمن في الأرشيف: ${entry.name}")
@@ -278,7 +283,18 @@ object FileTools {
                 if (out.exists() && !overwrite) continue
                 out.parentFile?.mkdirs()
                 zip.getInputStream(entry).use { input ->
-                    out.outputStream().use { output -> input.copyTo(output) }
+                    out.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            totalBytes += read
+                            if (totalBytes > 50_000_000L) {
+                                throw IllegalArgumentException("الأرشيف أكبر من 50MB؛ تم إيقاف فك الضغط")
+                            }
+                            output.write(buffer, 0, read)
+                        }
+                    }
                 }
                 count++
             }

@@ -117,6 +117,23 @@ fun GitHubScreen(
         }
     }
 
+    fun searchAll() {
+        val q = query.trim()
+        if (q.isBlank()) return
+        scope.launch {
+            loading = true
+            status = ""
+            val result = withContext(Dispatchers.IO) {
+                runCatching { GitHubClient.searchRepos(token, q, 30) }
+            }
+            result.onSuccess {
+                repos = it
+                if (it.isEmpty()) status = "لا نتائج لهذا البحث."
+            }.onFailure { status = "⚠️ ${it.message}" }
+            loading = false
+        }
+    }
+
     fun openRepo(repo: GitHubClient.Repo) {
         selected = repo
         mode = "files"
@@ -281,15 +298,21 @@ fun GitHubScreen(
             }
 
             if (selected == null) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("ابحث في مستودعاتك...", color = Color(0xFF707070)) },
-                    singleLine = true,
-                    textStyle = TextStyle(color = Color.White),
-                    colors = fieldColors()
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("ابحث في مستودعاتك أو GitHub...", color = Color(0xFF707070)) },
+                        singleLine = true,
+                        textStyle = TextStyle(color = Color.White),
+                        colors = fieldColors()
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    TextButton(enabled = !loading, onClick = { searchAll() }) {
+                        Text("🌐", color = GOLD, fontSize = 18.sp)
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 val filtered = repos.filter {
                     query.isBlank() || it.fullName.contains(query, true) || it.description.contains(query, true)

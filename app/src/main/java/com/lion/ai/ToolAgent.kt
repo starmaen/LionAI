@@ -50,8 +50,15 @@ object ToolAgent {
         var current = prompt
         var lastSignature = ""
         var repeated = 0
+        val deadline = System.currentTimeMillis() + 100_000
 
         for (step in 0 until MAX_STEPS) {
+            if (System.currentTimeMillis() > deadline) {
+                return Result(
+                    "⚠️ انتهى وقت تنفيذ الأدوات قبل اكتمال المهمة. آخر ملاحظات:\n\n" + current.take(3000),
+                    used
+                )
+            }
             val reply = LlmClient.ask(
                 message = current,
                 apiKey = apiKey,
