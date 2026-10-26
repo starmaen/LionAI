@@ -135,7 +135,9 @@ fun SettingsScreen(
     autoSpeak: Boolean,
     onAutoSpeakChange: (Boolean) -> Unit,
     onBack: () -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    onOpenGitHub: () -> Unit = {},
+    onOpenDevTools: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     val ctx = LocalContext.current
@@ -189,8 +191,26 @@ fun SettingsScreen(
     }
     var webGrounding by remember { mutableStateOf(prefs.getBoolean("web_grounding", true)) }
     var consensus by remember { mutableStateOf(prefs.getBoolean("consensus", false)) }
+    var githubToken by remember { mutableStateOf(prefs.getString("github_token", "") ?: "") }
+    var githubAgent by remember { mutableStateOf(prefs.getBoolean("agent_tools", true)) }
+    var githubWrite by remember { mutableStateOf(prefs.getBoolean("agent_write", true)) }
+    var githubRepo by remember { mutableStateOf(prefs.getString("github_default_repo", "") ?: "") }
+    var githubStatus by remember { mutableStateOf("") }
+    var githubTesting by remember { mutableStateOf(false) }
 
     val current = providerInfo(provider)
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    fun notificationPermissionGranted(): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    fun ensureNotificationPermission() {
+        if (!notificationPermissionGranted()) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val versionName = remember {
         runCatching {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
@@ -212,6 +232,10 @@ fun SettingsScreen(
         editor.putString("answer_length", answerLength)
         editor.putBoolean("web_grounding", webGrounding)
         editor.putBoolean("consensus", consensus)
+        editor.putString("github_token", githubToken.filterNot { it.isWhitespace() })
+        editor.putBoolean("agent_tools", githubAgent)
+        editor.putBoolean("agent_write", githubWrite)
+        editor.putString("github_default_repo", githubRepo.trim())
         editor.apply()
     }
 
@@ -268,6 +292,15 @@ fun SettingsScreen(
                 color = Color(0xFFB0B0B0),
                 fontSize = 12.sp
             )
+            if (SecurePrefs.usingPlaintextFallback) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "⚠️ تعذّر تشغيل التخزين المشفّر على هذا الجهاز؛ المفاتيح محفوظة مؤقتاً بدون تشفير. " +
+                        "أعد فتح التطبيق أو أعد تثبيته فوق النسخة الحالية لتفعيل التشفير.",
+                    color = Color(0xFFE94560),
+                    fontSize = 12.sp
+                )
+            }
             Spacer(Modifier.height(16.dp))
 
             Text("المزود:", color = Color.White, fontWeight = FontWeight.Bold)
@@ -705,6 +738,117 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
             HorizontalDivider(color = Color(0xFF2A2A2A))
             Spacer(Modifier.height(8.dp))
+            Text("🧰 أدوات الذكاء والتطوير", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+            Text(
+                "تتيح للنموذج استخدام أدوات GitHub والويب والملفات وقواعد البيانات ومحلل الكود عند الحاجة، مع الحفاظ على كل ميزات المحادثة والويب والوسائط.",
+                color = Color(0xFFB0B0B0),
+                fontSize = 12.sp
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { githubAgent = !githubAgent }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Switch(
+                    checked = githubAgent,
+                    onCheckedChange = { githubAgent = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("تشغيل أدوات الوكيل تلقائياً", color = Color.White, fontSize = 14.sp)
+                    Text("يجعل النموذج يفحص ويعدّل ويبحث بدلاً من الإجابة النظرية فقط.", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { githubWrite = !githubWrite }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Switch(
+                    checked = githubWrite,
+                    onCheckedChange = { githubWrite = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("السماح للذكاء بالكتابة والحذف والدفع", color = Color.White, fontSize = 14.sp)
+                    Text("يشمل ملفات مساحة العمل وتعديل GitHub. أوقفه إن أردت وضع القراءة فقط.", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("توكن GitHub (Personal Access Token)", color = Color.White, fontSize = 13.sp)
+            OutlinedTextField(
+                value = githubToken,
+                onValueChange = { githubToken = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("github_pat_... أو ghp_...", color = Color(0xFF707070)) },
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFFFB800),
+                    unfocusedBorderColor = Color(0xFF2A2A2A),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFFFFB800)
+                )
+            )
+            Text(
+                "الصلاحيات المقترحة: repo (أو Contents + Issues + Pull requests) وread:user. يُخزَّن التوكن مشفّراً على الجهاز فقط.",
+                color = Color(0xFF9A9A9A),
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            Text("المستودع الافتراضي (owner/repo) — اختياري", color = Color.White, fontSize = 13.sp)
+            OutlinedTextField(
+                value = githubRepo,
+                onValueChange = { githubRepo = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("starmaen/LionAI", color = Color(0xFF707070)) },
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFFFB800),
+                    unfocusedBorderColor = Color(0xFF2A2A2A),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFFFFB800)
+                )
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    enabled = !githubTesting,
+                    onClick = {
+                        githubTesting = true
+                        githubStatus = "⏳ أختبر الاتصال..."
+                        val tokenNow = githubToken
+                        settingsScope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { GitHubClient.whoAmI(tokenNow) }
+                            }
+                            val user = result.getOrNull()
+                            githubStatus = if (user != null) {
+                                "✅ متصل بحساب ${user.optString("login")} (${user.optInt("public_repos")} مستودع عام)"
+                            } else {
+                                "⚠️ " + (result.exceptionOrNull()?.message ?: "فشل الاتصال")
+                            }
+                            githubTesting = false
+                        }
+                    }
+                ) { Text("🧪 اختبار اتصال GitHub", color = Color(0xFFFFB800), fontSize = 12.sp) }
+                TextButton(onClick = { persist(); onOpenGitHub() }) {
+                    Text("🐙 فتح GitHub", color = Color(0xFFFFB800), fontSize = 12.sp)
+                }
+            }
+            if (githubStatus.isNotBlank()) {
+                Text(githubStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+            }
+            TextButton(onClick = { persist(); onOpenDevTools() }) {
+                Text("🧰 فتح أدوات المطوّر ومساحة العمل", color = Color(0xFFFFB800), fontSize = 12.sp)
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = Color(0xFF2A2A2A))
+            Spacer(Modifier.height(8.dp))
             Text("🔔 التنبيهات والتذكيرات", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
             var alarmStatus by remember { mutableStateOf("") }
             Text(
@@ -713,10 +857,16 @@ fun SettingsScreen(
                 fontSize = 12.sp
             )
             TextButton(onClick = {
-                val ok = Notifier.show(ctx, 7001, "🔔 اختبار", "إذا ظهر لك هذا الإشعار فالتنبيهات تعمل بشكل سليم.")
-                alarmStatus = if (ok) "تم إرسال إشعار تجريبي. هل ظهر؟" else "⚠️ تعذر إرسال الإشعار (تحقق من صلاحية الإشعارات)."
+                if (!notificationPermissionGranted()) {
+                    ensureNotificationPermission()
+                    alarmStatus = "اسمح بالإشعارات من النافذة الظاهرة ثم اضغط «اختبار إشعار الآن» مرة أخرى."
+                } else {
+                    val ok = Notifier.show(ctx, 7001, "🔔 اختبار", "إذا ظهر لك هذا الإشعار فالتنبيهات تعمل بشكل سليم.")
+                    alarmStatus = if (ok) "تم إرسال إشعار تجريبي. هل ظهر؟" else "⚠️ تعذر إرسال الإشعار (تحقق من صلاحية الإشعارات)."
+                }
             }) { Text("🔔 اختبار إشعار الآن", color = Color(0xFFFFB800), fontSize = 13.sp) }
             TextButton(onClick = {
+                ensureNotificationPermission()
                 val err = Scheduler.add(
                     ctx, prefs,
                     ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, System.currentTimeMillis() + 15_000L, "", "", "حان موعد اختبار المنبه ✅")

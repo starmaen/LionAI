@@ -10,6 +10,11 @@ object SecurePrefs {
     private const val LEGACY_FILE = "lion_prefs"
     private const val MIGRATED = "secure_migrated_v1"
 
+    /** يصبح true إذا تعذّر إنشاء التخزين المشفّر واضطررنا للتخزين العادي. */
+    @Volatile
+    var usingPlaintextFallback: Boolean = false
+        private set
+
     fun get(context: Context): SharedPreferences {
         return try {
             val masterKey = MasterKey.Builder(context)
@@ -25,6 +30,7 @@ object SecurePrefs {
             migrate(context, secure)
             secure
         } catch (e: Exception) {
+            usingPlaintextFallback = true
             context.getSharedPreferences(LEGACY_FILE, Context.MODE_PRIVATE)
         }
     }

@@ -153,6 +153,8 @@ fun LionApp() {
     val listState = rememberLazyListState()
 
     var showSettings by remember { mutableStateOf(false) }
+    var showGitHub by remember { mutableStateOf(false) }
+    var showDevTools by remember { mutableStateOf(false) }
     var showContacts by remember { mutableStateOf(false) }
     var showScheduled by remember { mutableStateOf(false) }
     var showArchive by remember { mutableStateOf(false) }
@@ -460,14 +462,52 @@ fun LionApp() {
         }
     }
 
+    fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+    var pendingPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
+        val action = pendingPermissionAction
+        pendingPermissionAction = null
         val contactsAllowed = result[Manifest.permission.READ_CONTACTS] == true ||
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.READ_CONTACTS
-            ) == PackageManager.PERMISSION_GRANTED
-        if (contactsAllowed) requestContacts()
+            hasPermission(Manifest.permission.READ_CONTACTS)
+        if (contactsAllowed && action == null) requestContacts()
+        action?.invoke()
+    }
+
+    /** يطلب الصلاحيات الناقصة فقط، وينفّذ onDone بعد رد النظام (سواء مُنحت أو رُفضت). */
+    fun requestPermissions(permissions: List<String>, onDone: (() -> Unit)? = null) {
+        val missing = permissions.filterNot { hasPermission(it) }
+        if (missing.isEmpty()) {
+            onDone?.invoke()
+            return
+        }
+        pendingPermissionAction = onDone
+        permLauncher.launch(missing.toTypedArray())
+    }
+
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(listOf(Manifest.permission.POST_NOTIFICATIONS))
+        }
+    }
+
+    /** جهات الاتصال تُطلب عند فتحها فقط، لا عند إقلاع التطبيق. */
+    fun openContacts() {
+        if (hasPermission(Manifest.permission.READ_CONTACTS)) {
+            requestContacts()
+            showContacts = true
+            return
+        }
+        requestPermissions(listOf(Manifest.permission.READ_CONTACTS)) {
+            if (hasPermission(Manifest.permission.READ_CONTACTS)) {
+                requestContacts()
+                showContacts = true
+            }
+        }
     }
 
     val voiceLauncher = rememberLauncherForActivityResult(
@@ -555,26 +595,18 @@ fun LionApp() {
         scheduledItems = Scheduler.list(prefs)
         openChat(activeTab.chatId)
 
-        val permissions = mutableListOf(
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.CALL_PHONE,
-            Manifest.permission.RECORD_AUDIO
-        )
-        if (Build.VERSION.SDK_INT >= 33) {
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        val missing = permissions.filter {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-        }
-        if (missing.isNotEmpty()) {
-            permLauncher.launch(missing.toTypedArray())
-        } else {
-            requestContacts()
-        }
+        // لا نطلب كل الصلاحيات عند الإقلاع. كل صلاحية تُطلب عند أول استخدام فعلي لها،
+        // إلا إذا كان المستخدم منحها سابقاً فنجهّز جهات الاتصال مباشرة.
+        if (hasPermission(Manifest.permission.READ_CONTACTS)) requestContacts()
     }
 
     fun startVoice() {
+        if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
+            requestPermissions(listOf(Manifest.permission.RECORD_AUDIO)) {
+                if (hasPermission(Manifest.permission.RECORD_AUDIO)) startVoice()
+            }
+            return
+        }
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(
@@ -587,9 +619,6 @@ fun LionApp() {
         } catch (e: Exception) {
         }
     }
-
-    fun hasPermission(permission: String): Boolean =
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     fun resolveRecipients(query: String): List<Recipient> {
         val q = TextNorm.digits(query).trim()
@@ -646,8 +675,10 @@ fun LionApp() {
     ): String {
         if (triggerAt != null) {
             if (kind == ActionKind.SMS && !hasPermission(Manifest.permission.SEND_SMS)) {
-                return "⚠️ صلاحية إرسال الرسائل غير ممنوحة. فعّلها من إعدادات التطبيق في النظام ثم أعد الطلب."
+                requestPermissions(listOf(Manifest.permission.SEND_SMS))
+                return "⚠️ اسمح بإرسال الرسائل من النافذة الظاهرة ثم أعد المحاولة."
             }
+            requestNotificationPermission()
             val scheduleError = Scheduler.add(
                 context, prefs,
                 ScheduledItem(Scheduler.newId(), kind, triggerAt, r.name, r.number, text)
@@ -697,6 +728,7 @@ fun LionApp() {
                     return
                 }
                 val text = a.message.ifBlank { "تذكير" }
+                requestNotificationPermission()
                 val scheduleError = Scheduler.add(
                     context, prefs,
                     ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, at, "", "", text, a.repeatMs)
@@ -753,7 +785,7 @@ fun LionApp() {
         }
     }
 
-    fun onPendingChoice(index: Int, pending: PendingAction, recipient: Recipient?, channel: String) {
+    fun completePendingChoice(index: Int, pending: PendingAction, recipient: Recipient?, channel: String) {
         val result = if (recipient == null) {
             "🚫 تم الإلغاء."
         } else {
@@ -767,6 +799,19 @@ fun LionApp() {
             }
         }
         saveCurrent()
+    }
+
+    fun onPendingChoice(index: Int, pending: PendingAction, recipient: Recipient?, channel: String) {
+        // نطلب صلاحية الرسائل عند التأكيد فقط، ثم نكمل الإرسال أو الجدولة تلقائياً.
+        if (recipient != null && pending.kind == ActionKind.SMS && channel != "whatsapp" &&
+            !hasPermission(Manifest.permission.SEND_SMS)
+        ) {
+            requestPermissions(listOf(Manifest.permission.SEND_SMS)) {
+                completePendingChoice(index, pending, recipient, channel)
+            }
+            return
+        }
+        completePendingChoice(index, pending, recipient, channel)
     }
 
     fun runChat(
@@ -793,6 +838,7 @@ fun LionApp() {
         }
         val plan = planFor(kind, mode)
         val auto = autoRoute
+        val toolGroups = if (image == null) AiTools.groupsFor(prompt, prefs) else emptySet()
         loadingChats[chatId] = true
         scope.launch {
             val sources = if (WebGrounding.enabled(prefs) && WebGrounding.shouldSearch(kind, prompt)) {
@@ -825,12 +871,33 @@ fun LionApp() {
             var reply = ""
             var used: Route? = null
             var fallback: Pair<Route, String>? = null
+            var toolNames: List<String> = emptyList()
             val failed = mutableListOf<String>()
-            val deadline = System.currentTimeMillis() + 90_000
+            val deadline = System.currentTimeMillis() + 120_000
             for (route in routesToTry) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
-                val r = withContext(Dispatchers.IO) {
+                val agentResult = if (toolGroups.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            ToolAgent.run(
+                                context = context,
+                                prefs = prefs,
+                                prompt = llmPrompt,
+                                apiKey = keyOf(route.provider),
+                                provider = route.provider,
+                                model = route.model,
+                                accountId = accountId(),
+                                history = history,
+                                baseSystemPrompt = systemPrompt,
+                                groups = toolGroups
+                            )
+                        }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList()) }
+                    }
+                } else {
+                    null
+                }
+                val r = agentResult?.answer ?: withContext(Dispatchers.IO) {
                     LlmClient.ask(
                         message = llmPrompt,
                         apiKey = keyOf(route.provider),
@@ -843,11 +910,12 @@ fun LionApp() {
                     )
                 }
                 val error = LlmClient.isErrorReply(r)
-                val low = !error && AnswerGuard.isLowQuality(r, kind, prompt)
+                val low = !error && agentResult?.usedTools != true && AnswerGuard.isLowQuality(r, kind, prompt)
                 SmartRouter.record(route, !error && !low, System.currentTimeMillis() - started)
                 if (!error && !low) {
                     reply = r
                     used = route
+                    toolNames = agentResult?.tools.orEmpty()
                     break
                 }
                 if (!error && fallback == null) fallback = route to r
@@ -949,6 +1017,7 @@ fun LionApp() {
             val via = used?.let {
                 SmartRouter.label(it, if (auto) kind else null) +
                     (if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else "") +
+                    (if (toolNames.isNotEmpty()) " · 🧰 " + toolNames.distinct().take(4).joinToString("، ") else "") +
                     (if (consensusPercent >= 0) " · 🧩 " + consensusPercent + "%" else "")
             }
             val newMessage = Message(
@@ -1204,6 +1273,34 @@ fun LionApp() {
         return
     }
 
+    if (showGitHub) {
+        GitHubScreen(
+            prefs = prefs,
+            onBack = { showGitHub = false },
+            onOpenSettings = {
+                showGitHub = false
+                showSettings = true
+            }
+        )
+        return
+    }
+
+    if (showDevTools) {
+        DevToolsScreen(
+            prefs = prefs,
+            onBack = { showDevTools = false },
+            onOpenGitHub = {
+                showDevTools = false
+                showGitHub = true
+            },
+            onOpenSettings = {
+                showDevTools = false
+                showSettings = true
+            }
+        )
+        return
+    }
+
     if (showSettings) {
         SettingsScreen(
             prefs = prefs,
@@ -1225,6 +1322,14 @@ fun LionApp() {
                 autoRoute = prefs.getBoolean("auto_route", true)
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
                 syncActiveTab()
+            },
+            onOpenGitHub = {
+                showSettings = false
+                showGitHub = true
+            },
+            onOpenDevTools = {
+                showSettings = false
+                showDevTools = true
             }
         )
         return
@@ -1234,6 +1339,7 @@ fun LionApp() {
         ContactsScreen(
             contacts = contacts,
             onBack = { showContacts = false },
+            onRequestPermission = { openContacts() },
             onSelect = { contact ->
                 input = "أرسل رسالة لـ ${contact.name}: "
                 showContacts = false
@@ -1395,8 +1501,7 @@ fun LionApp() {
                         scope.launch { drawerState.close() }
                     },
                     onContacts = {
-                        requestContacts()
-                        showContacts = true
+                        openContacts()
                         scope.launch { drawerState.close() }
                     },
                     onScheduled = {
@@ -1409,6 +1514,14 @@ fun LionApp() {
                         imageLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
+                        scope.launch { drawerState.close() }
+                    },
+                    onGitHub = {
+                        showGitHub = true
+                        scope.launch { drawerState.close() }
+                    },
+                    onDevTools = {
+                        showDevTools = true
                         scope.launch { drawerState.close() }
                     },
                     onOpenChat = { id ->

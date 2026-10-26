@@ -9,6 +9,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # اختياري: عند إضافته في GitHub Secrets يُستخدم تلقائياً، وإلا تبقى القيمة القديمة
+      # حتى لا ينكسر توقيع التحديثات.
+      LION_KEYSTORE_PASSWORD: ${{ secrets.LION_KEYSTORE_PASSWORD }}
+      LION_KEY_PASSWORD: ${{ secrets.LION_KEY_PASSWORD }}
     steps:
     - uses: actions/checkout@v4
 

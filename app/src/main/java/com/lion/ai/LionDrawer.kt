@@ -34,6 +34,8 @@ internal fun LionDrawerContent(
     onContacts: () -> Unit,
     onScheduled: () -> Unit,
     onImageEditor: () -> Unit,
+    onGitHub: () -> Unit,
+    onDevTools: () -> Unit,
     onOpenChat: (String) -> Unit,
     onRename: (ChatMeta) -> Unit,
     onAutoTitle: (String) -> Unit,
@@ -82,6 +84,20 @@ internal fun LionDrawerContent(
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A2E4A))
         ) {
             Text("🖼️ محرر الصور", color = Color.White)
+        }
+        Button(
+            onClick = onGitHub,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24292F))
+        ) {
+            Text("🐙 GitHub (قراءة وكتابة)", color = Color.White)
+        }
+        Button(
+            onClick = onDevTools,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3A3A))
+        ) {
+            Text("🧰 أدوات المطوّر", color = Color.White)
         }
         Spacer(Modifier.height(6.dp))
 

@@ -10,6 +10,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+    env:
+      LION_KEYSTORE_PASSWORD: ${{ secrets.LION_KEYSTORE_PASSWORD }}
+      LION_KEY_PASSWORD: ${{ secrets.LION_KEY_PASSWORD }}
     steps:
     - uses: actions/checkout@v4
       with:

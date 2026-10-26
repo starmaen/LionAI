@@ -145,6 +145,7 @@ fun InputAction(icon: ImageVector, description: String, onClick: () -> Unit) {
 fun ContactsScreen(
     contacts: List<Contact>,
     onBack: () -> Unit,
+    onRequestPermission: () -> Unit,
     onSelect: (Contact) -> Unit
 ) {
     Scaffold(
@@ -170,7 +171,13 @@ fun ContactsScreen(
                 modifier = Modifier.padding(padding).fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text("لا توجد جهات اتصال. امنح صلاحية جهات الاتصال.", color = Color.White)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("لا توجد جهات اتصال.", color = Color.White)
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onRequestPermission) {
+                        Text("منح صلاحية جهات الاتصال", color = Color(0xFFFFB800))
+                    }
+                }
             }
         } else {
             LazyColumn(
