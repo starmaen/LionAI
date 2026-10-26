@@ -124,6 +124,19 @@ object FileTools {
         }
     }
 
+    /** كل الملفات داخل مجلد (تعاودياً) مع تجاهل المسارات المحجوزة. */
+    fun walk(context: Context, path: String = "", maxFiles: Int = 2000): List<Entry> {
+        val root = resolve(context, path)
+        if (root.isFile) return listOf(Entry(relative(context, root), root.length(), false))
+        if (!root.isDirectory) return emptyList()
+        return root.walkTopDown()
+            .onEnter { !it.name.startsWith(".lion-") }
+            .filter { it.isFile }
+            .take(maxFiles.coerceIn(1, 5000))
+            .map { Entry(relative(context, it), it.length(), false) }
+            .toList()
+    }
+
     fun read(context: Context, path: String, maxBytes: Int = 1_000_000): Info {
         val file = resolve(context, path)
         if (!file.exists() || !file.isFile) throw IllegalArgumentException("الملف غير موجود: $path")

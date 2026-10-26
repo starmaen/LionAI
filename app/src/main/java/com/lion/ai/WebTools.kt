@@ -160,15 +160,20 @@ object WebTools {
         return output.toByteArray()
     }
 
-    private fun validate(url: String) {        val parsed = runCatching { URL(url) }.getOrNull()
+    private fun validate(url: String) {
+        val parsed = runCatching { URL(url) }.getOrNull()
             ?: throw IllegalArgumentException("رابط غير صالح")
         if (parsed.protocol !in setOf("http", "https")) {
             throw IllegalArgumentException("السماح لروابط http/https فقط")
         }
-        val host = parsed.host.lowercase()
-        if (host == "169.254.169.254" || host == "metadata.google.internal") {
-            throw IllegalArgumentException("هذا العنوان محجوب لأسباب أمنية")
-        }
+        val host = parsed.host.lowercase().removePrefix("[").removeSuffix("]")
+        val private172 = Regex("^172\\.(1[6-9]|2\\d|3[01])\\.")
+        val blocked = host.isBlank() || host == "localhost" || host == "127.0.0.1" ||
+            host == "0.0.0.0" || host == "::1" || host == "169.254.169.254" ||
+            host == "metadata.google.internal" || host.startsWith("10.") ||
+            host.startsWith("192.168.") || host.startsWith("169.254.") ||
+            private172.containsMatchIn(host)
+        if (blocked) throw IllegalArgumentException("هذا العنوان محجوب لأسباب أمنية")
     }
 
     fun fetch(url: String, maxBytes: Int = 2_000_000, withLinks: Boolean = true): Page {

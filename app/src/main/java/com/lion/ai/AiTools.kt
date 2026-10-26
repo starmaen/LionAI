@@ -140,6 +140,7 @@ object AiTools {
             "(\\.kt\\b|\\.java\\b|\\.py\\b|\\.js\\b|\\.ts\\b|\\.cpp\\b|\\.cs\\b|\\.go\\b|\\.rs\\b|code|" +
                 "كود|برمج|برمجة|دالة|دوال|كلاس|class|تعقيد|complexity|todo|fixme|اعتماديات|dependencies|" +
                 "تحليل الكود|حلل الكود|حلّل الكود|راجع الكود|مراجعة الكود|اصلح|أصلح|صحح|خطأ برمجي|bug|exception|" +
+                "حلل المشروع|تحليل المشروع|راجع المشروع|مراجعة المشروع|افحص المشروع|فحص المشروع|" +
                 "android|kotlin|python|javascript|typescript|flutter|gradle|تطبيق|تطبيقات|مشروع برمجي|تعديل التطبيق|تطوير)"
         )
         if (code.containsMatchIn(t)) groups.add(ToolGroup.CODE)
@@ -509,7 +510,14 @@ object AiTools {
 
             "db_list" -> DatabaseTools.list(ctx.context).joinToString("\n") { "• $it" }.ifBlank { "لا توجد قواعد بيانات." }
             "db_schema" -> DatabaseTools.schema(ctx.context, req(args, "db"))
-            "db_query" -> DatabaseTools.query(ctx.context, req(args, "db"), req(args, "sql"), int(args, "max_rows", 200))
+            "db_query" -> {
+                val sql = req(args, "sql")
+                val verb = sql.trim().substringBefore(' ').lowercase()
+                if (!ctx.allowWrite && verb !in setOf("select", "pragma", "explain", "with")) {
+                    throw IllegalArgumentException("الكتابة في قاعدة البيانات معطّلة. فعّل «السماح بالكتابة» أولاً.")
+                }
+                DatabaseTools.query(ctx.context, req(args, "db"), sql, int(args, "max_rows", 200))
+            }
             "db_import_json" -> DatabaseTools.importJson(
                 ctx.context, req(args, "db"), req(args, "table"), req(args, "json"), args.optBoolean("replace", false)
             )
@@ -529,10 +537,9 @@ object AiTools {
                 if (info.binary) "الملف ثنائي" else CodeAnalyzer.report(CodeAnalyzer.analyze(path, info.text))
             }
             "code_project_analyze" -> {
-                val root = FileTools.list(ctx.context, args.optString("path"))
+                val root = FileTools.walk(ctx.context, args.optString("path"), maxFiles = 1500)
                 val max = int(args, "max_files", 80).coerceIn(1, 300)
                 val files = root.asSequence()
-                    .filter { !it.directory }
                     .filter { CodeAnalyzer.languageFor(it.path) != "غير معروف" }
                     .take(max)
                     .mapNotNull { entry ->
