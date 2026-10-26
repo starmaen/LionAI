@@ -1,6 +1,7 @@
 package com.lion.ai
 
 import android.content.SharedPreferences
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -101,21 +102,33 @@ object WebGrounding {
         val android = ANDROID_WORDS.containsMatchIn(normalized)
         val lang = if (q.any { it in '\u0600'..'\u06FF' }) "ar" else "en"
 
-        val wikipedia = async(Dispatchers.IO) {
+        val wikipedia = async<List<WebSource>>(Dispatchers.IO) {
             runCatching { searchWikipedia(q, lang) }.getOrDefault(emptyList())
         }
-        val web = async(Dispatchers.IO) {
+        val web = async<List<WebSource>>(Dispatchers.IO) {
             runCatching { searchWeb(q) }.getOrDefault(emptyList())
         }
-        val github = if (technical) async(Dispatchers.IO) {
-            runCatching { searchGithub(q) }.getOrDefault(emptyList())
-        } else null
-        val stack = if (technical) async(Dispatchers.IO) {
-            runCatching { searchStackOverflow(q) }.getOrDefault(emptyList())
-        } else null
-        val xda = if (android) async(Dispatchers.IO) {
-            runCatching { searchWeb("site:xda-developers.com $q", 2) }.getOrDefault(emptyList())
-        } else null
+        val github: Deferred<List<WebSource>>? = if (technical) {
+            async<List<WebSource>>(Dispatchers.IO) {
+                runCatching { searchGithub(q) }.getOrDefault(emptyList())
+            }
+        } else {
+            null
+        }
+        val stack: Deferred<List<WebSource>>? = if (technical) {
+            async<List<WebSource>>(Dispatchers.IO) {
+                runCatching { searchStackOverflow(q) }.getOrDefault(emptyList())
+            }
+        } else {
+            null
+        }
+        val xda: Deferred<List<WebSource>>? = if (android) {
+            async<List<WebSource>>(Dispatchers.IO) {
+                runCatching { searchWeb("site:xda-developers.com $q", 2) }.getOrDefault(emptyList())
+            }
+        } else {
+            null
+        }
 
         val all = buildList {
             addAll(wikipedia.await())
