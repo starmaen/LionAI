@@ -190,10 +190,14 @@ object WebTools {
             }
             val contentType = connection.contentType.orEmpty()
             val bytes = connection.inputStream.use { readLimited(it, maxBytes.coerceIn(1024, 5_000_000)) }
-            val charset = runCatching { charsetOf(contentType, bytes) }.getOrDefault("UTF-8")
-            var body = runCatching { String(bytes, charset) }.getOrElse { String(bytes, Charsets.UTF_8) }
-            if (body.count { it == '\uFFFD' } > 20 && charset.uppercase() != "WINDOWS-1256") {
-                body = runCatching { String(bytes, charset("windows-1256")) }.getOrDefault(body)
+            val charsetName = runCatching { charsetOf(contentType, bytes) }.getOrDefault("UTF-8")
+            var body = runCatching {
+                String(bytes, java.nio.charset.Charset.forName(charsetName))
+            }.getOrElse { String(bytes, Charsets.UTF_8) }
+            if (body.count { it == '\uFFFD' } > 20 && charsetName.uppercase() != "WINDOWS-1256") {
+                body = runCatching {
+                    String(bytes, java.nio.charset.Charset.forName("windows-1256"))
+                }.getOrDefault(body)
             }
             val finalUrl = connection.url.toString()
             val isJson = contentType.contains("json", ignoreCase = true) ||
