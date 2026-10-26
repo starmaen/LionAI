@@ -100,6 +100,8 @@ object FileTools {
 
     fun root(context: Context): File = File(context.filesDir, "workspace").apply { mkdirs() }
 
+    fun file(context: Context, path: String): File = resolve(context, path)
+
     private fun resolve(context: Context, path: String): File {
         val root = root(context).canonicalFile
         val clean = path.trim().removePrefix("/").ifBlank { "." }

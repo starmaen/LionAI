@@ -36,6 +36,7 @@ internal fun LionDrawerContent(
     onImageEditor: () -> Unit,
     onGitHub: () -> Unit,
     onDevTools: () -> Unit,
+    onConnectors: () -> Unit,
     onOpenChat: (String) -> Unit,
     onRename: (ChatMeta) -> Unit,
     onAutoTitle: (String) -> Unit,
@@ -98,6 +99,13 @@ internal fun LionDrawerContent(
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3A3A))
         ) {
             Text("🧰 أدوات المطوّر", color = Color.White)
+        }
+        Button(
+            onClick = onConnectors,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A2E1F))
+        ) {
+            Text("🔌 ربط الحسابات والموصلات", color = Color.White)
         }
         Spacer(Modifier.height(6.dp))
 

@@ -622,7 +622,8 @@ private fun ToolManagerTab(
             "📁 الملفات: مساحة عمل/ZIP/CSV" to ToolGroup.FILES,
             "🗄️ SQLite: استعلام/مخطط/JSON" to ToolGroup.DATABASE,
             "🔍 الكود: مقاييس/تعقيد/اعتماديات" to ToolGroup.CODE,
-            "🧰 أدوات: JSON/Base64/Hash/Regex" to ToolGroup.UTIL
+            "🧰 أدوات: JSON/Base64/Hash/Regex" to ToolGroup.UTIL,
+            "🔌 الموصلات: Drive/Gmail/Calendar/Notion/Slack" to ToolGroup.CONNECTORS
         ).forEach { (label, _) ->
             Text("• $label", color = Color.White, fontSize = 12.sp)
         }

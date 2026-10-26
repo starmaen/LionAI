@@ -13,7 +13,8 @@ enum class ToolGroup(val id: String, val label: String, val icon: String) {
     FILES("files", "الملفات", "📁"),
     DATABASE("database", "قواعد البيانات", "🗄️"),
     CODE("code", "محلل الكود", "🔍"),
-    UTIL("util", "أدوات مساعدة", "🧰")
+    UTIL("util", "أدوات مساعدة", "🧰"),
+    CONNECTORS("connectors", "الموصلات", "🔌")
 }
 
 data class ToolCall(val name: String, val args: JSONObject, val raw: String)
@@ -33,7 +34,8 @@ object AiTools {
         val group: ToolGroup,
         val signature: String,
         val description: String,
-        val write: Boolean = false
+        val write: Boolean = false,
+        val connector: String? = null
     )
 
     private val defs = listOf(
@@ -108,7 +110,28 @@ object AiTools {
         Def("util_url", ToolGroup.UTIL, """{"text":"...","mode":"encode|decode"}""", "URL encode/decode"),
         Def("util_regex", ToolGroup.UTIL, """{"pattern":"\\\\d+","text":"...","ignore_case":false}""", "اختبار تعبير نمطي"),
         Def("util_uuid", ToolGroup.UTIL, "{}", "UUID جديد"),
-        Def("util_timestamp", ToolGroup.UTIL, "{}", "الوقت الحالي Unix/ISO")
+        Def("util_timestamp", ToolGroup.UTIL, "{}", "الوقت الحالي Unix/ISO"),
+
+        // Connectors
+        Def("connectors_status", ToolGroup.CONNECTORS, "{}", "حالة الموصلات والحسابات المربوطة"),
+        Def("drive_search", ToolGroup.CONNECTORS, """{"query":"تقرير","max":10}""", "بحث في ملفات Google Drive", connector = "google_drive"),
+        Def("drive_read", ToolGroup.CONNECTORS, """{"file_id":"...","max_chars":12000}""", "قراءة محتوى ملف نصي من Drive", connector = "google_drive"),
+        Def("drive_upload", ToolGroup.CONNECTORS, """{"name":"report.txt","path":"","content":"...","mime":"text/plain","folder_id":""}""", "رفع ملف/نص إلى Drive", true, "google_drive"),
+        Def("drive_mkdir", ToolGroup.CONNECTORS, """{"name":"مجلد","folder_id":""}""", "إنشاء مجلد في Drive", true, "google_drive"),
+        Def("gmail_search", ToolGroup.CONNECTORS, """{"query":"from:someone","max":10}""", "بحث في Gmail", connector = "gmail"),
+        Def("gmail_read", ToolGroup.CONNECTORS, """{"message_id":"...","max_chars":12000}""", "قراءة رسالة بريد كاملة", connector = "gmail"),
+        Def("gmail_send", ToolGroup.CONNECTORS, """{"to":"a@b.com","subject":"...","body":"...","cc":"","bcc":"","html":false}""", "إرسال بريد إلكتروني", true, "gmail"),
+        Def("calendar_list", ToolGroup.CONNECTORS, """{"days":7,"max":20}""", "المواعيد القادمة", connector = "google_calendar"),
+        Def("calendar_create", ToolGroup.CONNECTORS, """{"summary":"اجتماع","start":"2026-10-27T10:00:00+03:00","end":"","description":"","location":"","timezone":"Asia/Riyadh"}""", "إنشاء موعد", true, "google_calendar"),
+        Def("notion_search", ToolGroup.CONNECTORS, """{"query":"...","max":10}""", "بحث في Notion", connector = "notion"),
+        Def("notion_read", ToolGroup.CONNECTORS, """{"page_id":"...","max_chars":12000}""", "قراءة صفحة Notion", connector = "notion"),
+        Def("notion_create", ToolGroup.CONNECTORS, """{"parent_page":"...","title":"...","content":"..."}""", "إنشاء صفحة Notion", true, "notion"),
+        Def("notion_append", ToolGroup.CONNECTORS, """{"page_id":"...","content":"..."}""", "إضافة محتوى إلى صفحة Notion", true, "notion"),
+        Def("slack_channels", ToolGroup.CONNECTORS, """{"max":50}""", "قنوات Slack", connector = "slack"),
+        Def("slack_post", ToolGroup.CONNECTORS, """{"channel":"general","text":"..."}""", "إرسال رسالة Slack", true, "slack"),
+        Def("slack_history", ToolGroup.CONNECTORS, """{"channel":"general","max":20}""", "آخر رسائل قناة Slack", connector = "slack"),
+        Def("connector_get", ToolGroup.CONNECTORS, """{"path":"/items"}""", "GET من خدمة REST المخصّصة", connector = "generic"),
+        Def("connector_request", ToolGroup.CONNECTORS, """{"path":"/items","method":"POST","body":"{}"}""", "طلب GET/POST/PUT/PATCH إلى خدمة REST المخصّصة", true, "generic")
     )
 
     private val byName = defs.associateBy { it.name }
@@ -158,6 +181,14 @@ object AiTools {
         if (code.containsMatchIn(t)) groups.add(ToolGroup.CODE)
         val util = Regex("(base64|hash|sha256|sha1|md5|uuid|timestamp|regex|تعبير نمطي|json|url encode|url decode|تنسيق نص)")
         if (util.containsMatchIn(t)) groups.add(ToolGroup.UTIL)
+        val connectors = Regex(
+            "(google drive|drive|gmail|email|e-mail|mail|calendar|notion|slack|connector|webhook|" +
+                "درايف|جوجل درايف|بريد|بريد إلكتروني|بريد الكتروني|ايميل|إيميل|جيميل|" +
+                "تقويم|مواعيد|calendar|اجتماع|نوشن|نوتيون|سلاك|موصل|موصلات|خدمة خارجية|تكامل|ربط حساب)"
+        )
+        if (connectors.containsMatchIn(t) && ConnectorAuth.anyConnected(prefs)) {
+            groups.add(ToolGroup.CONNECTORS)
+        }
         return groups
     }
 
@@ -187,8 +218,13 @@ object AiTools {
         }
     }
 
-    fun spec(groups: Set<ToolGroup>): String {
+    fun spec(groups: Set<ToolGroup>, prefs: SharedPreferences): String {
         if (groups.isEmpty()) return ""
+        val available = defs.filter { def ->
+            def.group != ToolGroup.CONNECTORS || def.connector == null ||
+                ConnectorAuth.isConnected(prefs, def.connector)
+        }
+        if (available.isEmpty()) return ""
         val builder = StringBuilder()
         builder.append("\n\n=== أدوات متاحة ===\n")
         builder.append("عند الحاجة الفعلية، استدعِ أداة واحدة أو أكثر بهذه الصيغة فقط داخل ردك:\n")
@@ -199,7 +235,7 @@ object AiTools {
         builder.append("بعد انتهاء الأدوات أجب بالعربية بملخص واضح وخطوات ما فعلته.\n")
         ToolGroup.values().filter { it in groups }.forEach { group ->
             builder.append("\n[").append(group.icon).append(' ').append(group.label).append("]\n")
-            defs.filter { it.group == group }.forEach { def ->
+            available.filter { it.group == group }.forEach { def ->
                 builder.append("- ").append(def.name).append(' ').append(def.signature)
                 if (def.write) builder.append(" [كتابة]")
                 builder.append(" — ").append(def.description).append('\n')
@@ -513,6 +549,47 @@ object AiTools {
                 )
                 "✅ أُنشئ commit ${sha.take(8)} (${files.size} ملف، ${deletions.size} حذف)"
             }
+
+            "connectors_status" -> {
+                val list = ConnectorAuth.all.joinToString("\n") { def ->
+                    val state = if (ConnectorAuth.isConnected(ctx.prefs, def.id)) "✅ مربوط" else "⚪ غير مربوط"
+                    val account = ConnectorAuth.account(ctx.prefs, def.id)
+                    "• ${def.icon} ${def.name} — $state${if (account.isNotBlank()) " ($account)" else ""}"
+                }
+                "الموصلات:\n$list"
+            }
+            "drive_search" -> Connectors.driveSearch(ctx, req(args, "query"), int(args, "max", 10))
+            "drive_read" -> Connectors.driveRead(ctx, req(args, "file_id"), int(args, "max_chars", 12_000))
+            "drive_upload" -> Connectors.driveUpload(
+                ctx, req(args, "name"), args.optString("path"), args.optString("content"),
+                args.optString("mime"), args.optString("folder_id")
+            )
+            "drive_mkdir" -> Connectors.driveMkdir(ctx, req(args, "name"), args.optString("folder_id"))
+            "gmail_search" -> Connectors.gmailSearch(ctx, req(args, "query"), int(args, "max", 10))
+            "gmail_read" -> Connectors.gmailRead(ctx, req(args, "message_id"), int(args, "max_chars", 12_000))
+            "gmail_send" -> Connectors.gmailSend(
+                ctx, req(args, "to"), args.optString("subject", "(بدون موضوع)"),
+                req(args, "body"), args.optString("cc"), args.optString("bcc"),
+                args.optBoolean("html", false)
+            )
+            "calendar_list" -> Connectors.calendarList(ctx, int(args, "days", 7), int(args, "max", 20))
+            "calendar_create" -> Connectors.calendarCreate(
+                ctx, req(args, "summary"), req(args, "start"), args.optString("end"),
+                args.optString("description"), args.optString("location"), args.optString("timezone")
+            )
+            "notion_search" -> Connectors.notionSearch(ctx, args.optString("query"), int(args, "max", 10))
+            "notion_read" -> Connectors.notionRead(ctx, req(args, "page_id"), int(args, "max_chars", 12_000))
+            "notion_create" -> Connectors.notionCreate(
+                ctx, req(args, "parent_page"), req(args, "title"), req(args, "content")
+            )
+            "notion_append" -> Connectors.notionAppend(ctx, req(args, "page_id"), req(args, "content"))
+            "slack_channels" -> Connectors.slackChannels(ctx, int(args, "max", 50))
+            "slack_post" -> Connectors.slackPost(ctx, req(args, "channel"), req(args, "text"))
+            "slack_history" -> Connectors.slackHistory(ctx, req(args, "channel"), int(args, "max", 20))
+            "connector_get" -> Connectors.genericRequest(ctx, "GET", req(args, "path"), "")
+            "connector_request" -> Connectors.genericRequest(
+                ctx, args.optString("method", "POST"), req(args, "path"), args.optString("body")
+            )
 
             "web_fetch" -> {
                 val page = WebTools.fetch(

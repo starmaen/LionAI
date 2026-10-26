@@ -43,7 +43,7 @@ object ToolAgent {
         baseSystemPrompt: String,
         groups: Set<ToolGroup>
     ): Result {
-        val system = baseSystemPrompt + AiTools.contextHint(prompt) + "\n\n" + PROMPT + AiTools.spec(groups)
+        val system = baseSystemPrompt + AiTools.contextHint(prompt) + "\n\n" + PROMPT + AiTools.spec(groups, prefs)
         val toolContext = ToolContext(context, prefs, AiTools.allowWrite(prefs))
         val used = mutableListOf<String>()
         val historyBuffer = history.toMutableList()

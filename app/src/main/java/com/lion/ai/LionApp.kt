@@ -155,6 +155,7 @@ fun LionApp() {
     var showSettings by remember { mutableStateOf(false) }
     var showGitHub by remember { mutableStateOf(false) }
     var showDevTools by remember { mutableStateOf(false) }
+    var showConnectors by remember { mutableStateOf(false) }
     var showContacts by remember { mutableStateOf(false) }
     var showScheduled by remember { mutableStateOf(false) }
     var showArchive by remember { mutableStateOf(false) }
@@ -1273,6 +1274,18 @@ fun LionApp() {
         return
     }
 
+    if (showConnectors) {
+        ConnectorsScreen(
+            prefs = prefs,
+            onBack = { showConnectors = false },
+            onOpenSettings = {
+                showConnectors = false
+                showSettings = true
+            }
+        )
+        return
+    }
+
     if (showGitHub) {
         GitHubScreen(
             prefs = prefs,
@@ -1330,6 +1343,10 @@ fun LionApp() {
             onOpenDevTools = {
                 showSettings = false
                 showDevTools = true
+            },
+            onOpenConnectors = {
+                showSettings = false
+                showConnectors = true
             }
         )
         return
@@ -1522,6 +1539,10 @@ fun LionApp() {
                     },
                     onDevTools = {
                         showDevTools = true
+                        scope.launch { drawerState.close() }
+                    },
+                    onConnectors = {
+                        showConnectors = true
                         scope.launch { drawerState.close() }
                     },
                     onOpenChat = { id ->

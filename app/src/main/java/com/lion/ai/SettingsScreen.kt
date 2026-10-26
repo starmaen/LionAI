@@ -137,7 +137,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onSave: () -> Unit,
     onOpenGitHub: () -> Unit = {},
-    onOpenDevTools: () -> Unit = {}
+    onOpenDevTools: () -> Unit = {},
+    onOpenConnectors: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     val ctx = LocalContext.current
@@ -740,7 +741,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Text("🧰 أدوات الذكاء والتطوير", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
             Text(
-                "تتيح للنموذج استخدام أدوات GitHub والويب والملفات وقواعد البيانات ومحلل الكود عند الحاجة، مع الحفاظ على كل ميزات المحادثة والويب والوسائط.",
+                "تتيح للنموذج استخدام أدوات GitHub والويب والملفات وقواعد البيانات ومحلل الكود والموصلات (Drive/Gmail/Calendar/Notion/Slack) عند الحاجة، مع الحفاظ على كل ميزات المحادثة والوسائط.",
                 color = Color(0xFFB0B0B0),
                 fontSize = 12.sp
             )
@@ -850,6 +851,9 @@ fun SettingsScreen(
             }
             TextButton(onClick = { persist(); onOpenDevTools() }) {
                 Text("🧰 فتح أدوات المطوّر ومساحة العمل", color = Color(0xFFFFB800), fontSize = 12.sp)
+            }
+            TextButton(onClick = { persist(); onOpenConnectors() }) {
+                Text("🔌 ربط الحسابات: Drive · Gmail · Calendar · Notion · Slack", color = Color(0xFFFFB800), fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(16.dp))
