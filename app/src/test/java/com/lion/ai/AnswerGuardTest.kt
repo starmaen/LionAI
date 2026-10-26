@@ -39,6 +39,17 @@ class AnswerGuardTest {
     }
 
     @Test
+    fun gibberishIsLowQuality() {
+        assertTrue(AnswerGuard.isLowQuality("!!!???###$$$%%%%^^^^&&&&****++++====", TaskKind.GENERAL, "سؤال"))
+    }
+
+    @Test
+    fun repeatedLoopIsLowQuality() {
+        val text = "الفيلم جميل جدا والفيلم جميل جدا والفيلم جميل جدا والفيلم جميل جدا"
+        assertTrue(AnswerGuard.isLowQuality(text, TaskKind.FACTUAL, "فيلم"))
+    }
+
+    @Test
     fun sanitizerConvertsTableToBullets() {
         val raw = "**أفلام**\n\n| الاسم | السنة |\n|---|---|\n| البيه البواب | 1987 |\n| الإرهاب والكباب | 1992 |"
         val out = AnswerGuard.sanitizeForDisplay(raw)

@@ -35,6 +35,26 @@ class SmartRouterTest {
     }
 
     @Test
+    fun shortNonSmalltalkQuestionIsGeneral() {
+        assertEquals(TaskKind.GENERAL, SmartRouter.classify("أعطني نصيحة للسفر", false, 0, null))
+    }
+
+    @Test
+    fun weakFastModelsAreNotReliableForFacts() {
+        assertTrue(SmartRouter.isReliableModel("gemini", "gemini-3.8-flash"))
+        assertTrue(SmartRouter.isReliableModel("groq", "openai/gpt-oss-120b"))
+        assertFalse(SmartRouter.isReliableModel("groq", "openai/gpt-oss-20b"))
+        assertFalse(SmartRouter.isReliableModel("llm7", "default"))
+        assertFalse(SmartRouter.isReliableModel("kilo", "kilo-auto/free"))
+    }
+
+    @Test
+    fun answerModeFallsBackToBalanced() {
+        assertEquals(AnswerMode.BALANCED, AnswerMode.fromId("unknown"))
+        assertEquals(AnswerMode.PRECISE, AnswerMode.fromId("precise"))
+    }
+
+    @Test
     fun longQuestionIsGeneral() {
         val long = "سؤال طويل جداً ".repeat(40)
         assertEquals(TaskKind.GENERAL, SmartRouter.classify(long, false, 0, null))

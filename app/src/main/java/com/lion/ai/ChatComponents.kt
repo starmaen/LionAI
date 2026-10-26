@@ -241,7 +241,9 @@ fun Bubble(
     context: Context,
     tts: TextToSpeech?,
     index: Int,
-    onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit
+    onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit,
+    canRegenerate: Boolean = false,
+    onRegenerate: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -445,6 +447,11 @@ fun Bubble(
                 if (!message.isUser) {
                     Spacer(Modifier.height(8.dp))
                     Row {
+                        if (canRegenerate) {
+                            TextButton(onClick = onRegenerate) {
+                                Text("🔄 إعادة", color = Color(0xFFFFB800), fontSize = 12.sp)
+                            }
+                        }
                         TextButton(onClick = {
                             val clipboard = context.getSystemService(
                                 Context.CLIPBOARD_SERVICE

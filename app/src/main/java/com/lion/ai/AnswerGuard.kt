@@ -39,6 +39,10 @@ object AnswerGuard {
             val lines = t.lines().map { it.trim() }.filter { it.length >= 8 }
             if (lines.size >= 3 && lines.groupingBy { it }.eachCount().values.any { it >= 3 }) return true
         }
+        if (strict || kind == TaskKind.GENERAL) {
+            if (looksLikeGibberish(t)) return true
+            if (hasLoop(t)) return true
+        }
 
         if (UNCERTAIN.containsMatchIn(t)) return false
 
@@ -49,6 +53,35 @@ object AnswerGuard {
             }
             if (query.any { it in '\u0600'..'\u06FF' } && t.none { it in '\u0600'..'\u06FF' }) return true
             if (ELLIPSIS.findAll(t).count() >= 2) return true
+        }
+        return false
+    }
+
+    /** نص مليء بالرموز أو بلا حروف كافية: غالباً هلوسة أو رد مبتور. */
+    private fun looksLikeGibberish(t: String): Boolean {
+        if (t.count { it == '|' } >= 4) return false
+        val visible = t.filterNot { it.isWhitespace() }
+        if (visible.length < 25) return false
+        val letters = visible.count { it.isLetter() }
+        if (letters * 2 < visible.length) return true
+        val symbols = visible.count {
+            !it.isLetterOrDigit() && it !in "،؛:!?.,()[]{}«»\"'%-/|•—…" &&
+                it !in '\u064B'..'\u065F'
+        }
+        return symbols * 4 > visible.length
+    }
+
+    /** تكرار نفس أربع كلمات ثلاث مرات = حلقة نماذج شائعة. */
+    private fun hasLoop(t: String): Boolean {
+        val words = TextNorm.forMatch(t).split(Regex("\\s+")).filter { it.length > 2 }
+        if (words.size < 12) return false
+        val counts = HashMap<String, Int>()
+        val n = 4
+        for (i in 0..words.size - n) {
+            val key = words.subList(i, i + n).joinToString(" ")
+            val count = (counts[key] ?: 0) + 1
+            if (count >= 3) return true
+            counts[key] = count
         }
         return false
     }
@@ -82,7 +115,9 @@ object AnswerGuard {
             }
             .replace(Regex("^#{1,6}\\s*", RegexOption.MULTILINE), "")
             .replace(Regex("^>\\s?", RegexOption.MULTILINE), "")
+            .replace(Regex("^\\s*[-*]\\s+", RegexOption.MULTILINE), "• ")
             .replace(Regex("^\\s*[-*_]{3,}\\s*$", RegexOption.MULTILINE), "")
+            .replace(Regex("~~(.*?)~~"), "$1")
             .replace(Regex("\\n{3,}"), "\n\n")
             .trim()
     }

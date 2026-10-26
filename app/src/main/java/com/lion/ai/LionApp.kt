@@ -362,6 +362,22 @@ fun LionApp() {
         }
     }
 
+    /** يستبدل رداً قديماً بنتيجة إعادة التوليد في نفس الموضع. */
+    fun replaceInChat(chatId: String, index: Int, message: Message): Boolean {
+        if (chatId == currentChat) {
+            if (index !in messages.indices || messages[index].isUser) return false
+            messages = messages.toMutableList().also { it[index] = message }
+            saveCurrent()
+            return true
+        }
+        val list = ChatRepository.load(prefs, chatId).toMutableList()
+        if (index !in list.indices || list[index].isUser) return false
+        list[index] = message
+        ChatRepository.save(prefs, chatId, list)
+        refreshChats()
+        return true
+    }
+
     fun keyOf(provider: String): String = prefs.getString("api_key_$provider", "") ?: ""
 
     fun accountId(): String = prefs.getString("cf_account_id", "") ?: ""
@@ -385,8 +401,19 @@ fun LionApp() {
     }
 
     /** الوضع التلقائي: العقل المركزي يرتّب المسارات المتاحة. اليدوي: المزود الذي اخترته فقط. */
-    fun planFor(kind: TaskKind): List<Route> =
-        if (autoRoute) SmartRouter.plan(prefs, kind).ifEmpty { listOf(manualRoute()) } else listOf(manualRoute())
+    fun planFor(kind: TaskKind, mode: AnswerMode? = null): List<Route> =
+        if (autoRoute) {
+            SmartRouter.plan(prefs, kind, mode ?: AnswerMode.read(prefs)).ifEmpty { listOf(manualRoute()) }
+        } else {
+            listOf(manualRoute())
+        }
+
+    /** طول الرد المختار من الإعدادات، يُضاف إلى تعليمات النظام. */
+    fun answerLengthSuffix(): String = when (prefs.getString("answer_length", "normal")) {
+        "short" -> LLM_LENGTH_SHORT
+        "long" -> LLM_LENGTH_LONG
+        else -> ""
+    }
 
     fun generateTitle(chatId: String, force: Boolean) {
         if (!force && !prefs.getBoolean("smart_titles", true)) return
@@ -751,12 +778,21 @@ fun LionApp() {
         ytmUrl: String?,
         anghamiUrl: String?,
         browserUrl: String?,
-        kind: TaskKind
+        kind: TaskKind,
+        replaceIndex: Int? = null,
+        forcePrecise: Boolean = false
     ) {
-        val strict = SmartRouter.isStrict(kind)
+        val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
+        val strict = SmartRouter.isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL)
+        val careful = SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
-        val systemPrompt = if (strict) LLM_FACT_PROMPT else LLM_SYSTEM_PROMPT
-        val plan = planFor(kind)
+        val basePrompt = when {
+            SmartRouter.isStrict(kind) -> LLM_FACT_PROMPT
+            careful -> LLM_CAREFUL_PROMPT
+            else -> LLM_SYSTEM_PROMPT
+        }
+        val systemPrompt = basePrompt + answerLengthSuffix()
+        val plan = planFor(kind, mode)
         val auto = autoRoute
         loadingChats[chatId] = true
         scope.launch {
@@ -814,7 +850,9 @@ fun LionApp() {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
             }
             val via = used?.let { SmartRouter.label(it, if (auto) kind else null) }
-            appendToChat(chatId, Message(reply, false, ytUrl, ytmUrl, anghamiUrl, browserUrl, via = via))
+            val newMessage = Message(reply, false, ytUrl, ytmUrl, anghamiUrl, browserUrl, via = via)
+            val replaced = replaceIndex != null && replaceInChat(chatId, replaceIndex, newMessage)
+            if (!replaced) appendToChat(chatId, newMessage)
             loadingChats[chatId] = false
             if (autoSpeak && chatId == currentChat) {
                 tts?.speak(reply.take(500), TextToSpeech.QUEUE_FLUSH, null, null)
@@ -945,6 +983,38 @@ fun LionApp() {
         }
 
         runChat(chatId, prompt, history, image, ytUrl, ytmUrl, anghamiUrl, browserUrl, kind)
+    }
+
+    /** زر «إعادة» في الفقاعة: يجرّب أقوى المزودات ويستبدل الرد القديم في مكانه. */
+    fun regenerate(index: Int) {
+        if (loadingChats[currentChat] == true) return
+        val chatId = currentChat
+        val old = messages.getOrNull(index) ?: return
+        if (old.isUser) return
+        val userIndex = (index - 1 downTo 0).firstOrNull { messages[it].isUser } ?: return
+        val userText = messages[userIndex].text.trim()
+        if (userText.isBlank() || userText.contains("📎") || userText.contains("🖼️")) {
+            appendToChat(
+                chatId,
+                Message("⚠️ لا يمكن إعادة هذه الإجابة تلقائياً لأنها تعتمد على مرفق. أعد إرسال المرفق مع طلبك.", false)
+            )
+            return
+        }
+        val history = windowedHistory(messages.take(userIndex))
+        val kind = SmartRouter.classify(userText, false, 0, null)
+        runChat(
+            chatId = chatId,
+            prompt = userText,
+            history = history,
+            image = null,
+            ytUrl = old.ytUrl,
+            ytmUrl = old.ytmUrl,
+            anghamiUrl = old.anghamiUrl,
+            browserUrl = old.browserUrl,
+            kind = kind,
+            replaceIndex = index,
+            forcePrecise = true
+        )
     }
 
     LaunchedEffect(autoSendTrigger) {
@@ -1310,6 +1380,7 @@ fun LionApp() {
                     context = context,
                     tts = tts,
                     onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) },
+                    onRegenerate = { i -> regenerate(i) },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()

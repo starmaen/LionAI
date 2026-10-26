@@ -53,6 +53,7 @@ internal fun LionMessageList(
     context: Context,
     tts: TextToSpeech?,
     onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit,
+    onRegenerate: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
                 LazyColumn(
@@ -61,9 +62,21 @@ internal fun LionMessageList(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     itemsIndexed(messages, key = { index, _ -> "$currentChat:$index" }) { index, message ->
+                        val previousUser = (index - 1 downTo 0)
+                            .firstOrNull { messages[it].isUser }
+                            ?.let { messages[it] }
+                        val canRegenerate = !message.isUser &&
+                            previousUser != null &&
+                            index > 0 &&
+                            messages[index - 1].isUser &&
+                            message.pending == null &&
+                            messages.drop(index + 1).none { it.isUser } &&
+                            !ActionDetector.looksLikeCommand(previousUser.text)
                         Bubble(
                             message, context, tts, index,
-                            onPendingChoice = onPendingChoice
+                            onPendingChoice = onPendingChoice,
+                            canRegenerate = canRegenerate,
+                            onRegenerate = { onRegenerate(index) }
                         )
                     }
                     if (loading) {

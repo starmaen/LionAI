@@ -1,6 +1,7 @@
 package com.lion.ai
 
 import android.content.SharedPreferences
+import java.util.Locale
 
 /** أنواع المهام التي يميّزها العقل المركزي. */
 enum class TaskKind(val label: String) {
@@ -16,6 +17,30 @@ enum class TaskKind(val label: String) {
 }
 
 data class Route(val provider: String, val model: String)
+
+/** وضع جودة الإجابة: يتحكم في قبول المزودات الضعيفة وفي عدد المحاولات. */
+enum class AnswerMode(val id: String, val label: String, val hint: String) {
+    PRECISE(
+        "precise",
+        "🎯 دقيق (موصى به)",
+        "يمنع النماذج الضعيفة في الأسئلة المعرفية والعامة، ويستعمل أقوى المزودات المتاحة فقط."
+    ),
+    BALANCED(
+        "balanced",
+        "⚖️ متوازن",
+        "يبدأ بأقوى المزودات ثم يسمح ببديل عند فشلها؛ توازن بين الدقة والسرعة."
+    ),
+    FAST(
+        "fast",
+        "⚡ سريع",
+        "محاولتان فقط وأولوية للسرعة. قد تقل الدقة في الأسئلة الطويلة أو الحساسة."
+    );
+
+    companion object {
+        fun fromId(id: String?): AnswerMode = values().firstOrNull { it.id == id } ?: BALANCED
+        fun read(prefs: SharedPreferences): AnswerMode = fromId(prefs.getString("answer_mode", BALANCED.id))
+    }
+}
 
 object ImageIntent {
     private val EDIT = Regex(
@@ -74,6 +99,11 @@ object SmartRouter {
             "ثوره|اكتشاف|اختراع|جائزه|بطوله|كاس|عاصمه|رئيس|ملكه|ملك|دوله|من هو|من هي|ما هو|ما هي|متي|اين|" +
             "\\bmovie\\b|\\bfilm\\b|\\bsinger\\b|\\bactor\\b|\\bhistory\\b|\\bdate\\b)"
     )
+    /** مجاملات قصيرة فقط: هذه وحدها تستحق المسار السريع، أما الأسئلة القصيرة فتحتاج مزوداً قوياً. */
+    private val SMALLTALK = Regex(
+        "(^|\\s)(مرحبا|اهلا|السلام عليكم|سلام|صباح الخير|مساء الخير|شكرا|شكرا لك|تسلم|تمام|اوكي|" +
+            "ok|hi|hello|thanks|كيف حالك|كيف الحال|ما اخبارك|من انت|ما اسمك|وداعا|باي)(\\s|$|[!،.؟?])"
+    )
 
     fun classify(text: String, hasImage: Boolean, attachmentChars: Int, attachmentName: String?): TaskKind {
         val t = TextNorm.forMatch(text)
@@ -86,7 +116,12 @@ object SmartRouter {
         if (REASONING_WORDS.containsMatchIn(t) || MATH_EXPR.containsMatchIn(t)) return TaskKind.REASONING
         if (WRITING_WORDS.containsMatchIn(t)) return TaskKind.WRITING
         if (FACT_WORDS.containsMatchIn(t)) return TaskKind.FACTUAL
-        return if (text.length <= 220 && attachmentChars == 0) TaskKind.FAST else TaskKind.GENERAL
+        // لا نرسل الأسئلة القصيرة إلى النماذج السريعة الضعيفة؛ السريع للمجاملات فقط.
+        return if (text.length <= 220 && attachmentChars == 0 && SMALLTALK.containsMatchIn(t)) {
+            TaskKind.FAST
+        } else {
+            TaskKind.GENERAL
+        }
     }
 
     private fun r(provider: String, model: String) = Route(provider, model)
@@ -101,23 +136,22 @@ object SmartRouter {
             r("opencode", "big-pickle"), r("ovh", "gpt-oss-20b"), r("deepseek", "deepseek-flash")
         )
         TaskKind.GENERAL -> listOf(
-            r("gemini", "gemini-3.8-flash"), r("groq", "openai/gpt-oss-120b"), r("mistral", "mistral-medium-latest"),
-            r("nvidia", "nvidia/nemotron-3-super-120b-a12b"), r("ollama", "gpt-oss:120b"), r("zai", "glm-4.7-flash"),
-            r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
-            r("cohere", "command-a-03-2025"), r("cloudflare", "@cf/openai/gpt-oss-120b"), r("opencode", "big-pickle"),
-            r("llm7", "default"), r("ovh", "gpt-oss-120b"),
-            r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
-            r("deepseek", "deepseek-flash"),
-            r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna")
-        )
-        TaskKind.FACTUAL -> listOf(
-            r("gemini", "gemini-3.8-flash"), r("groq", "openai/gpt-oss-120b"),
-            r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
+            r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
             r("deepseek", "deepseek-flash"), r("mistral", "mistral-medium-latest"),
             r("cohere", "command-a-03-2025"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("zai", "glm-4.7-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
-            r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"),
+            r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
+            r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
+            r("opencode", "big-pickle"), r("llm7", "default")
+        )
+        TaskKind.FACTUAL -> listOf(
+            r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
+            r("deepseek", "deepseek-flash"), r("mistral", "mistral-medium-latest"),
+            r("cohere", "command-a-03-2025"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+            r("zai", "glm-4.7-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
+            r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "kilo-auto/free"), r("opencode", "big-pickle"), r("llm7", "default")
         )
         TaskKind.CODE -> listOf(
@@ -177,9 +211,27 @@ object SmartRouter {
 
     fun isTrustedFactual(provider: String): Boolean = provider in TRUSTED_FACTUAL
 
-    /** هل يوجد مزود قوي متاح فعلاً لهذا النوع؟ */
+    /** نماذج صغيرة/سريعة نعرف أنها تهلوّس في الأسئلة المعرفية؛ تُستبعد عند توفر بديل أقوى. */
+    private val WEAK_MODEL_HINTS = listOf(
+        "gpt-oss-20b", "llama-3.1-8b", "llama-3.2-3b", "llama-3.2-1b",
+        "compound-mini", "flash-lite", "open-mistral-nemo", "command-r7b",
+        "north-mini", "kilo-auto", "gemma", "minimax", "mimo", "laguna",
+        "qwen3.8-27b", "step-3.7", "default"
+    )
+
+    /** هل المزود + الموديل معاً جديران بالأسئلة التي تحتاج دقة؟ */
+    fun isReliableModel(provider: String, model: String): Boolean {
+        if (!isTrustedFactual(provider)) return false
+        val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
+        val id = model.ifBlank { info.defaultModel }.lowercase(Locale.ROOT)
+        return WEAK_MODEL_HINTS.none { id == it || id.contains(it) }
+    }
+
+    /** هل يوجد نموذج قوي متاح فعلاً لهذا النوع؟ (العام قد يصبح صارماً في وضع الدقة) */
     fun hasTrusted(prefs: SharedPreferences, kind: TaskKind): Boolean =
-        isStrict(kind) && candidates(kind).any { available(prefs, it.provider) && isTrustedFactual(it.provider) }
+        (isStrict(kind) || kind == TaskKind.GENERAL) && candidates(kind).any {
+            available(prefs, it.provider) && isReliableModel(it.provider, it.model)
+        }
 
     fun available(prefs: SharedPreferences, provider: String): Boolean {
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
@@ -193,12 +245,22 @@ object SmartRouter {
      * يُبقي ترتيب التخصص كما هو، لكنه يؤخّر المزود الذي فشل مرتين متتاليتين
      * حتى لا يستهلك كل المحاولات (توازن دون التضحية بالتخصص).
      */
-    fun plan(prefs: SharedPreferences, kind: TaskKind): List<Route> {
-        val availableRoutes = candidates(kind)
-            .filter { available(prefs, it.provider) }
-            .distinctBy { it.provider }
-        val trusted = if (isStrict(kind)) availableRoutes.filter { isTrustedFactual(it.provider) } else emptyList()
-        val routes = if (trusted.isNotEmpty()) trusted else availableRoutes
+    fun plan(
+        prefs: SharedPreferences,
+        kind: TaskKind,
+        mode: AnswerMode = AnswerMode.read(prefs)
+    ): List<Route> {
+        val availableRoutes = candidates(kind).filter { available(prefs, it.provider) }
+        val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
+        val strict = isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL)
+        val preferReliable = (kind == TaskKind.GENERAL && mode != AnswerMode.FAST) || mode == AnswerMode.PRECISE
+        val base = when {
+            strict -> reliableRoutes.ifEmpty { availableRoutes }
+            preferReliable && reliableRoutes.isNotEmpty() ->
+                reliableRoutes + availableRoutes.filterNot { r -> reliableRoutes.any { it == r } }
+            else -> availableRoutes
+        }
+        val routes = base.distinctBy { it.provider }
         val (healthy, failing) = routes.partition { (failures[it.provider] ?: 0) < 2 }
         val ordered = (healthy + failing).toMutableList()
         // توازن الاستجابة: إن كان الأفضل بطيئاً (>25ث) والثاني أسرع بوضوح، قدّم الثاني.
@@ -211,7 +273,7 @@ object SmartRouter {
                 ordered[1] = tmp
             }
         }
-        return ordered.take(4)
+        return ordered.take(if (mode == AnswerMode.FAST) 2 else 4)
     }
 
     fun label(route: Route, kind: TaskKind?): String {

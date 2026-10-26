@@ -183,6 +183,10 @@ fun SettingsScreen(
         }
     }
     var confirmActions by remember { mutableStateOf(prefs.getBoolean("confirm_actions", true)) }
+    var answerMode by remember { mutableStateOf(AnswerMode.read(prefs).id) }
+    var answerLength by remember {
+        mutableStateOf(prefs.getString("answer_length", "normal") ?: "normal")
+    }
 
     val current = providerInfo(provider)
     val versionName = remember {
@@ -202,6 +206,8 @@ fun SettingsScreen(
         editor.putBoolean("smart_titles", smartTitles)
         editor.putBoolean("auto_route", autoRouteSetting)
         editor.putBoolean("confirm_actions", confirmActions)
+        editor.putString("answer_mode", answerMode)
+        editor.putString("answer_length", answerLength)
         editor.apply()
     }
 
@@ -585,6 +591,62 @@ fun SettingsScreen(
                         color = Color(0xFF9A9A9A),
                         fontSize = 11.sp
                     )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = Color(0xFF2A2A2A))
+            Spacer(Modifier.height(8.dp))
+            Text("🎚️ جودة الإجابات", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+            Text(
+                "اختر مقدار الدقة مقابل السرعة. «دقيق» يمنع النماذج السريعة الضعيفة من الإجابة عن الأسئلة المعرفية.",
+                color = Color(0xFFB0B0B0),
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(6.dp))
+            Text("وضع الإجابة:", color = Color.White, fontSize = 13.sp)
+            AnswerMode.values().forEach { mode ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { answerMode = mode.id }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = answerMode == mode.id,
+                        onClick = { answerMode = mode.id },
+                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(mode.label, color = Color.White, fontSize = 14.sp)
+                        Text(mode.hint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("طول الرد:", color = Color.White, fontSize = 13.sp)
+            listOf(
+                Triple("short", "مختصر", "أهم النقاط فقط"),
+                Triple("normal", "عادي", "الطول الافتراضي المتوازن"),
+                Triple("long", "مفصّل", "شرح أوسع وأمثلة")
+            ).forEach { (id, label, hint) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { answerLength = id }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = answerLength == id,
+                        onClick = { answerLength = id },
+                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(label, color = Color.White, fontSize = 14.sp)
+                        Text(hint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                    }
                 }
             }
 
