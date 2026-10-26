@@ -25,7 +25,9 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run unit tests
-      run: ./gradlew testDebugUnitTest --stacktrace
+      run: |
+        set -o pipefail
+        ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee /tmp/unit-tests.log
 
     - name: Report failing tests
       if: failure()
@@ -45,6 +47,9 @@ jobs:
                 message = (failure.get("message") or failure.text or "failed").replace("\n", " ")[:1200]
                 print(f"::error file={path}::{case.get('classname')}.{case.get('name')}: {message}")
         PY
+        grep -E "^(e: |.*error: )" /tmp/unit-tests.log | head -20 | while IFS= read -r line; do
+          echo "::error::${line}"
+        done
 
     - name: Build signed release APK
       run: ./gradlew assembleRelease --stacktrace
