@@ -241,9 +241,10 @@ object Connectors {
         val res = ensureOk(google(ctx, "gmail", "GET", url), "Gmail")
         val messages = JSONObject(res.body).optJSONArray("messages") ?: JSONArray()
         if (messages.length() == 0) return "لا توجد رسائل مطابقة."
-        return (0 until messages.length()).joinToString("\n") { index ->
+        val lines = mutableListOf<String>()
+        for (index in 0 until messages.length()) {
             val id = messages.optJSONObject(index)?.optString("id").orEmpty()
-            val detail = runCatching {
+            val detail = try {
                 val d = ensureOk(
                     google(
                         ctx, "gmail", "GET",
@@ -252,7 +253,9 @@ object Connectors {
                     "Gmail"
                 )
                 JSONObject(d.body)
-            }.getOrNull()
+            } catch (e: Exception) {
+                null
+            }
             val headers = detail?.optJSONObject("payload")?.optJSONArray("headers")
             fun header(name: String): String {
                 if (headers == null) return ""
@@ -263,8 +266,11 @@ object Connectors {
                 return ""
             }
             val snippet = detail?.optString("snippet").orEmpty()
-            "• ${header("Subject").ifBlank { "(بدون موضوع)" }}\n  من: ${header("From")} — ${header("Date")}\n  id=$id\n  ${snippet.take(160)}"
+            lines.add(
+                "• ${header("Subject").ifBlank { "(بدون موضوع)" }}\n  من: ${header("From")} — ${header("Date")}\n  id=$id\n  ${snippet.take(160)}"
+            )
         }
+        return lines.joinToString("\n")
     }
 
     suspend fun gmailRead(ctx: ToolContext, messageId: String, maxChars: Int): String {
@@ -482,9 +488,9 @@ object Connectors {
                         "divider" -> "\n---\n"
                         else -> ""
                     }
-                    append("  ".repeat(depth)).append(prefix).append(text)
-                    if (type == "code") append("\n```")
-                    append('\n')
+                    builder.append("  ".repeat(depth)).append(prefix).append(text)
+                    if (type == "code") builder.append("\n```")
+                    builder.append('\n')
                 }
                 if (block.optBoolean("has_children")) walk(block.optString("id"), depth + 1)
             }
