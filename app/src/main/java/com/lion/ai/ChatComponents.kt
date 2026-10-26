@@ -403,6 +403,37 @@ fun Bubble(
                         }
                     }
                 }
+                if (!message.isUser && message.sources.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("🌐 المصادر", color = Color(0xFFFFB800), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    message.sources.forEachIndexed { sourceIndex, source ->
+                        val host = runCatching { Uri.parse(source.url).host }.getOrNull()
+                            ?.removePrefix("www.") ?: ""
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url)))
+                                    }
+                                }
+                                .padding(vertical = 3.dp)
+                        ) {
+                            Text(
+                                "${sourceIndex + 1}. ${source.title}",
+                                color = Color(0xFF64B5F6),
+                                fontSize = 11.sp,
+                                maxLines = 2
+                            )
+                            Text(
+                                if (host.isBlank()) source.url else host,
+                                color = Color(0xFF7A7A7A),
+                                fontSize = 9.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
                 if (!message.isUser && message.via != null) {
                     Spacer(Modifier.height(4.dp))
                     Text("🧠 " + message.via, color = Color(0xFF7A7A7A), fontSize = 10.sp)

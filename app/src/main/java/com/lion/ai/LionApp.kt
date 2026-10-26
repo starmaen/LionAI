@@ -791,11 +791,24 @@ fun LionApp() {
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
         }
-        val systemPrompt = basePrompt + answerLengthSuffix()
         val plan = planFor(kind, mode)
         val auto = autoRoute
         loadingChats[chatId] = true
         scope.launch {
+            val sources = if (WebGrounding.enabled(prefs) && WebGrounding.shouldSearch(kind, prompt)) {
+                withContext(Dispatchers.IO) {
+                    runCatching { WebGrounding.search(prompt) }.getOrDefault(emptyList<WebSource>())
+                }
+            } else {
+                emptyList<WebSource>()
+            }
+            val systemPrompt = basePrompt + answerLengthSuffix() +
+                if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else ""
+            val llmPrompt = if (sources.isEmpty()) {
+                prompt
+            } else {
+                prompt + "\n\n" + WebGrounding.contextBlock(sources)
+            }
             var reply = ""
             var used: Route? = null
             var fallback: Pair<Route, String>? = null
@@ -806,7 +819,7 @@ fun LionApp() {
                 val started = System.currentTimeMillis()
                 val r = withContext(Dispatchers.IO) {
                     LlmClient.ask(
-                        message = prompt,
+                        message = llmPrompt,
                         apiKey = keyOf(route.provider),
                         provider = route.provider,
                         history = history,
@@ -849,8 +862,20 @@ fun LionApp() {
             if (used == null && failed.size > 1) {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
             }
-            val via = used?.let { SmartRouter.label(it, if (auto) kind else null) }
-            val newMessage = Message(reply, false, ytUrl, ytmUrl, anghamiUrl, browserUrl, via = via)
+            val via = used?.let {
+                SmartRouter.label(it, if (auto) kind else null) +
+                    if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else ""
+            }
+            val newMessage = Message(
+                reply,
+                false,
+                ytUrl,
+                ytmUrl,
+                anghamiUrl,
+                browserUrl,
+                via = via,
+                sources = if (used != null) sources else emptyList()
+            )
             val replaced = replaceIndex != null && replaceInChat(chatId, replaceIndex, newMessage)
             if (!replaced) appendToChat(chatId, newMessage)
             loadingChats[chatId] = false

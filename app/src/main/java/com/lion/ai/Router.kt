@@ -99,6 +99,10 @@ object SmartRouter {
             "ثوره|اكتشاف|اختراع|جائزه|بطوله|كاس|عاصمه|رئيس|ملكه|ملك|دوله|من هو|من هي|ما هو|ما هي|متي|اين|" +
             "\\bmovie\\b|\\bfilm\\b|\\bsinger\\b|\\bactor\\b|\\bhistory\\b|\\bdate\\b)"
     )
+    /** أخبار وأسعار ونتائج حالية: نصنّفها معرفية حتى تُدعَم بمصادر ويب. */
+    private val CURRENT_WORDS = Regex(
+        "(اخبار(\\s|$|[؟?،.!])|عاجل|اسعار|سعر|طقس|نتيجه|مباراه|انتخابات|تصريح|قرار جديد)"
+    )
     /** مجاملات قصيرة فقط: هذه وحدها تستحق المسار السريع، أما الأسئلة القصيرة فتحتاج مزوداً قوياً. */
     private val SMALLTALK = Regex(
         "(^|\\s)(مرحبا|اهلا|السلام عليكم|سلام|صباح الخير|مساء الخير|شكرا|شكرا لك|تسلم|تمام|اوكي|" +
@@ -115,7 +119,7 @@ object SmartRouter {
         }
         if (REASONING_WORDS.containsMatchIn(t) || MATH_EXPR.containsMatchIn(t)) return TaskKind.REASONING
         if (WRITING_WORDS.containsMatchIn(t)) return TaskKind.WRITING
-        if (FACT_WORDS.containsMatchIn(t)) return TaskKind.FACTUAL
+        if (FACT_WORDS.containsMatchIn(t) || CURRENT_WORDS.containsMatchIn(t)) return TaskKind.FACTUAL
         // لا نرسل الأسئلة القصيرة إلى النماذج السريعة الضعيفة؛ السريع للمجاملات فقط.
         return if (text.length <= 220 && attachmentChars == 0 && SMALLTALK.containsMatchIn(t)) {
             TaskKind.FAST

@@ -21,6 +21,18 @@ object ChatStore {
             message.anghamiUrl?.let { item.put("angh", it) }
             message.browserUrl?.let { item.put("browser", it) }
             message.via?.let { item.put("via", it) }
+            if (message.sources.isNotEmpty()) {
+                val sources = JSONArray()
+                message.sources.forEach { source ->
+                    sources.put(
+                        JSONObject()
+                            .put("title", source.title)
+                            .put("url", source.url)
+                            .put("snippet", source.snippet)
+                    )
+                }
+                item.put("sources", sources)
+            }
             array.put(item)
         }
         return array.toString()
@@ -34,6 +46,21 @@ object ChatStore {
                 val item = array.optJSONObject(index) ?: return@mapNotNull null
                 val text = item.optString("text", "")
                 if (text.isEmpty()) return@mapNotNull null
+                val sourcesArray = item.optJSONArray("sources")
+                val sources = if (sourcesArray == null) {
+                    emptyList()
+                } else {
+                    (0 until sourcesArray.length()).mapNotNull { sourceIndex ->
+                        val source = sourcesArray.optJSONObject(sourceIndex) ?: return@mapNotNull null
+                        val url = source.optString("url", "").trim()
+                        if (url.isBlank()) return@mapNotNull null
+                        WebSource(
+                            title = source.optString("title", "").trim().ifBlank { "مصدر" },
+                            url = url,
+                            snippet = source.optString("snippet", "").trim()
+                        )
+                    }
+                }
                 Message(
                     text = text,
                     isUser = item.optBoolean("user", false),
@@ -41,7 +68,8 @@ object ChatStore {
                     ytmUrl = item.optString("ytm", "").takeIf { it.isNotBlank() },
                     anghamiUrl = item.optString("angh", "").takeIf { it.isNotBlank() },
                     browserUrl = item.optString("browser", "").takeIf { it.isNotBlank() },
-                    via = item.optString("via", "").takeIf { it.isNotBlank() }
+                    via = item.optString("via", "").takeIf { it.isNotBlank() },
+                    sources = sources
                 )
             }
         } catch (e: Exception) {

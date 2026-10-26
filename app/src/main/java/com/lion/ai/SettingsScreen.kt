@@ -187,6 +187,7 @@ fun SettingsScreen(
     var answerLength by remember {
         mutableStateOf(prefs.getString("answer_length", "normal") ?: "normal")
     }
+    var webGrounding by remember { mutableStateOf(prefs.getBoolean("web_grounding", true)) }
 
     val current = providerInfo(provider)
     val versionName = remember {
@@ -208,6 +209,7 @@ fun SettingsScreen(
         editor.putBoolean("confirm_actions", confirmActions)
         editor.putString("answer_mode", answerMode)
         editor.putString("answer_length", answerLength)
+        editor.putBoolean("web_grounding", webGrounding)
         editor.apply()
     }
 
@@ -647,6 +649,30 @@ fun SettingsScreen(
                         Text(label, color = Color.White, fontSize = 14.sp)
                         Text(hint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
                     }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { webGrounding = !webGrounding }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Switch(
+                    checked = webGrounding,
+                    onCheckedChange = { webGrounding = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("🌐 بحث ويب تلقائي للمعلومات", color = Color.White, fontSize = 14.sp)
+                    Text(
+                        "للأسئلة المعرفية والبرمجية: يجلب مقتطفات من ويكيبيديا والبحث العام، ومن GitHub وStack Overflow وXDA عند الحاجة، ثم يعرض المصادر أسفل الرد. يرسل نص سؤالك إلى خدمات البحث، ولا يعمل مع المرفقات.",
+                        color = Color(0xFF9A9A9A),
+                        fontSize = 11.sp
+                    )
                 }
             }
 

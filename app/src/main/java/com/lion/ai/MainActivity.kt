@@ -136,7 +136,8 @@ data class Message(
     val anghamiUrl: String? = null,
     val browserUrl: String? = null,
     val pending: PendingAction? = null,
-    val via: String? = null
+    val via: String? = null,
+    val sources: List<WebSource> = emptyList()
 )
 
 data class Contact(val name: String, val number: String, val normalized: String? = null)
