@@ -27,6 +27,25 @@ jobs:
     - name: Run unit tests
       run: ./gradlew testDebugUnitTest --stacktrace
 
+    - name: Report failing tests
+      if: failure()
+      run: |
+        python3 - <<'PY'
+        import glob
+        import xml.etree.ElementTree as ET
+        for path in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+            try:
+                root = ET.parse(path).getroot()
+            except Exception:
+                continue
+            for case in root.iter("testcase"):
+                failure = case.find("failure")
+                if failure is None:
+                    continue
+                message = (failure.get("message") or failure.text or "failed").replace("\n", " ")[:1200]
+                print(f"::error file={path}::{case.get('classname')}.{case.get('name')}: {message}")
+        PY
+
     - name: Build signed release APK
       run: ./gradlew assembleRelease --stacktrace
 
