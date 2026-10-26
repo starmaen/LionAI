@@ -849,13 +849,27 @@ fun LionApp() {
             } else {
                 emptyList<WebSource>()
             }
+            val driveContext = if (image == null && ConnectorAuth.isConnected(prefs, "google_drive")) {
+                val driveId = Connectors.extractDriveId(prompt)
+                if (driveId == null) null else withContext(Dispatchers.IO) {
+                    runCatching {
+                        Connectors.driveOpen(
+                            ToolContext(context, prefs, AiTools.allowWrite(prefs)), driveId, 8000
+                        )
+                    }.getOrNull()
+                }
+            } else {
+                null
+            }
             val systemPrompt = basePrompt + answerLengthSuffix() +
                 if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else ""
-            val llmPrompt = if (sources.isEmpty()) {
+            val baseLlmPrompt = if (sources.isEmpty()) {
                 prompt
             } else {
                 prompt + "\n\n" + WebGrounding.contextBlock(sources)
             }
+            val llmPrompt = if (driveContext.isNullOrBlank()) baseLlmPrompt else
+                baseLlmPrompt + "\n\n=== بيانات Google Drive من الرابط في رسالة المستخدم ===\n" + driveContext
             // عند توفر مصادر ويب، لا نتوقف عند أول 6 مسارات: نمنح أي مزود متاح آخر
             // فرصة للاستناد إلى المصادر بدلاً من إظهار «لا توجد إجابة موثوقة».
             val rescueRoutes = if (sources.isNotEmpty()) {

@@ -69,6 +69,7 @@ fun ConnectorsScreen(
     var message by remember { mutableStateOf("") }
     var googleId by remember { mutableStateOf(ConnectorAuth.googleClientId(prefs)) }
     var googleSecret by remember { mutableStateOf(ConnectorAuth.googleClientSecret(prefs)) }
+    var showGoogleGuide by remember { mutableStateOf(false) }
 
     fun run(id: String, action: suspend () -> String) {
         if (busyId.isNotBlank()) return
@@ -171,6 +172,27 @@ fun ConnectorsScreen(
                         TextButton(onClick = {
                             runCatching { uriHandler.openUri("https://console.cloud.google.com/apis/library") }
                         }) { Text("تفعيل الـ APIs", color = Color(0xFFFFB800), fontSize = 11.sp) }
+                    }
+                    TextButton(onClick = { showGoogleGuide = !showGoogleGuide }) {
+                        Text(
+                            if (showGoogleGuide) "إخفاء الخطوات" else "❓ من أين أحصل على Client ID وSecret؟",
+                            color = Color(0xFFFFB800),
+                            fontSize = 12.sp
+                        )
+                    }
+                    if (showGoogleGuide) {
+                        Text(
+                            "1) افتح console.cloud.google.com وأنشئ مشروعاً جديداً (أو اختر مشروعاً).\n" +
+                                "2) APIs & Services ← Library: فعّل Google Drive API، وإن أردت البريد فعّل Gmail API، وللتقويم فعّل Google Calendar API.\n" +
+                                "3) APIs & Services ← OAuth consent screen: اختر External، املأ اسم التطبيق وبريد الدعم، وأضف بريدك في Test users.\n" +
+                                "4) في Data access أضف الصلاحيات: drive وgmail.modify وgmail.send وcalendar (حسب ما تريد).\n" +
+                                "5) APIs & Services ← Credentials ← Create Credentials ← OAuth client ID ← Application type: Desktop app ← Create.\n" +
+                                "6) انسخ Client ID وClient secret والصقهما هنا ثم اضغط حفظ الإعداد، ثم اضغط ربط الحساب.\n" +
+                                "لا تحتاج إلى إضافة Redirect URI يدوياً؛ التطبيق يستخدم 127.0.0.1 مؤقتاً.\n" +
+                                "إن ظهرت رسالة أن التطبيق غير موثّق، اضغط Advanced ثم المتابعة، أو أضف حسابك كـ Test user.",
+                            color = Color(0xFFD0D0D0),
+                            fontSize = 11.sp
+                        )
                     }
                 }
             }

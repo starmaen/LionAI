@@ -136,6 +136,97 @@ object Connectors {
 
     // ---------------- Google Drive ----------------
 
+    fun extractDriveId(raw: String): String? {
+        val text = raw.trim()
+        val fromUrl = Regex("""(?:/folders/|/file/d/|[?&]id=)([A-Za-z0-9_-]{10,})""").find(text)?.groupValues?.get(1)
+        if (!fromUrl.isNullOrBlank()) return fromUrl
+        return text.takeIf { it.matches(Regex("[A-Za-z0-9_-]{20,}")) }
+    }
+
+    suspend fun driveOpen(ctx: ToolContext, raw: String, maxChars: Int): String {
+        val id = extractDriveId(raw) ?: return driveSearch(ctx, raw, 10)
+        val metaRes = ensureOk(
+            google(ctx, "google_drive", "GET", "$DRIVE/files/$id?fields=id,name,mimeType,size,parents,webViewLink"),
+            "Drive"
+        )
+        val meta = JSONObject(metaRes.body)
+        val mime = meta.optString("mimeType")
+        val name = meta.optString("name")
+        val link = meta.optString("webViewLink")
+        if (mime.startsWith("application/vnd.google-apps.folder")) {
+            val listing = driveList(ctx, 100, id)
+            return "📁 $name\n$link\n\n$listing"
+        }
+        return driveRead(ctx, id, maxChars)
+    }
+
+    suspend fun driveMove(ctx: ToolContext, fileId: String, folderId: String, name: String): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
+        val dest = extractDriveId(folderId) ?: throw IllegalArgumentException("معرّف المجلد غير صالح")
+        val meta = ensureOk(google(ctx, "google_drive", "GET", "$DRIVE/files/$id?fields=id,name,parents"), "Drive")
+        val parents = JSONObject(meta.body).optJSONArray("parents") ?: JSONArray()
+        val remove = (0 until parents.length()).mapNotNull { parents.optString(it).takeIf { p -> p.isNotBlank() } }
+            .joinToString(",")
+        val url = buildString {
+            append("$DRIVE/files/$id?addParents=$dest&fields=id,name,parents,webViewLink")
+            if (remove.isNotBlank()) append("&removeParents=").append(enc(remove))
+        }
+        val payload = JSONObject()
+        if (name.isNotBlank()) payload.put("name", name)
+        ensureOk(google(ctx, "google_drive", "PATCH", url, payload.toString()), "Drive")
+        return "✅ نُقل الملف إلى المجلد المحدد${if (name.isNotBlank()) " باسم $name" else ""}"
+    }
+
+    suspend fun driveRename(ctx: ToolContext, fileId: String, name: String): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
+        if (name.isBlank()) throw IllegalArgumentException("الاسم الجديد مطلوب")
+        val payload = JSONObject().put("name", name)
+        ensureOk(google(ctx, "google_drive", "PATCH", "$DRIVE/files/$id?fields=id,name", payload.toString()), "Drive")
+        return "✅ أُعيدت تسمية الملف إلى $name"
+    }
+
+    suspend fun driveCopy(ctx: ToolContext, fileId: String, name: String, folderId: String): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
+        val payload = JSONObject()
+        if (name.isNotBlank()) payload.put("name", name)
+        val dest = extractDriveId(folderId)
+        if (dest != null) payload.put("parents", JSONArray().put(dest))
+        val res = ensureOk(
+            google(ctx, "google_drive", "POST", "$DRIVE/files/$id/copy?fields=id,name,webViewLink", payload.toString()),
+            "Drive"
+        )
+        val json = JSONObject(res.body)
+        return "✅ نُسخ الملف: ${json.optString("name")}\n${json.optString("webViewLink")}"
+    }
+
+    suspend fun driveTrash(ctx: ToolContext, fileId: String, permanent: Boolean): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
+        if (permanent) {
+            ensureOk(google(ctx, "google_drive", "DELETE", "$DRIVE/files/$id"), "Drive")
+            return "✅ حُذف الملف نهائياً"
+        }
+        val payload = JSONObject().put("trashed", true)
+        ensureOk(google(ctx, "google_drive", "PATCH", "$DRIVE/files/$id?fields=id", payload.toString()), "Drive")
+        return "✅ نُقل الملف إلى سلة المهملات"
+    }
+
+    suspend fun driveUpdate(ctx: ToolContext, fileId: String, content: String, path: String, mime: String): String {
+        val id = extractDriveId(fileId) ?: throw IllegalArgumentException("معرّف الملف غير صالح")
+        val meta = ensureOk(google(ctx, "google_drive", "GET", "$DRIVE/files/$id?fields=id,name,mimeType"), "Drive")
+        val info = JSONObject(meta.body)
+        val type = info.optString("mimeType")
+        if (type.startsWith("application/vnd.google-apps")) {
+            throw IllegalStateException("ملفات Google Docs لا تُعدّل عبر هذه الأداة؛ استخدم drive_upload لملف نصي عادي")
+        }
+        val bytes = if (path.isNotBlank()) bytesOf(ctx, path) else content.toByteArray(Charsets.UTF_8)
+        if (bytes.isEmpty()) throw IllegalArgumentException("المحتوى فارغ")
+        val contentType = mime.ifBlank { type.ifBlank { "text/plain" } }
+        val token = ConnectorAuth.token(ctx.prefs, "google_drive")
+        val res = uploadBytes("$DRIVE_UPLOAD/files/$id?uploadType=media", token, bytes, contentType)
+        ensureOk(res, "Drive")
+        return "✅ حُدّث محتوى ${info.optString("name")} (${FileTools.formatSize(bytes.size.toLong())})"
+    }
+
     suspend fun driveSearch(ctx: ToolContext, query: String, max: Int): String {
         val q = "(name contains '${quote(query)}' or fullText contains '${quote(query)}') and trashed = false"
         val url = "$DRIVE/files?q=${enc(q)}&pageSize=${max.coerceIn(1, 50)}" +
@@ -150,9 +241,12 @@ object Connectors {
         }
     }
 
-    suspend fun driveList(ctx: ToolContext, max: Int): String {
-        val url = "$DRIVE/files?pageSize=${max.coerceIn(1, 100)}" +
-            "&orderBy=modifiedTime desc&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)"
+    suspend fun driveList(ctx: ToolContext, max: Int, folderId: String = ""): String {
+        val folderQuery = if (folderId.isBlank()) "" else
+            "&q=${enc("'" + folderId + "' in parents and trashed = false")}&orderBy=name"
+        val order = if (folderId.isBlank()) "&orderBy=modifiedTime desc" else ""
+        val url = "$DRIVE/files?pageSize=${max.coerceIn(1, 200)}" +
+            "$order&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)$folderQuery"
         val res = ensureOk(google(ctx, "google_drive", "GET", url), "Drive")
         val files = JSONObject(res.body).optJSONArray("files") ?: JSONArray()
         if (files.length() == 0) return "Drive فارغ."

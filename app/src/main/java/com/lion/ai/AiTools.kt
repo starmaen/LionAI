@@ -115,11 +115,17 @@ object AiTools {
         // Connectors
         Def("connectors_status", ToolGroup.CONNECTORS, "{}", "حالة الموصلات والحسابات المربوطة"),
         Def("drive_search", ToolGroup.CONNECTORS, """{"query":"تقرير","max":10}""", "بحث في ملفات Google Drive", connector = "google_drive"),
-        Def("drive_list", ToolGroup.CONNECTORS, """{"max":20}""", "أحدث ملفات Drive", connector = "google_drive"),
+        Def("drive_open", ToolGroup.CONNECTORS, """{"url_or_id":"https://drive.google.com/drive/folders/...","max_chars":12000}""", "فتح رابط/معرّف ملف أو مجلد Drive وعرض محتواه", connector = "google_drive"),
+        Def("drive_list", ToolGroup.CONNECTORS, """{"max":50,"folder_id":""}""", "أحدث ملفات Drive أو محتويات مجلد", connector = "google_drive"),
         Def("drive_read", ToolGroup.CONNECTORS, """{"file_id":"...","max_chars":12000}""", "قراءة محتوى ملف نصي من Drive", connector = "google_drive"),
         Def("drive_download", ToolGroup.CONNECTORS, """{"file_id":"...","name":"file.pdf"}""", "تنزيل ملف من Drive إلى مساحة العمل", true, "google_drive"),
         Def("drive_upload", ToolGroup.CONNECTORS, """{"name":"report.txt","path":"","content":"...","mime":"text/plain","folder_id":""}""", "رفع ملف/نص إلى Drive", true, "google_drive"),
+        Def("drive_update", ToolGroup.CONNECTORS, """{"file_id":"...","content":"...","path":"","mime":"text/plain"}""", "تعديل محتوى ملف نصي موجود", true, "google_drive"),
         Def("drive_mkdir", ToolGroup.CONNECTORS, """{"name":"مجلد","folder_id":""}""", "إنشاء مجلد في Drive", true, "google_drive"),
+        Def("drive_move", ToolGroup.CONNECTORS, """{"file_id":"...","folder_id":"...","name":""}""", "نقل ملف إلى مجلد آخر", true, "google_drive"),
+        Def("drive_rename", ToolGroup.CONNECTORS, """{"file_id":"...","name":"الاسم الجديد"}""", "إعادة تسمية ملف", true, "google_drive"),
+        Def("drive_copy", ToolGroup.CONNECTORS, """{"file_id":"...","name":"نسخة","folder_id":""}""", "نسخ ملف", true, "google_drive"),
+        Def("drive_trash", ToolGroup.CONNECTORS, """{"file_id":"...","permanent":false}""", "نقل ملف إلى السلة أو حذفه نهائياً", true, "google_drive"),
         Def("gmail_search", ToolGroup.CONNECTORS, """{"query":"from:someone","max":10}""", "بحث في Gmail", connector = "gmail"),
         Def("gmail_read", ToolGroup.CONNECTORS, """{"message_id":"...","max_chars":12000}""", "قراءة رسالة بريد كاملة", connector = "gmail"),
         Def("gmail_send", ToolGroup.CONNECTORS, """{"to":"a@b.com","subject":"...","body":"...","cc":"","bcc":"","html":false}""", "إرسال بريد إلكتروني", true, "gmail"),
@@ -234,6 +240,7 @@ object AiTools {
         builder.append("ستتلقى نتيجة كل أداة ثم تتابع حتى تُنجز المهمة. لا تخترع نتائج. ")
         builder.append("لا تضع أسراراً في الملفات أو الردود. المسارات محصورة في مساحة عمل التطبيق. ")
         builder.append("لا تكتب أو تحذف أو تدفع إلى GitHub، ولا ترسل بريداً أو رسالة Slack، ولا ترفع إلى Drive، ولا تنشئ مواعيد أو صفحات، إلا إذا طلب المستخدم ذلك صراحة. ")
+        builder.append("إذا أرسل المستخدم رابط Google Drive أو معرّف ملف/مجلد، استخدم drive_open مباشرة بدلاً من drive_search. ")
         builder.append("بعد انتهاء الأدوات أجب بالعربية بملخص واضح وخطوات ما فعلته.\n")
         ToolGroup.values().filter { it in groups }.forEach { group ->
             builder.append("\n[").append(group.icon).append(' ').append(group.label).append("]\n")
@@ -560,8 +567,21 @@ object AiTools {
                 }
                 "الموصلات:\n$list"
             }
-            "drive_search" -> Connectors.driveSearch(ctx, req(args, "query"), int(args, "max", 10))
-            "drive_list" -> Connectors.driveList(ctx, int(args, "max", 20))
+            "drive_search" -> {
+                val query = args.optString("query").ifBlank { args.optString("q") }.trim()
+                val id = Connectors.extractDriveId(query)
+                when {
+                    id != null -> Connectors.driveOpen(ctx, id, int(args, "max_chars", 12_000))
+                    query.isBlank() -> Connectors.driveList(ctx, int(args, "max", 20))
+                    else -> Connectors.driveSearch(ctx, query, int(args, "max", 10))
+                }
+            }
+            "drive_open" -> Connectors.driveOpen(
+                ctx, req(args, "url_or_id"), int(args, "max_chars", 12_000)
+            )
+            "drive_list" -> Connectors.driveList(
+                ctx, int(args, "max", 50), args.optString("folder_id")
+            )
             "drive_read" -> Connectors.driveRead(ctx, req(args, "file_id"), int(args, "max_chars", 12_000))
             "drive_download" -> Connectors.driveDownload(
                 ctx, req(args, "file_id"), args.optString("name")
@@ -571,6 +591,20 @@ object AiTools {
                 args.optString("mime"), args.optString("folder_id")
             )
             "drive_mkdir" -> Connectors.driveMkdir(ctx, req(args, "name"), args.optString("folder_id"))
+            "drive_move" -> Connectors.driveMove(
+                ctx, req(args, "file_id"), req(args, "folder_id"), args.optString("name")
+            )
+            "drive_rename" -> Connectors.driveRename(ctx, req(args, "file_id"), req(args, "name"))
+            "drive_copy" -> Connectors.driveCopy(
+                ctx, req(args, "file_id"), args.optString("name"), args.optString("folder_id")
+            )
+            "drive_trash" -> Connectors.driveTrash(
+                ctx, req(args, "file_id"), args.optBoolean("permanent", false)
+            )
+            "drive_update" -> Connectors.driveUpdate(
+                ctx, req(args, "file_id"), args.optString("content"),
+                args.optString("path"), args.optString("mime")
+            )
             "gmail_search" -> Connectors.gmailSearch(ctx, req(args, "query"), int(args, "max", 10))
             "gmail_read" -> Connectors.gmailRead(ctx, req(args, "message_id"), int(args, "max_chars", 12_000))
             "gmail_send" -> Connectors.gmailSend(
