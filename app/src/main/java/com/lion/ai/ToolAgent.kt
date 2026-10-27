@@ -28,6 +28,7 @@ object ToolAgent {
         - لا تضع مفاتيح أو أسراراً داخل الملفات أو الردود.
         - قبل أي عملية كتابة أو حذف أو دفع إلى GitHub، أو إرسال بريد/Slack، أو رفع/تنزيل من Drive، أو إنشاء موعد/صفحة، تأكد أن المستخدم طلبها صراحة في رسالته الحالية أو السابقة.
         - إذا فشلت أداة، اقرأ الخطأ، صحّح المدخلات، وأعد المحاولة مرة أو مرتين ثم اشرح العائق.
+        - لديك وصول حقيقي إلى GitHub وGoogle Drive وGmail عبر الأدوات المذكورة في نهاية هذه التعليمات. لا تعتذر عن عدم القدرة على الوصول قبل استدعاء الأداة المناسبة، وإذا كان التوكن ناقصاً فاشرح للمستخدم من أين يضيفه.
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
 
         سير العمل البرمجي الكامل:
@@ -54,9 +55,10 @@ object ToolAgent {
         accountId: String,
         history: List<ChatTurn>,
         baseSystemPrompt: String,
-        groups: Set<ToolGroup>
+        groups: Set<ToolGroup>,
+        contextText: String = prompt
     ): Result {
-        val system = baseSystemPrompt + AiTools.contextHint(prompt) + "\n\n" + PROMPT + AiTools.spec(groups, prefs)
+        val system = baseSystemPrompt + AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT + AiTools.spec(groups, prefs)
         val toolContext = ToolContext(context, prefs, AiTools.allowWrite(prefs))
         val used = mutableListOf<String>()
         val historyBuffer = history.toMutableList()

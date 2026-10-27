@@ -5,14 +5,24 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
         val apiKey = rawKey.filterNot { it.isWhitespace() }
         val bearer = mapOf("Authorization" to "Bearer $apiKey")
         val ids: List<String> = when (provider) {
-            "opencode", "opencode-go" -> {
+            "opencode", "opencode-go", "opencode-console" -> {
                 val headers = if (apiKey.isNotBlank()) bearer else emptyMap()
-                val base = if (provider == "opencode-go") {
-                    "https://opencode.ai/inference/go/v1/models"
-                } else {
-                    "https://opencode.ai/inference/v1/models"
+                val bases = when (provider) {
+                    "opencode" -> listOf(
+                        "https://opencode.ai/zen/v1/models",
+                        "https://opencode.ai/inference/v1/models"
+                    )
+                    "opencode-go" -> listOf(
+                        "https://opencode.ai/zen/go/v1/models",
+                        "https://opencode.ai/inference/go/v1/models"
+                    )
+                    else -> listOf("https://opencode.ai/inference/v1/models")
                 }
-                val json = getJson(base, headers)
+                val json = runCatching { getJson(bases.first(), headers) }.getOrElse { first ->
+                    bases.drop(1).firstNotNullOfOrNull { url ->
+                        runCatching { getJson(url, headers) }.getOrNull()
+                    } ?: throw first
+                }
                 idsOf(json.optJSONArray("data"), "id")
                     .filterNot { it == "test" || it.startsWith("jev-") }
             }

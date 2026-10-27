@@ -137,7 +137,7 @@ object SmartRouter {
             r("kilo", "kilo-auto/free"), r("llm7", "fast"), r("nvidia", "openai/gpt-oss-20b"),
             r("cloudflare", "@cf/openai/gpt-oss-20b"), r("ollama", "gpt-oss:20b"),
             r("openrouter", "nvidia/nemotron-nano-9b-v2:free"), r("zai", "glm-4.7-flash"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "glm-5.3-flash"), r("ovh", "gpt-oss-20b"), r("deepseek", "deepseek-flash")
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("ovh", "gpt-oss-20b"), r("deepseek", "deepseek-flash")
         )
         TaskKind.GENERAL -> listOf(
             r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
@@ -147,7 +147,7 @@ object SmartRouter {
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "glm-5.3-flash"), r("llm7", "default")
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("llm7", "default")
         )
         TaskKind.FACTUAL -> listOf(
             r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
@@ -156,11 +156,11 @@ object SmartRouter {
             r("zai", "glm-4.7-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
-            r("kilo", "kilo-auto/free"), r("opencode", "glm-5.3-flash"), r("opencode-go", "glm-5.3-flash"), r("llm7", "default")
+            r("kilo", "kilo-auto/free"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("llm7", "default")
         )
         TaskKind.CODE -> listOf(
             r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "glm-5.3-flash"), r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "poolside/laguna-s-2.1:free"), r("openrouter", "cohere/north-mini-code:free"),
             r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("cohere", "north-mini-code-1-0"), r("ollama", "deepseek-v4-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),

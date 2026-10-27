@@ -26,12 +26,18 @@ object LlmClient {
         return if (custom.isNotEmpty() && safe) custom else default
     }
 
+    private fun openCodeId(prefix: String): String =
+        prefix + java.util.UUID.randomUUID().toString().replace("-", "").take(26)
+
     /** معرّف جلسة ثابت يرسله OpenCode لتوجيه الطلبات وتخزين الـ prompt cache. */
-    internal val openCodeSession: String by lazy { java.util.UUID.randomUUID().toString() }
+    internal val openCodeSession: String by lazy { openCodeId("ses_") }
+
+    /** معرّف ثابت للعميل يرسله OpenCode مع كل طلب (x-opencode-request). */
+    internal val openCodeRequest: String by lazy { openCodeId("usr_") }
 
     /** هل الموديل الحالي يقرأ الصور؟ (OpenRouter يعتمد على الموديل، وخطأ المزود يُعرض إن لم يدعمها) */
     fun supportsVision(provider: String, model: String): Boolean = when (provider) {
-        "gemini", "openai", "claude", "deepseek", "openrouter", "opencode", "opencode-go",
+        "gemini", "openai", "claude", "deepseek", "openrouter", "opencode", "opencode-go", "opencode-console",
         "mistral", "cloudflare", "zai", "ollama", "together", "nvidia", "ovh" -> true
         "groq" -> (model.ifBlank { providerInfo("groq").defaultModel }).contains("llama-4")
         else -> false
@@ -117,7 +123,7 @@ object LlmClient {
         return try {
             when (provider) {
                 "gemini" -> callGemini(message, apiKey, model, turns, image, systemPrompt)
-                "opencode", "opencode-go" -> callOpenCode(
+                "opencode", "opencode-go", "opencode-console" -> callOpenCode(
                     provider, message, apiKey, model, turns, image, systemPrompt
                 )
                 "groq" -> callOpenAiCompatible(
@@ -158,16 +164,16 @@ object LlmClient {
             }
         } catch (e: LlmException) {
             val raw = e.message.orEmpty()
-            if ((provider == "opencode" || provider == "opencode-go") &&
+            if (provider.startsWith("opencode") &&
                 (raw.contains("FreeUsageLimit", ignoreCase = true) ||
                     raw.contains("Free usage limit", ignoreCase = true) ||
                     raw.contains("free-tier", ignoreCase = true))
             ) {
-                return "🔒 موديل OpenCode المجاني لا يعمل من تطبيقات خارج OpenCode (FreeUsageLimitError) حتى مع مفتاح صحيح.\n" +
-                    "اختر موديلاً مدفوعاً برصيد من OpenCode Console، أو استخدم مزود «OpenCode Go» إن كان لديك اشتراك Go، أو مزوداً آخر."
+                return "🆓 الموديل «$model» مجاني، والموديلات المجانية في OpenCode مخصّصة لتطبيق OpenCode الرسمي فقط (FreeUsageLimitError).\n" +
+                    "اختر موديلاً مدفوعاً برصيد Zen من قائمة «تحديث»، أو استخدم مزود OpenCode Go إن كان لديك اشتراك."
             }
             when (e.status) {
-                402 -> if (provider == "opencode" || provider == "opencode-go") {
+                402 -> if (provider.startsWith("opencode")) {
                     "💳 لا يوجد رصيد كافٍ في OpenCode لهذا الموديل المدفوع. أضف رصيداً في opencode.ai/console أو استخدم مزود OpenCode Go."
                 } else {
                     "⚠️ خطأ من المزود (402): ${e.message}"

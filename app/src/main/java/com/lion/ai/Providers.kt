@@ -46,24 +46,24 @@ val PROVIDERS = listOf(
     ),
     ProviderInfo(
         id = "opencode",
-        label = "OpenCode Console",
-        tagline = "مفتاح OpenCode (رصيد مدفوع) — الموديلات المجانية تعمل داخل OpenCode فقط",
+        label = "OpenCode Zen",
+        tagline = "مفتاح Zen من opencode.ai/auth — يتطلب رصيداً مدفوعاً",
         docsUrl = "https://opencode.ai/docs/zen/",
         defaultModel = "glm-5.3-flash",
         free = false,
         shortName = "OpenCode",
-        modelHint = "الموديلات المجانية (big-pickle و-free) ترفضها OpenCode من التطبيقات الخارجية وتعيد FreeUsageLimitError. من هنا استخدم موديلاً مدفوعاً برصيد، أو فعّل مزود «OpenCode Go» إن كان لديك اشتراك Go. زر «تحديث» يجلب القائمة الحالية.",
+        modelHint = "يستخدم مسار Zen الرسمي (zen/v1) مع ترويسات عميل OpenCode، ثم ينتقل تلقائياً إلى مسار Console (inference) إن لزم. الموديلات المجانية (big-pickle وما ينتهي بـ -free) محجوبة عن التطبيقات الخارجية بـ FreeUsageLimit؛ استخدم موديلاً مدفوعاً برصيد أو مزود OpenCode Go. زر «تحديث» يجلب موديلات حسابك.",
         models = listOf(
             "glm-5.3-flash",
             "deepseek-v4.1-flash",
+            "big-pickle",
+            "glm-5.3-flash-free",
             "kimi-k2.7-code",
             "minimax-m3",
             "qwen3.8-max",
-            "claude-haiku-5-5",
-            "gemini-4-argon",
-            "gpt-6-luna",
-            "big-pickle",
-            "glm-5.3-flash-free"
+            "claude-haiku-4-5",
+            "gemini-3.5-flash-lite",
+            "gpt-5-nano"
         )
     ),
     ProviderInfo(
@@ -71,13 +71,13 @@ val PROVIDERS = listOf(
         label = "OpenCode Go",
         tagline = "اشتراك Go — يعمل من هذا التطبيق بنفس مفتاح OpenCode",
         docsUrl = "https://opencode.ai/docs/go/",
-        defaultModel = "glm-5.3-flash",
+        defaultModel = "deepseek-v4.1-flash",
         free = false,
         shortName = "OpenCode Go",
         modelHint = "يتطلب اشتراك OpenCode Go أو Go Plus. استخدم نفس مفتاح OpenCode، واختر موديلاً من قائمة Go. زر «تحديث» يجلب موديلات Go المتاحة لحسابك.",
         models = listOf(
-            "glm-5.3-flash",
             "deepseek-v4.1-flash",
+            "glm-5.3-flash",
             "kimi-k2.7-code",
             "minimax-m3",
             "qwen3.8-max",
@@ -86,6 +86,26 @@ val PROVIDERS = listOf(
             "gpt-6-luna",
             "mimo-v2.6-flash",
             "muse-spark-1.3-contributor"
+        )
+    ),
+    ProviderInfo(
+        id = "opencode-console",
+        label = "OpenCode Console",
+        tagline = "رصيد Console المدفوع — مفتاح من opencode.ai/console",
+        docsUrl = "https://opencode.ai/docs/zen/",
+        defaultModel = "glm-5.3-flash",
+        free = false,
+        shortName = "OpenCode Console",
+        modelHint = "لمفاتيح Console الحديثة ذات الرصيد المدفوع فقط. إن كان مفتاحك من opencode.ai/auth فاستخدم مزود «OpenCode Zen».",
+        models = listOf(
+            "glm-5.3-flash",
+            "deepseek-v4.1-flash",
+            "kimi-k2.7-code",
+            "minimax-m3",
+            "qwen3.8-max",
+            "claude-haiku-5-5",
+            "gemini-4-argon",
+            "gpt-6-luna"
         )
     ),
     ProviderInfo(

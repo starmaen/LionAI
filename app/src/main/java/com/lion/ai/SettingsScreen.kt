@@ -467,6 +467,15 @@ fun SettingsScreen(
                     }
                 }
             }
+            if (provider.startsWith("opencode") &&
+                (activeModel == "big-pickle" || activeModel.endsWith("-free"))
+            ) {
+                Text(
+                    "ℹ️ هذا موديل مجاني في OpenCode. إن رفضه المزود (FreeUsageLimit) اختر موديلاً مدفوعاً برصيد Zen أو فعّل مزود OpenCode Go.",
+                    color = Color(0xFFFFB800),
+                    fontSize = 12.sp
+                )
+            }
 
             var modelStatus by remember(provider) { mutableStateOf("") }
             TextButton(
@@ -527,7 +536,7 @@ fun SettingsScreen(
                 Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
             }
 
-            if (current.endpoint.isNotBlank() || provider in setOf("groq", "openrouter", "opencode", "opencode-go", "deepseek", "openai")) {
+            if (current.endpoint.isNotBlank() || provider in setOf("groq", "openrouter", "opencode", "opencode-go", "opencode-console", "deepseek", "openai")) {
                 Spacer(Modifier.height(8.dp))
                 Text("عنوان وسيط (اختياري)", color = Color.White, fontSize = 13.sp)
                 OutlinedTextField(

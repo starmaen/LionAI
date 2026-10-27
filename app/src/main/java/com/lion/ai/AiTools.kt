@@ -2,6 +2,8 @@ package com.lion.ai
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -349,6 +351,12 @@ object AiTools {
             groups.add(ToolGroup.CODE)
             if (githubReady(prefs)) groups.add(ToolGroup.GITHUB)
         }
+        val defaultRepo = prefs.getString("github_default_repo", "")?.trim().orEmpty()
+        if (defaultRepo.isNotBlank() && githubReady(prefs) &&
+            (ToolGroup.FILES in groups || ToolGroup.CODE in groups)
+        ) {
+            groups.add(ToolGroup.GITHUB)
+        }
         val wantsTools = Regex("(أداة|اداة|أدوات|ادوات|tool|tools|وكيل|agent)").containsMatchIn(t)
         if (groups.isNotEmpty() || wantsTools) groups.add(ToolGroup.META)
         return groups
@@ -370,13 +378,98 @@ object AiTools {
         return GitHubRef(owner, repo, branch, path)
     }
 
-    fun contextHint(text: String): String {
-        val ref = detectGitHubUrl(text) ?: return ""
+    fun githubMentioned(text: String): Boolean =
+        Regex("(github|git\\b|repo|repository|مستودع|مستودعات|جيت هاب|غيث هاب)")
+            .containsMatchIn(TextNorm.forMatch(text))
+
+    fun contextHint(text: String, prefs: SharedPreferences? = null): String {
+        val ref = detectGitHubUrl(text)
+        val fallback = prefs?.getString("github_default_repo", "")?.trim().orEmpty()
+        if (ref == null && fallback.isBlank()) return ""
         return buildString {
-            append("\n\nسياق GitHub من رسالة المستخدم: owner=${ref.owner} repo=${ref.repo}")
-            if (ref.branch.isNotBlank()) append(" branch=${ref.branch}")
-            if (ref.path.isNotBlank()) append(" path=${ref.path}")
-            append("\nاستخدم هذا المستودع/الملف مباشرة عند الحاجة دون سؤال المستخدم عن المالك أو الاسم.")
+            append("\n\nسياق GitHub")
+            if (ref != null) {
+                append(" من رسالة المستخدم: owner=${ref.owner} repo=${ref.repo}")
+                if (ref.branch.isNotBlank()) append(" branch=${ref.branch}")
+                if (ref.path.isNotBlank()) append(" path=${ref.path}")
+            } else {
+                append(": المستودع الافتراضي هو $fallback")
+            }
+            if (prefs == null || githubReady(prefs)) {
+                append("\nلديك وصول حقيقي إلى GitHub عبر الأدوات المذكورة أدناه؛ استخدم المستودع/الملف مباشرة دون سؤال المستخدم عن المالك أو الاسم، ولا تعتذر عن عدم القدرة على الوصول قبل استدعاء الأداة.")
+            } else {
+                append("\nGitHub غير مربوط حالياً؛ اطلب من المستخدم إضافة توكن GitHub من الإعدادات ولا تدّعِ الوصول.")
+            }
+        }
+    }
+
+    suspend fun githubContext(prefs: SharedPreferences, text: String, maxChars: Int = 6000): String {
+        val ref = detectGitHubUrl(text) ?: return ""
+        val token = token(prefs)
+        if (token.isBlank()) return ""
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val repo = GitHubClient.getRepo(token, ref.owner, ref.repo)
+                val branch = ref.branch.ifBlank { repo.defaultBranch }
+                buildString {
+                    append("=== محتوى GitHub الحقيقي من الرابط في رسالة المستخدم ===\n")
+                    append("المستودع: ").append(repo.fullName).append('\n')
+                    if (repo.description.isNotBlank()) append("الوصف: ").append(repo.description).append('\n')
+                    append("الفرع: ").append(branch).append(" | اللغة: ").append(repo.language).append('\n')
+                    if (ref.path.isNotBlank()) {
+                        val file = runCatching {
+                            GitHubClient.readFile(token, ref.owner, ref.repo, ref.path, branch)
+                        }.getOrNull()
+                        if (file != null) {
+                            if (file.binary) {
+                                append("الملف ثنائي: ").append(file.path)
+                            } else {
+                                append("\n--- ").append(file.path).append(" ---\n").append(file.text)
+                            }
+                        } else {
+                            val prefix = ref.path.trimEnd('/') + "/"
+                            val tree = runCatching {
+                                GitHubClient.listTree(token, ref.owner, ref.repo, branch, maxEntries = 300)
+                            }.getOrDefault(emptyList())
+                            val under = tree.filter {
+                                it.path == ref.path || it.path.startsWith(prefix)
+                            }.take(150)
+                            if (under.isNotEmpty()) {
+                                append("\n--- محتويات ").append(ref.path).append(" ---\n")
+                                under.forEach {
+                                    append(if (it.type == "dir") "📁 " else "📄 ").append(it.path).append('\n')
+                                }
+                            } else {
+                                append("تعذر قراءة المسار ").append(ref.path)
+                            }
+                        }
+                    } else {
+                        val readme = runCatching {
+                            GitHubClient.readFile(token, ref.owner, ref.repo, "README.md", branch)
+                        }.getOrNull()
+                        if (readme != null && !readme.binary && readme.text.isNotBlank()) {
+                            append("\n--- README ---\n").append(readme.text.take(3000))
+                        }
+                        val tree = runCatching {
+                            GitHubClient.listTree(token, ref.owner, ref.repo, branch, maxEntries = 120)
+                        }.getOrDefault(emptyList())
+                        if (tree.isNotEmpty()) {
+                            append("\n--- شجرة الملفات ---\n")
+                            tree.take(120).forEach {
+                                append(if (it.type == "dir") "📁 " else "📄 ").append(it.path).append('\n')
+                            }
+                        }
+                        val commits = runCatching {
+                            GitHubClient.listCommits(token, ref.owner, ref.repo, branch)
+                        }.getOrDefault(emptyList())
+                        if (commits.isNotEmpty()) {
+                            append("\n--- آخر التغييرات ---\n")
+                            commits.take(8).forEach { append("• ").append(it).append('\n') }
+                        }
+                    }
+                    append("\nاستخدم هذه البيانات للإجابة. للتعديل استخدم أدوات GitHub المذكورة في التعليمات.")
+                }.take(maxChars.coerceIn(500, 20_000))
+            }.getOrDefault("")
         }
     }
 
@@ -401,7 +494,9 @@ object AiTools {
                 .append("هذا يسمح بإنجاز مهام غير متوقعة دون تخمين أسماء الأدوات.\n")
         }
         if (ToolGroup.GITHUB in groups) {
-            builder.append("حلقة التطوير: clone أو اقرأ الملفات، عدّل، راجع file_diff، ارفع عبر github_push_workspace ")
+            builder.append("GitHub مربوط بتوكن صالح، ولديك وصول حقيقي عبر الأدوات التالية. ")
+                .append("ابدأ بـ github_repo_overview أو github_list_tree أو github_read_file، ولا تقل إنك لا تستطيع الوصول إلى GitHub. ")
+                .append("حلقة التطوير: clone أو اقرأ الملفات، عدّل، راجع file_diff، ارفع عبر github_push_workspace ")
                 .append("(استخدم dry_run أولاً عند الشك)، ثم github_wait_run لقراءة فشل CI، ثم أصلح وأعد الرفع. ")
                 .append("لا تدفع إلى main مباشرة إن كان ذلك خطراً؛ أنشئ فرعاً وPR.\n")
         }

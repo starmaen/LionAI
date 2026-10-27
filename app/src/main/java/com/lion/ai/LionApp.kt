@@ -839,7 +839,9 @@ fun LionApp() {
         }
         val plan = planFor(kind, mode)
         val auto = autoRoute
-        val toolGroups = if (image == null) AiTools.groupsFor(prompt, prefs) else emptySet()
+        val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
+        val toolText = if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext
+        val toolGroups = if (image == null) AiTools.groupsFor(toolText, prefs) else emptySet()
         loadingChats[chatId] = true
         scope.launch {
             val sources = if (WebGrounding.enabled(prefs) && WebGrounding.shouldSearch(kind, prompt)) {
@@ -861,15 +863,29 @@ fun LionApp() {
             } else {
                 null
             }
+            val githubContext = if (image == null && AiTools.githubReady(prefs) &&
+                AiTools.detectGitHubUrl(toolText) != null
+            ) {
+                runCatching { AiTools.githubContext(prefs, toolText, 6000) }.getOrDefault("")
+            } else {
+                ""
+            }
+            val githubNote = if (AiTools.githubMentioned(toolText) && !AiTools.githubReady(prefs)) {
+                "\n\nملاحظة: GitHub غير مربوط حالياً. اطلب من المستخدم إضافة توكن GitHub من «الإعدادات ← أدوات الذكاء والتطوير»، ولا تدّعِ الوصول إلى GitHub."
+            } else {
+                ""
+            }
             val systemPrompt = basePrompt + answerLengthSuffix() +
-                if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else ""
+                (if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "") + githubNote
             val baseLlmPrompt = if (sources.isEmpty()) {
                 prompt
             } else {
                 prompt + "\n\n" + WebGrounding.contextBlock(sources)
             }
-            val llmPrompt = if (driveContext.isNullOrBlank()) baseLlmPrompt else
+            val withDrive = if (driveContext.isNullOrBlank()) baseLlmPrompt else
                 baseLlmPrompt + "\n\n=== بيانات Google Drive من الرابط في رسالة المستخدم ===\n" + driveContext
+            val llmPrompt = if (githubContext.isBlank()) withDrive else
+                withDrive + "\n\n" + githubContext
             // عند توفر مصادر ويب، لا نتوقف عند أول 6 مسارات: نمنح أي مزود متاح آخر
             // فرصة للاستناد إلى المصادر بدلاً من إظهار «لا توجد إجابة موثوقة».
             val rescueRoutes = if (sources.isNotEmpty()) {
@@ -905,7 +921,8 @@ fun LionApp() {
                                 accountId = accountId(),
                                 history = history,
                                 baseSystemPrompt = systemPrompt,
-                                groups = toolGroups
+                                groups = toolGroups,
+                                contextText = toolText
                             )
                         }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList()) }
                     }

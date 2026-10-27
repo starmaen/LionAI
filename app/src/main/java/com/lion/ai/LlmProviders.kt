@@ -227,6 +227,52 @@ internal fun LlmClient.callClaude(
         return text.toString().ifBlank { "لم يصل رد من Claude." }
     }
 
+private data class OpenCodeEndpoints(
+    val chat: String,
+    val responses: String,
+    val anthropic: String,
+    val google: String
+)
+
+private fun openCodeEndpoints(provider: String, model: String): List<OpenCodeEndpoints> {
+    val zenRoot = "https://opencode.ai/zen/v1"
+    val zenGoRoot = "https://opencode.ai/zen/go/v1"
+    val consoleRoot = "https://opencode.ai/inference"
+    val consoleGoRoot = "https://opencode.ai/inference/go"
+    val encodedModel = model.trim()
+
+    fun zen(root: String) = OpenCodeEndpoints(
+        chat = "$root/chat/completions",
+        responses = "$root/responses",
+        anthropic = "$root/messages",
+        google = "$root/models/$encodedModel:generateContent"
+    )
+
+    fun console(root: String) = OpenCodeEndpoints(
+        chat = "$root/openai/v1/chat/completions",
+        responses = "$root/openai/v1/responses",
+        anthropic = "$root/anthropic/v1/messages",
+        google = "$root/google/v1beta/models/$encodedModel:generateContent"
+    )
+
+    return when (provider) {
+        "opencode" -> listOf(zen(zenRoot), console(consoleRoot))
+        "opencode-go" -> listOf(zen(zenGoRoot), console(consoleGoRoot))
+        "opencode-console" -> listOf(console(consoleRoot))
+        else -> listOf(console(consoleRoot))
+    }
+}
+
+private fun openCodeShouldFallback(error: LlmException): Boolean {
+    val text = error.message.orEmpty()
+    if (text.contains("FreeUsageLimit", ignoreCase = true)) return false
+    return error.status in setOf(400, 401, 403, 404, 405, 410, 422, 429) ||
+        text.contains("Invalid credential", ignoreCase = true) ||
+        text.contains("not found", ignoreCase = true) ||
+        text.contains("unknown endpoint", ignoreCase = true) ||
+        text.contains("model not found", ignoreCase = true)
+}
+
 /** يوجّه طلب OpenCode إلى الواجهة الصحيحة حسب عائلة الموديل (OpenAI / Anthropic / Google / Responses). */
 internal fun LlmClient.callOpenCode(
         provider: String,
@@ -238,11 +284,14 @@ internal fun LlmClient.callOpenCode(
         systemPrompt: String
     ): String {
         val go = provider == "opencode-go"
-        val root = if (go) "https://opencode.ai/inference/go" else "https://opencode.ai/inference"
-        val session = mapOf("x-opencode-session" to openCodeSession)
+        val session = mapOf(
+            "x-opencode-session" to openCodeSession,
+            "x-opencode-request" to openCodeRequest,
+            "x-opencode-client" to "cli",
+            "User-Agent" to "opencode/1.18.5"
+        )
         val id = model.trim().lowercase()
 
-        // وسيط مخصص = بروكسي متوافق مع OpenAI، فنمرر كل شيء عبره.
         val custom = endpoint(provider, "")
         if (custom.isNotBlank()) {
             return callOpenAiCompatible(
@@ -256,7 +305,6 @@ internal fun LlmClient.callOpenCode(
             return "⚠️ موديل Jev من OpenCode يستخدم واجهة System One ولا يدعم الدردشة النصية. اختر موديلاً آخر."
         }
 
-        // موديلات OpenCode التي تُقدَّم عبر واجهة Anthropic (حسب كتالوج OpenCode الرسمي).
         val anthropicModels = setOf(
             "qwen3.5-plus", "qwen3.6-plus", "qwen3.6-plus-free", "qwen3.8-flash",
             "minimax-m2.1-free", "minimax-m2.5-free", "minimax-m3-free"
@@ -266,39 +314,46 @@ internal fun LlmClient.callOpenCode(
         )
         val useAnthropic = id.startsWith("claude-") ||
             id in anthropicModels || (go && id in anthropicGoModels)
-        if (useAnthropic) {
-            return callClaude(
-                message, apiKey, model, history, image, systemPrompt,
-                url = "$root/anthropic/v1/messages",
-                headers = session + mapOf(
-                    "x-api-key" to apiKey,
-                    "anthropic-version" to "2023-06-01"
-                )
-            )
-        }
-
-        if (id.startsWith("gemini-")) {
-            return callGemini(
-                message, apiKey, model, history, image, systemPrompt,
-                url = "$root/google/v1beta/models/$model:generateContent",
-                headers = session + mapOf("x-goog-api-key" to apiKey)
-            )
-        }
-
         val useResponses = id.startsWith("gpt-") || id.startsWith("muse-") ||
             (id.startsWith("grok-") && id != "grok-code")
-        if (useResponses) {
-            return callOpenAiResponses(
-                "$root/openai/v1/responses", apiKey, model, history, message,
-                image = image, systemPrompt = systemPrompt, extraHeaders = session
-            )
-        }
 
-        return callOpenAiCompatible(
-            "$root/openai/v1/chat/completions", apiKey, model, history, message,
-            extraHeaders = session, maxTokens = LLM_OPENAI_MAX_TOKENS,
-            image = image, systemPrompt = systemPrompt
-        )
+        var lastError: LlmException? = null
+        for (endpoints in openCodeEndpoints(provider, model)) {
+            try {
+                if (useAnthropic) {
+                    return callClaude(
+                        message, apiKey, model, history, image, systemPrompt,
+                        url = endpoints.anthropic,
+                        headers = session + mapOf(
+                            "x-api-key" to apiKey,
+                            "anthropic-version" to "2023-06-01"
+                        )
+                    )
+                }
+                if (id.startsWith("gemini-")) {
+                    return callGemini(
+                        message, apiKey, model, history, image, systemPrompt,
+                        url = endpoints.google,
+                        headers = session + mapOf("x-goog-api-key" to apiKey)
+                    )
+                }
+                if (useResponses) {
+                    return callOpenAiResponses(
+                        endpoints.responses, apiKey, model, history, message,
+                        image = image, systemPrompt = systemPrompt, extraHeaders = session
+                    )
+                }
+                return callOpenAiCompatible(
+                    endpoints.chat, apiKey, model, history, message,
+                    extraHeaders = session, maxTokens = LLM_OPENAI_MAX_TOKENS,
+                    image = image, systemPrompt = systemPrompt
+                )
+            } catch (e: LlmException) {
+                lastError = e
+                if (!openCodeShouldFallback(e)) throw e
+            }
+        }
+        throw lastError ?: LlmException(0, "تعذر الاتصال بـ OpenCode")
     }
 
 /** واجهة OpenAI Responses المستخدمة في OpenCode لموديلات GPT/Grok/Muse. */
