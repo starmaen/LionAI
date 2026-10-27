@@ -288,7 +288,7 @@ internal fun LlmClient.callOpenCode(
             "x-opencode-session" to openCodeSession,
             "x-opencode-request" to openCodeRequest,
             "x-opencode-client" to "cli",
-            "User-Agent" to "opencode/1.18.5"
+            "User-Agent" to "opencode-cli/1.0.0"
         )
         val id = model.trim().lowercase()
 
