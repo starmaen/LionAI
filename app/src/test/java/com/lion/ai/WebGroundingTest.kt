@@ -28,6 +28,26 @@ class WebGroundingTest {
     }
 
     @Test
+    fun greetingsAndSmallTalkNeverTriggerWebSearch() {
+        assertFalse(WebGrounding.shouldSearch(TaskKind.FAST, "كيف حالك يا صديقي؟"))
+        assertFalse(WebGrounding.shouldSearch(TaskKind.FAST, "مرحبا"))
+    }
+
+    @Test
+    fun devAndBrokenCodeTriggerWebSearch() {
+        assertTrue(WebGrounding.shouldSearch(TaskKind.DEV, "أصلح فشل البناء في المستودع"))
+        assertTrue(WebGrounding.shouldSearch(TaskKind.CODE, "لماذا يظهر هذا exception في gradle؟"))
+        assertFalse(WebGrounding.shouldSearch(TaskKind.CODE, "اكتب لي دالة لجمع رقمين"))
+    }
+
+    @Test
+    fun explicitSourceRequestWorksForGeneral() {
+        assertTrue(WebGrounding.shouldSearch(TaskKind.GENERAL, "تأكد من المصدر: كم سعر هذا الجهاز اليوم؟"))
+        assertTrue(WebGrounding.explicitlyRequested("ابحث عن أحدث إصدار"))
+        assertFalse(WebGrounding.explicitlyRequested("اكتب لي نصيحة للسفر"))
+    }
+
+    @Test
     fun duckDuckGoHtmlParsesTitleUrlAndSnippet() {
         val html = """
             <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2FJetBrains%2Fkotlin&amp;rut=abc">GitHub - <b>JetBrains/kotlin</b></a>

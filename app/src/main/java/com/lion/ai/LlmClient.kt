@@ -57,6 +57,7 @@ object LlmClient {
 
     fun isErrorReply(reply: String): Boolean =
         reply.startsWith("⚠️") || reply.startsWith("🔑") || reply.startsWith("⏳") ||
+            reply.startsWith("💳") || reply.startsWith("🆓") || reply.startsWith("⛔") ||
             reply.startsWith("لم يصل رد")
 
     private fun stripThinking(text: String): String =

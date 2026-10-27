@@ -39,7 +39,7 @@ object AnswerGuard {
             val lines = t.lines().map { it.trim() }.filter { it.length >= 8 }
             if (lines.size >= 3 && lines.groupingBy { it }.eachCount().values.any { it >= 3 }) return true
         }
-        if (strict || kind == TaskKind.GENERAL) {
+        if (strict || kind == TaskKind.GENERAL || kind == TaskKind.DEV) {
             if (looksLikeGibberish(t)) return true
             if (hasLoop(t)) return true
         }

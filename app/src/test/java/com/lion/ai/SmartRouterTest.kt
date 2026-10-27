@@ -18,6 +18,31 @@ class SmartRouterTest {
     }
 
     @Test
+    fun greetingsNeverNeedDeepThinking() {
+        listOf("مرحبا", "كيف حالك؟", "السلام عليكم", "شكراً على المساعدة", "شكرا على الكود").forEach {
+            assertEquals("«$it» يجب أن تكون سريعة", TaskKind.FAST, SmartRouter.classify(it, false, 0, null))
+        }
+    }
+
+    @Test
+    fun devTaskWithRepoActionIsDev() {
+        assertEquals(
+            TaskKind.DEV,
+            SmartRouter.classify("أصلح فشل البناء في مستودع GitHub ثم ارفع التعديل", false, 0, null)
+        )
+        assertEquals(
+            TaskKind.DEV,
+            SmartRouter.classify("راجع هذا المستودع github.com/starmaen/LionAI وطور الكود", false, 0, null)
+        )
+    }
+
+    @Test
+    fun simpleCodeQuestionIsNotDev() {
+        assertEquals(TaskKind.CODE, SmartRouter.classify("اكتب لي دالة kotlin لجمع رقمين", false, 0, null))
+        assertEquals(TaskKind.CODE, SmartRouter.classify("راجع هذا الملف", false, 500, "Main.kt"))
+    }
+
+    @Test
     fun capitalQuestionIsFactual() {
         assertEquals(TaskKind.FACTUAL, SmartRouter.classify("ما عاصمة سوريا؟", false, 0, null))
     }

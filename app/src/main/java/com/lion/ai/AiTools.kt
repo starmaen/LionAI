@@ -288,7 +288,7 @@ object AiTools {
         val t = TextNorm.forMatch(text)
         val groups = mutableSetOf<ToolGroup>()
         val github = Regex(
-            "(github|git\\b|repo|repository|pull request|\\bpr\\b|issue|commit|branch|workflow|actions|readme|" +
+            "(github|\\bgit\\b|\\brepo\\b|\\brepository\\b|pull request|\\bpr\\b|issue|commit|branch|workflow|actions|readme|" +
                 "merge|release|tag|compare|diff|log|" +
                 "مستودع|مستودعات|ريبو|فرع|فروع|كوميت|بلاغ|بلاغات|طلب سحب|سحب|دفع|ارفع|رفع|دمج|إصدار|اصدار|وسم|" +
                 "شجرة الملفات|ملفات المشروع|جيت هاب|غيث هاب|github|workflows|بناء التطبيق|سجل البناء|" +
@@ -341,10 +341,10 @@ object AiTools {
 
         // أوامر تطويرية عامة: لا تحتاج كلمة مفتاحية مثل "كود" حتى تُفعّل أدوات العمل.
         val devAction = Regex(
-            "(نفذ|أنفذ|انفذ|أكمل|اكمل|طور|طوّر|أصلح|اصلح|صحح|ابن|ابني|بناء|اختبر|جرّب|جرب|ادفع|ارفع|" +
-                "عدل|عدّل|أضف|اضف|احذف|برمج|اكتب كود|راجع|حلل|حلّل|افحص|أعد|اعد|اعمل|انشئ|أنشئ|" +
-                "implement|fix|build|test|deploy|push|commit|refactor|add|remove|update|run|verify|" +
-                "debug|inspect|create|write|patch|merge|release)"
+            "(نفذ|أنفذ|انفذ|أكمل|اكمل|طور|طوّر|أصلح|اصلح|صحح|دقق|تدقيق|راجع|مراجعة|ابن|ابني|بناء|اختبر|جرّب|ادفع|ارفع|" +
+                "عدل|عدّل|أضف|اضف|احذف|برمج|اكتب كود|حلل|حلّل|افحص|فحص|أعد|اعد|اعمل|انشئ|أنشئ|" +
+                "implement|fix|audit|review|lint|inspect|build|test|deploy|push|commit|refactor|add|remove|update|run|verify|" +
+                "debug|create|write|patch|merge|release)"
         )
         if (devAction.containsMatchIn(t)) {
             groups.add(ToolGroup.FILES)
@@ -379,7 +379,7 @@ object AiTools {
     }
 
     fun githubMentioned(text: String): Boolean =
-        Regex("(github|git\\b|repo|repository|مستودع|مستودعات|جيت هاب|غيث هاب)")
+        Regex("(github|\\bgit\\b|\\brepo\\b|\\brepository\\b|مستودع|مستودعات|جيت هاب|غيث هاب)")
             .containsMatchIn(TextNorm.forMatch(text))
 
     fun contextHint(text: String, prefs: SharedPreferences? = null): String {

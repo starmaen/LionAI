@@ -32,11 +32,12 @@ object ToolAgent {
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
 
         سير العمل البرمجي الكامل:
-        1) github_tree/github_read_file/github_find_symbol لفهم المشروع، وfile_read للجهاز.
-        2) عدّل عبر file_apply_patch (unified diff) أو file_write، ثم اقرأ الملف للتأكد.
-        3) ارفع إلى GitHub عبر github_push_workspace (dry_run أولاً عند الشك)، ثم github_wait_run لمراقبة CI.
-        4) إن فشل البناء اقرأ github_run_logs/github_job_log، أصلح، وأعد الرفع حتى ينجح.
+        1) افحص أولاً: github_repo_overview أو github_list_tree أو github_read_file للمستودع، وfile_tree/file_read للملفات المحلية، وgithub_search_code للبحث داخل الكود.
+        2) عدّل عبر file_apply_patch (unified diff) أو file_write، ثم اقرأ الملف أو استخدم file_diff للتأكد من التطابق.
+        3) تحقّق محلياً ما أمكن: code_analyze_file، ثم ارفع إلى GitHub عبر github_push_workspace (dry_run أولاً عند الشك)، ثم github_wait_run لمراقبة CI.
+        4) إن فشل البناء اقرأ github_run_logs/github_job_log، أصلح السبب، وأعد الرفع حتى ينجح.
         5) لا تدفع إلى الفرع الرئيسي إلا إذا طلب المستخدم ذلك صراحة؛ استخدم فرعاً وPR عند الشك.
+        6) لا تُنهِ المهمة قبل خطوة تحقق واحدة على الأقل من نتيجة التعديل (قراءة/فرق/تحليل/بناء).
 
         التواصل (WhatsApp/Telegram):
         - Telegram Bot: telegram_send/telegram_updates/telegram_chat/telegram_admin… تعمل على المحادثات التي أُضيف إليها البوت.

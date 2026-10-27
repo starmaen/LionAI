@@ -67,11 +67,37 @@ object WebGrounding {
     internal fun enabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean("web_grounding", true)
 
-    /** البحث للأسئلة المعرفية ولأسئلة البرمجة النصية فقط. */
+    /** طلب صريح من المستخدم بالبحث أو التحقق من المصدر: يُحترم حتى في الوضع اليدوي. */
+    fun explicitlyRequested(text: String): Boolean = SOURCE_REQUEST.containsMatchIn(TextNorm.forMatch(text))
+
+    private val SOURCE_REQUEST = Regex(
+        "(ابحث|بحث|تأكد|تحقق|تحقّق|مصدر|مصادر|مرجع|مراجع|رابط|روابط|أحدث|احدث|آخر|اخر|" +
+            "اليوم|الآن|الان|حاليا|حالياً|سعر|أسعار|اسعار|نتيجة|نتائج|" +
+            "search|verify|source|sources|latest|current|today|price)"
+    )
+
+    private val RESEARCH_WORDS = Regex(
+        "(خطأ|أخطاء|اخطاء|error|exception|traceback|crash|يتعطل|لا يعمل|لم يعمل|لماذا|why|" +
+            "فشل البناء|سجل البناء|بناء التطبيق|workflow|ci\\b|" +
+            "ثبت|تثبيت|install|setup|version|إصدار|اصدار|توثيق|docs|documentation|" +
+            "أفضل ممارسة|افضل ممارسة|best practice|how to|كيف (أ|ا)?(ثبت|استخدم|أستخدم))"
+    )
+
+    /** البحث فقط حيث يفيد فعلاً: أسئلة معرفية، وأعطال/توثيق برمجي، وطلب مصادر صريح — لا للمجاملات. */
     fun shouldSearch(kind: TaskKind, text: String): Boolean {
         if (text.length < 6 || text.contains(FILE_MARK)) return false
-        if (text.contains("```") && kind == TaskKind.CODE) return false
-        return kind == TaskKind.FACTUAL || kind == TaskKind.CODE
+        if (kind == TaskKind.FAST || kind == TaskKind.WRITING ||
+            kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT
+        ) {
+            return false
+        }
+        val norm = TextNorm.forMatch(text)
+        if (kind == TaskKind.FACTUAL) return true
+        if (text.contains("```")) return false
+        if (kind == TaskKind.DEV || kind == TaskKind.CODE) {
+            return RESEARCH_WORDS.containsMatchIn(norm) || explicitlyRequested(text)
+        }
+        return explicitlyRequested(text)
     }
 
     /** يحذف صيغة السؤال ويقصّ الطلب إلى حد آمن لأي محرك بحث. */

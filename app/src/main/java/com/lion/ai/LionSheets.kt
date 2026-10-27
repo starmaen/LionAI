@@ -55,6 +55,13 @@ Column(
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     )
+    Text(
+        "🧠 تلقائي = العقل المركزي يختار الأنسب لكل سؤال ويستبعد ما لا يعمل. " +
+            "🔒 يدوي = حرية الاختيار لك، ولا يبدّل مزودك تلقائياً إلا إذا فعّلت المساعدة من الإعدادات.",
+        color = Color(0xFF9A9A9A),
+        fontSize = 11.sp,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()

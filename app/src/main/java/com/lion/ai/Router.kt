@@ -9,6 +9,7 @@ enum class TaskKind(val label: String) {
     GENERAL("سؤال عام"),
     FACTUAL("سؤال معرفي"),
     CODE("برمجة"),
+    DEV("مهمة تطوير"),
     REASONING("استدلال وحساب"),
     WRITING("كتابة وترجمة"),
     VISION("تحليل صورة"),
@@ -105,27 +106,48 @@ object SmartRouter {
     )
     /** مجاملات قصيرة فقط: هذه وحدها تستحق المسار السريع، أما الأسئلة القصيرة فتحتاج مزوداً قوياً. */
     private val SMALLTALK = Regex(
-        "(^|\\s)(مرحبا|اهلا|السلام عليكم|سلام|صباح الخير|مساء الخير|شكرا|شكرا لك|تسلم|تمام|اوكي|" +
-            "ok|hi|hello|thanks|كيف حالك|كيف الحال|ما اخبارك|من انت|ما اسمك|وداعا|باي)(\\s|$|[!،.؟?])"
+        "(^|\\s)(مرحبا|مرحباً|اهلا|أهلا|هلا|السلام عليكم|سلام|صباح الخير|مساء الخير|شكرا|شكراً|شكرا لك|" +
+            "تسلم|يعطيك العافية|تمام|اوكي|أوكي|ok|hi|hello|thanks|كيف حالك|كيف الحال|كيف حالكم|كيفك|كيف خالك|كيف خلك|شلونك|" +
+            "ما اخبارك|ما أخبارك|من انت|من أنت|ما اسمك|وداعا|باي)(\\s|$|[!،.؟?])"
     )
+
+    /** أفعال تطوير حقيقية: لا تكفي وحدها، بل مع سياق برمجي/مستودع. */
+    private val DEV_ACTION = Regex(
+        "(أصلح|اصلح|صحح|دقق|تدقيق|راجع|مراجعة|افحص|فحص|اختبر|جرّب|حلل|حلّل|أكمل|اكمل|طور|طوّر|تطوير|" +
+            "عدل|عدّل|أضف|اضف|احذف|أنشئ|انشئ|ابن|ابني|بناء|ادفع|ارفع|دمج|نفذ|أنفذ|انفذ|اقرأ|اقرا|قراء[هة]|" +
+            "implement|fix|audit|review|lint|inspect|test|build|deploy|push|commit|refactor|merge|release|patch|clone|update|add|remove)"
+    )
+    /** سياق يدل على كود أو مستودع حقيقي. */
+    private val DEV_CONTEXT = Regex(
+        "(github|\\bgit\\b|\\brepo\\b|repository|pull request|\\bpr\\b|branch|commit|workflow|actions|apk|" +
+            "kotlin|android|gradle|compose|مستودع|مستودعات|ريبو|فرع|فروع|كوميت|جيت هاب|غيث هاب|" +
+            "طلب سحب|دمج|بناء التطبيق|فشل البناء|سجل البناء|مشروع برمجي|كود المشروع|ملفات المشروع|" +
+            "كود|برمج|برمجه|دال[هة]|دوال|تطبيق|مشروع)"
+    )
+    private val GITHUB_LINK = Regex("github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+    /** هل النص مجاملة/سؤال سطحي قصير يستحق رداً فورياً دون تفكير عميق؟ */
+    fun isSmallTalk(text: String): Boolean =
+        text.length <= 80 && SMALLTALK.containsMatchIn(TextNorm.forMatch(text))
 
     fun classify(text: String, hasImage: Boolean, attachmentChars: Int, attachmentName: String?): TaskKind {
         val t = TextNorm.forMatch(text)
         if (hasImage) return if (ImageIntent.looksLikeEdit(text)) TaskKind.IMAGE_EDIT else TaskKind.VISION
         if (attachmentChars > 14_000) return TaskKind.LONG_DOC
+        // التحيات والأسئلة السطحية أولاً حتى لا تلتقطها كلمات مثل «كود» أو «تاريخ» بالخطأ.
+        if (attachmentChars == 0 && isSmallTalk(text)) return TaskKind.FAST
         val ext = attachmentName?.substringAfterLast('.', "")?.lowercase().orEmpty()
-        if (text.contains("```") || CODE_WORDS.containsMatchIn(t) || (ext in CODE_EXT && attachmentChars > 0)) {
-            return TaskKind.CODE
-        }
+        val attachedCode = ext in CODE_EXT && attachmentChars > 0
+        if (text.contains("```") || attachedCode) return TaskKind.CODE
+        // مهمة تطوير = فعل تعديل/بناء + سياق مستودع/كود، أو رابط GitHub مباشر.
+        val devTask = GITHUB_LINK.containsMatchIn(t) ||
+            (DEV_ACTION.containsMatchIn(t) && DEV_CONTEXT.containsMatchIn(t))
+        if (devTask) return TaskKind.DEV
+        if (CODE_WORDS.containsMatchIn(t)) return TaskKind.CODE
         if (REASONING_WORDS.containsMatchIn(t) || MATH_EXPR.containsMatchIn(t)) return TaskKind.REASONING
         if (WRITING_WORDS.containsMatchIn(t)) return TaskKind.WRITING
         if (FACT_WORDS.containsMatchIn(t) || CURRENT_WORDS.containsMatchIn(t)) return TaskKind.FACTUAL
-        // لا نرسل الأسئلة القصيرة إلى النماذج السريعة الضعيفة؛ السريع للمجاملات فقط.
-        return if (text.length <= 220 && attachmentChars == 0 && SMALLTALK.containsMatchIn(t)) {
-            TaskKind.FAST
-        } else {
-            TaskKind.GENERAL
-        }
+        return TaskKind.GENERAL
     }
 
     private fun r(provider: String, model: String) = Route(provider, model)
@@ -137,7 +159,9 @@ object SmartRouter {
             r("kilo", "kilo-auto/free"), r("llm7", "fast"), r("nvidia", "openai/gpt-oss-20b"),
             r("cloudflare", "@cf/openai/gpt-oss-20b"), r("ollama", "gpt-oss:20b"),
             r("openrouter", "nvidia/nemotron-nano-9b-v2:free"), r("zai", "glm-4.7-flash"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("ovh", "gpt-oss-20b"), r("deepseek", "deepseek-flash")
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("opencode-console", "glm-5.3-flash"), r("ovh", "gpt-oss-20b"), r("deepseek", "deepseek-flash"),
+            r("openai", "gpt-6-luna"), r("claude", "claude-haiku-5-5")
         )
         TaskKind.GENERAL -> listOf(
             r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
@@ -160,10 +184,24 @@ object SmartRouter {
         )
         TaskKind.CODE -> listOf(
             r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("opencode-console", "deepseek-v4.1-flash"), r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "poolside/laguna-s-2.1:free"), r("openrouter", "cohere/north-mini-code:free"),
             r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("cohere", "north-mini-code-1-0"), r("ollama", "deepseek-v4-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
+            r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("llm7", "default"), r("ovh", "gpt-oss-120b")
+        )
+        // مهام التطوير تحتاج نماذج قوية في اتباع الأدوات وتعديل المستودعات، مع بدائل مجانية قادرة.
+        TaskKind.DEV -> listOf(
+            r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("opencode-console", "deepseek-v4.1-flash"), r("gemini", "gemini-3.8-flash"),
+            r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
+            r("zai", "glm-4.7-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+            r("cloudflare", "@cf/openai/gpt-oss-120b"),
+            r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"),
+            r("openrouter", "cohere/north-mini-code:free"), r("ollama", "deepseek-v4-flash"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("llm7", "default"), r("ovh", "gpt-oss-120b")
         )
@@ -244,10 +282,20 @@ object SmartRouter {
         return info.keyless || key.isNotEmpty()
     }
 
+    /** أقصى مدة انتظار مناسبة لكل نوع، حتى لا يعلق سؤال بسيط في مزود بطيء. */
+    fun timeoutMs(kind: TaskKind): Long = when (kind) {
+        TaskKind.FAST -> 35_000L
+        TaskKind.VISION -> 90_000L
+        TaskKind.IMAGE_EDIT -> 60_000L
+        TaskKind.DEV -> 180_000L
+        TaskKind.LONG_DOC -> 150_000L
+        else -> 120_000L
+    }
+
     /**
-     * المسارات المتاحة فعلاً بالترتيب، موديل واحد لكل مزود، بحد أقصى 4 محاولات.
-     * يُبقي ترتيب التخصص كما هو، لكنه يؤخّر المزود الذي فشل مرتين متتاليتين
-     * حتى لا يستهلك كل المحاولات (توازن دون التضحية بالتخصص).
+     * المسارات المتاحة فعلاً بالترتيب، موديل واحد لكل مزود.
+     * يستبعد المزودات التي فشلت مرتين متتاليتين عندما يوجد بديل سليم،
+     * ويؤخّر البطيء جداً لصالح الأسرع عند تعدد البدائل.
      */
     fun plan(
         prefs: SharedPreferences,
@@ -256,8 +304,13 @@ object SmartRouter {
     ): List<Route> {
         val availableRoutes = candidates(kind).filter { available(prefs, it.provider) }
         val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
-        val strict = isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL)
-        val preferReliable = (kind == TaskKind.GENERAL && mode != AnswerMode.FAST) || mode == AnswerMode.PRECISE
+        // المسار السريع يبقى سريعاً دائماً: لا نرفعه إلى نماذج ثقيلة مهما كان وضع الجودة.
+        val fastOnly = kind == TaskKind.FAST || mode == AnswerMode.FAST
+        val strict = !fastOnly && (isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL))
+        val preferReliable = !fastOnly && (
+            (kind == TaskKind.GENERAL && mode != AnswerMode.FAST) ||
+                mode == AnswerMode.PRECISE || kind == TaskKind.DEV
+            )
         val base = when {
             strict -> reliableRoutes.ifEmpty { availableRoutes }
             preferReliable && reliableRoutes.isNotEmpty() ->
@@ -265,19 +318,31 @@ object SmartRouter {
             else -> availableRoutes
         }
         val routes = base.distinctBy { it.provider }
+        val maxAttempts = when {
+            fastOnly -> 2
+            kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT -> 3
+            else -> 4
+        }
         val (healthy, failing) = routes.partition { (failures[it.provider] ?: 0) < 2 }
-        val ordered = (healthy + failing).toMutableList()
-        // توازن الاستجابة: إن كان الأفضل بطيئاً (>25ث) والثاني أسرع بوضوح، قدّم الثاني.
+        // إن وُجد بديل سليم فلا نضيّع محاولات على مزود معروف الفشل.
+        val ordered = (
+            healthy + if (healthy.size >= maxAttempts) emptyList() else failing.take(maxAttempts - healthy.size)
+            ).toMutableList()
+        // توازن الاستجابة: إن كان الأول بطيئاً جداً (>20ث) فأعطِ الأولوية لأسرع بديل موثوق.
         if (ordered.size >= 2) {
             val first = latency(ordered[0].provider)
-            val second = latency(ordered[1].provider)
-            if (first > 25_000 && second > 0 && second <= 20_000) {
-                val tmp = ordered[0]
-                ordered[0] = ordered[1]
-                ordered[1] = tmp
+            if (first > 20_000) {
+                val fasterIndex = (1 until ordered.size).firstOrNull { index ->
+                    val candidate = latency(ordered[index].provider)
+                    candidate > 0 && candidate + 8_000 < first
+                }
+                if (fasterIndex != null) {
+                    val fastest = ordered.removeAt(fasterIndex)
+                    ordered.add(0, fastest)
+                }
             }
         }
-        return ordered.take(if (mode == AnswerMode.FAST) 2 else 6)
+        return ordered.take(maxAttempts)
     }
 
     fun label(route: Route, kind: TaskKind?): String {

@@ -168,6 +168,7 @@ fun SettingsScreen(
     }
     var smartTitles by remember { mutableStateOf(prefs.getBoolean("smart_titles", true)) }
     var autoRouteSetting by remember { mutableStateOf(prefs.getBoolean("auto_route", true)) }
+    var manualAssist by remember { mutableStateOf(prefs.getBoolean("manual_assist", false)) }
     val settingsScope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var modelMenuOpen by remember { mutableStateOf(false) }
@@ -228,6 +229,7 @@ fun SettingsScreen(
         editor.putBoolean("auto_speak", autoSpeak)
         editor.putBoolean("smart_titles", smartTitles)
         editor.putBoolean("auto_route", autoRouteSetting)
+        editor.putBoolean("manual_assist", manualAssist)
         editor.putBoolean("confirm_actions", confirmActions)
         editor.putString("answer_mode", answerMode)
         editor.putString("answer_length", answerLength)
@@ -634,10 +636,31 @@ fun SettingsScreen(
                 Column {
                     Text("🧠 العقل المركزي (اختيار النموذج تلقائياً)", color = Color.White)
                     Text(
-                        "يصنّف سؤالك ويختار الأنسب من المزودات المتاحة لديك، ويجرّب بديلاً عند الفشل. أطفئه لاستعمال المزود المحدد يدوياً.",
+                        "يصنّف سؤالك ويختار الأنسب من المزودات المتاحة لديك، ويستبعد ما لا يعمل ويجرّب بديلاً عند الفشل. أطفئه للوضع اليدوي: يبقى مزودك المختار فقط دون تبديل تلقائي.",
                         color = Color(0xFF9A9A9A),
                         fontSize = 11.sp
                     )
+                }
+            }
+
+            if (!autoRouteSetting) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = manualAssist,
+                        onCheckedChange = { manualAssist = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("🤝 مساعدة العقل المركزي في الوضع اليدوي", color = Color.White)
+                        Text(
+                            "يبقي مزودك المختار أولاً، لكنه يسمح بالبحث عن المصادر وتجربة بديل عند فشل مزودك. " +
+                                "أطفئه لتبقى الحرية الكاملة: لن يتدخل العقل المركزي إطلاقاً.",
+                            color = Color(0xFF9A9A9A),
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
 

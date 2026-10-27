@@ -222,7 +222,7 @@ internal fun LionInputBar(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    if (autoRoute) "🧠 تلقائي" else providerLabel,
+                                    if (autoRoute) "🧠 تلقائي" else "🔒 $providerLabel",
                                     color = Color(0xFFFFB800),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold

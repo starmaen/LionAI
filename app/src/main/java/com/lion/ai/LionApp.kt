@@ -387,29 +387,31 @@ fun LionApp() {
 
     fun manualRoute(): Route {
         val selected = providerInfo(selectedProvider)
-        val selectedReady = selected.group == ProviderGroup.API &&
-            (selected.keyless || keyOf(selectedProvider).isNotBlank())
-        if (selectedReady) {
-            return Route(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
-        }
-        // لا نسمح بأن يعلق الوضع اليدوي على مزود ويب/وسائط أو مزود بلا مفتاح.
-        val fallback = PROVIDERS.firstOrNull {
-            it.group == ProviderGroup.API && (it.keyless || keyOf(it.id).isNotBlank())
-        }
-        return if (fallback != null) {
-            Route(fallback.id, prefs.getString("model_${fallback.id}", "") ?: "")
+        // لا نبدّل مزود المستخدم بصمت أبداً. مزودات الويب لا تصلح للدردشة داخل المحادثة،
+        // فنرجع لأول مزود API فقط في هذه الحالة النادرة، ونترك رسالة الخطأ الواضحة تظهر.
+        val providerId = if (selected.group == ProviderGroup.API) {
+            selectedProvider
         } else {
-            Route(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
+            PROVIDERS.firstOrNull { it.group == ProviderGroup.API }?.id ?: selectedProvider
         }
+        return Route(providerId, prefs.getString("model_$providerId", "") ?: "")
     }
 
-    /** الوضع التلقائي: العقل المركزي يرتّب المسارات المتاحة. اليدوي: المزود الذي اخترته فقط. */
-    fun planFor(kind: TaskKind, mode: AnswerMode? = null): List<Route> =
+    /**
+     * الوضع التلقائي: العقل المركزي يرتّب المسارات المتاحة.
+     * الوضع اليدوي: مزود المستخدم أولاً ودون تبديل تلقائي، إلا إذا فعّل «مساعدة العقل المركزي».
+     */
+    fun planFor(kind: TaskKind, mode: AnswerMode? = null): List<Route> {
         if (autoRoute) {
-            SmartRouter.plan(prefs, kind, mode ?: AnswerMode.read(prefs)).ifEmpty { listOf(manualRoute()) }
-        } else {
-            listOf(manualRoute())
+            return SmartRouter.plan(prefs, kind, mode ?: AnswerMode.read(prefs)).ifEmpty { listOf(manualRoute()) }
         }
+        val chosen = manualRoute()
+        if (!prefs.getBoolean("manual_assist", false)) return listOf(chosen)
+        val extras = SmartRouter.plan(prefs, kind, mode ?: AnswerMode.read(prefs))
+            .filter { it.provider != chosen.provider }
+            .take(2)
+        return listOf(chosen) + extras
+    }
 
     /** طول الرد المختار من الإعدادات، يُضاف إلى تعليمات النظام. */
     fun answerLengthSuffix(): String = when (prefs.getString("answer_length", "normal")) {
@@ -829,10 +831,16 @@ fun LionApp() {
         forcePrecise: Boolean = false
     ) {
         val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
-        val strict = SmartRouter.isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL)
-        val careful = SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL
+        val assist = !autoRoute && prefs.getBoolean("manual_assist", false)
+        // «المركزي» يعمل في الوضع التلقائي، أو في الوضع اليدوي فقط إذا فعّل المستخدم المساعدة.
+        val central = autoRoute || assist
+        val strict = central &&
+            (SmartRouter.isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL))
+        val careful = central && (SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL)
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
         val basePrompt = when {
+            kind == TaskKind.DEV -> LLM_DEV_PROMPT
+            kind == TaskKind.FAST -> LLM_FAST_PROMPT
             SmartRouter.isStrict(kind) -> LLM_FACT_PROMPT
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
@@ -841,9 +849,23 @@ fun LionApp() {
         val auto = autoRoute
         val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
         val toolText = if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext
-        val toolGroups = if (image == null) AiTools.groupsFor(toolText, prefs) else emptySet()
+        val toolGroups = if (image == null && kind != TaskKind.FAST && AiTools.agentEnabled(prefs)) {
+            val groups = AiTools.groupsFor(toolText, prefs).toMutableSet()
+            // مهمة التطوير تحتاج دائماً أدوات الفحص والتعديل والتحقق، حتى لو لم يذكر المستخدم كلمة «كود».
+            if (kind == TaskKind.DEV) {
+                groups.add(ToolGroup.FILES)
+                groups.add(ToolGroup.CODE)
+                groups.add(ToolGroup.META)
+                if (AiTools.githubReady(prefs)) groups.add(ToolGroup.GITHUB)
+            }
+            groups
+        } else {
+            emptySet<ToolGroup>()
+        }
         loadingChats[chatId] = true
         scope.launch {
+            // المصادر والروابط (يوتيوب/أنغامي/يوتيوب ميوزيك) ميزة مستقلة يحكمها إعدادها،
+            // وتبقى تعمل في الوضع اليدوي أيضاً ولا يلغيها العقل المركزي.
             val sources = if (WebGrounding.enabled(prefs) && WebGrounding.shouldSearch(kind, prompt)) {
                 withContext(Dispatchers.IO) {
                     runCatching { WebGrounding.search(prompt) }.getOrDefault(emptyList<WebSource>())
@@ -851,7 +873,9 @@ fun LionApp() {
             } else {
                 emptyList<WebSource>()
             }
-            val driveContext = if (image == null && ConnectorAuth.isConnected(prefs, "google_drive")) {
+            val driveContext = if (image == null && kind != TaskKind.FAST &&
+                ConnectorAuth.isConnected(prefs, "google_drive")
+            ) {
                 val driveId = Connectors.extractDriveId(prompt)
                 if (driveId == null) null else withContext(Dispatchers.IO) {
                     runCatching {
@@ -863,20 +887,28 @@ fun LionApp() {
             } else {
                 null
             }
-            val githubContext = if (image == null && AiTools.githubReady(prefs) &&
+            val githubContext = if (image == null && kind != TaskKind.FAST && AiTools.githubReady(prefs) &&
                 AiTools.detectGitHubUrl(toolText) != null
             ) {
                 runCatching { AiTools.githubContext(prefs, toolText, 6000) }.getOrDefault("")
             } else {
                 ""
             }
-            val githubNote = if (AiTools.githubMentioned(toolText) && !AiTools.githubReady(prefs)) {
+            val githubNote = if (kind != TaskKind.FAST &&
+                AiTools.githubMentioned(toolText) && !AiTools.githubReady(prefs)
+            ) {
                 "\n\nملاحظة: GitHub غير مربوط حالياً. اطلب من المستخدم إضافة توكن GitHub من «الإعدادات ← أدوات الذكاء والتطوير»، ولا تدّعِ الوصول إلى GitHub."
             } else {
                 ""
             }
+            val toolsNote = if (kind == TaskKind.DEV && toolGroups.isEmpty() && !AiTools.agentEnabled(prefs)) {
+                "\n\nملاحظة: أدوات التطوير معطّلة من الإعدادات. لا تدّعِ أنك فحصت المستودع أو عدّلته؛ " +
+                    "قدّم خطة دقيقة واطلب تفعيل «أدوات الذكاء والتطوير» لتنفيذها فعلياً."
+            } else {
+                ""
+            }
             val systemPrompt = basePrompt + answerLengthSuffix() +
-                (if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "") + githubNote
+                (if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "") + githubNote + toolsNote
             val baseLlmPrompt = if (sources.isEmpty()) {
                 prompt
             } else {
@@ -886,9 +918,9 @@ fun LionApp() {
                 baseLlmPrompt + "\n\n=== بيانات Google Drive من الرابط في رسالة المستخدم ===\n" + driveContext
             val llmPrompt = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
-            // عند توفر مصادر ويب، لا نتوقف عند أول 6 مسارات: نمنح أي مزود متاح آخر
-            // فرصة للاستناد إلى المصادر بدلاً من إظهار «لا توجد إجابة موثوقة».
-            val rescueRoutes = if (sources.isNotEmpty()) {
+            // البدائل الإضافية من العقل المركزي تُستخدم فقط عندما يسمح المستخدم بذلك
+            // (تلقائي أو مساعدة الوضع اليدوي)، لا في الوضع اليدوي الحر.
+            val rescueRoutes = if (central && sources.isNotEmpty()) {
                 SmartRouter.candidates(kind)
                     .filter { SmartRouter.available(prefs, it.provider) }
                     .filterNot { candidate -> plan.any { it.provider == candidate.provider } }
@@ -903,8 +935,11 @@ fun LionApp() {
             var used: Route? = null
             var fallback: Pair<Route, String>? = null
             var toolNames: List<String> = emptyList()
+            var lastErrorReply = ""
             val failed = mutableListOf<String>()
-            val deadline = System.currentTimeMillis() + 120_000
+            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(kind)
+            // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
+            val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
             for (route in routesToTry) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
@@ -919,7 +954,7 @@ fun LionApp() {
                                 provider = route.provider,
                                 model = route.model,
                                 accountId = accountId(),
-                                history = history,
+                                history = requestHistory,
                                 baseSystemPrompt = systemPrompt,
                                 groups = toolGroups,
                                 contextText = toolText
@@ -934,7 +969,7 @@ fun LionApp() {
                         message = llmPrompt,
                         apiKey = keyOf(route.provider),
                         provider = route.provider,
-                        history = history,
+                        history = requestHistory,
                         modelOverride = route.model,
                         accountId = accountId(),
                         image = image,
@@ -942,7 +977,9 @@ fun LionApp() {
                     )
                 }
                 val error = LlmClient.isErrorReply(r)
-                val low = !error && agentResult?.usedTools != true && AnswerGuard.isLowQuality(r, kind, prompt)
+                if (error && lastErrorReply.isBlank()) lastErrorReply = r
+                val low = !error && agentResult?.usedTools != true && central &&
+                    AnswerGuard.isLowQuality(r, kind, prompt)
                 SmartRouter.record(route, !error && !low, System.currentTimeMillis() - started)
                 if (!error && !low) {
                     reply = r
@@ -955,14 +992,12 @@ fun LionApp() {
             }
             if (used == null) {
                 val f = fallback
-                val canUseFallback = sources.isNotEmpty() || !auto || !strict || !hasTrusted
+                val canUseFallback = central && (sources.isNotEmpty() || !strict || !hasTrusted)
                 if (f != null && f.second.isNotBlank() && canUseFallback) {
                     reply = f.second
                     used = f.first
                     reply += if (sources.isNotEmpty() && auto && strict) {
                         "\n\n✅ الإجابة مستندة إلى مصادر الويب أعلاه، لكنها من مزود أقل قوة من المعتاد؛ راجع التفاصيل الحساسة."
-                    } else if (!auto) {
-                        "\n\n⚠️ الرد من المزود المختار قد يكون غير موثوق؛ راجع التواريخ والأسماء قبل الاعتماد عليه."
                     } else if (strict) {
                         "\n\n⚠️ لم يتوفر مزود قوي لهذا السؤال؛ هذه إجابة من مزود مجاني. تحقق من التواريخ والأسماء قبل الاعتماد عليها."
                     } else {
@@ -971,14 +1006,20 @@ fun LionApp() {
                 } else if (strict && hasTrusted) {
                     reply = "⚠️ لم أجد إجابة موثوقة من المزودات القوية المتاحة، ولم أعرض إجابة من مزود ضعيف لتجنب معلومات خاطئة.\nجرّب لاحقاً أو أضف مفتاح Gemini أو Groq أو OpenAI أو Claude."
                 } else {
-                    reply = "⚠️ تعذر الوصول إلى مزود يرد حالياً. تحقق من الاتصال أو جرّب مزوداً آخر."
+                    reply = lastErrorReply.ifBlank {
+                        "⚠️ تعذر الوصول إلى مزود يرد حالياً. تحقق من الاتصال أو جرّب مزوداً آخر."
+                    }
+                    if (!central) {
+                        reply += "\n\n🔒 الوضع اليدوي: بقيت على المزود الذي اخترته ولم أبدّل تلقائياً. " +
+                            "تحقق من المفتاح/الموديل أو اختر مزوداً آخر، أو فعّل «مساعدة العقل المركزي في الوضع اليدوي» من الإعدادات."
+                    }
                 }
             }
             if (used == null && failed.size > 1) {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
             }
             var consensusPercent = -1
-            if (used != null && kind == TaskKind.FACTUAL &&
+            if (central && used != null && kind == TaskKind.FACTUAL &&
                 prefs.getBoolean("consensus", false) &&
                 image == null && !prompt.contains("محتوى الملف (")
             ) {
