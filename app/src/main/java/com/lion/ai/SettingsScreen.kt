@@ -306,357 +306,272 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(16.dp))
 
-            Text("المزود:", color = Color.White, fontWeight = FontWeight.Bold)
-            ProviderGroup.values().forEach { group ->
+            SettingsSection(
+                title = "🔑 المزودات الأساسية (API)",
+                subtitle = "اضغط على المزود لفتح مفتاحه وموديله وزر الاختبار. الدائرة ● = المزود النشط",
+                badge = "${PROVIDERS.count { it.group == ProviderGroup.API }} مزود",
+                initiallyExpanded = true
+            ) {
+                val apiProviders = PROVIDERS.filter { it.group == ProviderGroup.API }
+                listOf(
+                    "🆓 بدون مفتاح" to apiProviders.filter { it.keyless },
+                    "🟢 مجانية بمفتاح" to apiProviders.filter { !it.keyless && it.free },
+                    "🔵 مدفوعة أو برصيد" to apiProviders.filter { !it.keyless && !it.free }
+                ).forEach { (groupTitle, list) ->
+                    if (list.isNotEmpty()) {
+                        SettingsSection(
+                            title = groupTitle,
+                            badge = "${list.size}",
+                            nested = true,
+                            initiallyExpanded = list.any { it.id == provider }
+                        ) {
+                            list.forEach { info ->
+                                ProviderCard(
+                                    info = info,
+                                    active = provider == info.id,
+                                    onActivate = { provider = info.id },
+                                    keys = keys,
+                                    models = models,
+                                    endpoints = endpoints,
+                                    modelCache = modelCache,
+                                    accountId = accountId,
+                                    onAccountIdChange = { accountId = it },
+                                    prefs = prefs,
+                                    scope = settingsScope
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            listOf(ProviderGroup.WEB, ProviderGroup.MEDIA).forEach { group ->
                 val groupProviders = PROVIDERS.filter { it.group == group }
-                if (groupProviders.isEmpty()) return@forEach
-                Text(
-                    "${group.icon} ${group.title}",
-                    color = Color(0xFFFFB800),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                )
-                groupProviders.forEach { info ->
-                    val isApi = info.group == ProviderGroup.API
-                    val openOrSelect: () -> Unit = {
-                        if (isApi) {
-                            provider = info.id
-                        } else {
-                            info.webviewUrl?.let { url ->
-                                runCatching {
-                                    ctx.startActivity(
-                                        Intent(ctx, ArenaActivity::class.java).putExtra("ARENA_URL", url)
+                if (groupProviders.isNotEmpty()) {
+                    SettingsSection(
+                        title = if (group == ProviderGroup.WEB) "🌐 مزودات صفحات الويب" else "🎨 مزودات الوسائط",
+                        subtitle = "هذا مزود ويب/وسائط: يُفتح داخل التطبيق من هنا أو من زر 🌐، ولا يحتاج مفتاحاً.",
+                        badge = "${groupProviders.size} موقع"
+                    ) {
+                        groupProviders.forEach { info ->
+                            val openPage: () -> Unit = {
+                                info.webviewUrl?.let { url ->
+                                    runCatching {
+                                        ctx.startActivity(
+                                            Intent(ctx, ArenaActivity::class.java).putExtra("ARENA_URL", url)
+                                        )
+                                    }
+                                }
+                                Unit
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { openPage() }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        info.label + "  " + (if (group == ProviderGroup.MEDIA) "🎨" else "🌐"),
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        info.tagline + " — يُفتح داخل التطبيق",
+                                        color = Color(0xFFB0B0B0),
+                                        fontSize = 12.sp
                                     )
                                 }
+                                TextButton(onClick = { openPage() }) {
+                                    Text("فتح ↗", color = Color(0xFFFFB800), fontSize = 12.sp)
+                                }
                             }
-                            Unit
-                        }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { openOrSelect() }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = isApi && provider == info.id,
-                            onClick = { openOrSelect() },
-                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                info.label + when {
-                                    !isApi -> "  " + if (info.group == ProviderGroup.MEDIA) "🎨" else "🌐"
-                                    info.free -> "  🟢"
-                                    else -> "  🔵"
-                                },
-                                color = Color.White
-                            )
-                            Text(
-                                if (isApi) info.tagline else info.tagline + " — يُفتح داخل التطبيق",
-                                color = Color(0xFFB0B0B0),
-                                fontSize = 12.sp
-                            )
                         }
                     }
                 }
             }
 
-            if (current.group != ProviderGroup.API) {
-                Text(
-                    "هذا مزود ويب/وسائط: يُفتح داخل التطبيق من هنا أو من زر 🌐، ولا يحتاج مفتاحاً.",
-                    color = Color(0xFF7CC47C),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "🔑 مفتاح ${current.label}",
-                color = Color(0xFFFFB800),
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = keys[provider].orEmpty(),
-                onValueChange = { keys[provider] = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("الصق المفتاح هنا", color = Color(0xFF707070)) },
-                textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFFFB800),
-                    unfocusedBorderColor = Color(0xFF2A2A2A),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color(0xFFFFB800)
-                )
-            )
-
-            if (current.needsAccountId) {
-                Spacer(Modifier.height(12.dp))
-                Text("Cloudflare Account ID", color = Color.White, fontSize = 14.sp)
-                OutlinedTextField(
-                    value = accountId,
-                    onValueChange = { accountId = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("من لوحة Cloudflare", color = Color(0xFF707070)) },
-                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFFFB800),
-                        unfocusedBorderColor = Color(0xFF2A2A2A),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        cursorColor = Color(0xFFFFB800)
-                    )
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-            Text(
-                if (current.free) "الموديل — اختر من القائمة أو اكتب اسماً" else "الموديل (اختياري)",
-                color = Color.White,
-                fontSize = 14.sp
-            )
-            val modelOptions = ModelCatalog.options(current, modelCache[provider].orEmpty())
-            val activeModel = models[provider].orEmpty().ifBlank { current.defaultModel }
-            Box(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = models[provider].orEmpty(),
-                    onValueChange = { models[provider] = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(current.defaultModel, color = Color(0xFF707070)) },
-                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(onClick = { modelMenuOpen = true }) {
-                            Icon(Icons.Filled.ArrowDropDown, "قائمة الموديلات", tint = Color(0xFFFFB800))
-                        }
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFFFB800),
-                        unfocusedBorderColor = Color(0xFF2A2A2A),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        cursorColor = Color(0xFFFFB800)
-                    )
-                )
-                DropdownMenu(
-                    expanded = modelMenuOpen,
-                    onDismissRequest = { modelMenuOpen = false },
-                    modifier = Modifier.heightIn(max = 380.dp)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("↺ الافتراضي (${current.defaultModel})", color = Color(0xFFFFB800)) },
-                        onClick = {
-                            models[provider] = ""
-                            modelMenuOpen = false
-                        }
-                    )
-                    modelOptions.forEach { id ->
-                        DropdownMenuItem(
-                            text = { Text(if (id == activeModel) "$id  ✓" else id) },
-                            onClick = {
-                                models[provider] = id
-                                modelMenuOpen = false
-                            }
-                        )
-                    }
-                }
-            }
-            if (provider.startsWith("opencode") &&
-                (activeModel == "big-pickle" || activeModel.endsWith("-free"))
+            SettingsSection(
+                title = "⚙️ الإعدادات العامة والعقل المركزي",
+                subtitle = "القراءة التلقائية، عناوين المحادثات، التأكيدات، واختيار النموذج تلقائياً"
             ) {
-                Text(
-                    "ℹ️ هذا موديل مجاني في OpenCode. إن رفضه المزود (FreeUsageLimit) اختر موديلاً مدفوعاً برصيد Zen أو فعّل مزود OpenCode Go.",
-                    color = Color(0xFFFFB800),
-                    fontSize = 12.sp
-                )
-            }
-
-            var modelStatus by remember(provider) { mutableStateOf("") }
-            TextButton(
-                enabled = !refreshing,
-                onClick = {
-                    refreshing = true
-                    modelStatus = "⏳ جارٍ جلب القائمة..."
-                    val pid = provider
-                    val key = keys[pid].orEmpty().trim()
-                    val account = accountId.trim()
-                    settingsScope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            runCatching { LlmClient.listModels(pid, key, account) }
-                        }
-                        val list = result.getOrNull()
-                        if (!list.isNullOrEmpty()) {
-                            modelCache[pid] = list
-                            ModelCatalog.saveCache(prefs, pid, list)
-                            modelStatus = "✅ تم جلب ${list.size} موديل. افتح القائمة ▼ للاختيار."
-                        } else {
-                            modelStatus = "⚠️ " + (result.exceptionOrNull()?.message ?: "لم يتم العثور على موديلات")
-                        }
-                        refreshing = false
-                    }
-                }
-            ) {
-                Text("🔄 تحديث قائمة الموديلات من الإنترنت", color = Color(0xFFFFB800), fontSize = 12.sp)
-            }
-            if (modelStatus.isNotBlank()) {
-                Text(modelStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
-            }
-
-            var testStatus by remember(provider) { mutableStateOf("") }
-            var testing by remember { mutableStateOf(false) }
-            TextButton(
-                enabled = !testing,
-                onClick = {
-                    testing = true
-                    testStatus = "⏳ أختبر المفتاح..."
-                    val pid = provider
-                    val key = keys[pid].orEmpty()
-                    val model = models[pid].orEmpty()
-                    val account = accountId
-                    // نحفظ العنوان الوسيط الحالي مؤقتاً ليشمله الاختبار
-                    LlmClient.endpointOverrides = LlmClient.endpointOverrides + (pid to endpoints[pid].orEmpty().trim())
-                    settingsScope.launch {
-                        val reply = withContext(Dispatchers.IO) {
-                            LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, pid, emptyList(), model, account)
-                        }
-                        testStatus = if (LlmClient.isErrorReply(reply)) reply else "✅ المفتاح والموديل يعملان. الرد: " + reply.take(80)
-                        testing = false
-                    }
-                }
-            ) {
-                Text("🧪 اختبار المفتاح والموديل", color = Color(0xFFFFB800), fontSize = 12.sp)
-            }
-            if (testStatus.isNotBlank()) {
-                Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
-            }
-
-            if (current.endpoint.isNotBlank() || provider in setOf("groq", "openrouter", "opencode", "opencode-go", "opencode-console", "deepseek", "openai")) {
-                Spacer(Modifier.height(8.dp))
-                Text("عنوان وسيط (اختياري)", color = Color.White, fontSize = 13.sp)
-                OutlinedTextField(
-                    value = endpoints[provider].orEmpty(),
-                    onValueChange = { endpoints[provider] = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = {
-                        Text("https://اسم-الوسيط.workers.dev/openai/v1/chat/completions", color = Color(0xFF707070), fontSize = 11.sp)
-                    },
-                    textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFFFB800),
-                        unfocusedBorderColor = Color(0xFF2A2A2A),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        cursorColor = Color(0xFFFFB800)
-                    )
-                )
-                Text(
-                    "للشبكات التي يحجبها المزود: ضع رابط وسيط يمرّر الطلبات إليه (مثل Cloudflare Worker). اتركه فارغاً للاتصال المباشر.",
-                    color = Color(0xFF9A9A9A),
-                    fontSize = 11.sp
-                )
-            }
-
-            if (current.keyless) {
-                Text(
-                    "✅ هذا المزود يعمل بدون مفتاح. المفتاح اختياري لرفع الحدود فقط.",
-                    color = Color(0xFF7CC47C),
-                    fontSize = 12.sp
-                )
-            }
-            if (current.modelHint.isNotBlank()) {
-                Text(current.modelHint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
-            }
-
-            TextButton(onClick = {
-                runCatching { uriHandler.openUri(current.docsUrl) }
-            }) {
-                Text(
-                    "📖 التوثيق الرسمي وحدود الاستخدام",
-                    color = Color(0xFFFFB800),
-                    fontSize = 12.sp
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(
-                    checked = autoSpeak,
-                    onCheckedChange = onAutoSpeakChange,
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("قراءة الردود تلقائياً", color = Color.White)
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(
-                    checked = smartTitles,
-                    onCheckedChange = { smartTitles = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                )
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text("عناوين ذكية للمحادثات", color = Color.White)
-                    Text("طلب قصير للنموذج بعد أول رد لتسمية المحادثة بموضوعها", color = Color(0xFF9A9A9A), fontSize = 11.sp)
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(
-                    checked = confirmActions,
-                    onCheckedChange = { confirmActions = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                )
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text("تأكيد قبل إرسال الرسائل والاتصال", color = Color.White)
-                    Text("يُنصح بإبقائه مفعّلاً لتفادي إرسال لشخص خاطئ", color = Color(0xFF9A9A9A), fontSize = 11.sp)
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(
-                    checked = autoRouteSetting,
-                    onCheckedChange = { autoRouteSetting = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                )
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text("🧠 العقل المركزي (اختيار النموذج تلقائياً)", color = Color.White)
-                    Text(
-                        "يصنّف سؤالك ويختار الأنسب من المزودات المتاحة لديك، ويستبعد ما لا يعمل ويجرّب بديلاً عند الفشل. أطفئه للوضع اليدوي: يبقى مزودك المختار فقط دون تبديل تلقائي.",
-                        color = Color(0xFF9A9A9A),
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            if (!autoRouteSetting) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(
-                        checked = manualAssist,
-                        onCheckedChange = { manualAssist = it },
+                        checked = autoSpeak,
+                        onCheckedChange = onAutoSpeakChange,
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("قراءة الردود تلقائياً", color = Color.White)
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = smartTitles,
+                        onCheckedChange = { smartTitles = it },
                         colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                     )
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text("🤝 مساعدة العقل المركزي في الوضع اليدوي", color = Color.White)
+                        Text("عناوين ذكية للمحادثات", color = Color.White)
+                        Text("طلب قصير للنموذج بعد أول رد لتسمية المحادثة بموضوعها", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = confirmActions,
+                        onCheckedChange = { confirmActions = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("تأكيد قبل إرسال الرسائل والاتصال", color = Color.White)
+                        Text("يُنصح بإبقائه مفعّلاً لتفادي إرسال لشخص خاطئ", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = autoRouteSetting,
+                        onCheckedChange = { autoRouteSetting = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("🧠 العقل المركزي (اختيار النموذج تلقائياً)", color = Color.White)
                         Text(
-                            "يبقي مزودك المختار أولاً، لكنه يسمح بالبحث عن المصادر وتجربة بديل عند فشل مزودك. " +
-                                "أطفئه لتبقى الحرية الكاملة: لن يتدخل العقل المركزي إطلاقاً.",
+                            "يصنّف سؤالك ويختار الأنسب من المزودات المتاحة لديك، ويستبعد ما لا يعمل ويجرّب بديلاً عند الفشل. أطفئه للوضع اليدوي: يبقى مزودك المختار فقط دون تبديل تلقائي.",
+                            color = Color(0xFF9A9A9A),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                if (!autoRouteSetting) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(
+                            checked = manualAssist,
+                            onCheckedChange = { manualAssist = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("🤝 مساعدة العقل المركزي في الوضع اليدوي", color = Color.White)
+                            Text(
+                                "يبقي مزودك المختار أولاً، لكنه يسمح بالبحث عن المصادر وتجربة بديل عند فشل مزودك. " +
+                                    "أطفئه لتبقى الحرية الكاملة: لن يتدخل العقل المركزي إطلاقاً.",
+                                color = Color(0xFF9A9A9A),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            SettingsSection(
+                title = "🎚️ جودة الإجابات والمصادر",
+                subtitle = "وضع الإجابة وطولها والبحث بالويب وإجماع النماذج"
+            ) {
+                Text(
+                    "اختر مقدار الدقة مقابل السرعة. «دقيق» يمنع النماذج السريعة الضعيفة من الإجابة عن الأسئلة المعرفية.",
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text("وضع الإجابة:", color = Color.White, fontSize = 13.sp)
+                AnswerMode.values().forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { answerMode = mode.id }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = answerMode == mode.id,
+                            onClick = { answerMode = mode.id },
+                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(mode.label, color = Color.White, fontSize = 14.sp)
+                            Text(mode.hint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("طول الرد:", color = Color.White, fontSize = 13.sp)
+                listOf(
+                    Triple("short", "مختصر", "أهم النقاط فقط"),
+                    Triple("normal", "عادي", "الطول الافتراضي المتوازن"),
+                    Triple("long", "مفصّل", "شرح أوسع وأمثلة")
+                ).forEach { (id, label, hint) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { answerLength = id }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = answerLength == id,
+                            onClick = { answerLength = id },
+                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(label, color = Color.White, fontSize = 14.sp)
+                            Text(hint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { webGrounding = !webGrounding }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Switch(
+                        checked = webGrounding,
+                        onCheckedChange = { webGrounding = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("🌐 بحث ويب تلقائي للمعلومات", color = Color.White, fontSize = 14.sp)
+                        Text(
+                            "للأسئلة المعرفية والبرمجية: يجلب مقتطفات من ويكيبيديا والبحث العام، ومن GitHub وStack Overflow وXDA عند الحاجة، ثم يعرض المصادر أسفل الرد. يرسل نص سؤالك إلى خدمات البحث، ولا يعمل مع المرفقات.",
+                            color = Color(0xFF9A9A9A),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { consensus = !consensus }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Switch(
+                        checked = consensus,
+                        onCheckedChange = { consensus = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("🧩 إجماع النماذج للأسئلة المعرفية", color = Color.White, fontSize = 14.sp)
+                        Text(
+                            "يسأل نموذجين قويين، يقارن إجابتيهما محلياً، ثم يدمجهما في إجابة واحدة مع نسبة الاتفاق. يضاعف الطلبات والزمن، ويتطلب توفر مزودين قويين.",
                             color = Color(0xFF9A9A9A),
                             fontSize = 11.sp
                         )
@@ -664,293 +579,191 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = Color(0xFF2A2A2A))
-            Spacer(Modifier.height(8.dp))
-            Text("🎚️ جودة الإجابات", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-            Text(
-                "اختر مقدار الدقة مقابل السرعة. «دقيق» يمنع النماذج السريعة الضعيفة من الإجابة عن الأسئلة المعرفية.",
-                color = Color(0xFFB0B0B0),
-                fontSize = 12.sp
-            )
-            Spacer(Modifier.height(6.dp))
-            Text("وضع الإجابة:", color = Color.White, fontSize = 13.sp)
-            AnswerMode.values().forEach { mode ->
+            SettingsSection(
+                title = "🧰 أدوات الذكاء والتطوير",
+                subtitle = "GitHub والملفات والموصلات (Drive/Gmail/Calendar...)"
+            ) {
+                Text(
+                    "تتيح للنموذج استخدام أدوات GitHub والويب والملفات وقواعد البيانات ومحلل الكود والموصلات (Drive/Gmail/Calendar/Notion/Slack) عند الحاجة، مع الحفاظ على كل ميزات المحادثة والوسائط.",
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 12.sp
+                )
+                Text(
+                    "أفضل إعداد: اترك «تشغيل الأدوات» و«السماح بالكتابة» مفعّلين. المستودع الافتراضي اختياري ويسهّل أوامر مثل «عدّل README». " +
+                        "أزرار الفتح روابط اختصار فقط. لبناء Actions أضف صلاحية Actions (أو workflow) للتوكن.",
+                    color = Color(0xFF8F8F8F),
+                    fontSize = 11.sp
+                )
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { answerMode = mode.id }
-                        .padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().clickable { githubAgent = !githubAgent }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(
-                        selected = answerMode == mode.id,
-                        onClick = { answerMode = mode.id },
-                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                    Switch(
+                        checked = githubAgent,
+                        onCheckedChange = { githubAgent = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                     )
+                    Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(mode.label, color = Color.White, fontSize = 14.sp)
-                        Text(mode.hint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                        Text("تشغيل أدوات الوكيل تلقائياً", color = Color.White, fontSize = 14.sp)
+                        Text("يجعل النموذج يفحص ويعدّل ويبحث بدلاً من الإجابة النظرية فقط.", color = Color(0xFF9A9A9A), fontSize = 11.sp)
                     }
                 }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text("طول الرد:", color = Color.White, fontSize = 13.sp)
-            listOf(
-                Triple("short", "مختصر", "أهم النقاط فقط"),
-                Triple("normal", "عادي", "الطول الافتراضي المتوازن"),
-                Triple("long", "مفصّل", "شرح أوسع وأمثلة")
-            ).forEach { (id, label, hint) ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { answerLength = id }
-                        .padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().clickable { githubWrite = !githubWrite }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(
-                        selected = answerLength == id,
-                        onClick = { answerLength = id },
-                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFB800))
+                    Switch(
+                        checked = githubWrite,
+                        onCheckedChange = { githubWrite = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                     )
+                    Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(label, color = Color.White, fontSize = 14.sp)
-                        Text(hint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                        Text("السماح للذكاء بالكتابة والحذف والدفع", color = Color.White, fontSize = 14.sp)
+                        Text("يشمل ملفات مساحة العمل وتعديل GitHub. أوقفه إن أردت وضع القراءة فقط.", color = Color(0xFF9A9A9A), fontSize = 11.sp)
                     }
                 }
-            }
-
-            Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { webGrounding = !webGrounding }
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Switch(
-                    checked = webGrounding,
-                    onCheckedChange = { webGrounding = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("🌐 بحث ويب تلقائي للمعلومات", color = Color.White, fontSize = 14.sp)
-                    Text(
-                        "للأسئلة المعرفية والبرمجية: يجلب مقتطفات من ويكيبيديا والبحث العام، ومن GitHub وStack Overflow وXDA عند الحاجة، ثم يعرض المصادر أسفل الرد. يرسل نص سؤالك إلى خدمات البحث، ولا يعمل مع المرفقات.",
-                        color = Color(0xFF9A9A9A),
-                        fontSize = 11.sp
+                Spacer(Modifier.height(8.dp))
+                Text("توكن GitHub (Personal Access Token)", color = Color.White, fontSize = 13.sp)
+                OutlinedTextField(
+                    value = githubToken,
+                    onValueChange = { githubToken = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("github_pat_... أو ghp_...", color = Color(0xFF707070)) },
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFFB800),
+                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFFFFB800)
                     )
-                }
-            }
-
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { consensus = !consensus }
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Switch(
-                    checked = consensus,
-                    onCheckedChange = { consensus = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                 )
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("🧩 إجماع النماذج للأسئلة المعرفية", color = Color.White, fontSize = 14.sp)
-                    Text(
-                        "يسأل نموذجين قويين، يقارن إجابتيهما محلياً، ثم يدمجهما في إجابة واحدة مع نسبة الاتفاق. يضاعف الطلبات والزمن، ويتطلب توفر مزودين قويين.",
-                        color = Color(0xFF9A9A9A),
-                        fontSize = 11.sp
+                Text(
+                    "الصلاحيات المقترحة: repo + workflow (أو Contents + Issues + Pull requests + Actions) وread:user. يُخزَّن التوكن مشفّراً على الجهاز فقط.",
+                    color = Color(0xFF9A9A9A),
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("المستودع الافتراضي (owner/repo) — اختياري", color = Color.White, fontSize = 13.sp)
+                OutlinedTextField(
+                    value = githubRepo,
+                    onValueChange = { githubRepo = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("starmaen/LionAI", color = Color(0xFF707070)) },
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFFB800),
+                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFFFFB800)
                     )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = Color(0xFF2A2A2A))
-            Spacer(Modifier.height(8.dp))
-            Text("🧰 أدوات الذكاء والتطوير", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-            Text(
-                "تتيح للنموذج استخدام أدوات GitHub والويب والملفات وقواعد البيانات ومحلل الكود والموصلات (Drive/Gmail/Calendar/Notion/Slack) عند الحاجة، مع الحفاظ على كل ميزات المحادثة والوسائط.",
-                color = Color(0xFFB0B0B0),
-                fontSize = 12.sp
-            )
-            Text(
-                "أفضل إعداد: اترك «تشغيل الأدوات» و«السماح بالكتابة» مفعّلين. المستودع الافتراضي اختياري ويسهّل أوامر مثل «عدّل README». " +
-                    "أزرار الفتح روابط اختصار فقط. لبناء Actions أضف صلاحية Actions (أو workflow) للتوكن.",
-                color = Color(0xFF8F8F8F),
-                fontSize = 11.sp
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { githubAgent = !githubAgent }.padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Switch(
-                    checked = githubAgent,
-                    onCheckedChange = { githubAgent = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                 )
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("تشغيل أدوات الوكيل تلقائياً", color = Color.White, fontSize = 14.sp)
-                    Text("يجعل النموذج يفحص ويعدّل ويبحث بدلاً من الإجابة النظرية فقط.", color = Color(0xFF9A9A9A), fontSize = 11.sp)
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { githubWrite = !githubWrite }.padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Switch(
-                    checked = githubWrite,
-                    onCheckedChange = { githubWrite = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("السماح للذكاء بالكتابة والحذف والدفع", color = Color.White, fontSize = 14.sp)
-                    Text("يشمل ملفات مساحة العمل وتعديل GitHub. أوقفه إن أردت وضع القراءة فقط.", color = Color(0xFF9A9A9A), fontSize = 11.sp)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text("توكن GitHub (Personal Access Token)", color = Color.White, fontSize = 13.sp)
-            OutlinedTextField(
-                value = githubToken,
-                onValueChange = { githubToken = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("github_pat_... أو ghp_...", color = Color(0xFF707070)) },
-                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFFFB800),
-                    unfocusedBorderColor = Color(0xFF2A2A2A),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color(0xFFFFB800)
-                )
-            )
-            Text(
-                "الصلاحيات المقترحة: repo + workflow (أو Contents + Issues + Pull requests + Actions) وread:user. يُخزَّن التوكن مشفّراً على الجهاز فقط.",
-                color = Color(0xFF9A9A9A),
-                fontSize = 11.sp
-            )
-            Spacer(Modifier.height(8.dp))
-            Text("المستودع الافتراضي (owner/repo) — اختياري", color = Color.White, fontSize = 13.sp)
-            OutlinedTextField(
-                value = githubRepo,
-                onValueChange = { githubRepo = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("starmaen/LionAI", color = Color(0xFF707070)) },
-                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFFFB800),
-                    unfocusedBorderColor = Color(0xFF2A2A2A),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color(0xFFFFB800)
-                )
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    enabled = !githubTesting,
-                    onClick = {
-                        githubTesting = true
-                        githubStatus = "⏳ أختبر الاتصال..."
-                        val tokenNow = githubToken
-                        settingsScope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching { GitHubClient.whoAmI(tokenNow) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        enabled = !githubTesting,
+                        onClick = {
+                            githubTesting = true
+                            githubStatus = "⏳ أختبر الاتصال..."
+                            val tokenNow = githubToken
+                            settingsScope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching { GitHubClient.whoAmI(tokenNow) }
+                                }
+                                val user = result.getOrNull()
+                                githubStatus = if (user != null) {
+                                    "✅ متصل بحساب ${user.optString("login")} (${user.optInt("public_repos")} مستودع عام)"
+                                } else {
+                                    "⚠️ " + (result.exceptionOrNull()?.message ?: "فشل الاتصال")
+                                }
+                                githubTesting = false
                             }
-                            val user = result.getOrNull()
-                            githubStatus = if (user != null) {
-                                "✅ متصل بحساب ${user.optString("login")} (${user.optInt("public_repos")} مستودع عام)"
-                            } else {
-                                "⚠️ " + (result.exceptionOrNull()?.message ?: "فشل الاتصال")
-                            }
-                            githubTesting = false
                         }
+                    ) { Text("🧪 اختبار اتصال GitHub", color = Color(0xFFFFB800), fontSize = 12.sp) }
+                    TextButton(onClick = { persist(); onOpenGitHub() }) {
+                        Text("🐙 فتح GitHub", color = Color(0xFFFFB800), fontSize = 12.sp)
                     }
-                ) { Text("🧪 اختبار اتصال GitHub", color = Color(0xFFFFB800), fontSize = 12.sp) }
-                TextButton(onClick = { persist(); onOpenGitHub() }) {
-                    Text("🐙 فتح GitHub", color = Color(0xFFFFB800), fontSize = 12.sp)
                 }
-            }
-            if (githubStatus.isNotBlank()) {
-                Text(githubStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
-            }
-            TextButton(onClick = { persist(); onOpenDevTools() }) {
-                Text("🧰 فتح أدوات المطوّر ومساحة العمل", color = Color(0xFFFFB800), fontSize = 12.sp)
-            }
-            TextButton(onClick = { persist(); onOpenConnectors() }) {
-                Text("🔌 ربط الحسابات: Drive · Gmail · Calendar · Notion · Slack", color = Color(0xFFFFB800), fontSize = 12.sp)
+                if (githubStatus.isNotBlank()) {
+                    Text(githubStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                }
+                TextButton(onClick = { persist(); onOpenDevTools() }) {
+                    Text("🧰 فتح أدوات المطوّر ومساحة العمل", color = Color(0xFFFFB800), fontSize = 12.sp)
+                }
+                TextButton(onClick = { persist(); onOpenConnectors() }) {
+                    Text("🔌 ربط الحسابات: Drive · Gmail · Calendar · Notion · Slack", color = Color(0xFFFFB800), fontSize = 12.sp)
+                }
             }
 
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = Color(0xFF2A2A2A))
-            Spacer(Modifier.height(8.dp))
-            Text("🔔 التنبيهات والتذكيرات", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-            var alarmStatus by remember { mutableStateOf("") }
-            Text(
-                if (Notifier.enabled(ctx)) "الإشعارات: مفعّلة في النظام ✅" else "الإشعارات: معطّلة في النظام ❌ — فعّلها من الزر أدناه",
-                color = Color(0xFFB0B0B0),
-                fontSize = 12.sp
-            )
-            TextButton(onClick = {
-                if (!notificationPermissionGranted()) {
-                    ensureNotificationPermission()
-                    alarmStatus = "اسمح بالإشعارات من النافذة الظاهرة ثم اضغط «اختبار إشعار الآن» مرة أخرى."
-                } else {
-                    val ok = Notifier.show(ctx, 7001, "🔔 اختبار", "إذا ظهر لك هذا الإشعار فالتنبيهات تعمل بشكل سليم.")
-                    alarmStatus = if (ok) "تم إرسال إشعار تجريبي. هل ظهر؟" else "⚠️ تعذر إرسال الإشعار (تحقق من صلاحية الإشعارات)."
-                }
-            }) { Text("🔔 اختبار إشعار الآن", color = Color(0xFFFFB800), fontSize = 13.sp) }
-            TextButton(onClick = {
-                ensureNotificationPermission()
-                val err = Scheduler.add(
-                    ctx, prefs,
-                    ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, System.currentTimeMillis() + 15_000L, "", "", "حان موعد اختبار المنبه ✅")
+            SettingsSection(
+                title = "🔔 التنبيهات والتذكيرات",
+                subtitle = "اختبار الإشعارات والمنبه والأذونات"
+            ) {
+                var alarmStatus by remember { mutableStateOf("") }
+                Text(
+                    if (Notifier.enabled(ctx)) "الإشعارات: مفعّلة في النظام ✅" else "الإشعارات: معطّلة في النظام ❌ — فعّلها من الزر أدناه",
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 12.sp
                 )
-                alarmStatus = if (err == null) {
-                    "سيصلك تذكير تجريبي بعد 15 ثانية. أغلق التطبيق أو اقفل الشاشة لاختبار الخلفية."
-                } else {
-                    "⚠️ تعذرت الجدولة: $err"
-                }
-            }) { Text("⏱ اختبار المنبه بعد 15 ثانية (صوت + شاشة)", color = Color(0xFFFFB800), fontSize = 13.sp) }
-            TextButton(onClick = {
-                runCatching {
-                    ctx.startActivity(
-                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                            .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                TextButton(onClick = {
+                    if (!notificationPermissionGranted()) {
+                        ensureNotificationPermission()
+                        alarmStatus = "اسمح بالإشعارات من النافذة الظاهرة ثم اضغط «اختبار إشعار الآن» مرة أخرى."
+                    } else {
+                        val ok = Notifier.show(ctx, 7001, "🔔 اختبار", "إذا ظهر لك هذا الإشعار فالتنبيهات تعمل بشكل سليم.")
+                        alarmStatus = if (ok) "تم إرسال إشعار تجريبي. هل ظهر؟" else "⚠️ تعذر إرسال الإشعار (تحقق من صلاحية الإشعارات)."
+                    }
+                }) { Text("🔔 اختبار إشعار الآن", color = Color(0xFFFFB800), fontSize = 13.sp) }
+                TextButton(onClick = {
+                    ensureNotificationPermission()
+                    val err = Scheduler.add(
+                        ctx, prefs,
+                        ScheduledItem(Scheduler.newId(), ActionKind.REMINDER, System.currentTimeMillis() + 15_000L, "", "", "حان موعد اختبار المنبه ✅")
                     )
+                    alarmStatus = if (err == null) {
+                        "سيصلك تذكير تجريبي بعد 15 ثانية. أغلق التطبيق أو اقفل الشاشة لاختبار الخلفية."
+                    } else {
+                        "⚠️ تعذرت الجدولة: $err"
+                    }
+                }) { Text("⏱ اختبار المنبه بعد 15 ثانية (صوت + شاشة)", color = Color(0xFFFFB800), fontSize = 13.sp) }
+                TextButton(onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                        )
+                    }
+                }) { Text("⚙️ إعدادات إشعارات التطبيق", color = Color(0xFFFFB800), fontSize = 13.sp) }
+                if (Build.VERSION.SDK_INT >= 34) {
+                    TextButton(onClick = {
+                        runCatching {
+                            ctx.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                    Uri.parse("package:" + ctx.packageName)
+                                )
+                            )
+                        }
+                    }) { Text("📲 السماح بالمنبه بملء الشاشة", color = Color(0xFFFFB800), fontSize = 13.sp) }
                 }
-            }) { Text("⚙️ إعدادات إشعارات التطبيق", color = Color(0xFFFFB800), fontSize = 13.sp) }
-            if (Build.VERSION.SDK_INT >= 34) {
                 TextButton(onClick = {
                     runCatching {
                         ctx.startActivity(
                             Intent(
-                                Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                                 Uri.parse("package:" + ctx.packageName)
                             )
                         )
                     }
-                }) { Text("📲 السماح بالمنبه بملء الشاشة", color = Color(0xFFFFB800), fontSize = 13.sp) }
-            }
-            TextButton(onClick = {
-                runCatching {
-                    ctx.startActivity(
-                        Intent(
-                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                            Uri.parse("package:" + ctx.packageName)
-                        )
-                    )
+                }) { Text("🔋 استثناء التطبيق من توفير البطارية", color = Color(0xFFFFB800), fontSize = 13.sp) }
+                if (alarmStatus.isNotBlank()) {
+                    Text(alarmStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
                 }
-            }) { Text("🔋 استثناء التطبيق من توفير البطارية", color = Color(0xFFFFB800), fontSize = 13.sp) }
-            if (alarmStatus.isNotBlank()) {
-                Text(alarmStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(24.dp))
