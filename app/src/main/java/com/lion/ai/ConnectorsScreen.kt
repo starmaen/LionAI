@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -73,6 +74,7 @@ fun ConnectorsScreen(
     var googleId by remember { mutableStateOf(ConnectorAuth.googleClientId(prefs)) }
     var googleSecret by remember { mutableStateOf(ConnectorAuth.googleClientSecret(prefs)) }
     var showGoogleGuide by remember { mutableStateOf(false) }
+    var notifText by remember { mutableStateOf("") }
 
     fun run(id: String, action: suspend () -> String) {
         if (busyId.isNotBlank()) return
@@ -253,6 +255,73 @@ fun ConnectorsScreen(
                             }
                         }
                     )
+                }
+            }
+
+            item {
+                SectionCard(
+                    title = "📱 قراءة وردّ WhatsApp/Telegram (حسابك الشخصي)",
+                    subtitle = "عبر صلاحية الإشعارات — بدون تسجيل دخول أو QR"
+                ) {
+                    Text(
+                        NotificationAccess.describe(context, prefs),
+                        color = Color(0xFFD0D0D0),
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        "تقرأ الخدمة إشعارات WhatsApp/Telegram فقط وتخزّنها محلياً على جهازك؛ " +
+                            "والرد المباشر يعمل على الإشعار النشط الذي يدعم RemoteInput.",
+                        color = Color(0xFF9C9C9C),
+                        fontSize = 11.sp
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Switch(
+                            checked = NotificationAccess.captureEnabled(prefs),
+                            onCheckedChange = { on ->
+                                prefs.edit().putBoolean(NotificationAccess.PREFS_CAPTURE, on).apply()
+                                version++
+                                message = if (on) "✅ التُقاط الرسائل مفعّل" else "تم إيقاف التقاط الرسائل"
+                            }
+                        )
+                        Text(
+                            if (NotificationAccess.captureEnabled(prefs)) "التقاط الرسائل مفعّل" else "التقاط الرسائل موقوف",
+                            color = Color(0xFFD0D0D0),
+                            fontSize = 12.sp
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                runCatching { context.startActivity(NotificationAccess.settingsIntent()) }
+                                    .onFailure { message = "❌ تعذّر فتح إعدادات الإشعارات" }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
+                        ) { Text("فتح صلاحية الإشعارات", color = Color(0xFF0D0D0D), fontSize = 12.sp) }
+                        TextButton(onClick = { version++ }) {
+                            Text("تحديث الحالة", color = Color(0xFFFFB800), fontSize = 12.sp)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            val rows = NotificationStore.recent(context, limit = 10)
+                            notifText = if (rows.isEmpty()) "لا رسائل محفوظة بعد."
+                            else rows.joinToString("\n") {
+                                "[${it.appName}] ${it.conversation}: ${it.body.take(80)}"
+                            }
+                        }) { Text("عرض آخر الرسائل", fontSize = 12.sp) }
+                        OutlinedButton(onClick = {
+                            NotificationStore.clear(context)
+                            version++
+                            notifText = ""
+                            message = "✅ مُسح سجل الرسائل المحلي"
+                        }) { Text("مسح السجل", fontSize = 12.sp) }
+                    }
+                    if (notifText.isNotBlank()) {
+                        Text(notifText, color = Color(0xFFB8B8B8), fontSize = 11.sp)
+                    }
                 }
             }
 

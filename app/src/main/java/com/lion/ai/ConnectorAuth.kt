@@ -93,6 +93,16 @@ object ConnectorAuth {
             tokenHint = "استخدم Bot Token يبدأ بـ xoxb- مع صلاحيات chat:write وchannels:read"
         ),
         ConnectorDef(
+            "telegram", "Telegram Bot", "✈️", AuthType.TOKEN,
+            "إرسال وقراءة رسائل البوت وإدارة القنوات والمجموعات",
+            tokenHint = "أنشئ بوتاً من @BotFather وألصق التوكن هنا. البوت يرى المحادثات التي أُضيف إليها فقط."
+        ),
+        ConnectorDef(
+            "whatsapp", "WhatsApp Business", "💬", AuthType.TOKEN,
+            "إرسال رسائل وقوالب WhatsApp Cloud API الرسمية",
+            tokenHint = "الصق بالصيغة PHONE_NUMBER_ID:ACCESS_TOKEN من Meta for Developers. هذا لرقم أعمال رسمي، وليس حساب واتساب الشخصي."
+        ),
+        ConnectorDef(
             "generic", "خدمة REST مخصّصة", "🔗", AuthType.CUSTOM,
             "اربط أي API بمفتاح أو رأس مصادقة خاص بك"
         )
@@ -116,7 +126,8 @@ object ConnectorAuth {
         "google_drive", "gmail", "google_calendar" ->
             !prefs.getString(accessKey(id), "").isNullOrBlank() ||
                 !prefs.getString(refreshKey(id), "").isNullOrBlank()
-        "notion", "slack" -> !prefs.getString(tokenKey(id), "").isNullOrBlank()
+        "notion", "slack", "telegram", "whatsapp" ->
+            !prefs.getString(tokenKey(id), "").isNullOrBlank()
         "generic" -> !prefs.getString(baseKey(id), "").isNullOrBlank()
         else -> false
     }
@@ -251,6 +262,12 @@ object ConnectorAuth {
         val (url, extra) = when (def.id) {
             "notion" -> "https://api.notion.com/v1/users/me" to mapOf("Notion-Version" to "2022-06-28")
             "slack" -> "https://slack.com/api/auth.test" to mapOf("Content-Type" to "application/json")
+            "telegram" -> "https://api.telegram.org/bot$token/getMe" to emptyMap()
+            "whatsapp" -> {
+                val credentials = WhatsAppClient.parse(token)
+                "https://graph.facebook.com/v21.0/${credentials.phoneId}?fields=verified_name,display_phone_number" to
+                    mapOf("Authorization" to "Bearer ${credentials.accessToken}")
+                }
             else -> return "متصل"
         }
         val conn = URL(url).openConnection() as HttpURLConnection
@@ -271,6 +288,18 @@ object ConnectorAuth {
             throw IllegalStateException("رفضت الخدمة التوكن (${conn.responseCode})")
         }
         val json = runCatching { JSONObject(body) }.getOrDefault(JSONObject())
+        if (def.id == "telegram") {
+            if (!json.optBoolean("ok")) {
+                throw IllegalStateException(json.optString("description", "توكن Telegram غير صالح"))
+            }
+            val user = json.optJSONObject("result") ?: JSONObject()
+            return TelegramClient.formatUser(user).ifBlank { "Telegram Bot" }
+        }
+        if (def.id == "whatsapp") {
+            val name = json.optString("verified_name").ifBlank { "WhatsApp Business" }
+            val number = json.optString("display_phone_number")
+            return if (number.isBlank()) name else "$name — $number"
+        }
         if (def.id == "slack") {
             if (!json.optBoolean("ok")) throw IllegalStateException(json.optString("error", "توكن Slack غير صالح"))
             val user = json.optString("user")

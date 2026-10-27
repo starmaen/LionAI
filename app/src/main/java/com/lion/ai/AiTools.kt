@@ -2,6 +2,7 @@ package com.lion.ai
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -14,7 +15,9 @@ enum class ToolGroup(val id: String, val label: String, val icon: String) {
     DATABASE("database", "قواعد البيانات", "🗄️"),
     CODE("code", "محلل الكود", "🔍"),
     UTIL("util", "أدوات مساعدة", "🧰"),
-    CONNECTORS("connectors", "الموصلات", "🔌")
+    CONNECTORS("connectors", "الموصلات", "🔌"),
+    COMMS("comms", "الاتصالات", "💬"),
+    META("meta", "إدارة الأدوات", "🧭")
 }
 
 data class ToolCall(val name: String, val args: JSONObject, val raw: String)
@@ -199,7 +202,68 @@ object AiTools {
         Def("slack_post", ToolGroup.CONNECTORS, """{"channel":"general","text":"..."}""", "إرسال رسالة Slack", true, "slack"),
         Def("slack_history", ToolGroup.CONNECTORS, """{"channel":"general","max":20}""", "آخر رسائل قناة Slack", connector = "slack"),
         Def("connector_get", ToolGroup.CONNECTORS, """{"path":"/items"}""", "GET من خدمة REST المخصّصة", connector = "generic"),
-        Def("connector_request", ToolGroup.CONNECTORS, """{"path":"/items","method":"POST","body":"{}"}""", "طلب GET/POST/PUT/PATCH إلى خدمة REST المخصّصة", true, "generic")
+        Def("connector_request", ToolGroup.CONNECTORS, """{"path":"/items","method":"POST","body":"{}"}""", "طلب GET/POST/PUT/PATCH إلى خدمة REST المخصّصة", true, "generic"),
+
+        // Developer execution loop
+        Def("github_push_workspace", ToolGroup.GITHUB, """{"repo":"owner/name","path":"repos/owner/name","branch":"main","message":"...","delete_missing":false,"dry_run":true}""", "رفع مجلد مساحة العمل دفعة واحدة عبر مقارنة blob (يدعم الثنائي والحذف الاختياري)", true),
+        Def("github_get_run", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "حالة عملية بناء واحدة"),
+        Def("github_wait_run", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","run_id":0,"timeout_sec":420}""", "انتظار انتهاء أحدث بناء ثم إرجاع سجل الفشل تلقائياً"),
+        Def("github_run_logs", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123,"max_chars":12000}""", "سجل وظائف عملية بناء كامل (للفشل والنجاح)"),
+        Def("github_compare", ToolGroup.GITHUB, """{"repo":"owner/name","base":"main","head":"feature"}""", "مقارنة فرعين: commits والملفات والفروق"),
+        Def("github_pr_files", ToolGroup.GITHUB, """{"repo":"owner/name","number":1}""", "ملفات PR وتغييراتها"),
+        Def("github_merge_pr", ToolGroup.GITHUB, """{"repo":"owner/name","number":1,"method":"squash","commit_title":""}""", "دمج Pull Request", true),
+        Def("github_review_pr", ToolGroup.GITHUB, """{"repo":"owner/name","number":1,"event":"APPROVE|REQUEST_CHANGES|COMMENT","body":"..."}""", "مراجعة PR واعتماده أو طلب تعديلات", true),
+        Def("github_close_issue", ToolGroup.GITHUB, """{"repo":"owner/name","number":1}""", "إغلاق Issue", true),
+        Def("github_list_tags", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "وسوم الإصدارات"),
+        Def("github_create_tag", ToolGroup.GITHUB, """{"repo":"owner/name","name":"v1.0.0","from":"main"}""", "إنشاء وسم إصدار", true),
+        Def("github_create_release", ToolGroup.GITHUB, """{"repo":"owner/name","tag":"v1.0.0","name":"","body":"","draft":false,"prerelease":false}""", "إنشاء Release", true),
+        Def("github_delete_branch", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"feature"}""", "حذف فرع (لا يحذف الفرع الافتراضي عادةً)", true),
+
+        // Files: precise patch
+        Def("file_apply_patch", ToolGroup.FILES, """{"path":"src/Main.kt","patch":"@@ -1,2 +1,2 @@\n ...","backup":true}""", "تطبيق unified diff بدقة ورفض عدم التطابق", true),
+
+        // Meta / tool discovery
+        Def("tools_schema", ToolGroup.META, """{"group":"github|files|code|comms|web|database|util|connectors"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
+        Def("tools_groups", ToolGroup.META, "{}", "حالة مجموعات الأدوات والموصلات والصلاحيات"),
+
+        // Telegram Bot API
+        Def("telegram_status", ToolGroup.COMMS, "{}", "بيانات البوت وقدراته", connector = "telegram"),
+        Def("telegram_updates", ToolGroup.COMMS, """{"offset":0,"limit":50}""", "أحدث تحديثات البوت (رسائل/أزرار) مع تحديث offset تلقائياً", connector = "telegram"),
+        Def("telegram_send", ToolGroup.COMMS, """{"chat_id":"...","text":"...","parse_mode":"Markdown","reply_to":0,"thread_id":0}""", "إرسال رسالة Telegram", true, "telegram"),
+        Def("telegram_send_media", ToolGroup.COMMS, """{"chat_id":"...","type":"photo","path":"downloads/a.jpg","url":"","caption":""}""", "إرسال صورة/ملف/فيديو/صوت من مساحة العمل أو رابط", true, "telegram"),
+        Def("telegram_edit", ToolGroup.COMMS, """{"chat_id":"...","message_id":1,"text":"...","parse_mode":"Markdown"}""", "تعديل رسالة بوت", true, "telegram"),
+        Def("telegram_delete", ToolGroup.COMMS, """{"chat_id":"...","message_id":1}""", "حذف رسالة", true, "telegram"),
+        Def("telegram_forward", ToolGroup.COMMS, """{"chat_id":"...","from_chat_id":"...","message_id":1}""", "تحويل رسالة", true, "telegram"),
+        Def("telegram_pin", ToolGroup.COMMS, """{"chat_id":"...","message_id":1,"notify":false}""", "تثبيت رسالة", true, "telegram"),
+        Def("telegram_chat_info", ToolGroup.COMMS, """{"chat_id":"..."}""", "بيانات محادثة/قناة/مجموعة", connector = "telegram"),
+        Def("telegram_members", ToolGroup.COMMS, """{"chat_id":"..."}""", "مشرفو المجموعة/القناة", connector = "telegram"),
+        Def("telegram_file_download", ToolGroup.COMMS, """{"file_id":"...","name":"file.bin"}""", "تنزيل ملف أرسله البوت إلى مساحة العمل", true, "telegram"),
+        Def("telegram_webhook_set", ToolGroup.COMMS, """{"url":"https://...","secret":""}""", "ضبط Webhook للبوت", true, "telegram"),
+        Def("telegram_webhook_delete", ToolGroup.COMMS, "{}", "حذف Webhook (لتفعيل polling)", true, "telegram"),
+        Def("telegram_webhook_info", ToolGroup.COMMS, "{}", "حالة Webhook", connector = "telegram"),
+        Def("telegram_poll", ToolGroup.COMMS, """{"chat_id":"...","question":"...","options":["أ","ب"]}""", "إرسال استطلاع", true, "telegram"),
+        Def("telegram_commands", ToolGroup.COMMS, """{"commands":["start:ابدأ","help:مساعدة"]}""", "ضبط أوامر البوت", true, "telegram"),
+        Def("telegram_invite", ToolGroup.COMMS, """{"chat_id":"...","name":"","member_limit":0}""", "إنشاء رابط دعوة", true, "telegram"),
+        Def("telegram_admin", ToolGroup.COMMS, """{"chat_id":"...","user_id":123,"action":"ban|unban|promote"}""", "إدارة عضو (حظر/رفع حظر/ترقية)", true, "telegram"),
+
+        // WhatsApp Business Cloud API
+        Def("whatsapp_status", ToolGroup.COMMS, "{}", "بيانات رقم WhatsApp Business وجودته", connector = "whatsapp"),
+        Def("whatsapp_send", ToolGroup.COMMS, """{"to":"9665...","text":"...","preview_url":false}""", "إرسال رسالة نصية WhatsApp Business", true, "whatsapp"),
+        Def("whatsapp_template", ToolGroup.COMMS, """{"to":"9665...","name":"hello_world","language":"ar","components":[]}""", "إرسال قالب معتمد", true, "whatsapp"),
+        Def("whatsapp_media", ToolGroup.COMMS, """{"to":"9665...","type":"image","link":"","path":"downloads/a.jpg","caption":""}""", "إرسال وسائط (رابط أو ملف)", true, "whatsapp"),
+        Def("whatsapp_mark_read", ToolGroup.COMMS, """{"message_id":"wamid..."}""", "تعليم رسالة كمقروءة", true, "whatsapp"),
+        Def("whatsapp_templates", ToolGroup.COMMS, """{"waba_id":"..."}""", "قوالب WhatsApp Business", connector = "whatsapp"),
+        Def("whatsapp_profile", ToolGroup.COMMS, "{}", "ملف نشاط WhatsApp Business", connector = "whatsapp"),
+        Def("whatsapp_numbers", ToolGroup.COMMS, """{"waba_id":"..."}""", "أرقام WABA", connector = "whatsapp"),
+        Def("whatsapp_download", ToolGroup.COMMS, """{"media_id":"...","name":"file.bin"}""", "تنزيل وسائط WhatsApp إلى مساحة العمل", true, "whatsapp"),
+
+        // On-device notification bridge (WhatsApp/Telegram personal accounts)
+        Def("notifications_status", ToolGroup.COMMS, "{}", "حالة صلاحية الإشعارات وعدد الرسائل المحفوظة"),
+        Def("notifications_list", ToolGroup.COMMS, """{"app":"whatsapp|telegram|","query":"","since_minutes":1440,"limit":50}""", "قراءة إشعارات WhatsApp/Telegram المحفوظة محلياً"),
+        Def("notifications_chats", ToolGroup.COMMS, """{"since_minutes":1440}""", "ملخص المحادثات من الإشعارات"),
+        Def("notifications_reply", ToolGroup.COMMS, """{"key":"...","text":"..."}""", "رد مباشر على إشعار نشط (RemoteInput)", true),
+        Def("notifications_dismiss", ToolGroup.COMMS, """{"key":"..."}""", "إغلاق إشعار", true),
+        Def("notifications_clear", ToolGroup.COMMS, "{}", "مسح سجل الإشعارات المحلي", true)
     )
 
     private val byName = defs.associateBy { it.name }
@@ -223,8 +287,10 @@ object AiTools {
         val groups = mutableSetOf<ToolGroup>()
         val github = Regex(
             "(github|git\\b|repo|repository|pull request|\\bpr\\b|issue|commit|branch|workflow|actions|readme|" +
-                "مستودع|مستودعات|ريبو|فرع|فروع|كوميت|بلاغ|بلاغات|طلب سحب|سحب|دفع|رفع|شجرة الملفات|ملفات المشروع|جيت هاب|غيث هاب|" +
-                "workflow|workflows|بناء التطبيق|سجل البناء|إعادة البناء|اعادة البناء|rerun|dispatch|artifacts|مخرجات البناء|apk)"
+                "merge|release|tag|compare|diff|log|" +
+                "مستودع|مستودعات|ريبو|فرع|فروع|كوميت|بلاغ|بلاغات|طلب سحب|سحب|دفع|ارفع|رفع|دمج|إصدار|اصدار|وسم|" +
+                "شجرة الملفات|ملفات المشروع|جيت هاب|غيث هاب|github|workflows|بناء التطبيق|سجل البناء|" +
+                "إعادة البناء|اعادة البناء|rerun|dispatch|artifacts|مخرجات البناء|apk|فشل البناء|أصلح البناء|اصلح البناء)"
         )
         if (github.containsMatchIn(t) && githubReady(prefs)) groups.add(ToolGroup.GITHUB)
         val web = Regex(
@@ -236,7 +302,7 @@ object AiTools {
             "(\\.zip\\b|\\.csv\\b|\\.json\\b|\\.ya?ml\\b|\\.xml\\b|\\.txt\\b|\\.kt\\b|\\.java\\b|\\.py\\b|\\.js\\b|" +
                 "ملف|ملفات|مجلد|مشروع|مساحة العمل|workspace|zip|أرشيف|ارشيف|csv|yaml|xml|احفظ|أحفظ|اكتب ملف|أنشئ ملف|انشئ ملف|اقرأ ملف|قراءة ملف|" +
                 "ابحث في الملفات|ابحث في المشروع|بحث في الملفات|بحث في الكود|grep|فك الضغط|فك ضغط|استخرج الملفات|استخراج الملفات|" +
-                "شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين)"
+                "شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين|patch|تعديل ملف|احذف ملف)"
         )
         if (files.containsMatchIn(t)) groups.add(ToolGroup.FILES)
         val db = Regex("(sql|sqlite|database|قاعدة بيانات|قواعد بيانات|جدول بيانات|استعلام|جدول|قاعدة|db\\b)")
@@ -263,6 +329,28 @@ object AiTools {
         if (connectors.containsMatchIn(t) || Connectors.extractDriveId(text) != null) {
             groups.add(ToolGroup.CONNECTORS)
         }
+        val comms = Regex(
+            "(whatsapp|whats app|telegram|notification|inbox|chat|message|dm\\b|" +
+                "واتساب|واتس اب|واتس|تلغرام|تيليجرام|تليجرام|تلجرام|إشعار|اشعار|إشعارات|اشعارات|" +
+                "رسالة|رسائل|محادثة|محادثات|دردشة|صندوق الوارد|بوت|قناة|قنوات|مجموعة|مجموعات|رد تلقائي|" +
+                "WhatsApp Business|Meta Cloud|remoteinput|تليغرام)"
+        )
+        if (comms.containsMatchIn(t)) groups.add(ToolGroup.COMMS)
+
+        // أوامر تطويرية عامة: لا تحتاج كلمة مفتاحية مثل "كود" حتى تُفعّل أدوات العمل.
+        val devAction = Regex(
+            "(نفذ|أنفذ|انفذ|أكمل|اكمل|طور|طوّر|أصلح|اصلح|صحح|ابن|ابني|بناء|اختبر|جرّب|جرب|ادفع|ارفع|" +
+                "عدل|عدّل|أضف|اضف|احذف|برمج|اكتب كود|راجع|حلل|حلّل|افحص|أعد|اعد|اعمل|انشئ|أنشئ|" +
+                "implement|fix|build|test|deploy|push|commit|refactor|add|remove|update|run|verify|" +
+                "debug|inspect|create|write|patch|merge|release)"
+        )
+        if (devAction.containsMatchIn(t)) {
+            groups.add(ToolGroup.FILES)
+            groups.add(ToolGroup.CODE)
+            if (githubReady(prefs)) groups.add(ToolGroup.GITHUB)
+        }
+        val wantsTools = Regex("(أداة|اداة|أدوات|ادوات|tool|tools|وكيل|agent)").containsMatchIn(t)
+        if (groups.isNotEmpty() || wantsTools) groups.add(ToolGroup.META)
         return groups
     }
 
@@ -295,8 +383,7 @@ object AiTools {
     fun spec(groups: Set<ToolGroup>, prefs: SharedPreferences): String {
         if (groups.isEmpty()) return ""
         val available = defs.filter { def ->
-            def.group != ToolGroup.CONNECTORS || def.connector == null ||
-                ConnectorAuth.isConnected(prefs, def.connector)
+            def.connector == null || ConnectorAuth.isConnected(prefs, def.connector)
         }
         if (available.isEmpty()) return ""
         val builder = StringBuilder()
@@ -308,6 +395,22 @@ object AiTools {
         builder.append("لا تكتب أو تحذف أو تدفع إلى GitHub، ولا ترسل بريداً أو رسالة Slack، ولا ترفع إلى Drive، ولا تنشئ مواعيد أو صفحات، إلا إذا طلب المستخدم ذلك صراحة. ")
         builder.append("إذا أرسل المستخدم رابط Google Drive أو معرّف ملف/مجلد، استخدم drive_open مباشرة بدلاً من drive_search. ")
         builder.append("بعد انتهاء الأدوات أجب بالعربية بملخص واضح وخطوات ما فعلته.\n")
+        if (ToolGroup.META in groups) {
+            builder.append("إذا احتجت أداة غير ظاهرة في القائمة، استدعِ أولاً tools_schema مع اسم المجموعة ")
+                .append("(github/files/code/comms/web/database/util/connectors/meta) ثم استخدم الأدوات التي تعود. ")
+                .append("هذا يسمح بإنجاز مهام غير متوقعة دون تخمين أسماء الأدوات.\n")
+        }
+        if (ToolGroup.GITHUB in groups) {
+            builder.append("حلقة التطوير: clone أو اقرأ الملفات، عدّل، راجع file_diff، ارفع عبر github_push_workspace ")
+                .append("(استخدم dry_run أولاً عند الشك)، ثم github_wait_run لقراءة فشل CI، ثم أصلح وأعد الرفع. ")
+                .append("لا تدفع إلى main مباشرة إن كان ذلك خطراً؛ أنشئ فرعاً وPR.\n")
+        }
+        if (ToolGroup.COMMS in groups) {
+            builder.append("الاتصالات: WhatsApp Business Cloud API لإرسال القوالب/الرسائل الرسمية، ")
+                .append("Telegram Bot API للبوت والقنوات التي أُضيف إليها، ")
+                .append("وإشعارات WhatsApp/Telegram الشخصية تُقرأ محلياً بعد منح صلاحية الإشعارات. ")
+                .append("لا تدّعِ قراءة سجل شخصي كامل لم يُلتقط، ولا ترسل لأحد دون طلب صريح.\n")
+        }
         if (ToolGroup.CONNECTORS in groups) {
             val connected = ConnectorAuth.all.filter { ConnectorAuth.isConnected(prefs, it.id) }
             if (connected.isEmpty()) {
@@ -1072,8 +1175,480 @@ object AiTools {
                     .replace(req(args, "text"), args.optString("replacement"))
                     .take(16_000)
             }
+            "tools_schema" -> {
+                val raw = args.optString("group").trim().lowercase()
+                val group = ToolGroup.values().firstOrNull { it.id == raw || it.name.lowercase() == raw }
+                    ?: throw IllegalArgumentException(
+                        "مجموعة غير معروفة. المتاح: " + ToolGroup.values().joinToString(", ") { it.id }
+                    )
+                spec(setOf(group), ctx.prefs).ifBlank {
+                    "لا أدوات متاحة في «$raw» حالياً. قد تحتاج ربط موصل أو تفعيل الأدوات من الإعدادات."
+                }
+            }
+            "tools_groups" -> buildString {
+                append("🧭 حالة الأدوات\n")
+                append("التشغيل التلقائي: ").append(if (agentEnabled(ctx.prefs)) "مفعّل" else "متوقف").append('\n')
+                append("الكتابة والتنفيذ: ").append(if (ctx.allowWrite) "مسموح" else "معطّل").append('\n')
+                ToolGroup.values().forEach { group ->
+                    val count = defs.count { def ->
+                        def.group == group && (def.connector == null || ConnectorAuth.isConnected(ctx.prefs, def.connector))
+                    }
+                    append("• ").append(group.icon).append(' ').append(group.label)
+                        .append(" (").append(group.id).append("): ").append(count).append(" أداة")
+                    if (group == ToolGroup.COMMS) {
+                        append(" — إشعارات: ")
+                            .append(if (NotificationAccess.isEnabled(ctx.context)) "مفعّلة" else "غير مفعّلة")
+                    }
+                    append('\n')
+                }
+                append("\nالموصلات المربوطة: ")
+                    .append(ConnectorAuth.all.filter { ConnectorAuth.isConnected(ctx.prefs, it.id) }
+                        .joinToString("، ") { it.name }.ifBlank { "لا شيء" })
+            }
+            "github_push_workspace" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val path = args.optString("path").trim().ifBlank { "repos/$owner/$repo" }
+                val dir = resolveWorkspace(ctx, path)
+                if (!dir.isDirectory) throw IllegalArgumentException("المسار ليس مجلداً: $path")
+                GitHubClient.commitWorkspace(
+                    token, owner, repo,
+                    branch = args.optString("branch"),
+                    message = args.optString("message", "تحديث من Lion AI"),
+                    localRoot = dir,
+                    deleteMissing = args.optBoolean("delete_missing", false),
+                    dryRun = args.optBoolean("dry_run", false)
+                )
+            }
+            "github_get_run" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val run = GitHubClient.getWorkflowRun(token, owner, repo, args.optLong("run_id"))
+                runSummary(run) + "\n" + GitHubClient.listRunJobs(token, owner, repo, run.id)
+                    .joinToString("\n") { "• ${it.name}: ${it.status}/${it.conclusion}" }
+            }
+            "github_wait_run" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val timeout = int(args, "timeout_sec", 420).coerceIn(30, 900)
+                val interval = int(args, "interval_sec", 10).coerceIn(5, 60)
+                val branch = args.optString("branch")
+                val requestedId = args.optLong("run_id", 0L)
+                val started = System.currentTimeMillis()
+                var run: GitHubClient.WorkflowRun? = if (requestedId > 0) {
+                    GitHubClient.getWorkflowRun(token, owner, repo, requestedId)
+                } else {
+                    null
+                }
+                if (run == null) {
+                    while (run == null && System.currentTimeMillis() - started < 90_000) {
+                        run = GitHubClient.listWorkflowRuns(
+                            token, owner, repo, perPage = 15, branch = branch
+                        ).firstOrNull { isoEpoch(it.createdAt) >= started - 120_000 }
+                        if (run == null) kotlinx.coroutines.delay(5_000)
+                    }
+                }
+                val target = run ?: throw IllegalStateException(
+                    "لم أجد عملية بناء حديثة على الفرع ${branch.ifBlank { "الافتراضي" }}. تأكد من الدفع أو استخدم github_dispatch."
+                )
+                var current = target
+                while (current.status != "completed" && System.currentTimeMillis() - started < timeout * 1000L) {
+                    kotlinx.coroutines.delay(interval * 1000L)
+                    current = GitHubClient.getWorkflowRun(token, owner, repo, current.id)
+                }
+                if (current.status != "completed") {
+                    return "⏳ البناء #${current.number} ما زال ${current.status}.\n${runSummary(current)}"
+                }
+                val artifacts = runCatching {
+                    GitHubClient.listArtifacts(token, owner, repo, current.id)
+                }.getOrDefault(emptyList())
+                if (current.conclusion == "success") {
+                    return buildString {
+                        append("✅ اكتمل البناء #${current.number} بنجاح.\n")
+                        append(runSummary(current))
+                        if (artifacts.isNotEmpty()) {
+                            append("\nالمخرجات: ").append(artifacts.joinToString("، ") { "${it.name} (id=${it.id})" })
+                        }
+                    }
+                }
+                val jobs = GitHubClient.listRunJobs(token, owner, repo, current.id)
+                val failed = jobs.filter { it.conclusion !in setOf("success", "skipped", "neutral", "") }
+                val logs = failed.take(3).joinToString("\n\n") { job ->
+                    val text = runCatching {
+                        GitHubClient.jobLog(token, owner, repo, job.id, 12_000)
+                    }.getOrDefault("(تعذر جلب السجل)")
+                    "===== ${job.name} (${job.conclusion}) =====\n$text"
+                }
+                buildString {
+                    append("❌ فشل البناء #${current.number} (${current.conclusion}).\n")
+                    append(runSummary(current)).append('\n')
+                    append(failed.joinToString("\n") { "• ${it.name}: ${it.conclusion}" })
+                    if (logs.isNotBlank()) append("\n\nسجل الفشل:\n").append(logs.take(16_000))
+                    append("\n\nأصلح السبب ثم أعد الرفع. يمكنك أيضاً github_rerun أو github_job_log.")
+                }
+            }
+            "github_run_logs" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val runId = args.optLong("run_id")
+                val max = int(args, "max_chars", 12_000).coerceIn(2_000, 16_000)
+                val jobs = GitHubClient.listRunJobs(token, owner, repo, runId)
+                if (jobs.isEmpty()) "لا وظائف لهذه العملية."
+                else jobs.joinToString("\n\n") { job ->
+                    "===== ${job.name}: ${job.status}/${job.conclusion} =====\n" +
+                        runCatching { GitHubClient.jobLog(token, owner, repo, job.id, max) }
+                            .getOrDefault("(تعذر جلب السجل)")
+                }.take(16_000)
+            }
+            "github_compare" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.compare(token, owner, repo, req(args, "base"), req(args, "head"))
+            }
+            "github_pr_files" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.pullFiles(token, owner, repo, args.optInt("number"))
+            }
+            "github_merge_pr" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.mergePull(
+                    token, owner, repo, args.optInt("number"),
+                    args.optString("commit_title"), args.optString("method", "merge")
+                )
+            }
+            "github_review_pr" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.reviewPull(
+                    token, owner, repo, args.optInt("number"),
+                    args.optString("event", "COMMENT"), args.optString("body")
+                )
+            }
+            "github_close_issue" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.closeIssue(token, owner, repo, args.optInt("number"))
+            }
+            "github_list_tags" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.listTags(token, owner, repo).joinToString("\n").ifBlank { "لا وسوم." }
+            }
+            "github_create_tag" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.createTag(token, owner, repo, req(args, "name"), args.optString("from"))
+            }
+            "github_create_release" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.createRelease(
+                    token, owner, repo, req(args, "tag"), args.optString("name"),
+                    args.optString("body"), args.optBoolean("draft", false), args.optBoolean("prerelease", false)
+                )
+            }
+            "github_delete_branch" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val branch = req(args, "branch")
+                GitHubClient.deleteBranch(token, owner, repo, branch)
+                "✅ حُذف الفرع $branch"
+            }
+            "file_apply_patch" -> {
+                val path = req(args, "path")
+                val info = FileTools.read(ctx.context, path, maxBytes = 4_000_000)
+                if (info.binary) throw IllegalArgumentException("الملف ثنائي ولا يمكن تعديله نصياً")
+                val applied = UnifiedDiff.apply(info.text, req(args, "patch"))
+                if (args.optBoolean("backup", true)) {
+                    runCatching {
+                        FileTools.write(ctx.context, ".lion-backup/" + path.replace('/', '_') + ".bak", info.text)
+                    }
+                }
+                FileTools.write(ctx.context, path, applied.text)
+                "✅ طُبّق الـ patch على $path — +${applied.added}/-${applied.removed} (${applied.hunks} hunk)"
+            }
+            "telegram_status" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val me = TelegramClient.getMe(bot)
+                buildString {
+                    append("🤖 ").append(TelegramClient.formatUser(me))
+                    if (me.optString("username").isNotBlank()) append(" — @").append(me.optString("username"))
+                    append("\nid: ").append(me.optLong("id"))
+                    append("\ngroups: ").append(me.optBoolean("can_join_groups"))
+                    append(" · read_all_group_messages: ").append(me.optBoolean("can_read_all_group_messages"))
+                    append(" · inline: ").append(me.optBoolean("supports_inline_queries"))
+                }
+            }
+            "telegram_updates" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val saved = ctx.prefs.getLong("telegram_update_offset", 0L)
+                val offset = if (args.has("offset") && args.optLong("offset") > 0) args.optLong("offset") else saved
+                val updates = TelegramClient.getUpdates(bot, offset, int(args, "limit", 50).coerceIn(1, 100), 0)
+                if (updates.length() == 0) {
+                    "لا تحديثات جديدة. إن كان Webhook مفعّلاً فاحذفه أولاً (telegram_webhook_delete) ليصل polling."
+                } else {
+                    var maxId = offset
+                    val lines = (0 until updates.length()).mapNotNull { index ->
+                        val update = updates.optJSONObject(index) ?: return@mapNotNull null
+                        maxId = maxOf(maxId, update.optLong("update_id") + 1)
+                        telegramUpdateLine(update)
+                    }
+                    ctx.prefs.edit().putLong("telegram_update_offset", maxId).apply()
+                    "آخر ${lines.size} تحديث (offset التالي: $maxId):\n" + lines.joinToString("\n")
+                }
+            }
+            "telegram_send" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val message = TelegramClient.sendMessage(
+                    bot, req(args, "chat_id"), req(args, "text"),
+                    args.optString("parse_mode"), args.optLong("reply_to", 0L),
+                    args.optBoolean("disable_preview", false), args.optLong("thread_id", 0L)
+                )
+                "✅ أُرسلت إلى ${message.optJSONObject("chat")?.optString("title") ?: req(args, "chat_id")} — " +
+                    "message_id=${message.optLong("message_id")}"
+            }
+            "telegram_send_media" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val path = args.optString("path").trim()
+                val file = if (path.isNotBlank()) resolveWorkspace(ctx, path) else null
+                val message = TelegramClient.sendMedia(
+                    bot, req(args, "chat_id"), args.optString("type", "photo"),
+                    file, args.optString("url"), args.optString("caption"),
+                    args.optString("parse_mode"), args.optLong("reply_to", 0L), args.optLong("thread_id", 0L)
+                )
+                "✅ أُرسلت الوسائط — message_id=${message.optLong("message_id")}"
+            }
+            "telegram_edit" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val result = TelegramClient.editMessageText(
+                    bot, req(args, "chat_id"), args.optLong("message_id"), req(args, "text"),
+                    args.optString("parse_mode")
+                )
+                "✅ عُدّلت الرسالة ${result.optLong("message_id")}"
+            }
+            "telegram_delete" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                TelegramClient.deleteMessage(bot, req(args, "chat_id"), args.optLong("message_id"))
+                "✅ حُذفت الرسالة"
+            }
+            "telegram_forward" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val result = TelegramClient.forwardMessage(
+                    bot, req(args, "chat_id"), req(args, "from_chat_id"), args.optLong("message_id")
+                )
+                "✅ حُوّلت الرسالة — message_id=${result.optLong("message_id")}"
+            }
+            "telegram_pin" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                TelegramClient.pinMessage(
+                    bot, req(args, "chat_id"), args.optLong("message_id"), args.optBoolean("notify", false)
+                )
+                "✅ ثُبّتت الرسالة"
+            }
+            "telegram_chat_info" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val chat = TelegramClient.getChat(bot, req(args, "chat_id"))
+                val members = runCatching { TelegramClient.getChatMemberCount(bot, req(args, "chat_id")) }.getOrDefault(0)
+                buildString {
+                    append("💬 ").append(chat.optString("title").ifBlank { TelegramClient.formatUser(chat) })
+                    append("\ntype: ").append(chat.optString("type"))
+                    append(" · id: ").append(chat.optLong("id"))
+                    if (chat.optString("username").isNotBlank()) append(" · @").append(chat.optString("username"))
+                    if (members > 0) append(" · members: ").append(members)
+                    if (chat.optString("description").isNotBlank()) {
+                        append("\n").append(chat.optString("description").take(1200))
+                    }
+                }
+            }
+            "telegram_members" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val admins = TelegramClient.getChatAdministrators(bot, req(args, "chat_id"))
+                if (admins.length() == 0) "لا مشرفين أو البوت ليس مشرفاً."
+                else (0 until admins.length()).joinToString("\n") { index ->
+                    val item = admins.optJSONObject(index) ?: return@joinToString ""
+                    "• ${TelegramClient.formatUser(item.optJSONObject("user"))} — ${item.optString("status")}"
+                }
+            }
+            "telegram_file_download" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val name = args.optString("name").ifBlank { "telegram-file.bin" }.replace('/', '_')
+                val target = resolveWorkspace(ctx, "downloads/$name")
+                val file = TelegramClient.downloadFile(bot, req(args, "file_id"), target)
+                "✅ نُزّل ${FileTools.relative(ctx.context, file)} (${FileTools.formatSize(file.length())})"
+            }
+            "telegram_webhook_set" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                TelegramClient.setWebhook(bot, req(args, "url"), args.optString("secret"))
+                "✅ ضُبط Webhook"
+            }
+            "telegram_webhook_delete" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                TelegramClient.deleteWebhook(bot)
+                "✅ حُذف Webhook (polling متاح الآن)"
+            }
+            "telegram_webhook_info" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val info = TelegramClient.getWebhookInfo(bot)
+                "url: ${info.optString("url").ifBlank { "—" }}\n" +
+                    "pending: ${info.optInt("pending_update_count")}\n" +
+                    "last_error: ${info.optString("last_error_message").ifBlank { "—" }}"
+            }
+            "telegram_poll" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val options = stringList(args.optJSONArray("options"))
+                if (options.size < 2) throw IllegalArgumentException("أرسل خيارين على الأقل في options")
+                val result = TelegramClient.sendPoll(bot, req(args, "chat_id"), req(args, "question"), options)
+                "✅ أُنشئ استطلاع — message_id=${result.optLong("message_id")}"
+            }
+            "telegram_commands" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val commands = stringList(args.optJSONArray("commands")).mapNotNull { raw ->
+                    val parts = raw.split(':', limit = 2)
+                    parts.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { command ->
+                        command to parts.getOrElse(1) { command }
+                    }
+                }
+                if (commands.isEmpty()) throw IllegalArgumentException("أرسل commands بصيغة command:description")
+                TelegramClient.setMyCommands(bot, commands)
+                "✅ ضُبطت ${commands.size} أوامر"
+            }
+            "telegram_invite" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val link = TelegramClient.createInviteLink(
+                    bot, req(args, "chat_id"), args.optString("name"), args.optInt("member_limit", 0)
+                )
+                "✅ ${link.optString("invite_link")}"
+            }
+            "telegram_admin" -> {
+                val bot = ConnectorAuth.token(ctx.prefs, "telegram")
+                val chatId = req(args, "chat_id")
+                val userId = args.optLong("user_id")
+                when (args.optString("action", "ban").lowercase()) {
+                    "unban" -> TelegramClient.unbanChatMember(bot, chatId, userId)
+                    "promote" -> TelegramClient.promoteChatMember(bot, chatId, userId, true)
+                    else -> TelegramClient.banChatMember(bot, chatId, userId)
+                }
+                "✅ نُفّذ إجراء ${args.optString("action", "ban")} على $userId"
+            }
+            "whatsapp_status" -> WhatsAppClient.status(ConnectorAuth.token(ctx.prefs, "whatsapp"))
+            "whatsapp_send" -> WhatsAppClient.sendText(
+                ConnectorAuth.token(ctx.prefs, "whatsapp"), req(args, "to"), req(args, "text"),
+                args.optBoolean("preview_url", false)
+            )
+            "whatsapp_template" -> {
+                val components = when (val raw = args.opt("components")) {
+                    is JSONArray -> raw
+                    is String -> runCatching { JSONArray(raw) }.getOrNull()
+                    else -> null
+                }
+                WhatsAppClient.sendTemplate(
+                    ConnectorAuth.token(ctx.prefs, "whatsapp"), req(args, "to"),
+                    req(args, "name"), args.optString("language", "ar"), components
+                )
+            }
+            "whatsapp_media" -> {
+                val path = args.optString("path").trim()
+                WhatsAppClient.sendMedia(
+                    ConnectorAuth.token(ctx.prefs, "whatsapp"), req(args, "to"),
+                    args.optString("type", "image"), args.optString("link"),
+                    if (path.isBlank()) "" else resolveWorkspace(ctx, path).absolutePath,
+                    args.optString("caption"), args.optString("filename")
+                )
+            }
+            "whatsapp_mark_read" -> WhatsAppClient.markRead(
+                ConnectorAuth.token(ctx.prefs, "whatsapp"), req(args, "message_id")
+            )
+            "whatsapp_templates" -> WhatsAppClient.listTemplates(
+                ConnectorAuth.token(ctx.prefs, "whatsapp"), req(args, "waba_id")
+            )
+            "whatsapp_profile" -> WhatsAppClient.profile(ConnectorAuth.token(ctx.prefs, "whatsapp"))
+            "whatsapp_numbers" -> WhatsAppClient.phoneNumbers(
+                ConnectorAuth.token(ctx.prefs, "whatsapp"), req(args, "waba_id")
+            )
+            "whatsapp_download" -> {
+                val name = args.optString("name").ifBlank { "whatsapp-media.bin" }.replace('/', '_')
+                val target = resolveWorkspace(ctx, "downloads/$name")
+                val file = WhatsAppClient.downloadMedia(
+                    ConnectorAuth.token(ctx.prefs, "whatsapp"), req(args, "media_id"), target
+                )
+                "✅ نُزّل ${FileTools.relative(ctx.context, file)} (${FileTools.formatSize(file.length())})"
+            }
+            "notifications_status" -> NotificationAccess.describe(ctx.context, ctx.prefs) +
+                "\nخدمة الاستماع: " + (if (LionNotificationListener.isConnected()) "متصلة ✅" else "غير متصلة ❌") +
+                (if (!NotificationAccess.isEnabled(ctx.context)) {
+                    "\nافتح: الأدوات ← الاتصالات ← منح صلاحية الإشعارات."
+                } else "")
+            "notifications_list" -> {
+                val limit = int(args, "limit", 50).coerceIn(1, 200)
+                val minutes = int(args, "since_minutes", 1440).coerceIn(0, 60 * 24 * 30)
+                val since = if (minutes > 0) System.currentTimeMillis() - minutes * 60_000L else 0L
+                val query = args.optString("query")
+                val packages = notificationPackages(args.optString("app"))
+                val rows = packages.flatMap { pkg ->
+                    NotificationStore.recent(ctx.context, pkg, query, since, limit)
+                }.sortedByDescending { it.postTime }.take(limit)
+                if (rows.isEmpty()) "لا رسائل محفوظة. تأكد من صلاحية الإشعارات ووصول رسائل جديدة."
+                else rows.joinToString("\n") { item ->
+                    "• [${item.appName}] ${item.conversation} — ${item.sender}: " +
+                        "${item.body.replace("\n", " ").take(400)} " +
+                        "(${NotificationStore.formatTime(item.postTime)} · key=${item.key})"
+                }
+            }
+            "notifications_chats" -> {
+                val minutes = int(args, "since_minutes", 1440).coerceIn(0, 60 * 24 * 30)
+                val since = if (minutes > 0) System.currentTimeMillis() - minutes * 60_000L else 0L
+                val chats = NotificationStore.chats(ctx.context, since, int(args, "limit", 60))
+                if (chats.isEmpty()) "لا محادثات محفوظة."
+                else chats.joinToString("\n") { (name, count) -> "• $name — $count رسالة" }
+            }
+            "notifications_reply" -> {
+                val text = req(args, "text")
+                val key = req(args, "key")
+                when {
+                    !NotificationAccess.isEnabled(ctx.context) ->
+                        "⛔ صلاحية الإشعارات غير مفعّلة. فعّلها من إعدادات النظام."
+                    !LionNotificationListener.isConnected() ->
+                        "⛔ خدمة الإشعارات غير متصلة. أعد فتح التطبيق أو أعد منح الصلاحية."
+                    LionNotificationListener.reply(key, text) -> "✅ أُرسل الرد المباشر عبر إشعار $key"
+                    else -> "❌ الإشعار لم يعد نشطاً أو لا يدعم الرد المباشر. افتح المحادثة وأرسل يدوياً."
+                }
+            }
+            "notifications_dismiss" -> {
+                if (LionNotificationListener.dismiss(req(args, "key"))) "✅ أُغلق الإشعار"
+                else "❌ الإشعار غير نشط أو الخدمة غير متصلة"
+            }
+            "notifications_clear" -> {
+                NotificationStore.clear(ctx.context)
+                "✅ مُسح سجل الإشعارات المحلي"
+            }
             else -> "❌ أداة غير معروفة: $name"
         }
+    }
+
+    private fun runSummary(run: GitHubClient.WorkflowRun): String =
+        "#${run.number} ${run.name} [${run.branch}] — ${run.status}/${run.conclusion}\n${run.htmlUrl}"
+
+    private fun isoEpoch(value: String): Long =
+        runCatching { java.time.Instant.parse(value).toEpochMilli() }.getOrDefault(0L)
+
+    private fun notificationPackages(raw: String): List<String> = when (raw.trim().lowercase()) {
+        "whatsapp", "واتساب", "واتس" -> listOf("com.whatsapp", "com.whatsapp.w4b")
+        "telegram", "تلغرام", "تيليجرام" ->
+            listOf(
+                "org.telegram.messenger", "org.telegram.messenger.web",
+                "org.telegram.plus", "org.thunderdog.challegram"
+            )
+        "" -> listOf("")
+        else -> listOf(raw.trim())
+    }
+
+    private fun telegramUpdateLine(update: JSONObject): String {
+        val callback = update.optJSONObject("callback_query")
+        if (callback != null) {
+            return "• [callback] ${TelegramClient.formatUser(callback.optJSONObject("from"))}: " +
+                callback.optString("data").take(200) + " (id=${callback.optString("id")})"
+        }
+        val message = update.optJSONObject("message")
+            ?: update.optJSONObject("edited_message")
+            ?: update.optJSONObject("channel_post")
+            ?: return "• تحديث ${update.optLong("update_id")}"
+        val chat = message.optJSONObject("chat")
+        val from = message.optJSONObject("from") ?: chat
+        val title = chat?.optString("title").orEmpty().ifBlank { chat?.optString("username").orEmpty() }
+            .ifBlank { TelegramClient.formatUser(from) }
+        val text = message.optString("text").ifBlank { message.optString("caption") }
+            .replace("\n", " ").take(500)
+        return "• [$title|${chat?.optLong("id")}] ${TelegramClient.formatUser(from)}: $text " +
+            "(msg_id=${message.optLong("message_id")})"
     }
 
     private fun stringList(array: org.json.JSONArray?): List<String> {

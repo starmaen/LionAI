@@ -36,7 +36,7 @@ object GitHubClient {
         val avatarUrl: String = ""
     )
 
-    data class Entry(val name: String, val path: String, val type: String, val size: Long)
+    data class Entry(val name: String, val path: String, val type: String, val size: Long, val sha: String = "")
 
     data class FileData(val path: String, val sha: String, val text: String, val binary: Boolean)
 
@@ -76,7 +76,8 @@ object GitHubClient {
         val branch: String,
         val event: String,
         val htmlUrl: String,
-        val createdAt: String
+        val createdAt: String,
+        val headSha: String = ""
     )
 
     data class WorkflowJob(
@@ -224,7 +225,8 @@ object GitHubClient {
                 name = o.optString("name"),
                 path = o.optString("path"),
                 type = o.optString("type", "file"),
-                size = o.optLong("size")
+                size = o.optLong("size"),
+                sha = o.optString("sha")
             )
         }.sortedWith(compareBy({ it.type != "dir" }, { it.name.lowercase() }))
     }
@@ -242,9 +244,10 @@ object GitHubClient {
                 name = o.optString("path").substringAfterLast('/'),
                 path = o.optString("path"),
                 type = if (o.optString("type") == "tree") "dir" else "file",
-                size = o.optLong("size")
+                size = o.optLong("size"),
+                sha = o.optString("sha")
             )
-        }.take(maxEntries.coerceIn(1, 2000))
+        }.take(maxEntries.coerceIn(1, 5000))
     }
 
     fun readFile(token: String, owner: String, repo: String, path: String, ref: String = ""): FileData {
@@ -499,7 +502,8 @@ object GitHubClient {
         branch = o.optString("head_branch"),
         event = o.optString("event"),
         htmlUrl = o.optString("html_url"),
-        createdAt = o.optString("created_at")
+        createdAt = o.optString("created_at"),
+        headSha = o.optString("head_sha")
     )
 
     fun listWorkflowRuns(
@@ -507,7 +511,9 @@ object GitHubClient {
         owner: String,
         repo: String,
         perPage: Int = 10,
-        workflowId: Long? = null
+        workflowId: Long? = null,
+        branch: String = "",
+        headSha: String = ""
     ): List<WorkflowRun> {
         val safe = perPage.coerceIn(1, 50)
         val base = if (workflowId != null) {
@@ -515,7 +521,12 @@ object GitHubClient {
         } else {
             "/repos/${encode(owner)}/${encode(repo)}/actions/runs"
         }
-        val raw = request("$base?per_page=$safe", token)
+        val query = buildString {
+            append("?per_page=").append(safe)
+            if (branch.isNotBlank()) append("&branch=").append(encode(branch))
+            if (headSha.isNotBlank()) append("&head_sha=").append(encode(headSha))
+        }
+        val raw = request("$base$query", token)
         val array = JSONObject(raw).optJSONArray("workflow_runs") ?: return emptyList()
         return (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::workflowRunFromJson) }
     }
@@ -804,6 +815,271 @@ object GitHubClient {
             JSONObject().put("sha", newCommit).put("force", false)
         )
         return newCommit
+    }
+
+    fun getWorkflowRun(token: String, owner: String, repo: String, runId: Long): WorkflowRun =
+        workflowRunFromJson(JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/actions/runs/$runId", token)))
+
+    fun compare(token: String, owner: String, repo: String, base: String, head: String): String {
+        val raw = request(
+            "/repos/${encode(owner)}/${encode(repo)}/compare/${encode(base)}...${encode(head)}",
+            token
+        )
+        val o = JSONObject(raw)
+        val builder = StringBuilder()
+        builder.append("مقارنة $base...$head — ${o.optString("status")}, ")
+            .append("${o.optInt("ahead_by")} commits أماماً / ${o.optInt("behind_by")} خلفاً\n")
+        val commits = o.optJSONArray("commits") ?: JSONArray()
+        for (i in 0 until commits.length().coerceAtMost(30)) {
+            val c = commits.optJSONObject(i) ?: continue
+            builder.append("• ").append(c.optString("sha").take(8)).append(" — ")
+                .append(c.optJSONObject("commit")?.optString("message")?.lineSequence()?.firstOrNull().orEmpty())
+                .append('\n')
+        }
+        val files = o.optJSONArray("files") ?: JSONArray()
+        if (files.length() > 0) builder.append("\nالملفات:\n")
+        for (i in 0 until files.length().coerceAtMost(60)) {
+            val f = files.optJSONObject(i) ?: continue
+            builder.append("• [").append(f.optString("status")).append("] ").append(f.optString("filename"))
+                .append(" (+").append(f.optInt("additions")).append("/-").append(f.optInt("deletions")).append(")\n")
+            val patch = f.optString("patch", "")
+            if (patch.isNotBlank()) builder.append(patch.lineSequence().take(40).joinToString("\n")).append("\n")
+        }
+        return builder.toString().take(16_000)
+    }
+
+    fun pullFiles(token: String, owner: String, repo: String, number: Int): String {
+        val raw = request("/repos/${encode(owner)}/${encode(repo)}/pulls/$number/files?per_page=100", token)
+        val array = JSONArray(raw)
+        return (0 until array.length()).joinToString("\n") { index ->
+            val f = array.optJSONObject(index) ?: return@joinToString ""
+            val patch = f.optString("patch", "").lineSequence().take(60).joinToString("\n")
+            "• [${f.optString("status")}] ${f.optString("filename")} (+${f.optInt("additions")}/-${f.optInt("deletions")})" +
+                if (patch.isBlank()) "" else "\n$patch"
+        }.take(16_000)
+    }
+
+    fun mergePull(
+        token: String,
+        owner: String,
+        repo: String,
+        number: Int,
+        commitTitle: String = "",
+        method: String = "merge"
+    ): String {
+        val mergeMethod = when (method.lowercase()) {
+            "squash", "rebase" -> method.lowercase()
+            else -> "merge"
+        }
+        val body = JSONObject().put("merge_method", mergeMethod)
+        if (commitTitle.isNotBlank()) body.put("commit_title", commitTitle)
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/pulls/$number/merge", token, "PUT", body))
+        return if (o.optBoolean("merged")) {
+            "✅ دُمج PR #$number (${o.optString("sha").take(8)}): ${o.optString("message")}"
+        } else {
+            "لم يُدمج: ${o.optString("message")}"
+        }
+    }
+
+    fun reviewPull(
+        token: String,
+        owner: String,
+        repo: String,
+        number: Int,
+        event: String,
+        body: String
+    ): String {
+        val normalized = when (event.uppercase()) {
+            "APPROVE", "APPROVED" -> "APPROVE"
+            "REQUEST_CHANGES", "REQUEST-CHANGES", "CHANGES_REQUESTED" -> "REQUEST_CHANGES"
+            else -> "COMMENT"
+        }
+        val json = JSONObject().put("event", normalized).put("body", body)
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/pulls/$number/reviews", token, "POST", json))
+        return "✅ أُرسلت المراجعة ($normalized) — ${o.optString("html_url")}"
+    }
+
+    fun closeIssue(token: String, owner: String, repo: String, number: Int): String {
+        val o = JSONObject(
+            request(
+                "/repos/${encode(owner)}/${encode(repo)}/issues/$number",
+                token, "PATCH", JSONObject().put("state", "closed")
+            )
+        )
+        return "✅ أُغلق #$number (${o.optString("title")})"
+    }
+
+    fun listTags(token: String, owner: String, repo: String): List<String> {
+        val raw = request("/repos/${encode(owner)}/${encode(repo)}/tags?per_page=100", token)
+        val array = JSONArray(raw)
+        return (0 until array.length()).mapNotNull { index ->
+            array.optJSONObject(index)?.optString("name")?.takeIf { it.isNotBlank() }
+        }
+    }
+
+    fun createTag(
+        token: String,
+        owner: String,
+        repo: String,
+        name: String,
+        from: String = ""
+    ): String {
+        val ref = from.ifBlank { getRepo(token, owner, repo).defaultBranch }
+        val sha = if (Regex("[0-9a-fA-F]{40}").matches(ref)) {
+            ref
+        } else {
+            val refRaw = request("/repos/${encode(owner)}/${encode(repo)}/git/ref/heads/${encode(ref)}", token)
+            JSONObject(refRaw).optJSONObject("object")?.optString("sha").orEmpty()
+        }
+        if (sha.isBlank()) throw GitHubException(404, "تعذّر تحديد commit للوسم")
+        val body = JSONObject().put("ref", "refs/tags/${name.trim()}").put("sha", sha)
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/git/refs", token, "POST", body))
+        return "✅ أُنشئ الوسم ${name.trim()} عند ${sha.take(8)} (${o.optString("ref")})"
+    }
+
+    fun createRelease(
+        token: String,
+        owner: String,
+        repo: String,
+        tag: String,
+        name: String = "",
+        body: String = "",
+        draft: Boolean = false,
+        prerelease: Boolean = false
+    ): String {
+        val json = JSONObject()
+            .put("tag_name", tag.trim())
+            .put("name", name.ifBlank { tag.trim() })
+            .put("body", body)
+            .put("draft", draft)
+            .put("prerelease", prerelease)
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/releases", token, "POST", json))
+        return "✅ أُنشئ الإصدار ${o.optString("tag_name")} — ${o.optString("html_url")}"
+    }
+
+    fun deleteBranch(token: String, owner: String, repo: String, branch: String) {
+        request("/repos/${encode(owner)}/${encode(repo)}/git/refs/heads/${encode(branch)}", token, "DELETE")
+    }
+
+    /** بصمة git blob القياسية (SHA-1) للمقارنة مع شجرة GitHub دون تنزيل المحتوى. */
+    fun gitBlobSha(bytes: ByteArray): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-1")
+        digest.update("blob ${bytes.size}".toByteArray(Charsets.UTF_8))
+        digest.update(0.toByte())
+        digest.update(bytes)
+        return digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+    }
+
+    /**
+     * يرفع مجلد مساحة عمل كاملاً إلى GitHub عبر Git Data API، بمقارنة بصمات
+     * blob لتجنب رفع الملفات غير المتغيرة. يدعم الملفات الثنائية والحذف الاختياري.
+     */
+    fun commitWorkspace(
+        token: String,
+        owner: String,
+        repo: String,
+        branch: String,
+        message: String,
+        localRoot: File,
+        deleteMissing: Boolean = false,
+        dryRun: Boolean = false,
+        maxFiles: Int = 400,
+        maxBytesPerFile: Long = 20L * 1024 * 1024
+    ): String {
+        if (!localRoot.isDirectory) throw IllegalArgumentException("مجلد مساحة العمل غير موجود: ${localRoot.path}")
+        val targetBranch = branch.ifBlank { getRepo(token, owner, repo).defaultBranch }
+        val remote = listTree(token, owner, repo, targetBranch, maxEntries = 5000)
+            .filter { it.type == "file" && it.sha.isNotBlank() }
+            .associate { it.path to it.sha }
+        val root = localRoot.canonicalFile
+        val excludes = setOf(
+            ".git", ".gradle", ".idea", "build", "node_modules", "__pycache__", ".venv", "venv",
+            "dist", "target", ".dart_tool", "Pods", ".next", ".lion-backup", ".lion-tmp"
+        )
+        val local = linkedMapOf<String, File>()
+        fun walk(dir: File) {
+            val children = dir.listFiles() ?: return
+            children.sortedBy { it.name }.forEach { child ->
+                if (child.name in excludes) return@forEach
+                val canonical = runCatching { child.canonicalFile }.getOrNull() ?: return@forEach
+                if (!canonical.path.startsWith(root.path + File.separator) && canonical != root) return@forEach
+                if (child.isDirectory) walk(child) else if (child.isFile && !child.name.startsWith(".lion-")) {
+                    val rel = canonical.relativeTo(root).path.replace(File.separatorChar, '/')
+                    local[rel] = child
+                }
+            }
+        }
+        walk(root)
+
+        val changed = mutableListOf<Pair<String, File>>()
+        local.forEach { (path, file) ->
+            if (file.length() > maxBytesPerFile) {
+                throw IllegalArgumentException("الملف $path أكبر من الحد (${maxBytesPerFile / 1024 / 1024}MB)")
+            }
+            val bytes = file.readBytes()
+            if (remote[path] != gitBlobSha(bytes)) changed.add(path to file)
+        }
+        val deleted = if (deleteMissing) remote.keys.filterNot { local.containsKey(it) } else emptyList()
+        if (changed.isEmpty() && deleted.isEmpty()) return "لا توجد تغييرات لرفعها إلى $owner/$repo@$targetBranch"
+        if (changed.size + deleted.size > maxFiles.coerceIn(1, 500)) {
+            throw IllegalArgumentException("عدد الملفات المتغيرة كبير جداً (${changed.size + deleted.size})")
+        }
+        val summary = buildString {
+            append("📦 $owner/$repo@$targetBranch\n")
+            append("متغير/جديد: ${changed.size} — محذوف: ${deleted.size}\n")
+            changed.take(60).forEach { (path, _) -> append("• ✏️ ").append(path).append('\n') }
+            if (changed.size > 60) append("• … ${changed.size - 60} ملفاً آخر\n")
+            deleted.take(40).forEach { append("• 🗑️ ").append(it).append('\n') }
+        }
+        if (dryRun) return "$summary\n(تجريبي فقط — لم يُرفع شيء)"
+
+        val repoPath = "/repos/${encode(owner)}/${encode(repo)}"
+        val refRaw = request("$repoPath/git/ref/heads/${encode(targetBranch)}", token)
+        val headSha = JSONObject(refRaw).optJSONObject("object")?.optString("sha").orEmpty()
+        if (headSha.isBlank()) throw GitHubException(404, "الفرع غير موجود: $targetBranch")
+        val baseTree = JSONObject(request("$repoPath/git/commits/$headSha", token))
+            .optJSONObject("tree")?.optString("sha").orEmpty()
+
+        val tree = JSONArray()
+        changed.forEach { (path, file) ->
+            val content = android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.NO_WRAP)
+            val blob = JSONObject(
+                request(
+                    "$repoPath/git/blobs", token, "POST",
+                    JSONObject().put("content", content).put("encoding", "base64")
+                )
+            )
+            tree.put(
+                JSONObject()
+                    .put("path", safeRepoPath(path))
+                    .put("mode", "100644")
+                    .put("type", "blob")
+                    .put("sha", blob.optString("sha"))
+            )
+        }
+        deleted.forEach { path ->
+            tree.put(
+                JSONObject()
+                    .put("path", safeRepoPath(path))
+                    .put("mode", "100644")
+                    .put("type", "blob")
+                    .put("sha", JSONObject.NULL)
+            )
+        }
+        val treeBody = JSONObject().put("tree", tree)
+        if (baseTree.isNotBlank()) treeBody.put("base_tree", baseTree)
+        val newTree = JSONObject(request("$repoPath/git/trees", token, "POST", treeBody)).optString("sha")
+        val commitBody = JSONObject()
+            .put("message", message.ifBlank { "تحديث من Lion AI" })
+            .put("tree", newTree)
+            .put("parents", JSONArray().put(headSha))
+        val newCommit = JSONObject(request("$repoPath/git/commits", token, "POST", commitBody))
+            .optString("sha")
+        request(
+            "$repoPath/git/refs/heads/${encode(targetBranch)}", token, "PATCH",
+            JSONObject().put("sha", newCommit).put("force", false)
+        )
+        return "$summary\n✅ commit جديد: $newCommit"
     }
 
     fun languages(token: String, owner: String, repo: String): Map<String, Long> {

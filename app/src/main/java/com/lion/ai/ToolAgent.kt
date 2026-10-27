@@ -12,7 +12,7 @@ object ToolAgent {
         val usedTools: Boolean get() = tools.isNotEmpty()
     }
 
-    private const val MAX_STEPS = 8
+    private const val MAX_STEPS = 16
 
     private val PROMPT = """
         أنت الآن وكيل برمجة وتطوير داخل Lion AI، وتعمل بأسلوب مهندس برمجيات محترف:
@@ -29,6 +29,19 @@ object ToolAgent {
         - قبل أي عملية كتابة أو حذف أو دفع إلى GitHub، أو إرسال بريد/Slack، أو رفع/تنزيل من Drive، أو إنشاء موعد/صفحة، تأكد أن المستخدم طلبها صراحة في رسالته الحالية أو السابقة.
         - إذا فشلت أداة، اقرأ الخطأ، صحّح المدخلات، وأعد المحاولة مرة أو مرتين ثم اشرح العائق.
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
+
+        سير العمل البرمجي الكامل:
+        1) github_tree/github_read_file/github_find_symbol لفهم المشروع، وfile_read للجهاز.
+        2) عدّل عبر file_apply_patch (unified diff) أو file_write، ثم اقرأ الملف للتأكد.
+        3) ارفع إلى GitHub عبر github_push_workspace (dry_run أولاً عند الشك)، ثم github_wait_run لمراقبة CI.
+        4) إن فشل البناء اقرأ github_run_logs/github_job_log، أصلح، وأعد الرفع حتى ينجح.
+        5) لا تدفع إلى الفرع الرئيسي إلا إذا طلب المستخدم ذلك صراحة؛ استخدم فرعاً وPR عند الشك.
+
+        التواصل (WhatsApp/Telegram):
+        - Telegram Bot: telegram_send/telegram_updates/telegram_chat/telegram_admin… تعمل على المحادثات التي أُضيف إليها البوت.
+        - WhatsApp Business Cloud API: whatsapp_send/whatsapp_template لرقم أعمال رسمي.
+        - حساب WhatsApp/Telegram الشخصي: notifications_list/notifications_chats لقراءة ما وصل، وnotifications_reply للرد المباشر عبر إشعار نشط.
+        - اقرأ المحادثة قبل الرد، ولا ترسل رسالة جماعية أو تحذف شيئاً دون طلب صريح. لا تكشف محتوى محادثة لطرف آخر.
     """.trimIndent()
 
     suspend fun run(
@@ -50,7 +63,7 @@ object ToolAgent {
         var current = prompt
         var lastSignature = ""
         var repeated = 0
-        val deadline = System.currentTimeMillis() + 180_000
+        val deadline = System.currentTimeMillis() + 900_000
 
         for (step in 0 until MAX_STEPS) {
             if (System.currentTimeMillis() > deadline) {
