@@ -284,11 +284,11 @@ internal fun LlmClient.callOpenCode(
         systemPrompt: String
     ): String {
         val go = provider == "opencode-go"
+        // OpenCode يطلب من العملاء الخارجيين أن يعرّفوا أنفسهم بـ User-Agent خاص بهم (يُرسل تلقائياً: LionAI)
+        // وأن يرسلوا معرّف جلسة ثابتاً. لا ننتحل صفة عميل OpenCode الرسمي.
         val session = mapOf(
             "x-opencode-session" to openCodeSession,
-            "x-opencode-request" to openCodeRequest,
-            "x-opencode-client" to "cli",
-            "User-Agent" to "opencode-cli/1.0.0"
+            "x-opencode-request" to openCodeRequest
         )
         val id = model.trim().lowercase()
 
