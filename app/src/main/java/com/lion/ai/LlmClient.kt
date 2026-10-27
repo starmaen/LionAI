@@ -18,7 +18,7 @@ object LlmClient {
         endpointOverrides = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
     }
 
-    private fun endpoint(provider: String, default: String): String {
+    internal fun endpoint(provider: String, default: String): String {
         val custom = endpointOverrides[provider]?.trim().orEmpty()
         val safe = custom.startsWith("https://") ||
             custom.startsWith("http://localhost") ||
@@ -26,9 +26,12 @@ object LlmClient {
         return if (custom.isNotEmpty() && safe) custom else default
     }
 
+    /** معرّف جلسة ثابت يرسله OpenCode لتوجيه الطلبات وتخزين الـ prompt cache. */
+    internal val openCodeSession: String by lazy { java.util.UUID.randomUUID().toString() }
+
     /** هل الموديل الحالي يقرأ الصور؟ (OpenRouter يعتمد على الموديل، وخطأ المزود يُعرض إن لم يدعمها) */
     fun supportsVision(provider: String, model: String): Boolean = when (provider) {
-        "gemini", "openai", "claude", "deepseek", "openrouter",
+        "gemini", "openai", "claude", "deepseek", "openrouter", "opencode", "opencode-go",
         "mistral", "cloudflare", "zai", "ollama", "together", "nvidia", "ovh" -> true
         "groq" -> (model.ifBlank { providerInfo("groq").defaultModel }).contains("llama-4")
         else -> false
@@ -114,22 +117,9 @@ object LlmClient {
         return try {
             when (provider) {
                 "gemini" -> callGemini(message, apiKey, model, turns, image, systemPrompt)
-                "opencode" -> {
-                    if (model.startsWith("gpt-") || model.startsWith("claude-") || model.startsWith("gemini-")) {
-                        "⚠️ الموديل «$model» يعمل عبر واجهة مختلفة في OpenCode. اختر موديلاً من نوع chat/completions مثل big-pickle."
-                    } else {
-                        val hasArabic = systemPrompt == LLM_SYSTEM_PROMPT && message.any { it in '\u0600'..'\u06FF' }
-                        val finalMessage = if (hasArabic) {
-                            message + "\n\n(أجب بالعربية)"
-                        } else {
-                            message
-                        }
-                        callOpenAiCompatible(
-                            endpoint("opencode", "https://opencode.ai/zen/v1/chat/completions"), apiKey, model, turns, finalMessage,
-                            maxTokens = LLM_OPENAI_MAX_TOKENS, image = null, systemPrompt = systemPrompt
-                        )
-                    }
-                }
+                "opencode", "opencode-go" -> callOpenCode(
+                    provider, message, apiKey, model, turns, image, systemPrompt
+                )
                 "groq" -> callOpenAiCompatible(
                     endpoint("groq", "https://api.groq.com/openai/v1/chat/completions"), apiKey, model, turns, message,
                     maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
@@ -167,7 +157,21 @@ object LlmClient {
                 }
             }
         } catch (e: LlmException) {
+            val raw = e.message.orEmpty()
+            if ((provider == "opencode" || provider == "opencode-go") &&
+                (raw.contains("FreeUsageLimit", ignoreCase = true) ||
+                    raw.contains("Free usage limit", ignoreCase = true) ||
+                    raw.contains("free-tier", ignoreCase = true))
+            ) {
+                return "🔒 موديل OpenCode المجاني لا يعمل من تطبيقات خارج OpenCode (FreeUsageLimitError) حتى مع مفتاح صحيح.\n" +
+                    "اختر موديلاً مدفوعاً برصيد من OpenCode Console، أو استخدم مزود «OpenCode Go» إن كان لديك اشتراك Go، أو مزوداً آخر."
+            }
             when (e.status) {
+                402 -> if (provider == "opencode" || provider == "opencode-go") {
+                    "💳 لا يوجد رصيد كافٍ في OpenCode لهذا الموديل المدفوع. أضف رصيداً في opencode.ai/console أو استخدم مزود OpenCode Go."
+                } else {
+                    "⚠️ خطأ من المزود (402): ${e.message}"
+                }
                 401, 403 -> "🔑 المفتاح غير صالح أو لا يملك صلاحية لهذا الموديل (${e.status}).\n${e.message}" +
                     regionHint(provider, e.message.orEmpty())
                 404 -> "⚠️ الموديل «$model» غير متاح لهذا المفتاح، أو أن المزود رفض الطلب. جرّب موديلاً آخر من الإعدادات." +

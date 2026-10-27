@@ -46,18 +46,46 @@ val PROVIDERS = listOf(
     ),
     ProviderInfo(
         id = "opencode",
-        label = "OpenCode Zen",
-        tagline = "موديلات مجانية ممتازة للكود — المفتاح من opencode.ai/auth",
+        label = "OpenCode Console",
+        tagline = "مفتاح OpenCode (رصيد مدفوع) — الموديلات المجانية تعمل داخل OpenCode فقط",
         docsUrl = "https://opencode.ai/docs/zen/",
-        defaultModel = "big-pickle",
+        defaultModel = "glm-5.3-flash",
+        free = false,
         shortName = "OpenCode",
-        modelHint = "زر «تحديث» يعرض الموديلات المجانية الحالية فقط. تعمل هنا موديلات chat/completions.",
+        modelHint = "الموديلات المجانية (big-pickle و-free) ترفضها OpenCode من التطبيقات الخارجية وتعيد FreeUsageLimitError. من هنا استخدم موديلاً مدفوعاً برصيد، أو فعّل مزود «OpenCode Go» إن كان لديك اشتراك Go. زر «تحديث» يجلب القائمة الحالية.",
         models = listOf(
+            "glm-5.3-flash",
+            "deepseek-v4.1-flash",
+            "kimi-k2.7-code",
+            "minimax-m3",
+            "qwen3.8-max",
+            "claude-haiku-5-5",
+            "gemini-4-argon",
+            "gpt-6-luna",
             "big-pickle",
-            "deepseek-v4-flash-free",
-            "minimax-m3-free",
-            "mimo-v2.5-free",
-            "nemotron-3-super-free"
+            "glm-5.3-flash-free"
+        )
+    ),
+    ProviderInfo(
+        id = "opencode-go",
+        label = "OpenCode Go",
+        tagline = "اشتراك Go — يعمل من هذا التطبيق بنفس مفتاح OpenCode",
+        docsUrl = "https://opencode.ai/docs/go/",
+        defaultModel = "glm-5.3-flash",
+        free = false,
+        shortName = "OpenCode Go",
+        modelHint = "يتطلب اشتراك OpenCode Go أو Go Plus. استخدم نفس مفتاح OpenCode، واختر موديلاً من قائمة Go. زر «تحديث» يجلب موديلات Go المتاحة لحسابك.",
+        models = listOf(
+            "glm-5.3-flash",
+            "deepseek-v4.1-flash",
+            "kimi-k2.7-code",
+            "minimax-m3",
+            "qwen3.8-max",
+            "claude-haiku-5-5",
+            "gemini-4-argon",
+            "gpt-6-luna",
+            "mimo-v2.6-flash",
+            "muse-spark-1.3-contributor"
         )
     ),
     ProviderInfo(

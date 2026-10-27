@@ -59,7 +59,10 @@ internal fun LlmClient.callGemini(
         model: String,
         history: List<ChatTurn>,
         image: ImageAttachment?,
-        systemPrompt: String
+        systemPrompt: String,
+        url: String = "https://generativelanguage.googleapis.com/v1beta/models/" +
+            model + ":generateContent",
+        headers: Map<String, String> = mapOf("x-goog-api-key" to apiKey)
     ): String {
         val contents = JSONArray()
         history.forEach { turn ->
@@ -91,9 +94,7 @@ internal fun LlmClient.callGemini(
                 JSONObject().put("maxOutputTokens", LLM_GEMINI_MAX_TOKENS)
             )
 
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/" +
-            model + ":generateContent"
-        val response = postJson(url, mapOf("x-goog-api-key" to apiKey), body)
+        val response = postJson(url, headers, body)
 
         val parts = response.optJSONArray("candidates")
             ?.optJSONObject(0)
@@ -175,7 +176,12 @@ internal fun LlmClient.callClaude(
         model: String,
         history: List<ChatTurn>,
         image: ImageAttachment?,
-        systemPrompt: String
+        systemPrompt: String,
+        url: String = "https://api.anthropic.com/v1/messages",
+        headers: Map<String, String> = mapOf(
+            "x-api-key" to apiKey,
+            "anthropic-version" to "2023-06-01"
+        )
     ): String {
         val messages = JSONArray()
         history.forEach { turn ->
@@ -205,11 +211,8 @@ internal fun LlmClient.callClaude(
             .put("messages", messages)
 
         val response = postJson(
-            "https://api.anthropic.com/v1/messages",
-            mapOf(
-                "x-api-key" to apiKey,
-                "anthropic-version" to "2023-06-01"
-            ),
+            url,
+            headers,
             body
         )
 
@@ -222,6 +225,141 @@ internal fun LlmClient.callClaude(
             }
         }
         return text.toString().ifBlank { "لم يصل رد من Claude." }
+    }
+
+/** يوجّه طلب OpenCode إلى الواجهة الصحيحة حسب عائلة الموديل (OpenAI / Anthropic / Google / Responses). */
+internal fun LlmClient.callOpenCode(
+        provider: String,
+        message: String,
+        apiKey: String,
+        model: String,
+        history: List<ChatTurn>,
+        image: ImageAttachment?,
+        systemPrompt: String
+    ): String {
+        val go = provider == "opencode-go"
+        val root = if (go) "https://opencode.ai/inference/go" else "https://opencode.ai/inference"
+        val session = mapOf("x-opencode-session" to openCodeSession)
+        val id = model.trim().lowercase()
+
+        // وسيط مخصص = بروكسي متوافق مع OpenAI، فنمرر كل شيء عبره.
+        val custom = endpoint(provider, "")
+        if (custom.isNotBlank()) {
+            return callOpenAiCompatible(
+                custom, apiKey, model, history, message,
+                extraHeaders = session, maxTokens = LLM_OPENAI_MAX_TOKENS,
+                image = image, systemPrompt = systemPrompt
+            )
+        }
+
+        if (id.startsWith("jev-")) {
+            return "⚠️ موديل Jev من OpenCode يستخدم واجهة System One ولا يدعم الدردشة النصية. اختر موديلاً آخر."
+        }
+
+        // موديلات OpenCode التي تُقدَّم عبر واجهة Anthropic (حسب كتالوج OpenCode الرسمي).
+        val anthropicModels = setOf(
+            "qwen3.5-plus", "qwen3.6-plus", "qwen3.6-plus-free", "qwen3.8-flash",
+            "minimax-m2.1-free", "minimax-m2.5-free", "minimax-m3-free"
+        )
+        val anthropicGoModels = setOf(
+            "qwen3.7-plus", "qwen3.8-max", "minimax-m2.7", "minimax-m3"
+        )
+        val useAnthropic = id.startsWith("claude-") ||
+            id in anthropicModels || (go && id in anthropicGoModels)
+        if (useAnthropic) {
+            return callClaude(
+                message, apiKey, model, history, image, systemPrompt,
+                url = "$root/anthropic/v1/messages",
+                headers = session + mapOf(
+                    "x-api-key" to apiKey,
+                    "anthropic-version" to "2023-06-01"
+                )
+            )
+        }
+
+        if (id.startsWith("gemini-")) {
+            return callGemini(
+                message, apiKey, model, history, image, systemPrompt,
+                url = "$root/google/v1beta/models/$model:generateContent",
+                headers = session + mapOf("x-goog-api-key" to apiKey)
+            )
+        }
+
+        val useResponses = id.startsWith("gpt-") || id.startsWith("muse-") ||
+            (id.startsWith("grok-") && id != "grok-code")
+        if (useResponses) {
+            return callOpenAiResponses(
+                "$root/openai/v1/responses", apiKey, model, history, message,
+                image = image, systemPrompt = systemPrompt, extraHeaders = session
+            )
+        }
+
+        return callOpenAiCompatible(
+            "$root/openai/v1/chat/completions", apiKey, model, history, message,
+            extraHeaders = session, maxTokens = LLM_OPENAI_MAX_TOKENS,
+            image = image, systemPrompt = systemPrompt
+        )
+    }
+
+/** واجهة OpenAI Responses المستخدمة في OpenCode لموديلات GPT/Grok/Muse. */
+internal fun LlmClient.callOpenAiResponses(
+        url: String,
+        apiKey: String,
+        model: String,
+        history: List<ChatTurn>,
+        message: String,
+        image: ImageAttachment?,
+        systemPrompt: String,
+        extraHeaders: Map<String, String> = emptyMap()
+    ): String {
+        val input = JSONArray()
+        history.forEach { turn ->
+            input.put(JSONObject().put("role", turn.role).put("content", turn.content))
+        }
+        val userContent: Any = if (image == null) {
+            message
+        } else {
+            JSONArray()
+                .put(JSONObject().put("type", "input_text").put("text", message))
+                .put(
+                    JSONObject()
+                        .put("type", "input_image")
+                        .put("image_url", imageDataUri(image))
+                )
+        }
+        input.put(JSONObject().put("role", "user").put("content", userContent))
+
+        val body = JSONObject()
+            .put("model", model)
+            .put("input", input)
+            .put("instructions", systemPrompt)
+            .put("max_output_tokens", LLM_OPENAI_MAX_TOKENS)
+
+        val headers = mutableMapOf<String, String>()
+        if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"
+        headers.putAll(extraHeaders)
+
+        val response = postJson(url, headers, body)
+        val direct = response.optString("output_text", "")
+        if (direct.isNotBlank()) return direct
+
+        val text = StringBuilder()
+        val output = response.optJSONArray("output")
+        if (output != null) {
+            for (index in 0 until output.length()) {
+                val item = output.optJSONObject(index) ?: continue
+                if (item.optString("type") != "message") continue
+                val content = item.optJSONArray("content") ?: continue
+                for (partIndex in 0 until content.length()) {
+                    val part = content.optJSONObject(partIndex) ?: continue
+                    val type = part.optString("type")
+                    if (type == "output_text" || type == "text") {
+                        text.append(part.optString("text", ""))
+                    }
+                }
+            }
+        }
+        return text.toString().ifBlank { "لم يصل رد من المزود." }
     }
 
 internal fun LlmClient.imageDataUri(image: ImageAttachment): String =

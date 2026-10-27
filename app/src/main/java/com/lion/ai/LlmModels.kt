@@ -5,11 +5,16 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
         val apiKey = rawKey.filterNot { it.isWhitespace() }
         val bearer = mapOf("Authorization" to "Bearer $apiKey")
         val ids: List<String> = when (provider) {
-            "opencode" -> {
+            "opencode", "opencode-go" -> {
                 val headers = if (apiKey.isNotBlank()) bearer else emptyMap()
-                val json = getJson("https://opencode.ai/zen/v1/models", headers)
+                val base = if (provider == "opencode-go") {
+                    "https://opencode.ai/inference/go/v1/models"
+                } else {
+                    "https://opencode.ai/inference/v1/models"
+                }
+                val json = getJson(base, headers)
                 idsOf(json.optJSONArray("data"), "id")
-                    .filter { it == "big-pickle" || it.contains("free") }
+                    .filterNot { it == "test" || it.startsWith("jev-") }
             }
 
             "openrouter" -> {
@@ -132,5 +137,5 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
 
             else -> emptyList()
         }
-        return ids.distinct().sorted().take(100)
+        return ids.distinct().sorted().take(200)
     }

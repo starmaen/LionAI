@@ -527,7 +527,7 @@ fun SettingsScreen(
                 Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
             }
 
-            if (current.endpoint.isNotBlank() || provider in setOf("groq", "openrouter", "opencode", "deepseek", "openai")) {
+            if (current.endpoint.isNotBlank() || provider in setOf("groq", "openrouter", "opencode", "opencode-go", "deepseek", "openai")) {
                 Spacer(Modifier.height(8.dp))
                 Text("عنوان وسيط (اختياري)", color = Color.White, fontSize = 13.sp)
                 OutlinedTextField(
