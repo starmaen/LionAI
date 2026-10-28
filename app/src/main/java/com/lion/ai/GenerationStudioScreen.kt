@@ -576,7 +576,7 @@ private fun VideoGenerationTabContent(
                 }
                 isGenerating = true
                 scope.launch {
-                    val result = Result.failure(Exception("Video generation not available"))
+                    val result = Result.failure<String>(Exception("ميزة توليد الفيديو غير متوفرة حالياً"))
                     isGenerating = false
                     message = if (result.isSuccess) {
                         "✅ ${result.getOrNull()}"
