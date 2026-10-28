@@ -1451,6 +1451,12 @@ fun LionApp() {
         return
     }
 
+    
+    if (showGenerationStudio) {
+        GenerationStudioScreen(onBack = { showGenerationStudio = false })
+        return
+    }
+
     if (showContacts) {
         ContactsScreen(
             contacts = contacts,

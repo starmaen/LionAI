@@ -84,7 +84,21 @@ internal fun LionDrawerContent(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A2E4A))
         ) {
-            Text("🖼️ محرر الصور", color = Color.White)
+            Text("🖼️ محرر الصور
+                // زر الاستوديو الجديد
+                NavigationDrawerItem(
+                    label = { Text("🎨 استوديو التوليد", color = Color.White) },
+                    selected = false,
+                    onClick = { 
+                        showGenerationStudio = true
+                        scope.launch { drawerState.close() }
+                    },
+                    icon = { Text("🖼️", fontSize = 24.sp) },
+                    colors = NavigationDrawerItemDefaults.colors(
+                        unselectedContainerColor = Color(0xFF2A1F3D)
+                    )
+                )
+", color = Color.White)
         }
         Button(
             onClick = onGitHub,
