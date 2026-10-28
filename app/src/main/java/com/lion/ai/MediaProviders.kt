@@ -8,42 +8,19 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.UUID
 
 object MediaProviders {
 
-    enum class GenerationStyle(val promptSuffix: String, val model: String) {
-        REALISTIC(
-            ", photorealistic, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3, masterpiece",
-            "flux"
-        ),
-        ANIME(
-            ", anime style, studio ghibli, makoto shinkai, vibrant colors, detailed background, masterpiece, best quality, 4k",
-            "flux"
-        ),
-        CARTOON(
-            ", 3d render, pixar style, disney animation, cute, colorful, smooth shading, high detail, octane render",
-            "flux"
-        ),
-        ICON(
-            ", minimalist vector icon, flat design, clean lines, white background, professional, ui/ux design, simple, svg style",
-            "flux"
-        ),
-        POSTER(
-            ", movie poster, dramatic lighting, cinematic composition, bold colors, professional photography, 8k, masterpiece",
-            "flux"
-        ),
-        CYBERPUNK(
-            ", cyberpunk, neon lights, futuristic, blade runner style, high tech, dark atmosphere, rain, detailed",
-            "flux"
-        ),
-        FANTASY(
-            ", fantasy art, epic, magical, detailed, dramatic lighting, concept art, artstation, masterpiece",
-            "flux"
-        ),
-        PORTRAIT(
-            ", professional portrait, studio lighting, shallow depth of field, bokeh, 85mm lens, detailed face, masterpiece",
-            "flux"
-        )
+    enum class GenerationStyle(val promptSuffix: String) {
+        REALISTIC(", photorealistic, 8k, highly detailed, professional photography, cinematic lighting"),
+        ANIME(", anime style, studio ghibli, vibrant colors, detailed, masterpiece"),
+        CARTOON(", 3d cartoon, pixar style, disney animation, cute, colorful"),
+        ICON(", minimalist vector icon, flat design, clean lines, professional"),
+        POSTER(", movie poster, dramatic lighting, cinematic composition"),
+        CYBERPUNK(", cyberpunk, neon lights, futuristic, blade runner style"),
+        FANTASY(", fantasy art, epic, magical, detailed, dramatic lighting"),
+        PORTRAIT(", professional portrait, studio lighting, detailed face")
     }
 
     enum class AspectRatio(val width: Int, val height: Int, val label: String) {
@@ -54,73 +31,64 @@ object MediaProviders {
         TALL(720, 1280, "ستوري 9:16")
     }
 
-    /**
-     * توليد صورة باستخدام Pollinations.ai مع نموذج Flux (الأقوى مجاناً)
-     */
     suspend fun generateImage(
         prompt: String,
         style: GenerationStyle = GenerationStyle.REALISTIC,
         aspectRatio: AspectRatio = AspectRatio.SQUARE,
-        seed: Int = (Math.random() * 100000).toInt(),
-        enhance: Boolean = true,
         negativePrompt: String = ""
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            // تحسين الـ Prompt
-            val enhancedPrompt = PromptEnhancer.enhancePrompt(prompt, style, enhance, negativePrompt)
-            val fullPrompt = URLEncoder.encode(enhancedPrompt, "UTF-8")
+            // 1. توليد seed عشوائي جديد تماماً لكل طلب
+            val seed = (System.currentTimeMillis() % 1000000).toInt()
             
-            // استخدام نموذج Flux مع جميع التحسينات
-            val imageUrl = "https://image.pollinations.ai/prompt/$fullPrompt" +
-                "?width=${aspectRatio.width}" +
-                "&height=${aspectRatio.height}" +
-                "&seed=$seed" +
-                "&nologo=true" +
-                "&enhance=true" +
-                "&model=${style.model}"
+            // 2. تحسين الـ Prompt
+            val enhancedPrompt = PromptEnhancer.enhancePrompt(prompt, style, true, negativePrompt)
             
+            // 3. تشفير صحيح للنص العربي
+            val encodedPrompt = URLEncoder.encode(enhancedPrompt, "UTF-8")
+                .replace("+", "%20")  // استبدال + بمسافة صحيحة
+            
+            // 4. بناء URL بشكل صحيح
+            val baseUrl = "https://image.pollinations.ai/prompt"
+            val imageUrl = buildString {
+                append("$baseUrl/$encodedPrompt")
+                append("?width=${aspectRatio.width}")
+                append("&height=${aspectRatio.height}")
+                append("&seed=$seed")
+                append("&nologo=true")
+                append("&enhance=true")
+                append("&model=flux")
+                append("&cache_buster=${UUID.randomUUID()}")  // منع الكاش نهائياً
+            }
+            
+            println("🦁 [DEBUG] URL: $imageUrl")
+            println("🦁 [DEBUG] Prompt: $enhancedPrompt")
+            println("🦁 [DEBUG] Seed: $seed")
+            
+            // 5. الاتصال
             val connection = URL(imageUrl).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = 120000
             connection.readTimeout = 120000
-            connection.setRequestProperty("User-Agent", "LionAI/1.0")
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            connection.instanceFollowRedirects = true
             
             if (connection.responseCode == 200) {
                 val inputStream: InputStream = connection.inputStream
-                BitmapFactory.decodeStream(inputStream)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+                connection.disconnect()
+                bitmap
             } else {
+                val errorStream = connection.errorStream?.bufferedReader()?.readText()
+                println("❌ [ERROR] Response: ${connection.responseCode}, $errorStream")
+                connection.disconnect()
                 null
             }
         } catch (e: Exception) {
+            println("❌ [EXCEPTION] ${e.message}")
             e.printStackTrace()
             null
-        }
-    }
-
-    /**
-     * توليد فيديو من نص (Pollinations - مجاني وسريع)
-     * ملاحظة: نستخدم Pollinations لأنه يعمل بدون مشاكل DNS
-     */
-    suspend fun generateVideo(prompt: String): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            // Pollinations يدعم توليد الفيديو أيضاً
-            val enhancedPrompt = URLEncoder.encode(prompt, "UTF-8")
-            val videoUrl = "https://video.pollinations.ai/prompt/$enhancedPrompt?width=1280&height=720&seed=${(Math.random() * 100000).toInt()}"
-            
-            val connection = URL(videoUrl).openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 180000 // 3 دقائق للفيديو
-            connection.readTimeout = 180000
-            connection.setRequestProperty("User-Agent", "LionAI/1.0")
-            
-            if (connection.responseCode == 200) {
-                // الفيديو تم توليده، لكن نحتاج لحفظه (سنضيف هذه الميزة لاحقاً)
-                Result.success("تم توليد الفيديو بنجاح! (سيتم إضافة ميزة الحفظ قريباً)")
-            } else {
-                Result.failure(Exception("فشل التوليد: ${connection.responseCode}"))
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception("خطأ في الاتصال: ${e.message}. تحقق من الإنترنت"))
         }
     }
 }
