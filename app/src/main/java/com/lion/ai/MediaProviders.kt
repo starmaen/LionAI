@@ -7,18 +7,19 @@ import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 object MediaProviders {
 
     enum class GenerationStyle(val promptSuffix: String) {
-        REALISTIC(", photorealistic, 8k, highly detailed, professional photography, cinematic lighting, masterpiece"),
-        ANIME(", anime style, studio ghibli, vibrant colors, detailed background, masterpiece, best quality"),
-        CARTOON(", 3d cartoon, pixar style, disney animation, cute, colorful, smooth shading"),
-        ICON(", minimalist vector icon, flat design, clean lines, white background, professional"),
-        POSTER(", movie poster, dramatic lighting, cinematic composition, bold colors"),
-        CYBERPUNK(", cyberpunk, neon lights, futuristic, blade runner style, high tech"),
-        FANTASY(", fantasy art, epic, magical, detailed, dramatic lighting, concept art"),
-        PORTRAIT(", professional portrait, studio lighting, shallow depth of field, detailed face")
+        REALISTIC(", photorealistic, 8k, highly detailed, masterpiece"),
+        ANIME(", anime style, studio ghibli style, vibrant colors, masterpiece"),
+        CARTOON(", 3d cartoon, pixar style, cute, colorful"),
+        ICON(", minimalist icon, flat design, professional"),
+        POSTER(", movie poster style, dramatic, cinematic"),
+        CYBERPUNK(", cyberpunk, neon lights, futuristic"),
+        FANTASY(", fantasy art, epic, magical"),
+        PORTRAIT(", professional portrait, detailed face")
     }
 
     enum class AspectRatio(val label: String) {
@@ -35,61 +36,82 @@ object MediaProviders {
         aspectRatio: AspectRatio = AspectRatio.SQUARE,
         negativePrompt: String = ""
     ): Bitmap? = withContext(Dispatchers.IO) {
-        try {
-            val apiUrl = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
-            
+        // المحاولة الأولى: Pollinations (الأسرع)
+        tryGenerateWithPollinations(prompt, style, aspectRatio) 
+            ?: tryGenerateWithSimpleAPI(prompt, style, aspectRatio)
+    }
+    
+    private suspend fun tryGenerateWithPollinations(
+        prompt: String,
+        style: GenerationStyle,
+        aspectRatio: AspectRatio
+    ): Bitmap? {
+        return try {
             val fullPrompt = "$prompt ${style.promptSuffix}"
-            val negative = if (negativePrompt.isNotBlank()) negativePrompt else "ugly, deformed, noisy, blurry, low contrast"
+            val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
+                .replace("+", "%20")
             
-            val jsonPayload = """
-                {
-                    "inputs": "$fullPrompt",
-                    "parameters": {
-                        "negative_prompt": "$negative",
-                        "width": ${getWidth(aspectRatio)},
-                        "height": ${getHeight(aspectRatio)},
-                        "num_inference_steps": 30,
-                        "guidance_scale": 7.5
-                    }
-                }
-            """.trimIndent()
+            val width = getWidth(aspectRatio)
+            val height = getHeight(aspectRatio)
+            val seed = (System.currentTimeMillis() % 100000).toInt()
             
-            val connection = URL(apiUrl).openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.connectTimeout = 120000
-            connection.readTimeout = 120000
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.setRequestProperty("User-Agent", "LionAI/1.0")
+            val url = "https://image.pollinations.ai/prompt/$encodedPrompt" +
+                "?width=$width&height=$height&seed=$seed&nologo=true"
             
-            connection.outputStream.use { os ->
-                val input = jsonPayload.toByteArray(Charsets.UTF_8)
-                os.write(input, 0, input.size)
-            }
+            println("🦁 Pollinations URL: $url")
             
-            val responseCode = connection.responseCode
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 60000
+            connection.readTimeout = 60000
             
-            if (responseCode == 200) {
+            if (connection.responseCode == 200) {
                 val inputStream: InputStream = connection.inputStream
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream.close()
-                connection.disconnect()
-                bitmap
-            } else {
-                val errorBody = connection.errorStream?.bufferedReader()?.readText()
-                
-                // الإصلاح هنا: استخدام ?.contains مع == true للتعامل الآمن مع القيم الفارغة
-                if (responseCode == 503 && errorBody?.contains("estimated_time") == true) {
-                    kotlinx.coroutines.delay(5000) // انتظر 5 ثوانٍ
-                    connection.disconnect()
-                    return@withContext generateImage(prompt, style, aspectRatio, negativePrompt)
+                BitmapFactory.decodeStream(inputStream).also {
+                    inputStream.close()
                 }
-                
+            } else {
+                println("❌ Pollinations failed: ${connection.responseCode}")
                 connection.disconnect()
                 null
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            println("❌ Pollinations error: ${e.message}")
+            null
+        }
+    }
+    
+    private suspend fun tryGenerateWithSimpleAPI(
+        prompt: String,
+        style: GenerationStyle,
+        aspectRatio: AspectRatio
+    ): Bitmap? {
+        return try {
+            // API بديل بسيط (مجانى)
+            val fullPrompt = "$prompt ${style.promptSuffix}"
+            val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
+            
+            val width = getWidth(aspectRatio)
+            val height = getHeight(aspectRatio)
+            
+            val url = "https://api.photoroom.com/v1/sg/$encodedPrompt?width=$width&height=$height"
+            
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 60000
+            connection.readTimeout = 60000
+            
+            if (connection.responseCode == 200) {
+                val inputStream: InputStream = connection.inputStream
+                BitmapFactory.decodeStream(inputStream).also {
+                    inputStream.close()
+                }
+            } else {
+                connection.disconnect()
+                null
+            }
+        } catch (e: Exception) {
+            println("❌ Fallback API error: ${e.message}")
             null
         }
     }
