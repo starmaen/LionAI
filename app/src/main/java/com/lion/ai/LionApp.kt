@@ -1454,7 +1454,14 @@ fun LionApp() {
 
     
     if (showGenerationStudio) {
-        GenerationStudioScreen(onBack = { showGenerationStudio = false })
+        GenerationStudioScreen(
+            onBack = { showGenerationStudio = false },
+            onPickImage = {
+                imageLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            }
+        )
         return
     }
 

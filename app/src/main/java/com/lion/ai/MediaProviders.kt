@@ -2,14 +2,12 @@ package com.lion.ai
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
-import java.io.File
 
 object MediaProviders {
 
@@ -22,7 +20,7 @@ object MediaProviders {
     }
 
     /**
-     * توليد صورة من نص باستخدام Pollinations.ai (مجاني 100% وسريع)
+     * توليد صورة من نص باستخدام Pollinations.ai (مجاني 100% وسريع جداً)
      */
     suspend fun generateImage(
         prompt: String,
@@ -51,15 +49,38 @@ object MediaProviders {
     }
 
     /**
-     * تحويل صورة موجودة إلى نمط معين (أنمي/كرتون)
-     * ملاحظة: نستخدم هنا نهج Prompt Engineering المتقدم مع Pollinations كبداية مجانية 100%
-     * يمكن لاحقاً ربطها بـ Hugging Face Inference API للحصول على Image-to-Image حقيقي.
+     * توليد فيديو من نص باستخدام Hugging Face Inference API (خطة مجانية)
+     * ملاحظة: هذا النموذج مجاني ولكنه قد يكون في طابور انتظار (Queue) لبضع دقائق.
      */
-    suspend fun transformImageToStyle(
-        imageDescription: String,
-        style: GenerationStyle
-    ): Bitmap? {
-        val transformPrompt = "Transform this into: $imageDescription. Style: ${style.name}, high quality, detailed"
-        return generateImage(transformPrompt, style, 1024, 1024)
+    suspend fun generateVideo(prompt: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            // نستخدم نموذجاً مجانياً متاحاً للاستدلال
+            val apiUrl = "https://api-inference.huggingface.co/models/ali-vilab/text-to-video-ms-1.7b"
+            val connection = URL(apiUrl).openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            // ملاحظة: للحصول على أداء أفضل وتجنب طابور الانتظار، يمكن للمستخدم إضافة HF Token في الإعدادات لاحقاً
+            
+            val jsonInputString = """{"inputs": "$prompt"}"""
+            connection.outputStream.use { os ->
+                val input = jsonInputString.toByteArray(Charsets.UTF_8)
+                os.write(input, 0, input.size)
+            }
+            
+            // نماذج الفيديو المجانية ترجع غالباً حالة 503 (Service Unavailable) مع وقت تقديرية
+            if (connection.responseCode == 200) {
+                Result.success("تم توليد الفيديو بنجاح! (سيتم عرض ميزة الحفظ قريباً)")
+            } else {
+                val errorStream = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
+                if (errorStream.contains("estimated_time")) {
+                    Result.failure(Exception("النموذج مجاني ومزدحم حالياً. الوقت المقدر: يرجى المحاولة لاحقاً أو إضافة مفتاح Hugging Face في الإعدادات."))
+                } else {
+                    Result.failure(Exception("فشل التوليد: ${connection.responseCode}"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

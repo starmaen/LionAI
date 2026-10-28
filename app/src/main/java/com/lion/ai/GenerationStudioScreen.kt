@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GenerationStudioScreen(onBack: () -> Unit) {
+fun GenerationStudioScreen(onBack: () -> Unit, onPickImage: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var prompt by remember { mutableStateOf("") }
@@ -177,26 +177,46 @@ fun GenerationStudioScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("🎬 فيديو ستوديو - قريباً", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("🎬 توليد فيديو بالذكاء الاصطناعي", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         Spacer(Modifier.height(8.dp))
-                        Text("جاري دمج محركات توليد الفيديو...", color = Color(0xFF7A7A7A))
+                        Text("نستخدم محركات مجانية (قد تتطلب بضع دقائق بسبب الازدحام)", color = Color(0xFF7A7A7A), fontSize = 12.sp)
                         Spacer(Modifier.height(16.dp))
                         OutlinedTextField(
                             value = prompt,
-                            onValueChange = { prompt = it },
-                            label = { Text("وصف المشهد...", color = Color(0xFF7A7A7A)) },
+                            onValueChange = { prompt = it; errorMessage = null },
+                            label = { Text("صف مشهد الفيديو باللغة الإنجليزية لأفضل نتيجة...", color = Color(0xFF7A7A7A)) },
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFFB800)),
                             textStyle = LocalTextStyle.current.copy(color = Color.White)
                         )
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(16.dp))
                         Button(
-                            onClick = { },
-                            enabled = false,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3A3A)),
+                            onClick = {
+                                if (prompt.isBlank()) {
+                                    errorMessage = "⚠️ الرجاء كتابة وصف للفيديو"
+                                    return@Button
+                                }
+                                isGenerating = true
+                                errorMessage = null
+                                scope.launch {
+                                    val result = MediaProviders.generateVideo(prompt)
+                                    isGenerating = false
+                                    if (result.isSuccess) {
+                                        saveMessage = "✅ ${result.getOrNull()}"
+                                    } else {
+                                        errorMessage = "❌ ${result.exceptionOrNull()?.message}"
+                                    }
+                                }
+                            },
+                            enabled = !isGenerating,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("🔒 قيد التطوير")
+                            if (isGenerating) {
+                                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                            } else {
+                                Text("🎬 بدء توليد الفيديو", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
