@@ -293,6 +293,46 @@ internal fun LlmClient.callOpenCode(
         val id = model.trim().lowercase()
 
         val custom = endpoint(provider, "")
+        if (provider == "qwen") {
+            return callOpenAiCompatible(
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                apiKey, model, history, message,
+                image = image, systemPrompt = systemPrompt
+            )
+        }
+
+        if (provider == "hf") {
+            return callOpenAiCompatible(
+                "https://router.huggingface.co/v1/chat/completions",
+                apiKey, model, history, message,
+                image = image, systemPrompt = systemPrompt
+            )
+        }
+
+        if (provider == "fireworks") {
+            return callOpenAiCompatible(
+                "https://api.fireworks.ai/inference/v1/chat/completions",
+                apiKey, model, history, message,
+                image = image, systemPrompt = systemPrompt
+            )
+        }
+
+        if (provider == "perplexity") {
+            return callOpenAiCompatible(
+                "https://api.perplexity.ai/chat/completions",
+                apiKey, model, history, message,
+                image = image, systemPrompt = systemPrompt
+            )
+        }
+
+        if (provider == "grok") {
+            return callOpenAiCompatible(
+                "https://api.x.ai/v1/chat/completions",
+                apiKey, model, history, message,
+                image = image, systemPrompt = systemPrompt
+            )
+        }
+
         if (custom.isNotBlank()) {
             return callOpenAiCompatible(
                 custom, apiKey, model, history, message,

@@ -145,6 +145,51 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
                 }
             }
 
+            "qwen" -> {
+                requireKey(apiKey)
+                val json = getJson(
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+                    bearer
+                )
+                idsOf(json.optJSONArray("data"), "id")
+            }
+
+            "hf" -> {
+                requireKey(apiKey)
+                val json = getJson(
+                    "https://router.huggingface.co/v1/models",
+                    bearer
+                )
+                idsOf(json.optJSONArray("data"), "id")
+            }
+
+            "fireworks" -> {
+                requireKey(apiKey)
+                val json = getJson(
+                    "https://api.fireworks.ai/inference/v1/models",
+                    bearer
+                )
+                idsOf(json.optJSONArray("data"), "id")
+            }
+
+            "perplexity" -> {
+                requireKey(apiKey)
+                val json = getJson(
+                    "https://api.perplexity.ai/models",
+                    bearer
+                )
+                idsOf(json.optJSONArray("data"), "id")
+            }
+
+            "grok" -> {
+                requireKey(apiKey)
+                val json = getJson(
+                    "https://api.x.ai/v1/models",
+                    bearer
+                )
+                idsOf(json.optJSONArray("data"), "id")
+            }
+
             else -> emptyList()
         }
         return ids.distinct().sorted().take(200)

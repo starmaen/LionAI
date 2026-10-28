@@ -283,6 +283,61 @@ val PROVIDERS = listOf(
         models = listOf("glm-4.7-flash", "glm-4.6v-flash")
     ),
 
+    ProviderInfo(
+        id = "qwen",
+        label = "Qwen API",
+        tagline = "حصة مجانية جيدة — نماذج قوية",
+        docsUrl = "https://qwen.ai",
+        defaultModel = "qwen-plus",
+        shortName = "Qwen",
+        endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        modelHint = "مناسب جدًا للعربية والبرمجة.",
+        models = listOf("qwen-plus", "qwen-max")
+    ),
+    ProviderInfo(
+        id = "hf",
+        label = "Hugging Face Inference",
+        tagline = "نماذج مفتوحة المصدر — مجاني/محدود",
+        docsUrl = "https://huggingface.co/docs/api-inference",
+        defaultModel = "meta-llama/Llama-3.1-8B-Instruct",
+        shortName = "HF",
+        endpoint = "https://router.huggingface.co/v1/chat/completions",
+        modelHint = "ممتاز للتجارب والنماذج المفتوحة.",
+        models = listOf("meta-llama/Llama-3.1-8B-Instruct")
+    ),
+    ProviderInfo(
+        id = "fireworks",
+        label = "Fireworks AI",
+        tagline = "حصة مجانية جيدة — سرعة عالية",
+        docsUrl = "https://fireworks.ai",
+        defaultModel = "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        shortName = "Fireworks",
+        endpoint = "https://api.fireworks.ai/inference/v1/chat/completions",
+        modelHint = "ممتاز للاختبارات ومقارنة الأداء.",
+        models = listOf("accounts/fireworks/models/llama-v3p1-70b-instruct")
+    ),
+    ProviderInfo(
+        id = "perplexity",
+        label = "Perplexity API",
+        tagline = "بحث + إجابة — حصة مجانية محدودة",
+        docsUrl = "https://docs.perplexity.ai",
+        defaultModel = "sonar",
+        shortName = "Perplexity",
+        endpoint = "https://api.perplexity.ai/chat/completions",
+        modelHint = "مناسب جدًا للبحث والاستخدام الواقعي.",
+        models = listOf("sonar", "sonar-pro")
+    ),
+    ProviderInfo(
+        id = "grok",
+        label = "Grok API",
+        tagline = "ردود طبيعية قوية",
+        docsUrl = "https://docs.x.ai",
+        defaultModel = "grok-2-latest",
+        shortName = "Grok",
+        endpoint = "https://api.x.ai/v1/chat/completions",
+        modelHint = "خيار قوي ومفيد في تنوع المزودات.",
+        models = listOf("grok-2-latest")
+    ),
     // ===== دردشات الويب المجانية (بدون مفتاح) =====
     ProviderInfo(
         id = "arena",
