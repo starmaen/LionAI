@@ -191,11 +191,7 @@ fun GenerationStudioScreen(
                         selectedFilter = ImageEditorTools.FilterType.NONE
                     }
                 )
-                1 -> VideoGenerationTabContent(
-                    prompt = prompt,
-                    onPromptChange = { prompt = it }
-                )
-                2 -> GalleryTabContent(
+                1 -> GalleryTabContent(
                     images = galleryImages,
                     onSelect = { 
                         generatedImage = it
