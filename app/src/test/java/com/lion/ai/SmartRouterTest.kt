@@ -37,6 +37,11 @@ class SmartRouterTest {
     }
 
     @Test
+    fun settingsScreenFixIsDev() {
+        assertEquals(TaskKind.DEV, SmartRouter.classify("أصلح شاشة الإعدادات في التطبيق", false, 0, null))
+    }
+
+    @Test
     fun simpleCodeQuestionIsNotDev() {
         assertEquals(TaskKind.CODE, SmartRouter.classify("اكتب لي دالة kotlin لجمع رقمين", false, 0, null))
         assertEquals(TaskKind.CODE, SmartRouter.classify("راجع هذا الملف", false, 500, "Main.kt"))

@@ -936,6 +936,7 @@ fun LionApp() {
             var fallback: Pair<Route, String>? = null
             var toolNames: List<String> = emptyList()
             var lastErrorReply = ""
+            var sawFalseClaim = false
             val failed = mutableListOf<String>()
             val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(kind)
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
@@ -957,7 +958,8 @@ fun LionApp() {
                                 history = requestHistory,
                                 baseSystemPrompt = systemPrompt,
                                 groups = toolGroups,
-                                contextText = toolText
+                                contextText = toolText,
+                                timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L)
                             )
                         }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList()) }
                     }
@@ -978,8 +980,13 @@ fun LionApp() {
                 }
                 val error = LlmClient.isErrorReply(r)
                 if (error && lastErrorReply.isBlank()) lastErrorReply = r
-                val low = !error && agentResult?.usedTools != true && central &&
-                    AnswerGuard.isLowQuality(r, kind, prompt)
+                val noTools = agentResult?.usedTools != true
+                // ادّعاء تنفيذ تعديل/رفع/PR دون استدعاء أي أداة = هلوسة خطيرة تُرفض دائماً حتى في الوضع اليدوي.
+                val falseClaim = !error && kind == TaskKind.DEV && noTools &&
+                    AnswerGuard.claimsCompletedAction(r)
+                if (falseClaim) sawFalseClaim = true
+                val low = !error && noTools &&
+                    (falseClaim || (central && AnswerGuard.isLowQuality(r, kind, prompt)))
                 SmartRouter.record(route, !error && !low, System.currentTimeMillis() - started)
                 if (!error && !low) {
                     reply = r
@@ -987,13 +994,32 @@ fun LionApp() {
                     toolNames = agentResult?.tools.orEmpty()
                     break
                 }
-                if (!error && fallback == null) fallback = route to r
+                if (!error && !falseClaim && fallback == null) fallback = route to r
                 failed.add(providerInfo(route.provider).shortName + if (low) " (رد غير موثوق)" else "")
             }
             if (used == null) {
                 val f = fallback
-                val canUseFallback = central && (sources.isNotEmpty() || !strict || !hasTrusted)
-                if (f != null && f.second.isNotBlank() && canUseFallback) {
+                val canUseFallback = !sawFalseClaim && central &&
+                    (sources.isNotEmpty() || !strict || !hasTrusted)
+                if (sawFalseClaim) {
+                    val toolsOff = !AiTools.agentEnabled(prefs)
+                    val githubOff = !AiTools.githubReady(prefs)
+                    reply = buildString {
+                        append("⚠️ لم أنفّذ أي تعديل فعلي، ولم أرفع شيئاً إلى GitHub. ")
+                        append("رفضت رداً ادّعى إتمام التعديل/الرفع دون استدعاء أي أداة (هذا ادّعاء غير صحيح).\n\n")
+                        append("ما تحتاجه لتنفيذ المهمة فعلياً:\n")
+                        if (toolsOff) {
+                            append("• فعّل «أدوات الذكاء والتطوير» من الإعدادات (agent_tools).\n")
+                        }
+                        if (githubOff) {
+                            append("• أضف توكن GitHub من «الإعدادات ← أدوات الذكاء والتطوير» وحدّد المستودع الافتراضي.\n")
+                        }
+                        if (!toolsOff && !githubOff) {
+                            append("• المزود الحالي لم يستدعِ الأدوات رغم توفرها؛ جرّب مزوداً يدعم الأدوات (Claude/Gemini/DeepSeek/OpenAI) أو فعّل «مساعدة العقل المركزي».\n")
+                        }
+                        append("• أو أرفق مجلد المشروع/الملف المطلوب، وسأنفّذ التعديل وأتحقق منه أمامك خطوة بخطوة.")
+                    }
+                } else if (f != null && f.second.isNotBlank() && canUseFallback) {
                     reply = f.second
                     used = f.first
                     reply += if (sources.isNotEmpty() && auto && strict) {

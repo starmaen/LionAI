@@ -32,7 +32,7 @@ object ToolAgent {
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
 
         سير العمل البرمجي الكامل:
-        1) افحص أولاً: github_repo_overview أو github_list_tree أو github_read_file للمستودع، وfile_tree/file_read للملفات المحلية، وgithub_search_code للبحث داخل الكود.
+        1) افحص أولاً: file_tree/file_read للملفات المحلية، وgithub_repo_overview/github_clone/github_list_tree/github_read_file للمستودع (استخدم المستودع الافتراضي إن لم يذكر المستخدم رابطاً)، وgithub_search_code للبحث داخل الكود. لا تطلب إرفاق ملفات يمكن قراءتها بالأدوات.
         2) عدّل عبر file_apply_patch (unified diff) أو file_write، ثم اقرأ الملف أو استخدم file_diff للتأكد من التطابق.
         3) تحقّق محلياً ما أمكن: code_analyze_file، ثم ارفع إلى GitHub عبر github_push_workspace (dry_run أولاً عند الشك)، ثم github_wait_run لمراقبة CI.
         4) إن فشل البناء اقرأ github_run_logs/github_job_log، أصلح السبب، وأعد الرفع حتى ينجح.
@@ -57,7 +57,8 @@ object ToolAgent {
         history: List<ChatTurn>,
         baseSystemPrompt: String,
         groups: Set<ToolGroup>,
-        contextText: String = prompt
+        contextText: String = prompt,
+        timeoutMs: Long = 900_000L
     ): Result {
         val system = baseSystemPrompt + AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT + AiTools.spec(groups, prefs)
         val toolContext = ToolContext(context, prefs, AiTools.allowWrite(prefs))
@@ -66,7 +67,8 @@ object ToolAgent {
         var current = prompt
         var lastSignature = ""
         var repeated = 0
-        val deadline = System.currentTimeMillis() + 900_000
+        var nudges = 0
+        val deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
 
         for (step in 0 until MAX_STEPS) {
             if (System.currentTimeMillis() > deadline) {
@@ -90,6 +92,20 @@ object ToolAgent {
             }
             val calls = AiTools.parseCalls(reply)
             if (calls.isEmpty()) {
+                // مهمة تنفيذية بلا أي أداة = غالباً النموذج اكتفى بالكلام. ندفعه للتنفيذ مرتين قبل القبول.
+                if (used.isEmpty() && nudges < 2 && groups.isNotEmpty() &&
+                    System.currentTimeMillis() + 45_000 < deadline
+                ) {
+                    nudges++
+                    historyBuffer.add(ChatTurn("user", current))
+                    historyBuffer.add(ChatTurn("assistant", reply))
+                    current = "لم تستخدم أي أداة بعد، وهذه مهمة تتطلب تنفيذاً فعلياً. " +
+                        "لا تطلب من المستخدم إرفاق ملفات ولا تدّعِ أنك عدّلت أو رفعت شيئاً. " +
+                        "ابدأ الآن باستدعاء أداة مناسبة (مثل file_tree أو github_list_tree ثم file_read/github_read_file) " +
+                        "بصيغة [[TOOL]]{\"name\":\"...\",\"args\":{...}}[[/TOOL]]. " +
+                        "إن كانت الأداة أو المفتاح غير متاح فاذكر ذلك بصراحة واقترح الخطوة التالية."
+                    continue
+                }
                 return Result(finalAnswer(reply, used), used)
             }
 

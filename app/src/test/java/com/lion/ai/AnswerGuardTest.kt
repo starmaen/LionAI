@@ -50,6 +50,16 @@ class AnswerGuardTest {
     }
 
     @Test
+    fun completedActionClaimsAreDetected() {
+        assertTrue(AnswerGuard.claimsCompletedAction("تم الرفع إلى GitHub بنجاح."))
+        assertTrue(AnswerGuard.claimsCompletedAction("فتحت طلب سحب على الفرع الجديد."))
+        assertTrue(AnswerGuard.claimsCompletedAction("I pushed the fix and created a PR."))
+        assertTrue(AnswerGuard.claimsCompletedAction("نجح البناء بعد التعديل."))
+        assertFalse(AnswerGuard.claimsCompletedAction("سأصلح الملف ثم أرفعه إن وافقت."))
+        assertFalse(AnswerGuard.claimsCompletedAction("أحتاج ملف الإعدادات لأتمكن من التعديل."))
+    }
+
+    @Test
     fun sanitizerConvertsTableToBullets() {
         val raw = "**أفلام**\n\n| الاسم | السنة |\n|---|---|\n| البيه البواب | 1987 |\n| الإرهاب والكباب | 1992 |"
         val out = AnswerGuard.sanitizeForDisplay(raw)

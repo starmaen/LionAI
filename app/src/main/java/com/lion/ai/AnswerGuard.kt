@@ -19,6 +19,20 @@ object AnswerGuard {
     private val ELLIPSIS = Regex("\\.{3,}|…")
     private val TABLE_CELL_SEPARATOR = Regex(":?-{3,}:?")
     private val UNCERTAIN = Regex("لست متأكد|لا أعرف|لا اعرف|لا أملك|لا املك|لا أمتلك|لا امتلك")
+
+    /** ادّعاء تنفيذ فعل مكتمل (رفع/تعديل/دمج/إنشاء PR) — لا يُقبل دون أداة استُدعيت فعلاً. */
+    private val COMPLETED_ACTION = Regex(
+        "(تم (الرفع|الدفع|رفع|دفع|التعديل|تعديل|الإصلاح|الاصلاح|إصلاح|اصلاح|الدمج|دمج|الإنشاء|الانشاء|إنشاء|انشاء|التحديث|تحديث|" +
+            "إنشاء فرع|انشاء فرع|فتح طلب سحب)|" +
+            "رفعت|دفعت|عدّلت|عدلت|أصلحت|اصلحت|أنشأت|انشأت|أنشئت|دمجت|حدّثت|حدثت|فتحت (طلب سحب|PR|pull request)|" +
+            "نجح (البناء|الاختبار|الـ?ci)|البناء ناجح|الاختبارات ناجحة|" +
+            "I (pushed|committed|opened|created|merged|updated|fixed|deployed)|" +
+            "successfully (pushed|created|opened|merged|committed|built|deployed))",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** هل يدّعي الرد أنه نفّذ مهمة تطوير (رفع/تعديل/PR)؟ يُستخدم لكشف الادعاء بلا أدوات. */
+    fun claimsCompletedAction(reply: String): Boolean = COMPLETED_ACTION.containsMatchIn(reply)
     private val FUTURE_CONTEXT = Regex("رؤية|خطة|مستقبل|متوقع|سيتم|سيكون|سيناريو|خطه|انتخابات|أولمبياد")
 
     fun isLowQuality(reply: String, kind: TaskKind, query: String = ""): Boolean {

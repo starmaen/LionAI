@@ -122,7 +122,7 @@ object SmartRouter {
         "(github|\\bgit\\b|\\brepo\\b|repository|pull request|\\bpr\\b|branch|commit|workflow|actions|apk|" +
             "kotlin|android|gradle|compose|مستودع|مستودعات|ريبو|فرع|فروع|كوميت|جيت هاب|غيث هاب|" +
             "طلب سحب|دمج|بناء التطبيق|فشل البناء|سجل البناء|مشروع برمجي|كود المشروع|ملفات المشروع|" +
-            "كود|برمج|برمجه|دال[هة]|دوال|تطبيق|مشروع)"
+            "كود|برمج|برمجه|دال[هة]|دوال|تطبيق|مشروع|شاش[هة]|واجه[هة]|إعدادات|اعدادات|settings|screen|\\bui\\b)"
     )
     private val GITHUB_LINK = Regex("github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
