@@ -214,6 +214,31 @@ object GitHubClient {
         return repoFromJson(JSONObject(request("/user/repos", token, "POST", body)))
     }
 
+    /** إنشاء مستودع جديد من قالب GitHub جاهز (Template Repository). */
+    fun createRepoFromTemplate(
+        token: String,
+        templateOwner: String,
+        templateRepo: String,
+        name: String,
+        description: String = "",
+        private: Boolean = true,
+        includeAllBranches: Boolean = false
+    ): Repo {
+        val body = JSONObject()
+            .put("name", name)
+            .put("description", description)
+            .put("private", private)
+            .put("include_all_branches", includeAllBranches)
+        return repoFromJson(
+            JSONObject(
+                request(
+                    "/repos/${encode(templateOwner)}/${encode(templateRepo)}/generate",
+                    token, "POST", body
+                )
+            )
+        )
+    }
+
     fun listDir(token: String, owner: String, repo: String, path: String = "", ref: String = ""): List<Entry> {
         val suffix = if (ref.isBlank()) "" else "?ref=${encode(ref)}"
         val url = "/repos/${encode(owner)}/${encode(repo)}/contents/" + encodePath(path) + suffix

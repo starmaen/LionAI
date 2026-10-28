@@ -109,6 +109,8 @@ object AiTools {
         Def("github_download_artifact", ToolGroup.GITHUB, """{"repo":"owner/name","artifact_id":123,"name":"LionAI.zip"}""", "تنزيل مخرج بناء إلى مساحة العمل", true),
         Def("github_clone", ToolGroup.GITHUB, """{"repo":"owner/name","ref":"main","target":"repos/owner/name"}""", "تنزيل المستودع كامل وفك ضغطه في مساحة العمل", true),
         Def("github_commit_files", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","message":"...","files":[{"path":"a.kt","content":"..."}],"delete":["old.txt"]}""", "commit واحد لعدة ملفات (تعديل/إنشاء/حذف)", true),
+        Def("github_bootstrap_project", ToolGroup.GITHUB, """{"name":"my-app","description":"","private":true,"base":"main","branch":"feature/setup","files":[{"path":"README.md","content":"# ..."}],"gitignore":"Kotlin","license":"mit","open_pr":false}""", "إنشاء مشروع GitHub كامل: مستودع + ملفات أولية + فرع + Pull Request اختياري", true),
+        Def("github_create_repo_from_template", ToolGroup.GITHUB, """{"template":"owner/template-repo","name":"my-app","description":"","private":true}""", "إنشاء مستودع من قالب GitHub جاهز", true),
 
         // Web
         Def("web_fetch", ToolGroup.WEB, """{"url":"https://...","links":true,"max_chars":12000}""", "جلب صفحة واستخراج النص والروابط والصور"),
@@ -120,6 +122,8 @@ object AiTools {
         Def("file_list", ToolGroup.FILES, """{"path":""}""", "عرض ملفات مساحة العمل"),
         Def("file_search", ToolGroup.FILES, """{"query":"TODO","path":"","max_results":50}""", "بحث نصي في مساحة العمل (اسم/مسار/محتوى)"),
         Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل"),
+        Def("file_read_many", ToolGroup.FILES, """{"paths":["src/Main.kt","README.md"],"max_chars":6000}""", "قراءة عدة ملفات في طلب واحد"),
+        Def("file_stat", ToolGroup.FILES, """{"path":"src"}""", "حجم/نوع/أسطر ملف أو إحصاء مجلد"),
         Def("file_write", ToolGroup.FILES, """{"path":"src/Main.kt","content":"..."}""", "إنشاء/تعديل ملف", true),
         Def("file_delete", ToolGroup.FILES, """{"path":"old.txt","recursive":false}""", "حذف ملف/مجلد", true),
         Def("file_mkdir", ToolGroup.FILES, """{"path":"src"}""", "إنشاء مجلد", true),
@@ -856,6 +860,66 @@ object AiTools {
                 )
                 "✅ أُنشئ commit ${sha.take(8)} (${files.size} ملف، ${deletions.size} حذف)"
             }
+            "github_bootstrap_project" -> {
+                val name = req(args, "name")
+                val repo = GitHubClient.createRepo(
+                    token, name, args.optString("description"),
+                    args.optBoolean("private", true), true,
+                    args.optString("gitignore"), args.optString("license")
+                )
+                val (owner, repoName) = GitHubClient.parseFullName(repo.fullName)
+                val base = args.optString("base").ifBlank { repo.defaultBranch }
+                val branch = args.optString("branch").trim().ifBlank { base }
+                if (branch != base) {
+                    GitHubClient.createBranch(token, owner, repoName, branch, base)
+                }
+                val files = linkedMapOf<String, String>()
+                args.optJSONArray("files")?.let { array ->
+                    for (index in 0 until array.length()) {
+                        val o = array.optJSONObject(index) ?: continue
+                        val path = o.optString("path").trim()
+                        if (path.isNotBlank()) files[path] = o.optString("content")
+                    }
+                }
+                args.optJSONObject("files")?.let { obj ->
+                    obj.keys().forEach { key -> files[key] = obj.optString(key) }
+                }
+                val commit = if (files.isEmpty()) "" else GitHubClient.commitFiles(
+                    token, owner, repoName, branch,
+                    args.optString("message", "مشروع أولي من Lion AI"), files
+                )
+                var prUrl = ""
+                if (args.optBoolean("open_pr", false) && branch != base) {
+                    prUrl = GitHubClient.createPull(
+                        token, owner, repoName,
+                        args.optString("pr_title", "تهيئة المشروع"),
+                        branch, base,
+                        args.optString("pr_body", "أُنشئ تلقائياً بواسطة Lion AI.")
+                    ).htmlUrl
+                }
+                buildString {
+                    append("✅ أُنشئ المشروع ").append(repo.fullName).append('\n')
+                    append("الفرع الأساسي: ").append(base)
+                    if (branch != base) append(" | فرع العمل: ").append(branch)
+                    append('\n')
+                    if (files.isNotEmpty()) {
+                        append("الملفات الأولية: ").append(files.size)
+                        if (commit.isNotBlank()) append(" (commit ").append(commit.take(8)).append(")")
+                        append('\n')
+                    }
+                    if (prUrl.isNotBlank()) append("PR: ").append(prUrl).append('\n')
+                    append(repo.htmlUrl)
+                }
+            }
+            "github_create_repo_from_template" -> {
+                val (templateOwner, templateRepo) = GitHubClient.parseFullName(req(args, "template"))
+                val repo = GitHubClient.createRepoFromTemplate(
+                    token, templateOwner, templateRepo, req(args, "name"),
+                    args.optString("description"), args.optBoolean("private", true),
+                    args.optBoolean("include_all_branches", false)
+                )
+                "✅ أُنشئ ${repo.fullName} من القالب $templateOwner/$templateRepo\n${repo.htmlUrl}"
+            }
 
             "connectors_status" -> {
                 val list = ConnectorAuth.all.joinToString("\n") { def ->
@@ -1048,6 +1112,47 @@ object AiTools {
                 val info = FileTools.read(ctx.context, req(args, "path"))
                 if (info.binary) "📄 ${info.path} — ملف ثنائي (${info.size} بايت)" else
                     "📄 ${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n${info.text.take(14_000)}"
+            }
+            "file_read_many" -> {
+                val paths = stringList(args.optJSONArray("paths"))
+                if (paths.isEmpty()) throw IllegalArgumentException("أرسل paths كمصفوفة مسارات")
+                val max = int(args, "max_chars", 6000).coerceIn(500, 20_000)
+                paths.take(12).joinToString("\n\n") { path ->
+                    runCatching {
+                        val info = FileTools.read(ctx.context, path)
+                        "=== ${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""}) ===\n" +
+                            if (info.binary) "[ملف ثنائي]" else info.text.take(max)
+                    }.getOrElse { "=== $path ===\n❌ ${it.message ?: it.javaClass.simpleName}" }
+                }
+            }
+            "file_stat" -> {
+                val path = args.optString("path").ifBlank { "" }
+                val file = resolveWorkspace(ctx, path)
+                if (!file.exists()) throw IllegalArgumentException("المسار غير موجود: $path")
+                if (file.isDirectory) {
+                    val entries = FileTools.walk(ctx.context, path, maxFiles = 5000)
+                    val total = entries.sumOf { it.size }
+                    val byExt = entries.groupBy { it.path.substringAfterLast('.', "").lowercase().ifBlank { "بدون امتداد" } }
+                        .entries.sortedByDescending { group -> group.value.sumOf { it.size } }.take(8)
+                    buildString {
+                        append("📁 ").append(FileTools.relative(ctx.context, file)).append('\n')
+                        append("الملفات: ").append(entries.size).append('\n')
+                        append("الحجم: ").append(FileTools.formatSize(total)).append('\n')
+                        append("الامتدادات: ").append(byExt.joinToString("، ") { "${it.key} (${it.value.size})" })
+                    }
+                } else {
+                    val info = FileTools.read(ctx.context, FileTools.relative(ctx.context, file), 2_000_000)
+                    val lines = if (info.binary) 0 else info.text.lineSequence().count()
+                    buildString {
+                        append("📄 ").append(info.path).append('\n')
+                        append("النوع: ").append(FileTools.fileType(info.path)).append('\n')
+                        FileTools.language(info.path)?.let { append("اللغة: ").append(it).append('\n') }
+                        append("الحجم: ").append(FileTools.formatSize(info.size)).append('\n')
+                        append("الأسطر: ").append(lines).append('\n')
+                        append("ثنائي: ").append(if (info.binary) "نعم" else "لا").append('\n')
+                        append("آخر تعديل: ").append(java.time.Instant.ofEpochMilli(file.lastModified()))
+                    }
+                }
             }
             "file_write" -> {
                 val entry = FileTools.write(ctx.context, req(args, "path"), args.optString("content"))

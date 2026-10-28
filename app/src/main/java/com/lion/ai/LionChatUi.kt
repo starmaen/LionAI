@@ -49,6 +49,7 @@ internal fun LionMessageList(
     messages: List<Message>,
     currentChat: String,
     loading: Boolean,
+    progress: String? = null,
     listState: LazyListState,
     context: Context,
     tts: TextToSpeech?,
@@ -81,11 +82,16 @@ internal fun LionMessageList(
                     }
                     if (loading) {
                         item {
-                            Text(
-                                "... يفكر",
-                                color = Color(0xFFB0B0B0),
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(8.dp)
-                            )
+                            ) {
+                                Text(
+                                    progress ?: "... يفكر",
+                                    color = Color(0xFFB0B0B0),
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
                     }
                 }

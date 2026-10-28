@@ -164,6 +164,7 @@ fun LionApp() {
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var input by remember { mutableStateOf("") }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
+    val toolStatus = remember { mutableStateMapOf<String, String>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
     var chatMetas by remember { mutableStateOf(listOf<ChatMeta>()) }
     var scheduledItems by remember { mutableStateOf(listOf<ScheduledItem>()) }
@@ -860,11 +861,22 @@ fun LionApp() {
                 groups.add(ToolGroup.META)
                 if (AiTools.githubReady(prefs)) groups.add(ToolGroup.GITHUB)
             }
+            // استئناف جلسة سابقة: حتى ردّ قصير مثل «نعم» يجب أن يصل للوكيل مع سياقه وأدواته.
+            if (AgentSessions.hasProgress(chatId)) {
+                groups.add(ToolGroup.FILES)
+                groups.add(ToolGroup.CODE)
+                groups.add(ToolGroup.META)
+                if (AiTools.githubReady(prefs)) groups.add(ToolGroup.GITHUB)
+            }
             groups
         } else {
             emptySet<ToolGroup>()
         }
         loadingChats[chatId] = true
+        toolStatus[chatId] = "🧠 أجهّز المهمة…"
+        val session = AgentSessions.of(chatId)
+        var agentComplete = true
+        var agentAsked = false
         scope.launch {
             // المصادر والروابط (يوتيوب/أنغامي/يوتيوب ميوزيك) ميزة مستقلة يحكمها إعدادها،
             // وتبقى تعمل في الوضع اليدوي أيضاً ولا يلغيها العقل المركزي.
@@ -961,9 +973,12 @@ fun LionApp() {
                                 baseSystemPrompt = systemPrompt,
                                 groups = toolGroups,
                                 contextText = toolText,
-                                timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L)
+                                timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L),
+                                session = session,
+                                providerLabel = SmartRouter.label(route, kind),
+                                onProgress = { status -> toolStatus[chatId] = status }
                             )
-                        }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList()) }
+                        }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList(), complete = false) }
                     }
                 } else {
                     null
@@ -981,6 +996,10 @@ fun LionApp() {
                     )
                 }
                 val error = LlmClient.isErrorReply(r)
+                if (agentResult != null) {
+                    agentComplete = agentResult.complete
+                    agentAsked = agentAsked || session.pendingQuestion != null
+                }
                 if (error && lastErrorReply.isBlank()) lastErrorReply = r
                 val noTools = agentResult?.usedTools != true
                 // ادّعاء تنفيذ تعديل/رفع/PR دون استدعاء أي أداة = هلوسة خطيرة تُرفض دائماً حتى في الوضع اليدوي.
@@ -1119,7 +1138,15 @@ fun LionApp() {
                 SmartRouter.label(it, if (auto) kind else null) +
                     (if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else "") +
                     (if (toolNames.isNotEmpty()) " · 🧰 " + toolNames.distinct().take(4).joinToString("، ") else "") +
+                    (if (agentAsked) " · 💬 بانتظار ردك" else "") +
                     (if (consensusPercent >= 0) " · 🧩 " + consensusPercent + "%" else "")
+            }
+            toolStatus.remove(chatId)
+            // الجلسة تبقى فقط إذا لم تُقبل إجابة مكتملة أو كان هناك سؤال معلّق؛ اكتمال المهمة يصفّرها.
+            if (used != null && agentComplete && session.pendingQuestion == null) {
+                AgentSessions.clear(chatId)
+            } else if (!session.hasWork()) {
+                AgentSessions.clear(chatId)
             }
             val newMessage = Message(
                 reply,
@@ -1755,6 +1782,7 @@ fun LionApp() {
                     messages = messages,
                     currentChat = currentChat,
                     loading = loadingChats[currentChat] == true,
+                    progress = toolStatus[currentChat],
                     listState = listState,
                     context = context,
                     tts = tts,
