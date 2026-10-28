@@ -7,7 +7,6 @@ import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.UUID
 
 object MediaProviders {
 
@@ -37,14 +36,11 @@ object MediaProviders {
         negativePrompt: String = ""
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            // استخدام Hugging Face Inference API مع Stable Diffusion XL
             val apiUrl = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
             
-            // بناء الـ Prompt
-            val fullPrompt = "${prompt} ${style.promptSuffix}"
+            val fullPrompt = "$prompt ${style.promptSuffix}"
             val negative = if (negativePrompt.isNotBlank()) negativePrompt else "ugly, deformed, noisy, blurry, low contrast"
             
-            // JSON payload
             val jsonPayload = """
                 {
                     "inputs": "$fullPrompt",
@@ -58,9 +54,6 @@ object MediaProviders {
                 }
             """.trimIndent()
             
-            println("🦁 [DEBUG] Sending to HF: $fullPrompt")
-            println(" [DEBUG] Size: ${getWidth(aspectRatio)}x${getHeight(aspectRatio)}")
-            
             val connection = URL(apiUrl).openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
             connection.doOutput = true
@@ -69,44 +62,38 @@ object MediaProviders {
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("User-Agent", "LionAI/1.0")
             
-            // إرسال الـ JSON
             connection.outputStream.use { os ->
                 val input = jsonPayload.toByteArray(Charsets.UTF_8)
                 os.write(input, 0, input.size)
             }
             
             val responseCode = connection.responseCode
-            println("🦁 [DEBUG] Response Code: $responseCode")
             
             if (responseCode == 200) {
                 val inputStream: InputStream = connection.inputStream
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 inputStream.close()
                 connection.disconnect()
-                println("✅ [SUCCESS] Image generated!")
                 bitmap
             } else {
                 val errorBody = connection.errorStream?.bufferedReader()?.readText()
-                println("❌ [ERROR] HF API Error: $responseCode - $errorBody")
                 
-                // إذا كان الخطأ 503 (Model Loading)، انتظر وحاول مرة أخرى
-                if (responseCode == 503 && errorBody.contains("estimated_time")) {
-                    println(" [WAIT] Model is loading, waiting...")
-                    kotlinx.coroutines.delay(5000) // انتظر 5 ثواني
-                    return@withContext generateImage(prompt, style, aspectRatio, negativePrompt) // حاول مرة أخرى
+                // الإصلاح هنا: استخدام ?.contains مع == true للتعامل الآمن مع القيم الفارغة
+                if (responseCode == 503 && errorBody?.contains("estimated_time") == true) {
+                    kotlinx.coroutines.delay(5000) // انتظر 5 ثوانٍ
+                    connection.disconnect()
+                    return@withContext generateImage(prompt, style, aspectRatio, negativePrompt)
                 }
                 
                 connection.disconnect()
                 null
             }
         } catch (e: Exception) {
-            println("❌ [EXCEPTION] ${e.message}")
             e.printStackTrace()
             null
         }
     }
     
-    // دوال مساعدة للأبعاد
     private fun getWidth(ratio: AspectRatio): Int {
         return when (ratio) {
             AspectRatio.SQUARE -> 1024

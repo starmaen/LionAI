@@ -91,9 +91,6 @@ fun GenerationStudioScreen(
                     Text("🎨 صور", modifier = Modifier.padding(16.dp))
                 }
                 Tab(selected = activeTab == 1, onClick = { activeTab = 1 }) {
-                    Text("🎬 فيديو", modifier = Modifier.padding(16.dp))
-                }
-                Tab(selected = activeTab == 2, onClick = { activeTab = 2 }) {
                     Text("🖼️ المعرض", modifier = Modifier.padding(16.dp))
                 }
             }
