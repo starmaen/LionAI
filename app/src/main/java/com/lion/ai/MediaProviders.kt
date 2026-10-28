@@ -27,16 +27,26 @@ object MediaProviders {
         style: GenerationStyle = GenerationStyle.REALISTIC,
         width: Int = 1024,
         height: Int = 1024,
-        seed: Int = (Math.random() * 10000).toInt()
+        seed: Int = (Math.random() * 10000).toInt(),
+        enhance: Boolean = true,
+        negativePrompt: String = ""
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            val fullPrompt = URLEncoder.encode("$prompt ${style.promptSuffix}", "UTF-8")
-            val imageUrl = "https://image.pollinations.ai/prompt/$fullPrompt?width=$width&height=$height&seed=$seed&nologo=true"
+            // استخدام PromptEnhancer لتحسين الـ Prompt
+            val enhancedPrompt = if (enhance) {
+                PromptEnhancer.enhancePrompt(prompt, style, true, negativePrompt)
+            } else {
+                "$prompt ${style.promptSuffix}"
+            }
+            
+            val fullPrompt = URLEncoder.encode(enhancedPrompt, "UTF-8")
+            // إضافة enhance=true و nologo=true للحصول على أفضل جودة بدون علامة مائية
+            val imageUrl = "https://image.pollinations.ai/prompt/$fullPrompt?width=$width&height=$height&seed=$seed&nologo=true&enhance=true"
             
             val connection = URL(imageUrl).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
-            connection.connectTimeout = 60000
-            connection.readTimeout = 60000
+            connection.connectTimeout = 90000  // زيادة الوقت للجودة العالية
+            connection.readTimeout = 90000
             
             if (connection.responseCode == 200) {
                 val inputStream: InputStream = connection.inputStream

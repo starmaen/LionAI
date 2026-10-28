@@ -11,6 +11,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +41,11 @@ fun GenerationStudioScreen(onBack: () -> Unit, onPickImage: () -> Unit) {
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var showImagePicker by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf(0) }
+    var imageWidth by remember { mutableStateOf(1024) }
+    var imageHeight by remember { mutableStateOf(1024) }
+    var enhanceQuality by remember { mutableStateOf(true) }
+    var negativePrompt by remember { mutableStateOf("") }
+    var showAdvancedOptions by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -108,7 +117,74 @@ fun GenerationStudioScreen(onBack: () -> Unit, onPickImage: () -> Unit) {
                     }
                 }
 
-                Spacer(Modifier.height(24.dp))
+                
+            // الخيارات المتقدمة
+            if (activeTab == 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("الخيارات المتقدمة:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+                    IconButton(onClick = { showAdvancedOptions = !showAdvancedOptions }) {
+                        Icon(
+                            if (showAdvancedOptions) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            "خيارات",
+                            tint = Color(0xFFFFB800)
+                        )
+                    }
+                }
+                
+                if (showAdvancedOptions) {
+                    // أبعاد الصورة
+                    Text("الأبعاد:", color = Color.White, fontSize = 14.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = imageWidth == 1024 && imageHeight == 1024,
+                            onClick = { imageWidth = 1024; imageHeight = 1024 },
+                            label = { Text("مربع") }
+                        )
+                        FilterChip(
+                            selected = imageWidth == 768 && imageHeight == 1024,
+                            onClick = { imageWidth = 768; imageHeight = 1024 },
+                            label = { Text("طولي") }
+                        )
+                        FilterChip(
+                            selected = imageWidth == 1024 && imageHeight == 768,
+                            onClick = { imageWidth = 1024; imageHeight = 768 },
+                            label = { Text("عرضي") }
+                        )
+                    }
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    // Negative Prompt
+                    OutlinedTextField(
+                        value = negativePrompt,
+                        onValueChange = { negativePrompt = it },
+                        label = { Text("ما لا تريده في الصورة (اختياري)...", color = Color(0xFF7A7A7A)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFFFB800),
+                            unfocusedBorderColor = Color(0xFF2A2A2A)
+                        ),
+                        textStyle = LocalTextStyle.current.copy(color = Color.White)
+                    )
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    // جودة عالية
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = enhanceQuality,
+                            onCheckedChange = { enhanceQuality = it },
+                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFFB800))
+                        )
+                        Text("جودة عالية (يأخذ وقت أطول)", color = Color.White)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
 
                 Button(
                     onClick = {
@@ -119,7 +195,7 @@ fun GenerationStudioScreen(onBack: () -> Unit, onPickImage: () -> Unit) {
                         isGenerating = true
                         errorMessage = null
                         scope.launch {
-                            generatedImage = MediaProviders.generateImage(prompt, selectedStyle)
+                            generatedImage = MediaProviders.generateImage(prompt, selectedStyle, imageWidth, imageHeight, enhance = enhanceQuality, negativePrompt = negativePrompt)
                             isGenerating = false
                             if (generatedImage == null) errorMessage = "❌ فشل التوليد، تأكد من الاتصال بالإنترنت"
                         }
