@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +35,7 @@ fun GenerationStudioScreen(
     onPickImage: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var activeTab by remember { mutableStateOf(0) }
     
     // متغيرات توليد الصور
@@ -48,7 +52,6 @@ fun GenerationStudioScreen(
     var saveMessage by remember { mutableStateOf<String?>(null) }
     
     // متغيرات التعديل
-    var showEditor by remember { mutableStateOf(false) }
     var brightness by remember { mutableStateOf(0) }
     var contrast by remember { mutableStateOf(0) }
     var saturation by remember { mutableStateOf(0) }
@@ -61,7 +64,7 @@ fun GenerationStudioScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("🎨 استوديو التوليد", color = Color(0xFFFFB800)) },
+                title = { Text(" استوديو التوليد", color = Color(0xFFFFB800)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, "رجوع", tint = Color(0xFFFFB800))
@@ -71,9 +74,12 @@ fun GenerationStudioScreen(
             )
         },
         containerColor = Color(0xFF0D0D0D)
-    ) { padding ->
+    ) { paddingValues ->
         Column(
-            modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
         ) {
             // التبويبات الرئيسية
             TabRow(
@@ -88,12 +94,12 @@ fun GenerationStudioScreen(
                     Text("🎬 فيديو", modifier = Modifier.padding(16.dp))
                 }
                 Tab(selected = activeTab == 2, onClick = { activeTab = 2 }) {
-                    Text("️ المعرض", modifier = Modifier.padding(16.dp))
+                    Text("🖼️ المعرض", modifier = Modifier.padding(16.dp))
                 }
             }
 
             when (activeTab) {
-                0 -> ImageGenerationTab(
+                0 -> ImageGenerationTabContent(
                     prompt = prompt,
                     onPromptChange = { prompt = it; errorMessage = null },
                     selectedStyle = selectedStyle,
@@ -110,8 +116,8 @@ fun GenerationStudioScreen(
                     saveMessage = saveMessage,
                     onGenerate = {
                         if (prompt.isBlank()) {
-                            errorMessage = "⚠️ اكتب وصفاً للصورة"
-                            return@ImageGenerationTab
+                            errorMessage = "️ اكتب وصفاً للصورة"
+                            return@ImageGenerationTabContent
                         }
                         isGenerating = true
                         errorMessage = null
@@ -134,16 +140,12 @@ fun GenerationStudioScreen(
                     },
                     onPickImage = onPickImage,
                     onSave = { location ->
-                        val img = generatedImage ?: editedImage ?: return@ImageGenerationTab
+                        val img = generatedImage ?: editedImage ?: return@ImageGenerationTabContent
                         scope.launch {
-                            val result = MediaSaver.saveImage(
-                                androidx.compose.ui.platform.LocalContext.current,
-                                img, location
-                            )
+                            val result = MediaSaver.saveImage(context, img, location)
                             saveMessage = if (result.isSuccess) "✅ تم الحفظ!" else "❌ فشل الحفظ"
                         }
                     },
-                    onEdit = { showEditor = true },
                     brightness = brightness,
                     onBrightnessChange = { 
                         brightness = it
@@ -165,30 +167,42 @@ fun GenerationStudioScreen(
                         applyEdits(generatedImage, brightness, contrast, saturation, selectedFilter)?.let { editedImage = it }
                     },
                     onRotate = {
-                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTabContent
                         editedImage = ImageEditorTools.rotateBitmap(img, 90f)
                     },
                     onFlipH = {
-                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTabContent
                         editedImage = ImageEditorTools.flipHorizontal(img)
                     },
                     onFlipV = {
-                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTabContent
                         editedImage = ImageEditorTools.flipVertical(img)
                     },
                     onUpscale = {
-                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTabContent
                         editedImage = ImageEditorTools.upscaleBitmap(img, 2)
                         saveMessage = "✅ تم تكبير الصورة 2x"
                     },
                     onReset = {
                         editedImage = null
-                        brightness = 0; contrast = 0; saturation = 0
+                        brightness = 0
+                        contrast = 0
+                        saturation = 0
                         selectedFilter = ImageEditorTools.FilterType.NONE
                     }
                 )
-                1 -> VideoGenerationTab(prompt, onPromptChange = { prompt = it })
-                2 -> GalleryTab(galleryImages) { generatedImage = it; editedImage = null; activeTab = 0 }
+                1 -> VideoGenerationTabContent(
+                    prompt = prompt,
+                    onPromptChange = { prompt = it }
+                )
+                2 -> GalleryTabContent(
+                    images = galleryImages,
+                    onSelect = { 
+                        generatedImage = it
+                        editedImage = null
+                        activeTab = 0 
+                    }
+                )
             }
         }
     }
@@ -231,7 +245,9 @@ private fun applyEdits(
 ): Bitmap? {
     if (original == null) return null
     var result = original
-    if (filter != ImageEditorTools.FilterType.NONE) result = ImageEditorTools.applyFilter(result, filter)
+    if (filter != ImageEditorTools.FilterType.NONE) {
+        result = ImageEditorTools.applyFilter(result, filter)
+    }
     if (brightness != 0) result = ImageEditorTools.adjustBrightness(result, brightness)
     if (contrast != 0) result = ImageEditorTools.adjustContrast(result, contrast)
     if (saturation != 0) result = ImageEditorTools.adjustSaturation(result, saturation)
@@ -240,7 +256,7 @@ private fun applyEdits(
 
 // ============ تبويب توليد الصور ============
 @Composable
-private fun ImageGenerationTab(
+private fun ImageGenerationTabContent(
     prompt: String,
     onPromptChange: (String) -> Unit,
     selectedStyle: MediaProviders.GenerationStyle,
@@ -258,7 +274,6 @@ private fun ImageGenerationTab(
     onGenerate: () -> Unit,
     onPickImage: () -> Unit,
     onSave: (MediaSaver.SaveLocation) -> Unit,
-    onEdit: () -> Unit,
     brightness: Int,
     onBrightnessChange: (Int) -> Unit,
     contrast: Int,
@@ -381,7 +396,7 @@ private fun ImageGenerationTab(
         }
 
         if (errorMessage != null) {
-            Text(errorMessage, color = Color(0xFFE94560), modifier = Modifier.padding(top = 8.dp))
+            Text(errorMessage ?: "", color = Color(0xFFE94560), modifier = Modifier.padding(top = 8.dp))
         }
 
         Spacer(Modifier.height(20.dp))
@@ -402,13 +417,13 @@ private fun ImageGenerationTab(
             Spacer(Modifier.height(12.dp))
 
             // أدوات التعديل
-            Text("️ أدوات التعديل:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+            Text("🛠️ أدوات التعديل:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
             
             // أزرار التعديل السريعة
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                padding = PaddingValues(vertical = 8.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onRotate) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -461,7 +476,7 @@ private fun ImageGenerationTab(
             )
 
             // التباين
-            Text("🔆 التباين: $contrast", color = Color.White, fontSize = 13.sp)
+            Text(" التباين: $contrast", color = Color.White, fontSize = 13.sp)
             Slider(
                 value = contrast.toFloat(),
                 onValueChange = { onContrastChange(it.toInt()) },
@@ -519,15 +534,30 @@ private fun ImageGenerationTab(
 
 // ============ تبويب الفيديو ============
 @Composable
-private fun VideoGenerationTab(prompt: String, onPromptChange: (String) -> Unit) {
+private fun VideoGenerationTabContent(
+    prompt: String,
+    onPromptChange: (String) -> Unit
+) {
     var isGenerating by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("🎬 توليد فيديو بالذكاء الاصطناعي", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    Column(
+        modifier = Modifier.padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "🎬 توليد فيديو بالذكاء الاصطناعي",
+            color = Color(0xFFFFB800),
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp
+        )
         Spacer(Modifier.height(8.dp))
-        Text("نستخدم محركات مجانية (قد تستغرق بضع دقائق)", color = Color(0xFF7A7A7A), fontSize = 12.sp)
+        Text(
+            "نستخدم محركات مجانية (قد تستغرق بضع دقائق)",
+            color = Color(0xFF7A7A7A),
+            fontSize = 12.sp
+        )
         Spacer(Modifier.height(16.dp))
         
         OutlinedTextField(
@@ -545,14 +575,18 @@ private fun VideoGenerationTab(prompt: String, onPromptChange: (String) -> Unit)
         Button(
             onClick = {
                 if (prompt.isBlank()) {
-                    message = "️ اكتب وصفاً للفيديو"
+                    message = "⚠️ اكتب وصفاً للفيديو"
                     return@Button
                 }
                 isGenerating = true
                 scope.launch {
                     val result = MediaProviders.generateVideo(prompt)
                     isGenerating = false
-                    message = if (result.isSuccess) "✅ ${result.getOrNull()}" else "❌ ${result.exceptionOrNull()?.message}"
+                    message = if (result.isSuccess) {
+                        "✅ ${result.getOrNull()}"
+                    } else {
+                        " ${result.exceptionOrNull()?.message}"
+                    }
                 }
             },
             enabled = !isGenerating,
@@ -567,16 +601,28 @@ private fun VideoGenerationTab(prompt: String, onPromptChange: (String) -> Unit)
         }
 
         if (message != null) {
-            Text(message!!, color = if (message!!.contains("✅")) Color(0xFF4CAF50) else Color(0xFFE94560), modifier = Modifier.padding(top = 16.dp))
+            Text(
+                message ?: "",
+                color = if ((message ?: "").contains("✅")) Color(0xFF4CAF50) else Color(0xFFE94560),
+                modifier = Modifier.padding(top = 16.dp)
+            )
         }
     }
 }
 
 // ============ تبويب المعرض ============
 @Composable
-private fun GalleryTab(images: List<Bitmap>, onSelect: (Bitmap) -> Unit) {
+private fun GalleryTabContent(
+    images: List<Bitmap>,
+    onSelect: (Bitmap) -> Unit
+) {
     Column(modifier = Modifier.padding(16.dp)) {
-        Text("🖼️ صورك المولدة في هذه الجلسة", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text(
+            "️ صورك المولدة في هذه الجلسة",
+            color = Color(0xFFFFB800),
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp
+        )
         Spacer(Modifier.height(16.dp))
         
         if (images.isEmpty()) {
@@ -587,8 +633,8 @@ private fun GalleryTab(images: List<Bitmap>, onSelect: (Bitmap) -> Unit) {
                 Text("لا توجد صور بعد. ابدأ بالتوليد!", color = Color(0xFF7A7A7A))
             }
         } else {
-            androidx.compose.foundation.lazy.LazyVerticalGrid(
-                columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
