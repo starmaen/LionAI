@@ -263,20 +263,18 @@ saveMessage = if (res3.isSuccess) "✅ جاري الرفع إلى Drive" else "�
                 saveMessage = null
             }
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .align(Alignment.BottomCenter),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.BottomCenter
             ) {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (saveMessage!!.contains("✅")) Color(0xFF2E4A2E) else Color(0xFF4A2E2E)
+                        containerColor = if (saveMessage.contains("✅")) Color(0xFF2E4A2E) else Color(0xFF4A2E2E)
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.padding(16.dp)
                 ) {
                     Text(
-                        saveMessage!!,
+                        saveMessage,
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         fontWeight = FontWeight.Bold
