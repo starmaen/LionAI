@@ -257,8 +257,8 @@ saveMessage = if (res3.isSuccess) "✅ جاري الرفع إلى Drive" else "�
         )
 
         // عرض رسالة نجاح الحفظ
-        if (saveMessage != null) {
-            LaunchedEffect(saveMessage) {
+        saveMessage?.let { message ->
+            LaunchedEffect(message) {
                 kotlinx.coroutines.delay(3000)
                 saveMessage = null
             }
@@ -268,13 +268,13 @@ saveMessage = if (res3.isSuccess) "✅ جاري الرفع إلى Drive" else "�
             ) {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (saveMessage.contains("✅")) Color(0xFF2E4A2E) else Color(0xFF4A2E2E)
+                        containerColor = if (message.contains("✅")) Color(0xFF2E4A2E) else Color(0xFF4A2E2E)
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.padding(16.dp)
                 ) {
                     Text(
-                        saveMessage,
+                        message,
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         fontWeight = FontWeight.Bold
