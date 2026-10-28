@@ -1696,8 +1696,17 @@ fun LionApp() {
                         IconButton(onClick = { addTab() }) {
                             Icon(Icons.Filled.Add, "علامة تبويب جديدة", tint = Color(0xFFFFB800))
                         }
-                        IconButton(onClick = { tts?.stop() }) {
-                            Icon(Icons.Filled.VolumeOff, "إيقاف القراءة", tint = Color(0xFFFFB800))
+                        IconButton(onClick = {
+                            val newValue = !autoSpeak
+                            autoSpeak = newValue
+                            prefs.edit().putBoolean("auto_speak", newValue).apply()
+                            if (!newValue) tts?.stop()
+                        }) {
+                            Icon(
+                                imageVector = if (autoSpeak) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                                contentDescription = if (autoSpeak) "إيقاف القراءة التلقائية" else "تفعيل القراءة التلقائية",
+                                tint = if (autoSpeak) Color(0xFFFFB800) else Color(0xFF555555)
+                            )
                         }
                         IconButton(onClick = { showSettings = true }) {
                             Icon(Icons.Filled.Settings, "الإعدادات", tint = Color(0xFFFFB800))
