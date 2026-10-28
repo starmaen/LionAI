@@ -1,27 +1,25 @@
 package com.lion.ai
 
-import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,23 +27,36 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GenerationStudioScreen(onBack: () -> Unit, onPickImage: () -> Unit) {
-    val context = LocalContext.current
+fun GenerationStudioScreen(
+    onBack: () -> Unit,
+    onPickImage: () -> Unit
+) {
     val scope = rememberCoroutineScope()
+    var activeTab by remember { mutableStateOf(0) }
+    
+    // متغيرات توليد الصور
     var prompt by remember { mutableStateOf("") }
     var selectedStyle by remember { mutableStateOf(MediaProviders.GenerationStyle.REALISTIC) }
+    var selectedRatio by remember { mutableStateOf(MediaProviders.AspectRatio.SQUARE) }
+    var negativePrompt by remember { mutableStateOf("") }
+    var showAdvanced by remember { mutableStateOf(false) }
+    
+    // متغيرات النتيجة
     var generatedImage by remember { mutableStateOf<Bitmap?>(null) }
     var isGenerating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var showSaveOptions by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
-    var showImagePicker by remember { mutableStateOf(false) }
-    var activeTab by remember { mutableStateOf(0) }
-    var imageWidth by remember { mutableStateOf(1024) }
-    var imageHeight by remember { mutableStateOf(1024) }
-    var enhanceQuality by remember { mutableStateOf(true) }
-    var negativePrompt by remember { mutableStateOf("") }
-    var showAdvancedOptions by remember { mutableStateOf(false) }
+    
+    // متغيرات التعديل
+    var showEditor by remember { mutableStateOf(false) }
+    var brightness by remember { mutableStateOf(0) }
+    var contrast by remember { mutableStateOf(0) }
+    var saturation by remember { mutableStateOf(0) }
+    var selectedFilter by remember { mutableStateOf(ImageEditorTools.FilterType.NONE) }
+    var editedImage by remember { mutableStateOf<Bitmap?>(null) }
+    
+    // معرض الصور
+    var galleryImages by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
 
     Scaffold(
         topBar = {
@@ -62,10 +73,9 @@ fun GenerationStudioScreen(onBack: () -> Unit, onPickImage: () -> Unit) {
         containerColor = Color(0xFF0D0D0D)
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
         ) {
-            // شريط التبويبات
+            // التبويبات الرئيسية
             TabRow(
                 selectedTabIndex = activeTab,
                 containerColor = Color(0xFF1A1A1A),
@@ -77,307 +87,526 @@ fun GenerationStudioScreen(onBack: () -> Unit, onPickImage: () -> Unit) {
                 Tab(selected = activeTab == 1, onClick = { activeTab = 1 }) {
                     Text("🎬 فيديو", modifier = Modifier.padding(16.dp))
                 }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            if (activeTab == 0) {
-                // تبويب الصور
-                OutlinedTextField(
-                    value = prompt,
-                    onValueChange = { prompt = it; errorMessage = null },
-                    label = { Text("اكتب فكرة الصورة...", color = Color(0xFF7A7A7A)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFFFB800),
-                        unfocusedBorderColor = Color(0xFF2A2A2A),
-                        focusedTextColor = Color.White,
-                        cursorColor = Color(0xFFFFB800)
-                    ),
-                    textStyle = LocalTextStyle.current.copy(color = Color.White)
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                Text("اختر النمط:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                ) {
-                    items(MediaProviders.GenerationStyle.values()) { style ->
-                        FilterChip(
-                            selected = selectedStyle == style,
-                            onClick = { selectedStyle = style },
-                            label = { Text(style.name.lowercase().replaceFirstChar { it.uppercase() }) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0xFFFFB800),
-                                selectedLabelColor = Color.Black
-                            )
-                        )
-                    }
-                }
-
-                
-            // الخيارات المتقدمة
-            if (activeTab == 0) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("الخيارات المتقدمة:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { showAdvancedOptions = !showAdvancedOptions }) {
-                        Icon(
-                            if (showAdvancedOptions) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            "خيارات",
-                            tint = Color(0xFFFFB800)
-                        )
-                    }
-                }
-                
-                if (showAdvancedOptions) {
-                    // أبعاد الصورة
-                    Text("الأبعاد:", color = Color.White, fontSize = 14.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = imageWidth == 1024 && imageHeight == 1024,
-                            onClick = { imageWidth = 1024; imageHeight = 1024 },
-                            label = { Text("مربع") }
-                        )
-                        FilterChip(
-                            selected = imageWidth == 768 && imageHeight == 1024,
-                            onClick = { imageWidth = 768; imageHeight = 1024 },
-                            label = { Text("طولي") }
-                        )
-                        FilterChip(
-                            selected = imageWidth == 1024 && imageHeight == 768,
-                            onClick = { imageWidth = 1024; imageHeight = 768 },
-                            label = { Text("عرضي") }
-                        )
-                    }
-                    
-                    Spacer(Modifier.height(8.dp))
-                    
-                    // Negative Prompt
-                    OutlinedTextField(
-                        value = negativePrompt,
-                        onValueChange = { negativePrompt = it },
-                        label = { Text("ما لا تريده في الصورة (اختياري)...", color = Color(0xFF7A7A7A)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFFFB800),
-                            unfocusedBorderColor = Color(0xFF2A2A2A)
-                        ),
-                        textStyle = LocalTextStyle.current.copy(color = Color.White)
-                    )
-                    
-                    Spacer(Modifier.height(8.dp))
-                    
-                    // جودة عالية
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = enhanceQuality,
-                            onCheckedChange = { enhanceQuality = it },
-                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFFB800))
-                        )
-                        Text("جودة عالية (يأخذ وقت أطول)", color = Color.White)
-                    }
+                Tab(selected = activeTab == 2, onClick = { activeTab = 2 }) {
+                    Text("️ المعرض", modifier = Modifier.padding(16.dp))
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
-
-                Button(
-                    onClick = {
+            when (activeTab) {
+                0 -> ImageGenerationTab(
+                    prompt = prompt,
+                    onPromptChange = { prompt = it; errorMessage = null },
+                    selectedStyle = selectedStyle,
+                    onStyleChange = { selectedStyle = it },
+                    selectedRatio = selectedRatio,
+                    onRatioChange = { selectedRatio = it },
+                    negativePrompt = negativePrompt,
+                    onNegativePromptChange = { negativePrompt = it },
+                    showAdvanced = showAdvanced,
+                    onShowAdvancedChange = { showAdvanced = it },
+                    generatedImage = generatedImage ?: editedImage,
+                    isGenerating = isGenerating,
+                    errorMessage = errorMessage,
+                    saveMessage = saveMessage,
+                    onGenerate = {
                         if (prompt.isBlank()) {
-                            errorMessage = "⚠️ الرجاء كتابة وصف للصورة أولاً"
-                            return@Button
+                            errorMessage = "⚠️ اكتب وصفاً للصورة"
+                            return@ImageGenerationTab
                         }
                         isGenerating = true
                         errorMessage = null
+                        saveMessage = null
                         scope.launch {
-                            generatedImage = MediaProviders.generateImage(prompt, selectedStyle, imageWidth, imageHeight, enhance = enhanceQuality, negativePrompt = negativePrompt)
+                            val img = MediaProviders.generateImage(
+                                prompt, selectedStyle, selectedRatio,
+                                negativePrompt = negativePrompt
+                            )
+                            generatedImage = img
+                            editedImage = null
                             isGenerating = false
-                            if (generatedImage == null) errorMessage = "❌ فشل التوليد، تأكد من الاتصال بالإنترنت"
-                        }
-                    },
-                    enabled = !isGenerating,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    if (isGenerating) {
-                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                    } else {
-                        Text("✨ توليد الصورة", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                }
-
-                if (errorMessage != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(errorMessage!!, color = Color(0xFFE94560), fontSize = 14.sp)
-                }
-
-                Spacer(Modifier.height(24.dp))
-
-                generatedImage?.let { bitmap ->
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth().aspectRatio(1f)
-                    ) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "الصورة المولدة",
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    OutlinedButton(
-                        onClick = { showSaveOptions = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFB800))
-                    ) {
-                        Icon(Icons.Filled.Download, "حفظ", modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("حفظ الصورة")
-                    }
-                }
-            } else {
-                // تبويب الفيديو
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("🎬 توليد فيديو بالذكاء الاصطناعي", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text("نستخدم محركات مجانية (قد تتطلب بضع دقائق بسبب الازدحام)", color = Color(0xFF7A7A7A), fontSize = 12.sp)
-                        Spacer(Modifier.height(16.dp))
-                        OutlinedTextField(
-                            value = prompt,
-                            onValueChange = { prompt = it; errorMessage = null },
-                            label = { Text("صف مشهد الفيديو باللغة الإنجليزية لأفضل نتيجة...", color = Color(0xFF7A7A7A)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFFB800)),
-                            textStyle = LocalTextStyle.current.copy(color = Color.White)
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                if (prompt.isBlank()) {
-                                    errorMessage = "⚠️ الرجاء كتابة وصف للفيديو"
-                                    return@Button
-                                }
-                                isGenerating = true
-                                errorMessage = null
-                                scope.launch {
-                                    val result = MediaProviders.generateVideo(prompt)
-                                    isGenerating = false
-                                    if (result.isSuccess) {
-                                        saveMessage = "✅ ${result.getOrNull()}"
-                                    } else {
-                                        errorMessage = "❌ ${result.exceptionOrNull()?.message}"
-                                    }
-                                }
-                            },
-                            enabled = !isGenerating,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            if (isGenerating) {
-                                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                            if (img != null) {
+                                galleryImages = galleryImages + img
+                                saveMessage = "✅ تم التوليد بنجاح! استخدم أدوات التعديل أدناه"
                             } else {
-                                Text("🎬 بدء توليد الفيديو", color = Color.Black, fontWeight = FontWeight.Bold)
+                                errorMessage = "❌ فشل التوليد، تحقق من الإنترنت"
                             }
                         }
+                    },
+                    onPickImage = onPickImage,
+                    onSave = { location ->
+                        val img = generatedImage ?: editedImage ?: return@ImageGenerationTab
+                        scope.launch {
+                            val result = MediaSaver.saveImage(
+                                androidx.compose.ui.platform.LocalContext.current,
+                                img, location
+                            )
+                            saveMessage = if (result.isSuccess) "✅ تم الحفظ!" else "❌ فشل الحفظ"
+                        }
+                    },
+                    onEdit = { showEditor = true },
+                    brightness = brightness,
+                    onBrightnessChange = { 
+                        brightness = it
+                        applyEdits(generatedImage, brightness, contrast, saturation, selectedFilter)?.let { editedImage = it }
+                    },
+                    contrast = contrast,
+                    onContrastChange = { 
+                        contrast = it
+                        applyEdits(generatedImage, brightness, contrast, saturation, selectedFilter)?.let { editedImage = it }
+                    },
+                    saturation = saturation,
+                    onSaturationChange = { 
+                        saturation = it
+                        applyEdits(generatedImage, brightness, contrast, saturation, selectedFilter)?.let { editedImage = it }
+                    },
+                    selectedFilter = selectedFilter,
+                    onFilterChange = { 
+                        selectedFilter = it
+                        applyEdits(generatedImage, brightness, contrast, saturation, selectedFilter)?.let { editedImage = it }
+                    },
+                    onRotate = {
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        editedImage = ImageEditorTools.rotateBitmap(img, 90f)
+                    },
+                    onFlipH = {
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        editedImage = ImageEditorTools.flipHorizontal(img)
+                    },
+                    onFlipV = {
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        editedImage = ImageEditorTools.flipVertical(img)
+                    },
+                    onUpscale = {
+                        val img = editedImage ?: generatedImage ?: return@ImageGenerationTab
+                        editedImage = ImageEditorTools.upscaleBitmap(img, 2)
+                        saveMessage = "✅ تم تكبير الصورة 2x"
+                    },
+                    onReset = {
+                        editedImage = null
+                        brightness = 0; contrast = 0; saturation = 0
+                        selectedFilter = ImageEditorTools.FilterType.NONE
                     }
-                }
+                )
+                1 -> VideoGenerationTab(prompt, onPromptChange = { prompt = it })
+                2 -> GalleryTab(galleryImages) { generatedImage = it; editedImage = null; activeTab = 0 }
             }
         }
     }
 
-    // نافذة اختيار مكان الحفظ
-    if (showSaveOptions && generatedImage != null) {
-        AlertDialog(
-            onDismissRequest = { showSaveOptions = false },
-            title = { Text("اختر مكان الحفظ", color = Color(0xFFFFB800)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val result = MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.GALLERY)
-                                saveMessage = if (result.isSuccess) "✅ تم الحفظ في المعرض بنجاح!" else "❌ فشل الحفظ"
-                            }
-                            showSaveOptions = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("🖼️ معرض الصور", color = Color.White) }
+    // رسالة Snackbar
+    saveMessage?.let { message ->
+        LaunchedEffect(message) {
+            kotlinx.coroutines.delay(3000)
+            saveMessage = null
+        }
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (message.contains("✅")) Color(0xFF2E4A2E) else Color(0xFF4A2E2E)
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    message,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
 
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val res2 = MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.APP_FOLDER)
-saveMessage = if (res2.isSuccess) "✅ تم الحفظ في مجلد التطبيق" else "❌ فشل الحفظ"
-                            }
-                            showSaveOptions = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("📂 مجلد التطبيق", color = Color.White) }
+// دالة مساعدة لتطبيق التعديلات
+private fun applyEdits(
+    original: Bitmap?,
+    brightness: Int,
+    contrast: Int,
+    saturation: Int,
+    filter: ImageEditorTools.FilterType
+): Bitmap? {
+    if (original == null) return null
+    var result = original
+    if (filter != ImageEditorTools.FilterType.NONE) result = ImageEditorTools.applyFilter(result, filter)
+    if (brightness != 0) result = ImageEditorTools.adjustBrightness(result, brightness)
+    if (contrast != 0) result = ImageEditorTools.adjustContrast(result, contrast)
+    if (saturation != 0) result = ImageEditorTools.adjustSaturation(result, saturation)
+    return result
+}
 
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val res3 = MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.DRIVE)
-saveMessage = if (res3.isSuccess) "✅ جاري الرفع إلى Drive" else "❌ تأكد من ربط Drive في الإعدادات"
-                            }
-                            showSaveOptions = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("☁️ Google Drive", color = Color.White) }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSaveOptions = false }) {
-                    Text("إلغاء", color = Color(0xFFFFB800))
-                }
-            },
-            containerColor = Color(0xFF1A1A1A)
+// ============ تبويب توليد الصور ============
+@Composable
+private fun ImageGenerationTab(
+    prompt: String,
+    onPromptChange: (String) -> Unit,
+    selectedStyle: MediaProviders.GenerationStyle,
+    onStyleChange: (MediaProviders.GenerationStyle) -> Unit,
+    selectedRatio: MediaProviders.AspectRatio,
+    onRatioChange: (MediaProviders.AspectRatio) -> Unit,
+    negativePrompt: String,
+    onNegativePromptChange: (String) -> Unit,
+    showAdvanced: Boolean,
+    onShowAdvancedChange: (Boolean) -> Unit,
+    generatedImage: Bitmap?,
+    isGenerating: Boolean,
+    errorMessage: String?,
+    saveMessage: String?,
+    onGenerate: () -> Unit,
+    onPickImage: () -> Unit,
+    onSave: (MediaSaver.SaveLocation) -> Unit,
+    onEdit: () -> Unit,
+    brightness: Int,
+    onBrightnessChange: (Int) -> Unit,
+    contrast: Int,
+    onContrastChange: (Int) -> Unit,
+    saturation: Int,
+    onSaturationChange: (Int) -> Unit,
+    selectedFilter: ImageEditorTools.FilterType,
+    onFilterChange: (ImageEditorTools.FilterType) -> Unit,
+    onRotate: () -> Unit,
+    onFlipH: () -> Unit,
+    onFlipV: () -> Unit,
+    onUpscale: () -> Unit,
+    onReset: () -> Unit
+) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        // حقل الإدخال
+        OutlinedTextField(
+            value = prompt,
+            onValueChange = onPromptChange,
+            label = { Text("✍️ اكتب فكرة الصورة (عربي أو إنجليزي)...") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFFFFB800),
+                unfocusedBorderColor = Color(0xFF2A2A2A),
+                focusedTextColor = Color.White,
+                cursorColor = Color(0xFFFFB800)
+            ),
+            textStyle = LocalTextStyle.current.copy(color = Color.White)
         )
 
-        // عرض رسالة نجاح الحفظ
-        saveMessage?.let { message ->
-            LaunchedEffect(message) {
-                kotlinx.coroutines.delay(3000)
-                saveMessage = null
-            }
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (message.contains("✅")) Color(0xFF2E4A2E) else Color(0xFF4A2E2E)
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Text(
-                        message,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        fontWeight = FontWeight.Bold
+        Spacer(Modifier.height(12.dp))
+
+        // اختيار النمط
+        Text("🎨 النمط الفني:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        ) {
+            items(MediaProviders.GenerationStyle.values()) { style ->
+                FilterChip(
+                    selected = selectedStyle == style,
+                    onClick = { onStyleChange(style) },
+                    label = { Text(style.name, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFFFFB800),
+                        selectedLabelColor = Color.Black
                     )
-                }
+                )
             }
         }
 
+        Spacer(Modifier.height(8.dp))
+
+        // اختيار الأبعاد
+        Text("📐 الأبعاد:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        ) {
+            items(MediaProviders.AspectRatio.values()) { ratio ->
+                FilterChip(
+                    selected = selectedRatio == ratio,
+                    onClick = { onRatioChange(ratio) },
+                    label = { Text(ratio.label, fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFFFFB800),
+                        selectedLabelColor = Color.Black
+                    )
+                )
+            }
+        }
+
+        // الخيارات المتقدمة
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("⚙️ خيارات متقدمة:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+            IconButton(onClick = { onShowAdvancedChange(!showAdvanced) }) {
+                Icon(
+                    if (showAdvanced) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    "خيارات",
+                    tint = Color(0xFFFFB800)
+                )
+            }
+        }
+
+        if (showAdvanced) {
+            OutlinedTextField(
+                value = negativePrompt,
+                onValueChange = onNegativePromptChange,
+                label = { Text("🚫 ما لا تريده في الصورة...") },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFFFB800),
+                    unfocusedBorderColor = Color(0xFF2A2A2A)
+                ),
+                textStyle = LocalTextStyle.current.copy(color = Color.White)
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // زر التوليد
+        Button(
+            onClick = onGenerate,
+            enabled = !isGenerating,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+        ) {
+            if (isGenerating) {
+                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("جاري التوليد...", color = Color.Black, fontWeight = FontWeight.Bold)
+            } else {
+                Text("✨ توليد الصورة", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        }
+
+        if (errorMessage != null) {
+            Text(errorMessage, color = Color(0xFFE94560), modifier = Modifier.padding(top = 8.dp))
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // عرض الصورة المولدة
+        generatedImage?.let { bitmap ->
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+            ) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "الصورة المولدة",
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // أدوات التعديل
+            Text("️ أدوات التعديل:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+            
+            // أزرار التعديل السريعة
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                padding = PaddingValues(vertical = 8.dp)
+            ) {
+                IconButton(onClick = onRotate) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.RotateRight, "تدوير", tint = Color(0xFFFFB800))
+                        Text("تدوير", fontSize = 10.sp, color = Color.White)
+                    }
+                }
+                IconButton(onClick = onFlipH) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.Flip, "قلب", tint = Color(0xFFFFB800))
+                        Text("قلب", fontSize = 10.sp, color = Color.White)
+                    }
+                }
+                IconButton(onClick = onUpscale) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.ZoomIn, "تكبير", tint = Color(0xFFFFB800))
+                        Text("2x", fontSize = 10.sp, color = Color.White)
+                    }
+                }
+                IconButton(onClick = onReset) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.Refresh, "إعادة", tint = Color(0xFFFFB800))
+                        Text("إعادة", fontSize = 10.sp, color = Color.White)
+                    }
+                }
+            }
+
+            // الفلاتر
+            Text("🎭 الفلاتر:", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                items(ImageEditorTools.FilterType.values()) { filter ->
+                    FilterChip(
+                        selected = selectedFilter == filter,
+                        onClick = { onFilterChange(filter) },
+                        label = { Text(filter.name, fontSize = 11.sp) }
+                    )
+                }
+            }
+
+            // السطوع
+            Text("☀️ السطوع: $brightness", color = Color.White, fontSize = 13.sp)
+            Slider(
+                value = brightness.toFloat(),
+                onValueChange = { onBrightnessChange(it.toInt()) },
+                valueRange = -100f..100f,
+                colors = SliderDefaults.colors(thumbColor = Color(0xFFFFB800), activeTrackColor = Color(0xFFFFB800))
+            )
+
+            // التباين
+            Text("🔆 التباين: $contrast", color = Color.White, fontSize = 13.sp)
+            Slider(
+                value = contrast.toFloat(),
+                onValueChange = { onContrastChange(it.toInt()) },
+                valueRange = -100f..100f,
+                colors = SliderDefaults.colors(thumbColor = Color(0xFFFFB800), activeTrackColor = Color(0xFFFFB800))
+            )
+
+            // التشبع
+            Text("🎨 التشبع: $saturation", color = Color.White, fontSize = 13.sp)
+            Slider(
+                value = saturation.toFloat(),
+                onValueChange = { onSaturationChange(it.toInt()) },
+                valueRange = -100f..100f,
+                colors = SliderDefaults.colors(thumbColor = Color(0xFFFFB800), activeTrackColor = Color(0xFFFFB800))
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // أزرار الحفظ والمشاركة
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { onSave(MediaSaver.SaveLocation.GALLERY) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E4A2E)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.PhotoLibrary, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("المعرض")
+                }
+                Button(
+                    onClick = { onSave(MediaSaver.SaveLocation.APP_FOLDER) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.Folder, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("المجلد")
+                }
+                Button(
+                    onClick = { onSave(MediaSaver.SaveLocation.DRIVE) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A2E4A)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.Cloud, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Drive")
+                }
+            }
+        }
+    }
+}
+
+// ============ تبويب الفيديو ============
+@Composable
+private fun VideoGenerationTab(prompt: String, onPromptChange: (String) -> Unit) {
+    var isGenerating by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("🎬 توليد فيديو بالذكاء الاصطناعي", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("نستخدم محركات مجانية (قد تستغرق بضع دقائق)", color = Color(0xFF7A7A7A), fontSize = 12.sp)
+        Spacer(Modifier.height(16.dp))
+        
+        OutlinedTextField(
+            value = prompt,
+            onValueChange = onPromptChange,
+            label = { Text("صف مشهد الفيديو (بالإنجليزية لأفضل نتيجة)...") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFFB800)),
+            textStyle = LocalTextStyle.current.copy(color = Color.White)
+        )
+        
+        Spacer(Modifier.height(16.dp))
+        
+        Button(
+            onClick = {
+                if (prompt.isBlank()) {
+                    message = "️ اكتب وصفاً للفيديو"
+                    return@Button
+                }
+                isGenerating = true
+                scope.launch {
+                    val result = MediaProviders.generateVideo(prompt)
+                    isGenerating = false
+                    message = if (result.isSuccess) "✅ ${result.getOrNull()}" else "❌ ${result.exceptionOrNull()?.message}"
+                }
+            },
+            enabled = !isGenerating,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (isGenerating) {
+                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+            } else {
+                Text("🎬 بدء توليد الفيديو", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (message != null) {
+            Text(message!!, color = if (message!!.contains("✅")) Color(0xFF4CAF50) else Color(0xFFE94560), modifier = Modifier.padding(top = 16.dp))
+        }
+    }
+}
+
+// ============ تبويب المعرض ============
+@Composable
+private fun GalleryTab(images: List<Bitmap>, onSelect: (Bitmap) -> Unit) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("🖼️ صورك المولدة في هذه الجلسة", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Spacer(Modifier.height(16.dp))
+        
+        if (images.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(300.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("لا توجد صور بعد. ابدأ بالتوليد!", color = Color(0xFF7A7A7A))
+            }
+        } else {
+            androidx.compose.foundation.lazy.LazyVerticalGrid(
+                columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(images.size) { index ->
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.aspectRatio(1f),
+                        onClick = { onSelect(images[index]) }
+                    ) {
+                        Image(
+                            bitmap = images[index].asImageBitmap(),
+                            contentDescription = "صورة ${index + 1}",
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
+                        )
+                    }
+                }
+            }
+        }
     }
 }

@@ -11,47 +11,86 @@ import java.net.URLEncoder
 
 object MediaProviders {
 
-    enum class GenerationStyle(val promptSuffix: String) {
-        REALISTIC(", photorealistic, 8k, highly detailed, cinematic lighting, masterpiece"),
-        ANIME(", anime style, studio ghibli, vibrant colors, masterpiece, best quality"),
-        CARTOON(", 3d cartoon style, pixar style, cute, bright colors, disney style"),
-        ICON(", minimalist vector icon, flat design, white background, professional, ui/ux"),
-        POSTER(", movie poster style, dramatic composition, bold typography space, cinematic")
+    enum class GenerationStyle(val promptSuffix: String, val model: String) {
+        REALISTIC(
+            ", photorealistic, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3, masterpiece",
+            "flux"
+        ),
+        ANIME(
+            ", anime style, studio ghibli, makoto shinkai, vibrant colors, detailed background, masterpiece, best quality, 4k",
+            "flux"
+        ),
+        CARTOON(
+            ", 3d render, pixar style, disney animation, cute, colorful, smooth shading, high detail, octane render",
+            "flux"
+        ),
+        ICON(
+            ", minimalist vector icon, flat design, clean lines, white background, professional, ui/ux design, simple, svg style",
+            "flux"
+        ),
+        POSTER(
+            ", movie poster, dramatic lighting, cinematic composition, bold colors, professional photography, 8k, masterpiece",
+            "flux"
+        ),
+        CYBERPUNK(
+            ", cyberpunk, neon lights, futuristic, blade runner style, high tech, dark atmosphere, rain, detailed",
+            "flux"
+        ),
+        FANTASY(
+            ", fantasy art, epic, magical, detailed, dramatic lighting, concept art, artstation, masterpiece",
+            "flux"
+        ),
+        PORTRAIT(
+            ", professional portrait, studio lighting, shallow depth of field, bokeh, 85mm lens, detailed face, masterpiece",
+            "flux"
+        )
+    }
+
+    enum class AspectRatio(val width: Int, val height: Int, val label: String) {
+        SQUARE(1024, 1024, "مربع 1:1"),
+        PORTRAIT(768, 1024, "طولي 3:4"),
+        LANDSCAPE(1024, 768, "عرضي 4:3"),
+        WIDE(1280, 720, "سينمائي 16:9"),
+        TALL(720, 1280, "ستوري 9:16")
     }
 
     /**
-     * توليد صورة من نص باستخدام Pollinations.ai (مجاني 100% وسريع جداً)
+     * توليد صورة باستخدام Pollinations.ai مع نموذج Flux (الأقوى مجاناً)
      */
     suspend fun generateImage(
         prompt: String,
         style: GenerationStyle = GenerationStyle.REALISTIC,
-        width: Int = 1024,
-        height: Int = 1024,
-        seed: Int = (Math.random() * 10000).toInt(),
+        aspectRatio: AspectRatio = AspectRatio.SQUARE,
+        seed: Int = (Math.random() * 100000).toInt(),
         enhance: Boolean = true,
         negativePrompt: String = ""
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            // استخدام PromptEnhancer لتحسين الـ Prompt
-            val enhancedPrompt = if (enhance) {
-                PromptEnhancer.enhancePrompt(prompt, style, true, negativePrompt)
-            } else {
-                "$prompt ${style.promptSuffix}"
-            }
-            
+            // تحسين الـ Prompt
+            val enhancedPrompt = PromptEnhancer.enhancePrompt(prompt, style, enhance, negativePrompt)
             val fullPrompt = URLEncoder.encode(enhancedPrompt, "UTF-8")
-            // إضافة enhance=true و nologo=true للحصول على أفضل جودة بدون علامة مائية
-            val imageUrl = "https://image.pollinations.ai/prompt/$fullPrompt?width=$width&height=$height&seed=$seed&nologo=true&enhance=true"
+            
+            // استخدام نموذج Flux مع جميع التحسينات
+            val imageUrl = "https://image.pollinations.ai/prompt/$fullPrompt" +
+                "?width=${aspectRatio.width}" +
+                "&height=${aspectRatio.height}" +
+                "&seed=$seed" +
+                "&nologo=true" +
+                "&enhance=true" +
+                "&model=${style.model}"
             
             val connection = URL(imageUrl).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
-            connection.connectTimeout = 90000  // زيادة الوقت للجودة العالية
-            connection.readTimeout = 90000
+            connection.connectTimeout = 120000
+            connection.readTimeout = 120000
+            connection.setRequestProperty("User-Agent", "LionAI/1.0")
             
             if (connection.responseCode == 200) {
                 val inputStream: InputStream = connection.inputStream
                 BitmapFactory.decodeStream(inputStream)
-            } else null
+            } else {
+                null
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -59,18 +98,15 @@ object MediaProviders {
     }
 
     /**
-     * توليد فيديو من نص باستخدام Hugging Face Inference API (خطة مجانية)
-     * ملاحظة: هذا النموذج مجاني ولكنه قد يكون في طابور انتظار (Queue) لبضع دقائق.
+     * توليد فيديو من نص (Hugging Face - مجاني)
      */
     suspend fun generateVideo(prompt: String): Result<String> = withContext(Dispatchers.IO) {
         try {
-            // نستخدم نموذجاً مجانياً متاحاً للاستدلال
             val apiUrl = "https://api-inference.huggingface.co/models/ali-vilab/text-to-video-ms-1.7b"
             val connection = URL(apiUrl).openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
-            // ملاحظة: للحصول على أداء أفضل وتجنب طابور الانتظار، يمكن للمستخدم إضافة HF Token في الإعدادات لاحقاً
             
             val jsonInputString = """{"inputs": "$prompt"}"""
             connection.outputStream.use { os ->
@@ -78,16 +114,10 @@ object MediaProviders {
                 os.write(input, 0, input.size)
             }
             
-            // نماذج الفيديو المجانية ترجع غالباً حالة 503 (Service Unavailable) مع وقت تقديرية
             if (connection.responseCode == 200) {
-                Result.success("تم توليد الفيديو بنجاح! (سيتم عرض ميزة الحفظ قريباً)")
+                Result.success("تم توليد الفيديو بنجاح!")
             } else {
-                val errorStream = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
-                if (errorStream.contains("estimated_time")) {
-                    Result.failure(Exception("النموذج مجاني ومزدحم حالياً. الوقت المقدر: يرجى المحاولة لاحقاً أو إضافة مفتاح Hugging Face في الإعدادات."))
-                } else {
-                    Result.failure(Exception("فشل التوليد: ${connection.responseCode}"))
-                }
+                Result.failure(Exception("النموذج مشغول حالياً، حاول لاحقاً"))
             }
         } catch (e: Exception) {
             Result.failure(e)
