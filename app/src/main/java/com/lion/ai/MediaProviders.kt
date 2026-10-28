@@ -98,29 +98,29 @@ object MediaProviders {
     }
 
     /**
-     * توليد فيديو من نص (Hugging Face - مجاني)
+     * توليد فيديو من نص (Pollinations - مجاني وسريع)
+     * ملاحظة: نستخدم Pollinations لأنه يعمل بدون مشاكل DNS
      */
     suspend fun generateVideo(prompt: String): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val apiUrl = "https://api-inference.huggingface.co/models/ali-vilab/text-to-video-ms-1.7b"
-            val connection = URL(apiUrl).openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json")
+            // Pollinations يدعم توليد الفيديو أيضاً
+            val enhancedPrompt = URLEncoder.encode(prompt, "UTF-8")
+            val videoUrl = "https://video.pollinations.ai/prompt/$enhancedPrompt?width=1280&height=720&seed=${(Math.random() * 100000).toInt()}"
             
-            val jsonInputString = """{"inputs": "$prompt"}"""
-            connection.outputStream.use { os ->
-                val input = jsonInputString.toByteArray(Charsets.UTF_8)
-                os.write(input, 0, input.size)
-            }
+            val connection = URL(videoUrl).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 180000 // 3 دقائق للفيديو
+            connection.readTimeout = 180000
+            connection.setRequestProperty("User-Agent", "LionAI/1.0")
             
             if (connection.responseCode == 200) {
-                Result.success("تم توليد الفيديو بنجاح!")
+                // الفيديو تم توليده، لكن نحتاج لحفظه (سنضيف هذه الميزة لاحقاً)
+                Result.success("تم توليد الفيديو بنجاح! (سيتم إضافة ميزة الحفظ قريباً)")
             } else {
-                Result.failure(Exception("النموذج مشغول حالياً، حاول لاحقاً"))
+                Result.failure(Exception("فشل التوليد: ${connection.responseCode}"))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception("خطأ في الاتصال: ${e.message}. تحقق من الإنترنت"))
         }
     }
 }
