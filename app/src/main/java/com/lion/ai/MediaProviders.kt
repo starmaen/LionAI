@@ -2,29 +2,27 @@ package com.lion.ai
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.io.File
 
-/**
- * محرك توليد الوسائط - يدعم المزودين المجانيين والسريعين
- */
 object MediaProviders {
 
-    // أنماط التوليد المتاحة
     enum class GenerationStyle(val promptSuffix: String) {
-        REALISTIC(", photorealistic, 8k, highly detailed, cinematic lighting"),
-        ANIME(", anime style, studio ghibli, vibrant colors, masterpiece"),
-        CARTOON(", 3d cartoon style, pixar style, cute, bright colors"),
-        ICON(", minimalist vector icon, flat design, white background, professional"),
-        POSTER(", movie poster style, dramatic composition, bold typography space")
+        REALISTIC(", photorealistic, 8k, highly detailed, cinematic lighting, masterpiece"),
+        ANIME(", anime style, studio ghibli, vibrant colors, masterpiece, best quality"),
+        CARTOON(", 3d cartoon style, pixar style, cute, bright colors, disney style"),
+        ICON(", minimalist vector icon, flat design, white background, professional, ui/ux"),
+        POSTER(", movie poster style, dramatic composition, bold typography space, cinematic")
     }
 
     /**
-     * توليد صورة باستخدام Pollinations.ai (مجاني وسريع جداً)
+     * توليد صورة من نص باستخدام Pollinations.ai (مجاني 100% وسريع)
      */
     suspend fun generateImage(
         prompt: String,
@@ -39,15 +37,13 @@ object MediaProviders {
             
             val connection = URL(imageUrl).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
-            connection.connectTimeout = 60000 // 60 ثانية انتظار
+            connection.connectTimeout = 60000
             connection.readTimeout = 60000
             
             if (connection.responseCode == 200) {
                 val inputStream: InputStream = connection.inputStream
                 BitmapFactory.decodeStream(inputStream)
-            } else {
-                null
-            }
+            } else null
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -55,14 +51,15 @@ object MediaProviders {
     }
 
     /**
-     * تحويل صورة إلى أنمي (محاكاة عبر Prompt Engineering مع Pollinations)
-     * ملاحظة: للتحويل الحقيقي Image-to-Image نحتاج Stable Diffusion API لاحقاً
+     * تحويل صورة موجودة إلى نمط معين (أنمي/كرتون)
+     * ملاحظة: نستخدم هنا نهج Prompt Engineering المتقدم مع Pollinations كبداية مجانية 100%
+     * يمكن لاحقاً ربطها بـ Hugging Face Inference API للحصول على Image-to-Image حقيقي.
      */
-    suspend fun transformToAnimeStyle(
-        description: String, 
-        originalImageHint: String = ""
+    suspend fun transformImageToStyle(
+        imageDescription: String,
+        style: GenerationStyle
     ): Bitmap? {
-        val animePrompt = "anime version of $description, $originalImageHint, anime style, studio ghibli, detailed"
-        return generateImage(animePrompt, GenerationStyle.ANIME)
+        val transformPrompt = "Transform this into: $imageDescription. Style: ${style.name}, high quality, detailed"
+        return generateImage(transformPrompt, style, 1024, 1024)
     }
 }

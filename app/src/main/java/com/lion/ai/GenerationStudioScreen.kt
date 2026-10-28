@@ -34,6 +34,8 @@ fun GenerationStudioScreen(onBack: () -> Unit) {
     var isGenerating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showSaveOptions by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
+    var showImagePicker by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf(0) }
 
     Scaffold(
@@ -212,7 +214,8 @@ fun GenerationStudioScreen(onBack: () -> Unit) {
                     Button(
                         onClick = {
                             scope.launch {
-                                MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.GALLERY)
+                                val result = MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.GALLERY)
+                                saveMessage = if (result.isSuccess) "✅ تم الحفظ في المعرض بنجاح!" else "❌ فشل الحفظ"
                             }
                             showSaveOptions = false
                         },
@@ -223,7 +226,8 @@ fun GenerationStudioScreen(onBack: () -> Unit) {
                     Button(
                         onClick = {
                             scope.launch {
-                                MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.APP_FOLDER)
+                                val res2 = MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.APP_FOLDER)
+saveMessage = if (res2.isSuccess) "✅ تم الحفظ في مجلد التطبيق" else "❌ فشل الحفظ"
                             }
                             showSaveOptions = false
                         },
@@ -234,7 +238,8 @@ fun GenerationStudioScreen(onBack: () -> Unit) {
                     Button(
                         onClick = {
                             scope.launch {
-                                MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.DRIVE)
+                                val res3 = MediaSaver.saveImage(context, generatedImage!!, MediaSaver.SaveLocation.DRIVE)
+saveMessage = if (res3.isSuccess) "✅ جاري الرفع إلى Drive" else "❌ تأكد من ربط Drive في الإعدادات"
                             }
                             showSaveOptions = false
                         },
@@ -250,5 +255,35 @@ fun GenerationStudioScreen(onBack: () -> Unit) {
             },
             containerColor = Color(0xFF1A1A1A)
         )
+
+        // عرض رسالة نجاح الحفظ
+        if (saveMessage != null) {
+            LaunchedEffect(saveMessage) {
+                kotlinx.coroutines.delay(3000)
+                saveMessage = null
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .align(Alignment.BottomCenter),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (saveMessage!!.contains("✅")) Color(0xFF2E4A2E) else Color(0xFF4A2E2E)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        saveMessage!!,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
     }
 }
