@@ -30,7 +30,7 @@ object WebBrowserTool {
             if (status !in 200..299) {
                 "⚠️ تعذّر تحميل الصفحة ($status): $url"
             } else {
-                val html = BufferedReader(InputStreamReader(connection.inputStream, "UTF-8")).use { it.readText() }
+                val html = String(connection.inputStream.readBytes(), "UTF-8")
                 extractText(html).take(maxChars)
             }
         } catch (e: Exception) {
