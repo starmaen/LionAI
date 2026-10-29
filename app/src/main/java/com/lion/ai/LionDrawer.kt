@@ -87,7 +87,6 @@ internal fun LionDrawerContent(
             Text("🖼️ محرر الصور", color = Color.White)
         }
         Button(
-            onClick = onGenerationStudio,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D2E5D))
         ) {
