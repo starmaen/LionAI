@@ -143,6 +143,8 @@ object AiTools {
         Def("file_copy", ToolGroup.FILES, """{"from":"a.kt","to":"b.kt","overwrite":false}""", "نسخ ملف أو مجلد", true),
         Def("file_tree", ToolGroup.FILES, """{"path":"","max_files":300}""", "شجرة ملفات المشروع كاملة", ),
         Def("file_checksum", ToolGroup.FILES, """{"path":"app.apk","algorithm":"sha256"}""", "بصمة MD5/SHA1/SHA256 لملف"),
+        Def("file_verify", ToolGroup.FILES, """{"path":"","algorithm":"sha256","baseline":"integrity-baseline.json","max_files":5000}""", "فحص سلامة المشروع: بصمات كل الملفات، الفارغة، المكررة، والمقارنة بخط أساس"),
+        Def("file_integrity_save", ToolGroup.FILES, """{"path":"","output":"integrity-baseline.json","algorithm":"sha256"}""", "حفظ خط أساس لبصمات ملفات المشروع للتحقق لاحقاً", true),
         Def("file_diff", ToolGroup.FILES, """{"first":"old.kt","second":"new.kt"}""", "مقارنة ملفين وإظهار الفروق"),
 
         // Database
@@ -159,6 +161,8 @@ object AiTools {
         Def("code_project_analyze", ToolGroup.CODE, """{"path":"","max_files":80}""", "تحليل مشروع كامل في مساحة العمل"),
         Def("code_patch", ToolGroup.CODE, """{"path":"Main.kt","find":"...","replace":"...","all":false}""", "تعديل دقيق: استبدال نص داخل ملف (مع نسخة احتياطية)", true),
         Def("code_review", ToolGroup.CODE, """{"path":"","max_files":30}""", "مراجعة آلية سريعة للمشروع واكتشاف المخاطر"),
+        Def("dependency_audit", ToolGroup.CODE, """{"path":"","online":true,"max_files":5000}""", "تدقيق المكتبات: Gradle/Maven/npm/Python/Dart/Rust/Go + ثغرات OSV + تعارض الإصدارات"),
+        Def("code_doctor", ToolGroup.CODE, """{"path":"","online":false,"max_files":3000}""", "تقرير جاهزية شامل: بنية، صحة كود، اختبارات، سلسلة بناء، اعتماديات، وحكم نهائي"),
 
         // Utilities
         Def("util_json", ToolGroup.UTIL, """{"text":"{...}","indent":2}""", "تنسيق/التحقق من JSON"),
@@ -617,7 +621,7 @@ object AiTools {
 
     private val CODE_WRITE_TOOLS = setOf(
         "file_write", "file_append", "file_apply_patch", "file_delete", "file_move",
-        "file_copy", "file_mkdir", "file_unzip", "code_patch", "github_write_file",
+        "file_copy", "file_mkdir", "file_unzip", "file_integrity_save", "code_patch", "github_write_file",
         "github_commit_files", "github_push_workspace", "github_delete_file",
         "github_bootstrap_project", "github_create_repo", "github_create_branch"
     )
@@ -1294,6 +1298,20 @@ object AiTools {
                 val value = FileTools.checksum(ctx.context, path, args.optString("algorithm", "sha256"))
                 "🔐 ${args.optString("algorithm", "sha256").uppercase()} $path\n$value"
             }
+            "file_verify" -> IntegrityTools.verify(
+                ctx.context,
+                args.optString("path"),
+                args.optString("algorithm", "sha256"),
+                args.optString("baseline"),
+                int(args, "max_files", 5000).coerceIn(1, 5000)
+            )
+            "file_integrity_save" -> IntegrityTools.saveBaseline(
+                ctx.context,
+                args.optString("path"),
+                args.optString("output", "integrity-baseline.json"),
+                args.optString("algorithm", "sha256"),
+                int(args, "max_files", 5000).coerceIn(1, 5000)
+            )
             "file_diff" -> FileTools.diff(
                 ctx.context, req(args, "first"), req(args, "second")
             ).take(16_000)
@@ -1356,6 +1374,20 @@ object AiTools {
                 if (files.isEmpty()) "لا ملفات كود للمراجعة."
                 else CodeAnalyzer.projectReport(files) + "\n\n🔎 راجع أيضاً: الأسرار المكشوفة، الاعتماديات غير المثبتة، وعدم معالجة الأخطاء."
             }
+            "dependency_audit" -> DependencyAudit.audit(
+                ctx.context,
+                args.optString("path"),
+                args.optBoolean("online", true),
+                int(args, "max_files", 5000).coerceIn(1, 5000)
+            )
+            "code_doctor" -> CodeDoctor.report(
+                ctx.context,
+                ctx.prefs,
+                args.optString("path"),
+                ctx.chatId,
+                args.optBoolean("online", false),
+                int(args, "max_files", 3000).coerceIn(1, 5000)
+            )
             "code_project_analyze" -> {
                 val root = FileTools.walk(ctx.context, args.optString("path"), maxFiles = 1500)
                 val max = int(args, "max_files", 80).coerceIn(1, 300)

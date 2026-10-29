@@ -32,6 +32,7 @@ object ShellTools {
         Regex("(\\.\\./){2,}"),
         Regex("(/etc/|/proc/|/sys/)"),
         Regex("(curl|wget)[^\\n|]*\\|\\s*(sh|bash)"),
+        Regex("(^|[;&|]\\s*)(sh|bash)\\s+-[a-z]*c(\\s|$)"),
         Regex("(^|\\s)chmod\\s+777\\s+/")
     )
     private const val MAX_OUTPUT = 18_000
@@ -103,14 +104,28 @@ object ShellTools {
     }
 
     fun which(context: Context, name: String): String {
-        val clean = name.trim().filter { it.isLetterOrDigit() || it in "._-" }
-        if (clean.isBlank()) return "اسم أمر غير صالح"
-        val root = FileTools.root(context)
-        listOf("/system/bin", "/system/xbin", "/vendor/bin", "/data/local/bin").forEach { dir ->
-            val file = File(dir, clean)
-            if (file.exists()) return file.absolutePath
+        val clean = name.trim().filter { it.isLetterOrDigit() || it in "._-/" }
+        if (clean.isBlank() || clean.contains("..")) return "اسم أمر غير صالح"
+        if (clean.contains('/')) {
+            val direct = File(clean)
+            return if (direct.exists()) direct.absolutePath else "غير موجود: $clean"
         }
-        return "غير موجود في PATH الافتراضي (جرّب shell_exec لمعرفة الخطأ الفعلي)"
+        val fixed = listOf(
+            "/system/bin", "/system/xbin", "/vendor/bin", "/data/local/bin",
+            "/data/data/com.termux/files/usr/bin", "/usr/bin", "/usr/local/bin", "/bin"
+        )
+        val fromPath = System.getenv("PATH").orEmpty()
+            .split(File.pathSeparatorChar)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        (fromPath + fixed).distinct().forEach { dir ->
+            val file = File(dir, clean)
+            if (file.isFile && file.canExecute()) return file.absolutePath
+        }
+        val workspace = FileTools.root(context)
+        val local = File(workspace, clean)
+        if (local.isFile && local.canExecute()) return local.absolutePath
+        return "غير موجود في PATH (تحقق عبر shell_exec أو ثبّت الأداة)"
     }
 
     fun buildAndroid(

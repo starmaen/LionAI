@@ -102,14 +102,19 @@ object FileTools {
 
     fun file(context: Context, path: String): File = resolve(context, path)
 
-    private fun resolve(context: Context, path: String): File {
-        val root = root(context).canonicalFile
+    private fun resolve(context: Context, path: String): File = resolveUnder(root(context), path)
+
+    /** حلّ مسار آمن تحت جذر معيّن، مع منع الخروج ومنع أسماء الملفات الداخلية المحجوزة. */
+    internal fun resolveUnder(rootDir: File, path: String): File {
+        val root = rootDir.canonicalFile
         val clean = path.trim().removePrefix("/").ifBlank { "." }
         val target = File(root, clean).canonicalFile
         if (target != root && !target.path.startsWith(root.path + File.separator)) {
             throw IllegalArgumentException("مسار غير مسموح خارج مساحة العمل")
         }
-        if (target.name.startsWith(".lion-")) throw IllegalArgumentException("مسار محجوز")
+        if (target != root && target.name.startsWith(".lion-")) {
+            throw IllegalArgumentException("مسار محجوز")
+        }
         return target
     }
 
@@ -166,9 +171,39 @@ object FileTools {
 
     fun write(context: Context, path: String, content: String): Entry {
         val file = resolve(context, path)
-        file.parentFile?.mkdirs()
-        file.writeText(content, Charsets.UTF_8)
+        writeAtomically(file, content)
         return Entry(relative(context, file), file.length(), false)
+    }
+
+    /**
+     * كتابة ذرّية: نكتب إلى ملف مؤقت في نفس المجلد ثم نستبدل الهدف.
+     * انقطاع العملية لا يترك الملف الأصلي نصف مكتوب أو تالفاً.
+     */
+    internal fun writeAtomically(target: File, content: String) {
+        val parent = target.parentFile ?: throw IllegalArgumentException("مسار بلا مجلد أب")
+        parent.mkdirs()
+        val temp = File.createTempFile(".lion-write-", ".tmp", parent)
+        try {
+            temp.writeText(content, Charsets.UTF_8)
+            val src = temp.toPath()
+            val dst = target.toPath()
+            try {
+                java.nio.file.Files.move(
+                    src,
+                    dst,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(
+                    src,
+                    dst,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
     }
 
     fun append(context: Context, path: String, content: String): Entry {
@@ -223,6 +258,32 @@ object FileTools {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    data class EntryHash(val path: String, val size: Long, val hash: String?, val error: String?)
+
+    /** بصمات كل ملفات مجلد (تعاودياً) مع تخطّي الملفات الضخمة وتسجيل سبب التخطي. */
+    fun hashAll(
+        context: Context,
+        path: String = "",
+        algorithm: String = "sha256",
+        maxFiles: Int = 5000,
+        maxFileBytes: Long = 8_000_000L
+    ): List<EntryHash> {
+        val entries = walk(context, path, maxFiles)
+        return entries.map { entry ->
+            val file = resolve(context, entry.path)
+            when {
+                !file.isFile -> EntryHash(entry.path, entry.size, null, "ليس ملفاً عادياً")
+                file.length() > maxFileBytes ->
+                    EntryHash(entry.path, file.length(), null, "أكبر من حد البصمة (${formatSize(maxFileBytes)})")
+                else -> runCatching {
+                    EntryHash(entry.path, file.length(), checksum(context, entry.path, algorithm), null)
+                }.getOrElse {
+                    EntryHash(entry.path, file.length(), null, it.message ?: it.javaClass.simpleName)
+                }
+            }
+        }
+    }
+
     /** فرق نصي مبسّط (LCS) بين ملفين أو نصين داخل مساحة العمل. */
     fun diff(context: Context, first: String, second: String, maxLines: Int = 1200): String {
         val left = read(context, first).text.lines()
@@ -257,8 +318,14 @@ object FileTools {
     fun delete(context: Context, path: String, recursive: Boolean = false): Boolean {
         val file = resolve(context, path)
         if (!file.exists()) return false
-        if (file.isDirectory && !recursive) throw IllegalArgumentException("المجلد غير فارغ؛ استخدم recursive=true")
-        return file.deleteRecursively()
+        if (file.isDirectory) {
+            val children = file.listFiles()?.toList().orEmpty()
+            if (children.isNotEmpty() && !recursive) {
+                throw IllegalArgumentException("المجلد غير فارغ؛ استخدم recursive=true")
+            }
+            return if (children.isEmpty()) file.delete() else file.deleteRecursively()
+        }
+        return file.delete()
     }
 
     fun mkdir(context: Context, path: String): Boolean = resolve(context, path).apply { mkdirs() }.isDirectory
