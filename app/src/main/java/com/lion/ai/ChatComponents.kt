@@ -279,7 +279,7 @@ fun Bubble(
                     )
                 }
 
-                if (message.replyTo.isNotBlank()) {
+                if (message.replyTo?.isNotBlank() == true) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "↩ رد على رد سابق",

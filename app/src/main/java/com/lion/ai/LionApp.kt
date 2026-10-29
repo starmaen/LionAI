@@ -1943,10 +1943,11 @@ fun LionApp() {
                     onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) },
                     onRegenerate = { i -> regenerate(i) },
                     onReply = { i ->
-                        val target = messages.getOrNull(i) ?: return@onReply
-                        replyingTo = target
-                        val quoted = target.text.take(700).replace("\n", " ")
-                        input = "↩ رد على ردك السابق:\n> $quoted\n\n"
+                        messages.getOrNull(i)?.let { target ->
+                            replyingTo = target
+                            val quoted = target.text.take(700).replace("\n", " ")
+                            input = "↩ رد على ردك السابق:\n> $quoted\n\n"
+                        }
                     },
                     modifier = Modifier
                         .weight(1f)
