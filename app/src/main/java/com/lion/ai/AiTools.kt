@@ -880,8 +880,9 @@ object AiTools {
                 val jobId = args.optLong("job_id", 0L)
                 val max = int(args, "max_chars", 12_000).coerceIn(2000, 30_000)
                 val log = runCatching { GitHubClient.jobLog(token, owner, repo, jobId) }
-                    .getOrElse { e ->
-                        val anns = GitHubClient.jobAnnotations(token, owner, repo, jobId)
+                    .getOrElse { _ ->
+                        val anns = runCatching { GitHubClient.jobAnnotations(token, owner, repo, jobId) }
+                            .getOrDefault(emptyList())
                         if (anns.isEmpty()) "(تعذر جلب السجل، ولم توجد ملاحظات فشل عامة)"
                         else anns.joinToString("\n") { a ->
                             val pos = buildString {
@@ -1705,7 +1706,8 @@ $code
                     "===== ${job.name}: ${job.status}/${job.conclusion} =====\n" +
                         runCatching { GitHubClient.jobLog(token, owner, repo, job.id, max) }
                             .getOrElse { _ ->
-                                val anns = GitHubClient.jobAnnotations(token, owner, repo, job.id)
+                                val anns = runCatching { GitHubClient.jobAnnotations(token, owner, repo, job.id) }
+                                    .getOrDefault(emptyList())
                                 if (anns.isEmpty()) "(تعذر جلب السجل، ولم توجد ملاحظات فشل عامة)"
                                 else anns.joinToString("\n") { a ->
                                     val pos = buildString {
