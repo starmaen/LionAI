@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 /**
  * مستعرض ويب خفيف يعمل داخل التطبيق عبر HTTP.
  * يجلب صفحة ويب ويستخرج النص المرئي منها (ي supprim الوسوم HTML والنصوص غير المرئية)
@@ -30,7 +31,7 @@ object WebBrowserTool {
             if (status !in 200..299) {
                 "⚠️ تعذّر تحميل الصفحة ($status): $url"
             } else {
-                val html = String(connection.inputStream.readBytes(), "UTF-8")
+                val html = String(connection.inputStream.readBytes(), StandardCharsets.UTF_8)
                 extractText(html).take(maxChars)
             }
         } catch (e: Exception) {
