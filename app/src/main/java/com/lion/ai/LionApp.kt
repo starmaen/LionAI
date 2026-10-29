@@ -163,6 +163,8 @@ fun LionApp() {
     var showArchive by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var input by remember { mutableStateOf("") }
+    /** الرد الذي يستكمل المستخدم سياقه عبر زر "رد على هذا الرد". */
+    var replyingTo by remember { mutableStateOf<Message?>(null) }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
     val toolStatus = remember { mutableStateMapOf<String, String>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
@@ -1284,7 +1286,9 @@ fun LionApp() {
         // تحية أو «هل أنت هنا؟» لا تستحق انتظار مزود؛ نرد فوراً من دون شبكة.
         if (file == null && image == null) {
             QuickReply.forText(text)?.let { quick ->
-                messages = messages + Message(text, true) + Message(quick, false, via = "⚡ رد فوري")
+                val reply = replyingTo
+                replyingTo = null
+                messages = messages + Message(text, true, replyTo = reply?.text) + Message(quick, false, via = "⚡ رد فوري")
                 input = ""
                 saveCurrent()
                 return
@@ -1347,7 +1351,9 @@ fun LionApp() {
         val history = windowedHistory(messages)
 
         val chatId = currentChat
-        messages = messages + Message(displayText, true)
+        val reply = replyingTo
+        replyingTo = null
+        messages = messages + Message(displayText, true, replyTo = reply?.text)
         input = ""
         attachment = null
         imageAttachment = null
@@ -1936,6 +1942,12 @@ fun LionApp() {
                     tts = tts,
                     onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) },
                     onRegenerate = { i -> regenerate(i) },
+                    onReply = { i ->
+                        val target = messages.getOrNull(i) ?: return@onReply
+                        replyingTo = target
+                        val quoted = target.text.take(700).replace("\n", " ")
+                        input = "↩ رد على ردك السابق:\n> $quoted\n\n"
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()

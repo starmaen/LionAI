@@ -250,7 +250,8 @@ fun Bubble(
     index: Int,
     onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit,
     canRegenerate: Boolean = false,
-    onRegenerate: () -> Unit = {}
+    onRegenerate: () -> Unit = {},
+    onReply: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -276,6 +277,31 @@ fun Bubble(
                         color = if (message.isUser) Color(0xFF0D0D0D) else Color.White,
                         fontSize = 15.sp
                     )
+                }
+
+                if (message.replyTo.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "↩ رد على رد سابق",
+                        color = Color(0xFF64B5F6),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (message.isUser && message.text.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("سؤال المستخدم", message.text))
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("📋 نسخ السؤال", color = Color(0xFF0D0D0D), fontSize = 10.sp)
+                        }
+                    }
                 }
                 
                 // عرض كل كتلة كود في صندوق منفصل مع زر نسخ
@@ -489,6 +515,9 @@ fun Bubble(
                             TextButton(onClick = onRegenerate) {
                                 Text("🔄 إعادة", color = Color(0xFFFFB800), fontSize = 12.sp)
                             }
+                        }
+                        TextButton(onClick = onReply) {
+                            Text("↩ رد على هذا الرد", color = Color(0xFFFFB800), fontSize = 12.sp)
                         }
                         TextButton(onClick = {
                             val clipboard = context.getSystemService(

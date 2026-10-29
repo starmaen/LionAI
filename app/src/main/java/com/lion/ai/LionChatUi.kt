@@ -55,6 +55,7 @@ internal fun LionMessageList(
     tts: TextToSpeech?,
     onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit,
     onRegenerate: (Int) -> Unit,
+    onReply: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
                 LazyColumn(
@@ -77,7 +78,8 @@ internal fun LionMessageList(
                             message, context, tts, index,
                             onPendingChoice = onPendingChoice,
                             canRegenerate = canRegenerate,
-                            onRegenerate = { onRegenerate(index) }
+                            onRegenerate = { onRegenerate(index) },
+                            onReply = { onReply(index) }
                         )
                     }
                     if (loading) {

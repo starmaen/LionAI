@@ -137,7 +137,9 @@ data class Message(
     val browserUrl: String? = null,
     val pending: PendingAction? = null,
     val via: String? = null,
-    val sources: List<WebSource> = emptyList()
+    val sources: List<WebSource> = emptyList(),
+    /** نص رد المزود الذي يرد عليه المستخدم هذا السؤال، للحفاظ على سياق المحادثة ونفس المزود. */
+    val replyTo: String? = null
 )
 
 data class Contact(val name: String, val number: String, val normalized: String? = null)
