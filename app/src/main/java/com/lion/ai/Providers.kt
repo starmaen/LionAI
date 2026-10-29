@@ -231,7 +231,25 @@ val PROVIDERS = listOf(
         shortName = "Kilo",
         endpoint = "https://ai-gateway.kilo.ai/api/v1/chat/completions",
         modelHint = "موديلات :free تعمل بدون مفتاح (حد 200 طلب/ساعة لكل IP)، وبالمفتاح ترتفع الحدود وتتاح موديلات أكثر.",
-        models = listOf("kilo-auto/free", "minimax/minimax-m2.7:free", "z-ai/glm-5:free"),
+        models = listOf(
+            "kilo-auto/free",
+            "kilo-auto/efficient",
+            "kilo-auto/balanced",
+            "kilo-auto/small",
+            "kilo-auto/frontier",
+            "nvidia/nemotron-3.5-lightning:free",
+            "nvidia/nemotron-3.5-super-vl:free",
+            "nvidia/nemotron-3.5-content-safety:free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "cohere/north-mini-code:free",
+            "dots-studio/dots-3-note-preview:free",
+            "liquid/lfm-2.5-2.6b:free",
+            "poolside/laguna-s-2.1:free",
+            "poolside/laguna-xs-2.1:free",
+            "recursive/flint-v1.0:free",
+            "xingchen-agi/xing4.0-29b-a4b:free"
+        ),
         keyless = true
     ),
     ProviderInfo(
@@ -245,6 +263,35 @@ val PROVIDERS = listOf(
         modelHint = "«default» أو «fast» يعملان مجاناً بدون مفتاح. الموديلات المتقدمة تحتاج توكن.",
         models = listOf("default", "fast", "DeepSeek-V4-Flash-0731"),
         keyless = true
+    ),
+    ProviderInfo(
+        id = "aihorde",
+        label = "AI Horde (مجاني بلا مفتاح)",
+        tagline = "حشد تطوعي مجاني — موديلات مفتوحة المصدر، بدون مفتاح",
+        docsUrl = "https://aihorde.net",
+        defaultModel = "auto",
+        shortName = "AI Horde",
+        keyless = true,
+        modelHint = "يعمل مجاناً بدون مفتاح عبر المفتاح المجهول. «auto» يترك الاختيار لأي عامل متاح، أو اختر موديلاً محدداً من «تحديث». قد يكون الطابور مزدحماً؛ وضع مفتاح AI Horde من aihorde.net يرفع الأولوية ويكسب نقاطاً.",
+        models = listOf(
+            "auto",
+            "koboldcpp/Rocinante-X-12B-v1",
+            "koboldcpp/L3-8B-Stheno-v3.2",
+            "koboldcpp/L3-8B-Stheno-v3.2-Q5_K_M",
+            "koboldcpp/Angelic_Eclipse-12B",
+            "koboldcpp/Skyfall-31B-v4.2",
+            "koboldcpp/mini-magnum-12b-v1.1",
+            "koboldcpp/gemma-4-31B-it-heretic",
+            "koboldcpp/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M",
+            "koboldcpp/Qwen_Qwen3-0.6B-IQ4_XS",
+            "koboldcpp/Qwen/Qwen3.5-0.8B",
+            "koboldcpp/Impish_LLAMA_3B",
+            "koboldcpp/Qwen2.5-Coder-3B-Instruct",
+            "koboldcpp/L3-Super-Nova-RP-8B",
+            "koboldcpp/gemma-3-270m-it-F16",
+            "wicked-tutu-26b-w8a16",
+            "Qwen/Qwen3.5-122B-A10B"
+        )
     ),
     ProviderInfo(
         id = "nvidia",
@@ -281,7 +328,20 @@ val PROVIDERS = listOf(
         shortName = "OVH",
         endpoint = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
         modelHint = "يعمل بدون مفتاح بحدود أعلى للتحكم، أو بمفتاح OVH لرفع الحدود.",
-        models = listOf("gpt-oss-120b", "gpt-oss-20b", "Qwen3.8-27B"),
+        models = listOf(
+            "gpt-oss-120b",
+            "gpt-oss-20b",
+            "Qwen3.8-27B",
+            "Qwen3.6-27B",
+            "Qwen3.5-397B-A17B",
+            "Qwen3.5-9B",
+            "Meta-Llama-3_3-70B-Instruct",
+            "Mistral-Small-3.2-24B-Instruct-2506",
+            "Mistral-Nemo-Instruct-2407",
+            "Qwen2.5-VL-72B-Instruct",
+            "Qwen3Guard-Gen-0.6B",
+            "Qwen3Guard-Gen-8B"
+        ),
         keyless = true
     ),
     ProviderInfo(

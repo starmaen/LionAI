@@ -227,6 +227,87 @@ internal fun LlmClient.callClaude(
         return text.toString().ifBlank { "لم يصل رد من Claude." }
     }
 
+/**
+ * AI Horde واجهة غير متزامنة: نرسل الطلب ثم نستطلع حالته حتى يجهز الرد.
+ * المفتاح اختياري؛ عند غيابه نستخدم المفتاح المجهول الرسمي.
+ */
+internal fun LlmClient.callAiHorde(
+        message: String,
+        apiKey: String,
+        model: String,
+        history: List<ChatTurn>,
+        image: ImageAttachment?,
+        systemPrompt: String
+    ): String {
+        val conversation = buildString {
+            history.forEach { turn ->
+                val role = if (turn.role == "assistant") "Assistant" else "User"
+                append("\n").append(role).append(": ").append(turn.content.trim())
+            }
+            append("\nUser: ").append(message.trim()).append("\nAssistant:")
+        }
+        val prefix = systemPrompt.trim() + "\n"
+        val prompt = prefix + conversation.takeLast((12_000 - prefix.length).coerceAtLeast(2_000))
+
+        val body = JSONObject()
+            .put("prompt", prompt)
+            .put(
+                "params",
+                JSONObject()
+                    .put("max_length", LLM_HORDE_MAX_TOKENS)
+                    .put("max_context_length", LLM_HORDE_CONTEXT)
+                    .put("temperature", LLM_TEMPERATURE)
+                    .put("top_p", 0.9)
+                    .put("rep_pen", 1.05)
+            )
+            .put("trusted_workers", false)
+            .put("slow_workers", true)
+
+        val chosen = model.trim()
+        if (chosen.isNotEmpty() && chosen.lowercase() !in setOf("auto", "default")) {
+            body.put("models", JSONArray().put(chosen))
+        }
+
+        val headers = mapOf("apikey" to apiKey.trim().ifBlank { LLM_HORDE_ANON_KEY })
+        val submitted = postJson(
+            "https://aihorde.net/api/v2/generate/text/async",
+            headers,
+            body
+        )
+        val id = submitted.optString("id", "")
+        if (id.isBlank()) {
+            throw LlmException(400, submitted.optString("message", "تعذر إنشاء طلب في AI Horde."))
+        }
+
+        val deadline = System.currentTimeMillis() + LLM_HORDE_MAX_WAIT
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(LLM_HORDE_POLL_INTERVAL)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return "⚠️ أُلغي انتظار AI Horde."
+            }
+            val status = getJson(
+                "https://aihorde.net/api/v2/generate/text/status/$id",
+                headers
+            )
+            val generation = status.optJSONArray("generations")?.optJSONObject(0)
+            if (status.optBoolean("faulted", false)) {
+                val fault = generation?.optString("text", "").orEmpty().trim()
+                val reason = fault.ifBlank { status.optString("message", "").trim() }
+                return "⚠️ فشل AI Horde في توليد الرد" +
+                    (if (reason.isNotBlank()) ": $reason" else ".")
+            }
+            val done = status.optBoolean("done", false) ||
+                status.optInt("finished", 0) > 0
+            if (done) {
+                val text = generation?.optString("text", "").orEmpty().trim()
+                return text.ifBlank { "لم يصل رد من AI Horde." }
+            }
+        }
+        return "⏳ طابور AI Horde مزدحم. أعد المحاولة أو اختر موديلاً أخف."
+    }
+
 private data class OpenCodeEndpoints(
     val chat: String,
     val responses: String,

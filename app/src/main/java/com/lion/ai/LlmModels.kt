@@ -127,6 +127,20 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
                 idsOf(getJson("https://ollama.com/api/tags", bearer).optJSONArray("models"), "name")
             }
 
+            "aihorde" -> {
+                val json = getJsonArray(
+                    "https://aihorde.net/api/v2/status/models?type=text",
+                    if (apiKey.isNotBlank()) mapOf("apikey" to apiKey) else emptyMap()
+                )
+                val out = mutableListOf<String>()
+                for (i in 0 until json.length()) {
+                    val item = json.optJSONObject(i) ?: continue
+                    val name = item.optString("name", "")
+                    if (name.isNotBlank() && item.optInt("count", 0) > 0) out.add(name)
+                }
+                out
+            }
+
             "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "together" -> {
                 val info = providerInfo(provider)
                 if (!info.keyless) requireKey(apiKey)

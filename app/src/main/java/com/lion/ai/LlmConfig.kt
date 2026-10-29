@@ -14,6 +14,17 @@ internal const val LLM_CLAUDE_MAX_TOKENS = 8192
 
 internal const val LLM_OPENAI_MAX_TOKENS = 8192
 
+/** مفتاح AI Horde المجهول المعتمد للاستخدام بدون حساب. */
+internal const val LLM_HORDE_ANON_KEY = "0000000000"
+
+internal const val LLM_HORDE_MAX_TOKENS = 512
+
+internal const val LLM_HORDE_CONTEXT = 4096
+
+internal const val LLM_HORDE_POLL_INTERVAL = 1_500L
+
+internal const val LLM_HORDE_MAX_WAIT = 120_000L
+
 internal const val LLM_TEMPERATURE = 0.3
 
 internal const val LLM_SYSTEM_PROMPT =

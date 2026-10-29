@@ -176,6 +176,7 @@ object LlmClient {
                 )
                 "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
                 "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
+                "aihorde" -> callAiHorde(message, apiKey, model, turns, image, systemPrompt)
                 "custom" -> {
                     val raw = endpoint("custom", "")
                     if (raw.isBlank()) {
@@ -292,6 +293,28 @@ object LlmClient {
             val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             val json = runCatching { JSONObject(raw) }.getOrNull()
             if (status !in 200..299) throw LlmException(status, errorMessage(json, raw))
+            return json ?: throw LlmException(status, "رد غير صالح من المزود")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    internal fun getJsonArray(url: String, headers: Map<String, String>): JSONArray {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = LLM_CONNECT_TIMEOUT
+            readTimeout = 30_000
+            useCaches = false
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", LLM_USER_AGENT)
+            headers.forEach { (name, value) -> setRequestProperty(name, value) }
+        }
+        try {
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            val json = runCatching { JSONArray(raw) }.getOrNull()
+            if (status !in 200..299) throw LlmException(status, errorMessage(null, raw))
             return json ?: throw LlmException(status, "رد غير صالح من المزود")
         } finally {
             connection.disconnect()

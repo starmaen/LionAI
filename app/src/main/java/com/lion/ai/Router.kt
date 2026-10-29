@@ -171,7 +171,8 @@ object SmartRouter {
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("llm7", "default")
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("llm7", "default"),
+            r("aihorde", "auto")
         )
         TaskKind.FACTUAL -> listOf(
             r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
@@ -190,7 +191,7 @@ object SmartRouter {
             r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("cohere", "north-mini-code-1-0"), r("ollama", "deepseek-v4-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
-            r("llm7", "default"), r("ovh", "gpt-oss-120b")
+            r("llm7", "default"), r("ovh", "gpt-oss-120b"), r("aihorde", "auto")
         )
         // مهام التطوير تحتاج نماذج قوية في اتباع الأدوات وتعديل المستودعات، مع بدائل مجانية قادرة.
         TaskKind.DEV -> listOf(
@@ -220,7 +221,7 @@ object SmartRouter {
             r("ollama", "gpt-oss:120b"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("zai", "glm-4.7-flash"),
             r("llm7", "default"), r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
-            r("ovh", "gpt-oss-120b")
+            r("ovh", "gpt-oss-120b"), r("aihorde", "auto")
         )
         TaskKind.VISION -> listOf(
             r("gemini", "gemini-3.8-flash"), r("claude", "claude-sonnet-5-5"), r("openai", "gpt-6-luna"),
