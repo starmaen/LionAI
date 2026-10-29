@@ -160,7 +160,6 @@ fun LionApp() {
     var showContacts by remember { mutableStateOf(false) }
     var showScheduled by remember { mutableStateOf(false) }
     var showArchive by remember { mutableStateOf(false) }
-    var showGenerationStudio by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var input by remember { mutableStateOf("") }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
@@ -1480,18 +1479,6 @@ fun LionApp() {
     }
 
     
-    if (showGenerationStudio) {
-        GenerationStudioScreen(
-            onBack = { showGenerationStudio = false },
-            onPickImage = {
-                imageLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-            }
-        )
-        return
-    }
-
     if (showContacts) {
         ContactsScreen(
             contacts = contacts,
@@ -1671,10 +1658,6 @@ fun LionApp() {
                         imageLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
-                        scope.launch { drawerState.close() }
-                    },
-                    onGenerationStudio = {
-                        showGenerationStudio = true
                         scope.launch { drawerState.close() }
                     },
                     onGitHub = {

@@ -34,7 +34,6 @@ internal fun LionDrawerContent(
     onContacts: () -> Unit,
     onScheduled: () -> Unit,
     onImageEditor: () -> Unit,
-    onGenerationStudio: () -> Unit,
     onGitHub: () -> Unit,
     onDevTools: () -> Unit,
     onConnectors: () -> Unit,
