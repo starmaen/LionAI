@@ -36,6 +36,18 @@ data class ProviderInfo(
 val PROVIDERS = listOf(
     // ===== مزودات API (مفتاح أو بدون مفتاح) =====
     ProviderInfo(
+        id = "local_proxy",
+        label = "خادم محلي (Proxy داخل التطبيق)",
+        tagline = "خادم HTTP يعمل على 127.0.0.1 داخل التطبيق ويوجه الطلبات لمزودي الذكاء الاصطناعي عبر الإنترنت",
+        docsUrl = "https://github.com/starmaen/LionAI",
+        defaultModel = "gemini-3.8-flash",
+        shortName = "محلي",
+        keyless = true,
+        custom = true,
+        modelHint = "يبدأ تلقائياً عند فتح التطبيق على http://127.0.0.1:<port>/v1/chat/completions. ينقل طلباتك لمزود الذكاء الاصطناعي النشط (Gemini، DeepSeek، إلخ) ويعيد الرد بصيغة OpenAI.",
+        models = emptyList()
+    ),
+    ProviderInfo(
         id = "custom",
         label = "مخصص (OpenAI-Compatible)",
         tagline = "Gateway / LiteLLM / Ollama / أي خادم متوافق — Base URL + مفتاح اختياري",

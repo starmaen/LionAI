@@ -209,6 +209,17 @@ object LlmClient {
                 "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
                 "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
                 "aihorde" -> callAiHorde(message, apiKey, model, turns, image, systemPrompt)
+                "local_proxy" -> {
+                    val baseUrl = LocalAIProxy.getUrl()
+                    if (baseUrl.isBlank()) {
+                        "⚠️ الخادم المحلي غير مفعّل بعد. أعد فتح التطبيق أو شغّل «خادم محلي» من الإعدادات."
+                    } else {
+                        callOpenAiCompatible(
+                            baseUrl, apiKey, model, turns, message,
+                            maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                        )
+                    }
+                }
                 "custom" -> {
                     val raw = endpoint("custom", "")
                     if (raw.isBlank()) {
