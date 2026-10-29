@@ -45,6 +45,7 @@ object LocalAIProxy {
                         }
                     }
                 }
+                publishEndpoint(prefs)
                 return port
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -64,7 +65,44 @@ object LocalAIProxy {
 
     fun isRunning(): Boolean = running
 
-    fun getUrl(): String = if (running) "http://127.0.0.1:$port" else ""
+    /** العنوان الأساسي للخادم (بدون مسار). */
+    fun getBaseUrl(): String = if (running) "http://127.0.0.1:$port" else ""
+
+    /** رابط OpenAI المتوافق الكامل الجاهز للاستخدام. */
+    fun getUrl(): String = if (running) "http://127.0.0.1:$port/v1/chat/completions" else ""
+
+    /**
+     * يكتب العنوان الكامل تلقائياً في حقول الإعدادات (custom + local_proxy)
+     * حتى لا يحتاج المستخدم لنسخه يدوياً. لا يمس عنوان custom إذا كان مضبوطاً
+     * على خادم خارجي حقيقي.
+     */
+    private fun publishEndpoint(prefs: SharedPreferences) {
+        if (!running) return
+        val full = getUrl()
+        val base = getBaseUrl()
+        val edit = prefs.edit()
+            .putString("local_proxy_url", full)
+            .putString("local_proxy_base_url", base)
+        val existing = (prefs.getString("endpoint_custom", "") ?: "").trim()
+        if (existing.isBlank() ||
+            existing.contains("127.0.0.1") ||
+            existing.contains("localhost") ||
+            existing.contains("local_proxy")
+        ) {
+            edit.putString("endpoint_custom", full)
+        }
+        edit.apply()
+    }
+
+    /** المزود الخلفي الفعلي الذي يوجّه إليه الخادم (لا يكون أبداً local_proxy/custom). */
+    fun backendProvider(prefs: SharedPreferences): String {
+        val active = (prefs.getString("provider", "gemini") ?: "gemini").trim()
+        val stored = (prefs.getString("local_proxy_backend", "") ?: "").trim()
+        val candidate = stored.ifBlank {
+            if (active == "local_proxy" || active == "custom") "gemini" else active
+        }
+        return if (candidate == "local_proxy" || candidate == "custom" || candidate.isBlank()) "gemini" else candidate
+    }
 
     private fun handleClient(client: Socket, prefs: SharedPreferences) {
         var reader: BufferedReader? = null
@@ -144,9 +182,10 @@ object LocalAIProxy {
                 }
             }
 
-            val provider = (prefs.getString("provider", "gemini") ?: "gemini").trim()
+            val provider = backendProvider(prefs)
             val apiKey = (prefs.getString("api_key_$provider", "") ?: "").trim()
-            val modelName = if (model.isNotBlank()) model else (prefs.getString("model_$provider", "") ?: "").trim()
+            val storedModel = (prefs.getString("model_$provider", "") ?: "").trim()
+            val modelName = storedModel.ifBlank { model }
 
             val reply = LlmClient.ask(
                 message = userText,

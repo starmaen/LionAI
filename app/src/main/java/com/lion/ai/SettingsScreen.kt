@@ -221,6 +221,10 @@ fun SettingsScreen(
 
     fun persist() {
         val editor = prefs.edit()
+        val previous = (prefs.getString("provider", "gemini") ?: "gemini").trim()
+        if (provider == "local_proxy" && previous != "local_proxy" && previous != "custom") {
+            editor.putString("local_proxy_backend", previous)
+        }
         editor.putString("provider", provider)
         keys.forEach { (id, value) -> editor.putString("api_key_$id", value.filterNot { it.isWhitespace() }) }
         endpoints.forEach { (id, value) -> editor.putString("endpoint_$id", value.trim()) }
@@ -341,6 +345,84 @@ fun SettingsScreen(
                                     scope = settingsScope
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            // بطاقة الخادم المحلي (Proxy) لعرض البورت الذي اختاره نظام أندرويد تلقائياً
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "🖥️ الخادم المحلي (Proxy داخل التطبيق)",
+                            color = Color(0xFFFFB800),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            if (LocalAIProxy.isRunning()) "الحالة: يعمل تلقائياً" else "الحالة: متوقف",
+                            color = if (LocalAIProxy.isRunning()) Color(0xFF4CAF50) else Color(0xFFF44336),
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        val backend = LocalAIProxy.backendProvider(prefs)
+                        val backendName = PROVIDERS.firstOrNull { it.id == backend }?.name ?: backend
+                        Text(
+                            "المزود الخلفي: $backendName — اختره من بطاقات المزودين أدناه، والخادم يوجّه إليه تلقائياً.",
+                            color = Color(0xFFB0B0B0),
+                            fontSize = 12.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        val proxyUrl = LocalAIProxy.getUrl()
+                        if (proxyUrl.isNotEmpty()) {
+                            Text(
+                                "الرابط مكتوب تلقائياً في إعدادات مزود «مخصص»:",
+                                color = Color(0xFFB0B0B0),
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    proxyUrl,
+                                    color = Color(0xFF64B5F6),
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("LionAI Proxy", proxyUrl))
+                                    },
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text("📋 نسخ", color = Color(0xFFFFB800), fontSize = 11.sp)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "كيف يعمل: الخادم يعمل على 127.0.0.1 dentro من التطبيق ويحول طلباتك لمزود الذكاء الاصطناعي النشط (Gemini، DeepSeek، إلخ) عبر الإنترنت، ثم يعيد الرد بصيغة OpenAI-Compatible.",
+                                color = Color(0xFF7A7A7A),
+                                fontSize = 11.sp,
+                                maxLines = 3
+                            )
+                        } else {
+                            Text(
+                                "لم يبدأ الخادم بعد. أعد فتح التطبيق لبدء الخادم المحلي تلقائياً.",
+                                color = Color(0xFF7A7A7A),
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
