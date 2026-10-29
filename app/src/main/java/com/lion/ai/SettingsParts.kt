@@ -310,6 +310,7 @@ fun ProviderCard(
                         modelStatus = "⏳ جارٍ جلب القائمة..."
                         val key = keys[id].orEmpty().trim()
                         val account = accountId.trim()
+                        LlmClient.endpointOverrides = LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
                                 runCatching { LlmClient.listModels(id, key, account) }
@@ -332,24 +333,37 @@ fun ProviderCard(
                     Text(modelStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
                 }
 
-                if (info.endpoint.isNotBlank() ||
+                if (info.endpoint.isNotBlank() || info.custom ||
                     id in setOf("groq", "openrouter", "opencode", "opencode-go", "opencode-console", "deepseek", "openai")
                 ) {
                     Spacer(Modifier.height(8.dp))
-                    Text("عنوان وسيط (اختياري)", color = Color.White, fontSize = 13.sp)
+                    Text(
+                        if (info.custom) "Base URL للخادم المخصص" else "عنوان وسيط (اختياري)",
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
                     OutlinedTextField(
                         value = endpoints[id].orEmpty(),
                         onValueChange = { endpoints[id] = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         placeholder = {
-                            Text("https://اسم-الوسيط.workers.dev/openai/v1/chat/completions", color = Color(0xFF707070), fontSize = 11.sp)
+                            Text(
+                                if (info.custom) "http://192.168.1.5:4000/v1  أو  https://gateway.example.com/v1/chat/completions"
+                                else "https://اسم-الوسيط.workers.dev/openai/v1/chat/completions",
+                                color = Color(0xFF707070),
+                                fontSize = 11.sp
+                            )
                         },
                         textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
                         colors = fieldColors()
                     )
                     Text(
-                        "للشبكات التي يحجبها المزود: ضع رابط وسيط يمرّر الطلبات إليه (مثل Cloudflare Worker). اتركه فارغاً للاتصال المباشر.",
+                        if (info.custom) {
+                            "يُقبل Base URL أو الرابط الكامل. إذا أدخلت http:// فيجب أن يكون localhost أو شبكة محلية (192.168/10/172.16-31) لحماية المفتاح."
+                        } else {
+                            "للشبكات التي يحجبها المزود: ضع رابط وسيط يمرّر الطلبات إليه (مثل Cloudflare Worker). اتركه فارغاً للاتصال المباشر."
+                        },
                         color = Color(0xFF9A9A9A),
                         fontSize = 11.sp
                     )

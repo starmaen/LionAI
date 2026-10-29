@@ -277,6 +277,9 @@ object SmartRouter {
 
     fun available(prefs: SharedPreferences, provider: String): Boolean {
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
+        if (provider == "custom") {
+            return (prefs.getString("endpoint_custom", "") ?: "").trim().isNotEmpty()
+        }
         val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
         if (provider == "cloudflare" && (prefs.getString("cf_account_id", "") ?: "").isBlank()) return false
         return info.keyless || key.isNotEmpty()

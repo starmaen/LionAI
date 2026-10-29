@@ -190,6 +190,14 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
                 idsOf(json.optJSONArray("data"), "id")
             }
 
+            "custom" -> {
+                val raw = endpointOverrides["custom"]?.trim().orEmpty()
+                if (raw.isBlank()) throw LlmException(400, "أدخل Base URL للخادم المخصص أولاً")
+                val base = normalizeCustomUrl(raw).removeSuffix("/chat/completions")
+                val headers = if (apiKey.isNotBlank()) bearer else emptyMap()
+                idsOf(getJson("$base/models", headers).optJSONArray("data"), "id")
+            }
+
             else -> emptyList()
         }
         return ids.distinct().sorted().take(200)

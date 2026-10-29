@@ -314,9 +314,10 @@ fun SettingsScreen(
             ) {
                 val apiProviders = PROVIDERS.filter { it.group == ProviderGroup.API }
                 listOf(
-                    "🆓 بدون مفتاح" to apiProviders.filter { it.keyless },
-                    "🟢 مجانية بمفتاح" to apiProviders.filter { !it.keyless && it.free },
-                    "🔵 مدفوعة أو برصيد" to apiProviders.filter { !it.keyless && !it.free }
+                    "🔧 مخصص (Gateway / LiteLLM)" to apiProviders.filter { it.custom },
+                    "🆓 بدون مفتاح" to apiProviders.filter { !it.custom && it.keyless },
+                    "🟢 مجانية بمفتاح" to apiProviders.filter { !it.custom && !it.keyless && it.free },
+                    "🔵 مدفوعة أو برصيد" to apiProviders.filter { !it.custom && !it.keyless && !it.free }
                 ).forEach { (groupTitle, list) ->
                     if (list.isNotEmpty()) {
                         SettingsSection(

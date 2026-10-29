@@ -20,10 +20,35 @@ object LlmClient {
 
     internal fun endpoint(provider: String, default: String): String {
         val custom = endpointOverrides[provider]?.trim().orEmpty()
-        val safe = custom.startsWith("https://") ||
-            custom.startsWith("http://localhost") ||
-            custom.startsWith("http://127.0.0.1")
-        return if (custom.isNotEmpty() && safe) custom else default
+        return if (custom.isNotEmpty() && isSafeEndpoint(custom)) custom else default
+    }
+
+    /** يسمح بـ HTTPS، أو HTTP للشبكات المحلية فقط (LiteLLM/Ollama على نفس الجهاز أو LAN). */
+    internal fun isSafeEndpoint(url: String): Boolean {
+        if (url.startsWith("https://")) return true
+        if (!url.startsWith("http://")) return false
+        val authority = url.removePrefix("http://").substringBefore('/')
+        val host = authority.substringBefore(':').lowercase()
+        if (host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2") return true
+        if (host.startsWith("192.168.") || host.startsWith("10.")) return true
+        if (host.startsWith("172.")) {
+            val second = host.split('.').getOrNull(1)?.toIntOrNull() ?: return false
+            return second in 16..31
+        }
+        return false
+    }
+
+    /**
+     * يطبّع Base URL لخادم OpenAI-Compatible:
+     * يقبل الرابط الكامل أو /v1 أو جذر الخادم، ويضيف /v1/chat/completions عند الحاجة.
+     */
+    internal fun normalizeCustomUrl(raw: String): String {
+        var url = raw.trim().trimEnd('/')
+        if (url.isBlank()) return ""
+        if (url.endsWith("/chat/completions")) return url
+        if (url.endsWith("/models")) return url.removeSuffix("/models") + "/chat/completions"
+        if (url.endsWith("/v1")) return "$url/chat/completions"
+        return "$url/v1/chat/completions"
     }
 
     private fun openCodeId(prefix: String): String =
@@ -38,7 +63,7 @@ object LlmClient {
     /** هل الموديل الحالي يقرأ الصور؟ (OpenRouter يعتمد على الموديل، وخطأ المزود يُعرض إن لم يدعمها) */
     fun supportsVision(provider: String, model: String): Boolean = when (provider) {
         "gemini", "openai", "claude", "deepseek", "openrouter", "opencode", "opencode-go", "opencode-console",
-        "mistral", "cloudflare", "zai", "ollama", "together", "nvidia", "ovh" -> true
+        "mistral", "cloudflare", "zai", "ollama", "together", "nvidia", "ovh", "custom" -> true
         "groq" -> (model.ifBlank { providerInfo("groq").defaultModel }).contains("llama-4")
         else -> false
     }
@@ -151,6 +176,17 @@ object LlmClient {
                 )
                 "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
                 "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
+                "custom" -> {
+                    val raw = endpoint("custom", "")
+                    if (raw.isBlank()) {
+                        "⚠️ لم يُضبط مزود مخصص بعد. افتح الإعدادات ← المزودات الأساسية ← «مخصص»، وأدخل Base URL لخادم LiteLLM/Ollama/OpenAI-Compatible."
+                    } else {
+                        callOpenAiCompatible(
+                            normalizeCustomUrl(raw), apiKey, model, turns, message,
+                            maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                        )
+                    }
+                }
                 else -> {
                     val info = PROVIDERS.firstOrNull { it.id == provider }
                     if (info == null || info.endpoint.isBlank()) {

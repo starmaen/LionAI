@@ -21,7 +21,8 @@ data class ProviderInfo(
     val webviewUrl: String? = null,
     val keyless: Boolean = false,
     val endpoint: String = "",
-    val category: String = "chat"
+    val category: String = "chat",
+    val custom: Boolean = false
 ) {
     /** التصنيف مشتق: بلا webviewUrl = API، ومع category غير chat = وسائط، وإلا ويب. */
     val group: ProviderGroup
@@ -34,6 +35,18 @@ data class ProviderInfo(
 
 val PROVIDERS = listOf(
     // ===== مزودات API (مفتاح أو بدون مفتاح) =====
+    ProviderInfo(
+        id = "custom",
+        label = "مخصص (OpenAI-Compatible)",
+        tagline = "Gateway / LiteLLM / Ollama / أي خادم متوافق — Base URL + مفتاح اختياري",
+        docsUrl = "https://docs.litellm.ai/docs/proxy/quick_start",
+        defaultModel = "gpt-4o-mini",
+        shortName = "مخصص",
+        keyless = true,
+        custom = true,
+        modelHint = "أدخل Base URL مثل http://192.168.1.5:4000/v1 أو الرابط الكامل .../v1/chat/completions. المفتاح اختياري (اتركه فارغاً للبوابات المحلية). اكتب اسم الموديل كما يعرّفه خادمك، وزر «تحديث» يجلب /models إن كان مدعوماً.",
+        models = emptyList()
+    ),
     ProviderInfo(
         id = "gemini",
         label = "Google Gemini (API)",
@@ -291,7 +304,7 @@ val PROVIDERS = listOf(
         defaultModel = "qwen-plus",
         shortName = "Qwen",
         endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-        modelHint = "مناسب جدًا للعربية والبرمجة.",
+        modelHint = "مفاتيح DashScope الصينية تستخدم dashscope.aliyuncs.com، والحسابات الدولية تستخدم dashscope-intl.aliyuncs.com — يمكنك وضع الرابط الكامل في «عنوان وسيط». تأكد أن المفتاح يملك حصة مجانية وأن الموديل متاح له.",
         models = listOf("qwen-plus", "qwen-max")
     ),
     ProviderInfo(
@@ -841,4 +854,7 @@ val PROVIDERS = listOf(
     )
 )
 
-fun providerInfo(id: String): ProviderInfo = PROVIDERS.firstOrNull { it.id == id } ?: PROVIDERS.first()
+fun providerInfo(id: String): ProviderInfo =
+    PROVIDERS.firstOrNull { it.id == id }
+        ?: PROVIDERS.firstOrNull { it.id == "gemini" }
+        ?: PROVIDERS.first()
