@@ -70,4 +70,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
