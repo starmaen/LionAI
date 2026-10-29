@@ -154,7 +154,7 @@ object LocalAIProxy {
                 provider = provider,
                 history = emptyList(),
                 modelOverride = modelName,
-                systemPrompt = LlmConfig.LLM_SYSTEM_PROMPT
+                systemPrompt = LLM_SYSTEM_PROMPT
             )
 
             org.json.JSONObject().apply {
