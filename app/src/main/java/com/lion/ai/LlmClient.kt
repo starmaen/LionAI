@@ -14,6 +14,35 @@ object LlmClient {
     @Volatile
     var endpointOverrides: Map<String, String> = emptyMap()
 
+    /**
+     * مهلة القراءة الخاصة بنداء واحد. تتيح للمنسّق فرض سقف زمني قصير على الردود السريعة
+     * (المجاملات) من دون تغيير المهلة العامة لباقي النداءات.
+     */
+    private val threadReadTimeout = ThreadLocal<Int>()
+
+    /** سقف زمني لمحاولة واحدة حسب نوع المهمة: البسيط سريع، والبرمجة تحتمل الانتظار. */
+    internal fun attemptTimeoutMs(kind: TaskKind): Int = when (kind) {
+        TaskKind.FAST -> 12_000
+        TaskKind.GENERAL, TaskKind.WRITING -> 30_000
+        TaskKind.FACTUAL -> 30_000
+        TaskKind.REASONING -> 40_000
+        TaskKind.VISION, TaskKind.IMAGE_EDIT -> 45_000
+        TaskKind.CODE, TaskKind.DEV -> 60_000
+        TaskKind.LONG_DOC -> 45_000
+    }
+
+    private inline fun <T> withReadTimeout(ms: Int, block: () -> T): T {
+        val previous = threadReadTimeout.get()
+        threadReadTimeout.set(ms)
+        return try {
+            block()
+        } finally {
+            if (previous == null) threadReadTimeout.remove() else threadReadTimeout.set(previous)
+        }
+    }
+
+    private fun currentReadTimeout(): Int = threadReadTimeout.get() ?: LLM_READ_TIMEOUT
+
     fun reloadOverrides(prefs: android.content.SharedPreferences) {
         endpointOverrides = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
     }
@@ -132,7 +161,8 @@ object LlmClient {
         modelOverride: String = "",
         accountId: String = "",
         image: ImageAttachment? = null,
-        systemPrompt: String = LLM_SYSTEM_PROMPT
+        systemPrompt: String = LLM_SYSTEM_PROMPT,
+        readTimeoutMs: Int = 0
     ): String {
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
@@ -145,8 +175,10 @@ object LlmClient {
 
         val model = modelOverride.trim().ifBlank { defaultModel(provider) }
         val turns = normalize(history)
+        val cap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
 
-        return try {
+        return withReadTimeout(cap) {
+            try {
             when (provider) {
                 "gemini" -> callGemini(message, apiKey, model, turns, image, systemPrompt)
                 "opencode", "opencode-go", "opencode-console" -> callOpenCode(
@@ -226,6 +258,7 @@ object LlmClient {
         } catch (e: Exception) {
             "⚠️ تعذر الاتصال بالمزود: ${e.message ?: e.javaClass.simpleName}"
         }
+        }
     }
 
     private fun regionHint(provider: String, message: String): String {
@@ -281,7 +314,7 @@ object LlmClient {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = LLM_CONNECT_TIMEOUT
-            readTimeout = 30_000
+            readTimeout = minOf(currentReadTimeout(), 30_000)
             useCaches = false
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", LLM_USER_AGENT)
@@ -303,7 +336,7 @@ object LlmClient {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = LLM_CONNECT_TIMEOUT
-            readTimeout = 30_000
+            readTimeout = minOf(currentReadTimeout(), 30_000)
             useCaches = false
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", LLM_USER_AGENT)
@@ -329,7 +362,7 @@ object LlmClient {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = LLM_CONNECT_TIMEOUT
-            readTimeout = LLM_READ_TIMEOUT
+            readTimeout = currentReadTimeout()
             doOutput = true
             useCaches = false
             setRequestProperty("Content-Type", "application/json; charset=utf-8")

@@ -851,6 +851,7 @@ fun LionApp() {
         val strict = central &&
             (SmartRouter.isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL))
         val careful = central && (SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL)
+        val mission = CentralBrain.policy(kind, chatMode, central)
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
         val plan = planFor(kind, mode)
         val auto = autoRoute
@@ -881,7 +882,7 @@ fun LionApp() {
         scope.launch {
             // المصادر والروابط (يوتيوب/أنغامي/يوتيوب ميوزيك) ميزة مستقلة يحكمها إعدادها،
             // وتبقى تعمل في الوضع اليدوي أيضاً ولا يلغيها العقل المركزي.
-            val sources = if (WebGrounding.enabled(prefs) && WebGrounding.shouldSearch(kind, prompt)) {
+            val sources = if (CentralBrain.shouldSearch(prefs, kind, chatMode, prompt, central)) {
                 withContext(Dispatchers.IO) {
                     runCatching { WebGrounding.search(prompt) }.getOrDefault(emptyList<WebSource>())
                 }
@@ -929,7 +930,8 @@ fun LionApp() {
             } else {
                 ""
             }
-            val systemPrompt = basePrompt + modeProfile.promptSuffix + projectBlock +
+            val sessionBlock = session.contextBlock()
+            val systemPrompt = basePrompt + modeProfile.promptSuffix + projectBlock + sessionBlock +
                 answerLengthSuffix() +
                 (if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "") + githubNote + toolsNote
             val baseLlmPrompt = if (sources.isEmpty()) {
@@ -941,15 +943,9 @@ fun LionApp() {
                 baseLlmPrompt + "\n\n=== بيانات Google Drive من الرابط في رسالة المستخدم ===\n" + driveContext
             val llmPrompt = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
-            // البدائل الإضافية من العقل المركزي تُستخدم فقط عندما يسمح المستخدم بذلك
-            // (تلقائي أو مساعدة الوضع اليدوي)، لا في الوضع اليدوي الحر.
-            val rescueRoutes = if (central && sources.isNotEmpty()) {
-                SmartRouter.candidates(kind)
-                    .filter { SmartRouter.available(prefs, it.provider) }
-                    .filterNot { candidate -> plan.any { it.provider == candidate.provider } }
-                    .distinctBy { it.provider }
-                    .sortedByDescending { SmartRouter.isReliableModel(it.provider, it.model) }
-                    .take(3)
+            // العقل المركزي يضمن أن لكل مجال مزوداً بديلاً جاهزاً عند فشل المسار الأساسي.
+            val rescueRoutes = if (central && mission.expandFallbacks) {
+                CentralBrain.rescueRoutes(prefs, kind, plan, image != null)
             } else {
                 emptyList()
             }
@@ -967,6 +963,10 @@ fun LionApp() {
             for (route in routesToTry) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
+                val attemptCap = minOf(
+                    (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L),
+                    LlmClient.attemptTimeoutMs(kind).toLong()
+                ).toInt()
                 val agentResult = if (toolGroups.isNotEmpty()) {
                     withContext(Dispatchers.IO) {
                         runCatching {
@@ -1003,7 +1003,8 @@ fun LionApp() {
                         modelOverride = route.model,
                         accountId = accountId(),
                         image = image,
-                        systemPrompt = systemPrompt
+                        systemPrompt = systemPrompt,
+                        readTimeoutMs = attemptCap
                     )
                 }
                 val error = LlmClient.isErrorReply(r)
@@ -1073,6 +1074,88 @@ fun LionApp() {
                     }
                 }
             }
+            // العقل المركزي يدقّق الإجابات غير الموثوقة أو المعرفية غير المدعومة بمصادر.
+            val answeredBy = used
+            if (answeredBy != null && image == null && !prompt.contains("محتوى الملف (") &&
+                System.currentTimeMillis() < deadline - 6_000
+            ) {
+                val judge = CentralBrain.judgeRoute(prefs, kind, answeredBy, routesToTry)
+                if (judge != null && CentralBrain.needsVerification(
+                        answeredBy, kind, mission,
+                        judgeAvailable = true,
+                        grounded = sources.isNotEmpty()
+                    )
+                ) {
+                    val judgeStarted = System.currentTimeMillis()
+                    val checkReply = withContext(Dispatchers.IO) {
+                        LlmClient.ask(
+                            message = CentralBrain.verificationPrompt(prompt, reply, sources, chatMode),
+                            apiKey = keyOf(judge.provider),
+                            provider = judge.provider,
+                            history = emptyList(),
+                            modelOverride = judge.model,
+                            accountId = accountId(),
+                            image = null,
+                            systemPrompt = LLM_VERIFY_PROMPT,
+                            readTimeoutMs = minOf(
+                                25_000L,
+                                (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
+                            ).toInt()
+                        )
+                    }
+                    val verdict = CentralBrain.parseVerdict(checkReply)
+                    val judgeOk = !LlmClient.isErrorReply(checkReply) && verdict.ok
+                    SmartRouter.record(judge, judgeOk, System.currentTimeMillis() - judgeStarted)
+                    if (!judgeOk) {
+                        val note = verdict.reason.ifBlank { "لم تتأكد صحة الإجابة" }
+                        val attempts = listOf(
+                            AnswerAttempt(answeredBy.provider, true, "الإجابة الأولى"),
+                            AnswerAttempt(judge.provider, false, note)
+                        )
+                        val fixPrompt = prompt + "\n\n" + CentralBrain.continuationBlock(attempts) +
+                            "\n\nملاحظات المدقق:\n" + note +
+                            if (verdict.corrected.isNotBlank()) {
+                                "\n\nنسخة مصححة مقترحة (راجعها ولا تنسخها حرفياً إن كانت خاطئة):\n" +
+                                    verdict.corrected.take(4000)
+                            } else {
+                                ""
+                            }
+                        val fixed = withContext(Dispatchers.IO) {
+                            LlmClient.ask(
+                                message = fixPrompt,
+                                apiKey = keyOf(answeredBy.provider),
+                                provider = answeredBy.provider,
+                                history = requestHistory,
+                                modelOverride = answeredBy.model,
+                                accountId = accountId(),
+                                image = null,
+                                systemPrompt = systemPrompt +
+                                    if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "",
+                                readTimeoutMs = minOf(
+                                    30_000L,
+                                    (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
+                                ).toInt()
+                            )
+                        }
+                        val fixedOk = !LlmClient.isErrorReply(fixed) &&
+                            !AnswerGuard.isLowQuality(fixed, kind, prompt) &&
+                            !CentralBrain.repeatsQuestion(fixed, mutableSetOf(), session.pendingQuestion)
+                        if (fixedOk) {
+                            reply = fixed
+                            used = answeredBy
+                        } else if (verdict.corrected.isNotBlank() &&
+                            !verdict.corrected.equals(reply, ignoreCase = true) &&
+                            !AnswerGuard.isLowQuality(verdict.corrected, kind, prompt)
+                        ) {
+                            reply = verdict.corrected
+                            used = judge
+                            reply += "\n\n🧭 دقّق العقل المركزي الإجابة واعتمد النسخة المصححة."
+                        } else {
+                            reply += "\n\n🧭 تحقق العقل المركزي: " + note.take(240)
+                        }
+                    }
+                }
+            }
             if (used == null && failed.size > 1) {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
             }
@@ -1097,7 +1180,11 @@ fun LionApp() {
                                 modelOverride = secondRoute.model,
                                 accountId = accountId(),
                                 image = null,
-                                systemPrompt = systemPrompt
+                                systemPrompt = systemPrompt,
+                                readTimeoutMs = minOf(
+                                    30_000L,
+                                    (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
+                                ).toInt()
                             )
                         }
                         val secondError = LlmClient.isErrorReply(secondReply)
@@ -1129,7 +1216,11 @@ fun LionApp() {
                                     accountId = accountId(),
                                     image = null,
                                     systemPrompt = LLM_CONSENSUS_PROMPT + answerLengthSuffix() +
-                                        if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else ""
+                                        if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "",
+                                    readTimeoutMs = minOf(
+                                        30_000L,
+                                        (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
+                                    ).toInt()
                                 )
                             }
                             consensusPercent = percent
@@ -1189,6 +1280,16 @@ fun LionApp() {
         val file = attachment
         val image = imageAttachment
         if (text.isEmpty() && file == null && image == null) return
+
+        // تحية أو «هل أنت هنا؟» لا تستحق انتظار مزود؛ نرد فوراً من دون شبكة.
+        if (file == null && image == null) {
+            QuickReply.forText(text)?.let { quick ->
+                messages = messages + Message(text, true) + Message(quick, false, via = "⚡ رد فوري")
+                input = ""
+                saveCurrent()
+                return
+            }
+        }
 
         val kind = SmartRouter.classify(text, image != null, file?.text?.length ?: 0, file?.name)
         // عزل وقت التشغيل: لا تنفيذ برمجي صامت في وضع عام/تعلّم. نطلب ترقية صريحة أولاً.

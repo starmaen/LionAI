@@ -126,9 +126,19 @@ object SmartRouter {
     )
     private val GITHUB_LINK = Regex("github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
+    /** أسئلة حضور/هوية/قدرات قصيرة: تجيب عنها واجهة الرد الفوري عادةً، وتُصنّف سريعة احتياطاً. */
+    private val TRIVIAL_PHRASE = Regex(
+        "(هل (انت|أنت) (هنا|موجود|متاح|جاهز)|(انت|أنت) هنا|^هل تعمل$|" +
+            "بماذا يجب (ان|أن) تعمل|ماذا يجب (ان|أن) تفعل|ماذا تستطيع|ماذا يمكنك (ان|أن) تفعل|" +
+            "ما وظيفتك|ما دورك|ما (هي )?مهامك|كيف (أ|ا)?ستخدمك)"
+    )
+
     /** هل النص مجاملة/سؤال سطحي قصير يستحق رداً فورياً دون تفكير عميق؟ */
-    fun isSmallTalk(text: String): Boolean =
-        text.length <= 80 && SMALLTALK.containsMatchIn(TextNorm.forMatch(text))
+    fun isSmallTalk(text: String): Boolean {
+        if (text.length > 80) return false
+        val normalized = TextNorm.forMatch(text)
+        return SMALLTALK.containsMatchIn(normalized) || TRIVIAL_PHRASE.containsMatchIn(normalized)
+    }
 
     fun classify(text: String, hasImage: Boolean, attachmentChars: Int, attachmentName: String?): TaskKind {
         val t = TextNorm.forMatch(text)

@@ -130,7 +130,8 @@ object ToolAgent {
                 modelOverride = model,
                 accountId = accountId,
                 image = null,
-                systemPrompt = system
+                systemPrompt = system,
+                readTimeoutMs = (deadline - System.currentTimeMillis()).coerceIn(10_000L, 90_000L).toInt()
             )
             if (LlmClient.isErrorReply(reply)) {
                 session?.providerFailed(label, reply)
