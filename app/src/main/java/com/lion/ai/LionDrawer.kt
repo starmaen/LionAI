@@ -1,25 +1,16 @@
 package com.lion.ai
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 
 @Composable
 internal fun LionDrawerContent(
@@ -70,7 +61,7 @@ internal fun LionDrawerContent(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F))
         ) {
-            Text("📇 جهات الاتصال (${contactsCount})", color = Color.White)
+            Text(" جهات الاتصال (${contactsCount})", color = Color.White)
         }
         Button(
             onClick = onScheduled,
@@ -85,12 +76,6 @@ internal fun LionDrawerContent(
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A2E4A))
         ) {
             Text("🖼️ محرر الصور", color = Color.White)
-        }
-        Button(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D2E5D))
-        ) {
-            Text("🎨 استوديو التوليد", color = Color.White)
         }
         Button(
             onClick = onGitHub,
