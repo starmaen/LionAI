@@ -889,7 +889,7 @@ object AiTools {
                                 if (a.startLine != null) append(":${a.startLine}")
                                 if (a.endLine != null) append("-${a.endLine}")
                             }.ifBlank { "بدون مسار" }
-                            "${a.title.ifBlank { "فشل" }} — ${a.message.ifBlank { "" }} ($pos)"
+                            "${a.title?.ifBlank { "فشل" } ?: "فشل"} — ${a.message?.ifBlank { "" } ?: ""} ($pos)"
                         }
                     }
                 log.take(max)
@@ -1419,11 +1419,11 @@ object AiTools {
                     ctx, source, sourceName, target, args.optString("notes")
                 )
                 if (code.startsWith("⚠️")) code
-                else "🌐 ${CodeTranslator.languageOf(sourceName)} → ${CodeTranslator.canonical(target)}
+                else """🌐 ${CodeTranslator.languageOf(sourceName)} → ${CodeTranslator.canonical(target)}
 
 ```
 $code
-```"
+```"""
             }
             "code_translate_save" -> {
                 val path = args.optString("path")
@@ -1713,7 +1713,7 @@ $code
                                         if (a.startLine != null) append(":${a.startLine}")
                                         if (a.endLine != null) append("-${a.endLine}")
                                     }.ifBlank { "بدون مسار" }
-                                    "${a.title.ifBlank { "فشل" }} — ${a.message.ifBlank { "" }} ($pos)"
+                                    "${a.title?.ifBlank { "فشل" } ?: "فشل"} — ${a.message?.ifBlank { "" } ?: ""} ($pos)"
                                 }
                             }
                 }.take(16_000)
