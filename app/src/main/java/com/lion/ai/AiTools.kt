@@ -69,7 +69,12 @@ class ToolContext(
     val prefs: SharedPreferences,
     val allowWrite: Boolean,
     val chatId: String = "",
-    val mode: ChatMode = ChatMode.CODE
+    val mode: ChatMode = ChatMode.CODE,
+    /** مزود الذكاء النشط وبياناته: تستخدمها أدوات الترجمة التي تحتاج نداء نموذجاً. */
+    val provider: String = "",
+    val model: String = "",
+    val apiKey: String = "",
+    val accountId: String = ""
 )
 
 /** سجل الأدوات + بروتوكول استدعاء موحّد يعمل مع جميع مزودات API. */
@@ -161,7 +166,10 @@ object AiTools {
         Def("code_project_analyze", ToolGroup.CODE, """{"path":"","max_files":80}""", "تحليل مشروع كامل في مساحة العمل"),
         Def("code_patch", ToolGroup.CODE, """{"path":"Main.kt","find":"...","replace":"...","all":false}""", "تعديل دقيق: استبدال نص داخل ملف (مع نسخة احتياطية)", true),
         Def("code_review", ToolGroup.CODE, """{"path":"","max_files":30}""", "مراجعة آلية سريعة للمشروع واكتشاف المخاطر"),
+        Def("code_translate", ToolGroup.CODE, """{"path":"Main.kt","text":"","name":"","to":"Kotlin","notes":""}""", "ترجمة ملف/كود إلى لغة أخرى عبر النموذج النشط (معاينة دون حفظ)"),
+        Def("code_translate_save", ToolGroup.CODE, """{"path":"a.py","text":"","name":"","to":"Kotlin","out":"","notes":""}""", "ترجمة كود إلى لغة أخرى وحفظ الناتج داخل مساحة العمل", true),
         Def("dependency_audit", ToolGroup.CODE, """{"path":"","online":true,"max_files":5000}""", "تدقيق المكتبات: Gradle/Maven/npm/Python/Dart/Rust/Go + ثغرات OSV + تعارض الإصدارات"),
+        Def("library_versions", ToolGroup.CODE, """{"path":"","name":"react","ecosystem":"npm","current_version":"18.0.0","max":12,"online":true}""", "أحدث إصدار وترخيص للمكتبات + مقارنة المثبّت (تقفّي الترقيات)"),
         Def("code_doctor", ToolGroup.CODE, """{"path":"","online":false,"max_files":3000}""", "تقرير جاهزية شامل: بنية، صحة كود، اختبارات، سلسلة بناء، اعتماديات، وحكم نهائي"),
 
         // Utilities
@@ -621,7 +629,8 @@ object AiTools {
 
     private val CODE_WRITE_TOOLS = setOf(
         "file_write", "file_append", "file_apply_patch", "file_delete", "file_move",
-        "file_copy", "file_mkdir", "file_unzip", "file_integrity_save", "code_patch", "github_write_file",
+        "file_copy", "file_mkdir", "file_unzip", "file_integrity_save", "code_patch",
+        "code_translate_save", "github_write_file",
         "github_commit_files", "github_push_workspace", "github_delete_file",
         "github_bootstrap_project", "github_create_repo", "github_create_branch"
     )
@@ -654,7 +663,9 @@ object AiTools {
         val result = try {
             val output = run(ctx, call.name, call.args)
             if (def.write && ctx.chatId.isNotBlank()) {
-                val path = call.args.optString("path").ifBlank { call.args.optString("from") }
+                val path = call.args.optString("out").ifBlank {
+                    call.args.optString("path").ifBlank { call.args.optString("from") }
+                }
                 if (path.isNotBlank()) ManifestStore.markFile(ctx.prefs, ctx.chatId, path, "written")
             }
             ToolResult(call.name, output.take(16_000), true)
@@ -866,8 +877,22 @@ object AiTools {
             }
             "github_job_log" -> {
                 val (owner, repo) = repoOf(ctx, args)
-                val log = GitHubClient.jobLog(token, owner, repo, args.optLong("job_id", 0L))
-                log.take(int(args, "max_chars", 12_000).coerceIn(2000, 30_000))
+                val jobId = args.optLong("job_id", 0L)
+                val max = int(args, "max_chars", 12_000).coerceIn(2000, 30_000)
+                val log = runCatching { GitHubClient.jobLog(token, owner, repo, jobId) }
+                    .getOrElse { e ->
+                        val anns = GitHubClient.jobAnnotations(token, owner, repo, jobId)
+                        if (anns.isEmpty()) "(تعذر جلب السجل، ولم توجد ملاحظات فشل عامة)"
+                        else anns.joinToString("\n") { a ->
+                            val pos = buildString {
+                                if (a.path != null) append(a.path)
+                                if (a.startLine != null) append(":${a.startLine}")
+                                if (a.endLine != null) append("-${a.endLine}")
+                            }.ifBlank { "بدون مسار" }
+                            "${a.title.ifBlank { "فشل" }} — ${a.message.ifBlank { "" }} ($pos)"
+                        }
+                    }
+                log.take(max)
             }
             "github_rerun" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -1374,12 +1399,86 @@ object AiTools {
                 if (files.isEmpty()) "لا ملفات كود للمراجعة."
                 else CodeAnalyzer.projectReport(files) + "\n\n🔎 راجع أيضاً: الأسرار المكشوفة، الاعتماديات غير المثبتة، وعدم معالجة الأخطاء."
             }
+            "code_translate" -> {
+                val path = args.optString("path")
+                val inline = args.optString("text")
+                val source = when {
+                    path.isNotBlank() -> {
+                        val info = FileTools.read(ctx.context, path, 200_000)
+                        if (info.binary) return "⚠️ لا يمكن ترجمة ملف ثنائي: $path"
+                        info.text
+                    }
+                    inline.isNotBlank() -> inline
+                    else -> return "⚠️ حدّد مسار ملف (path) أو كوداً مباشراً (text)."
+                }
+                val sourceName = path.substringAfterLast('/').ifBlank {
+                    args.optString("name", "inline.txt")
+                }
+                val target = args.optString("to")
+                val code = CodeTranslator.translate(
+                    ctx, source, sourceName, target, args.optString("notes")
+                )
+                if (code.startsWith("⚠️")) code
+                else "🌐 ${CodeTranslator.languageOf(sourceName)} → ${CodeTranslator.canonical(target)}
+
+```
+$code
+```"
+            }
+            "code_translate_save" -> {
+                val path = args.optString("path")
+                val inline = args.optString("text")
+                val source = when {
+                    path.isNotBlank() -> {
+                        val info = FileTools.read(ctx.context, path, 200_000)
+                        if (info.binary) return "⚠️ لا يمكن ترجمة ملف ثنائي: $path"
+                        info.text
+                    }
+                    inline.isNotBlank() -> inline
+                    else -> return "⚠️ حدّد مسار ملف (path) أو كوداً مباشراً (text)."
+                }
+                val sourceName = path.substringAfterLast('/').ifBlank {
+                    args.optString("name", "inline.txt")
+                }
+                val target = args.optString("to")
+                val out = args.optString("out").ifBlank { CodeTranslator.outputPath(path, target) }
+                if (path.isNotBlank() && out == path) {
+                    return "⚠️ مسار الناتج مطابق للمصدر. حدّد out مختلفاً لحماية الملف الأصلي."
+                }
+                val code = CodeTranslator.translate(
+                    ctx, source, sourceName, target, args.optString("notes")
+                )
+                if (code.startsWith("⚠️")) code
+                else {
+                    val entry = FileTools.write(ctx.context, out, code.trimEnd() + "\n")
+                    "✅ ترجمت ${CodeTranslator.canonical(target)} وحفظت ${entry.path} (${entry.size} بايت). " +
+                        "راجعه ثم استخدم code_analyze_file للتحقق."
+                }
+            }
             "dependency_audit" -> DependencyAudit.audit(
                 ctx.context,
                 args.optString("path"),
                 args.optBoolean("online", true),
                 int(args, "max_files", 5000).coerceIn(1, 5000)
             )
+            "library_versions" -> {
+                val name = args.optString("name")
+                if (name.isNotBlank()) {
+                    LibraryAudit.lookupText(
+                        args.optString("ecosystem", "npm"),
+                        name,
+                        args.optString("current_version"),
+                        args.optBoolean("online", true)
+                    )
+                } else {
+                    LibraryAudit.audit(
+                        ctx.context,
+                        args.optString("path"),
+                        int(args, "max", 12),
+                        args.optBoolean("online", true)
+                    )
+                }
+            }
             "code_doctor" -> CodeDoctor.report(
                 ctx.context,
                 ctx.prefs,
@@ -1605,7 +1704,18 @@ object AiTools {
                 else jobs.joinToString("\n\n") { job ->
                     "===== ${job.name}: ${job.status}/${job.conclusion} =====\n" +
                         runCatching { GitHubClient.jobLog(token, owner, repo, job.id, max) }
-                            .getOrDefault("(تعذر جلب السجل)")
+                            .getOrElse { _ ->
+                                val anns = GitHubClient.jobAnnotations(token, owner, repo, job.id)
+                                if (anns.isEmpty()) "(تعذر جلب السجل، ولم توجد ملاحظات فشل عامة)"
+                                else anns.joinToString("\n") { a ->
+                                    val pos = buildString {
+                                        if (a.path != null) append(a.path)
+                                        if (a.startLine != null) append(":${a.startLine}")
+                                        if (a.endLine != null) append("-${a.endLine}")
+                                    }.ifBlank { "بدون مسار" }
+                                    "${a.title.ifBlank { "فشل" }} — ${a.message.ifBlank { "" }} ($pos)"
+                                }
+                            }
                 }.take(16_000)
             }
             "github_compare" -> {

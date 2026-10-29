@@ -99,7 +99,11 @@ object ToolAgent {
             prefs,
             profile.allowWrite,
             chatId = session?.chatId.orEmpty(),
-            mode = chatMode
+            mode = chatMode,
+            provider = provider,
+            model = model,
+            apiKey = apiKey,
+            accountId = accountId
         )
         val used = mutableListOf<String>()
         val historyBuffer = history.toMutableList()

@@ -653,6 +653,27 @@ object GitHubClient {
         return String(bytes, Charsets.UTF_8)
     }
 
+    data class JobAnnotation(val path: String?, val startLine: Int?, val endLine: Int?, val title: String?, val message: String?)
+
+    /** بديل عام عند تعذّر جلب السجل الكامل (يتطلب administrator): يعرض 메시جات الفشل من annotations. */
+    fun jobAnnotations(token: String, owner: String, repo: String, jobId: Long): List<JobAnnotation> {
+        val raw = request(
+            "/repos/${encode(owner)}/${encode(repo)}/check-runs/$jobId/annotations?per_page=100",
+            token
+        )
+        val array = JSONObject(raw).optJSONArray("annotations") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val o = array.optJSONObject(index) ?: return@mapNotNull null
+            JobAnnotation(
+                path = o.optString("path").ifBlank { null },
+                startLine = o.optInt("start_line").takeIf { it > 0 },
+                endLine = o.optInt("end_line").takeIf { it > 0 },
+                title = o.optString("title").ifBlank { null },
+                message = o.optString("message").ifBlank { null }
+            )
+        }
+    }
+
     fun rerunRun(token: String, owner: String, repo: String, runId: Long) {
         request("/repos/${encode(owner)}/${encode(repo)}/actions/runs/$runId/rerun", token, "POST")
     }
