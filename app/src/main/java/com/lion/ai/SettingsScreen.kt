@@ -373,13 +373,149 @@ fun SettingsScreen(
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(6.dp))
-                        val backend = LocalAIProxy.backendProvider(prefs)
-                        val backendName = PROVIDERS.firstOrNull { it.id == backend }?.name ?: backend
+                        var backend by remember { mutableStateOf(LocalAIProxy.backendProvider(prefs)) }
+                        val backendOptions = remember {
+                            PROVIDERS.filter {
+                                it.group == ProviderGroup.API && it.id != "local_proxy" && it.id != "custom"
+                            }
+                        }
+                        val backendName = backendOptions.firstOrNull { it.id == backend }?.label ?: backend
                         Text(
-                            "المزود الخلفي: $backendName — اختره من بطاقات المزودين أدناه، والخادم يوجّه إليه تلقائياً.",
+                            "المزود الخلفي: $backendName — اختر من القائمة أدناه، والخادم يوجّه إليه تلقائياً بلا كتابة يدوية.",
                             color = Color(0xFFB0B0B0),
                             fontSize = 12.sp
                         )
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            backendOptions.forEach { info ->
+                                val selected = info.id == backend
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            if (selected) Color(0xFFFFB800) else Color(0xFF2A2A2A),
+                                            RoundedCornerShape(16.dp)
+                                        )
+                                        .clickable {
+                                            backend = info.id
+                                            prefs.edit().putString("local_proxy_backend", info.id).apply()
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        if (info.id == "openai") "ChatGPT" else info.shortName,
+                                        color = if (selected) Color(0xFF121212) else Color(0xFFE0E0E0),
+                                        fontSize = 11.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        val activeBackendModel = (prefs.getString("model_$backend", "") ?: "")
+                            .ifBlank { backendOptions.firstOrNull { it.id == backend }?.defaultModel ?: "" }
+                        Text(
+                            "الموديل: ${activeBackendModel.ifBlank { "غير محدد" }} — يبدأ الخادم تلقائياً عند فتح التطبيق.",
+                            color = Color(0xFF7A7A7A),
+                            fontSize = 11.sp
+                        )
+
+                        // مزودون مستوردون من الإنترنت (مجموعة قابلة للاختيار)
+                        var importedList by remember { mutableStateOf(ImportedProviders.list(prefs)) }
+                        var importUrl by remember { mutableStateOf("") }
+                        var importing by remember { mutableStateOf(false) }
+                        var importStatus by remember { mutableStateOf("") }
+                        if (importedList.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "🌐 مزودون مستوردون (اضغط للاختيار):",
+                                color = Color(0xFFB0B0B0),
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                importedList.forEach { entry ->
+                                    val selected = entry.id == backend
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                if (selected) Color(0xFF64B5F6) else Color(0xFF2A2A2A),
+                                                RoundedCornerShape(16.dp)
+                                            )
+                                            .clickable {
+                                                backend = entry.id
+                                                prefs.edit().putString("local_proxy_backend", entry.id).apply()
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            entry.label,
+                                            color = if (selected) Color(0xFF121212) else Color(0xFFE0E0E0),
+                                            fontSize = 11.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = importUrl,
+                            onValueChange = { importUrl = it },
+                            label = { Text("رابط JSON لمجموعة مزودين (استيراد من الإنترنت)", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(fontSize = 12.sp, color = Color(0xFFE0E0E0))
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = {
+                                    if (importUrl.isBlank()) return@Button
+                                    importing = true
+                                    importStatus = ""
+                                    settingsScope.launch {
+                                        val raw = withContext(Dispatchers.IO) {
+                                            WebBrowserTool.fetchRaw(importUrl.trim())
+                                        }
+                                        if (raw.startsWith("⚠️")) {
+                                            importStatus = raw
+                                        } else {
+                                            val n = ImportedProviders.importFrom(prefs, raw)
+                                            importedList = ImportedProviders.list(prefs)
+                                            importStatus = if (n > 0) {
+                                                val first = importedList.lastOrNull()?.id
+                                                if (first != null) {
+                                                    backend = first
+                                                    prefs.edit().putString("local_proxy_backend", first).apply()
+                                                }
+                                                "✅ تمت إضافة $n مزود بنجاح"
+                                            } else {
+                                                "ℹ️ لا يوجد مزودون جدد أو الصيغة غير صالحة"
+                                            }
+                                        }
+                                        importing = false
+                                    }
+                                },
+                                enabled = !importing && importUrl.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
+                            ) {
+                                Text(
+                                    if (importing) "جارٍ الاستيراد…" else "⬇️ استيراد",
+                                    color = Color(0xFF121212),
+                                    fontSize = 12.sp
+                                )
+                            }
+                            if (importStatus.isNotBlank()) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(importStatus, color = Color(0xFFB0B0B0), fontSize = 11.sp)
+                            }
+                        }
                         Spacer(Modifier.height(8.dp))
                         val proxyUrl = LocalAIProxy.getUrl()
                         if (proxyUrl.isNotEmpty()) {
@@ -405,14 +541,13 @@ fun SettingsScreen(
                                         val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         clipboard.setPrimaryClip(ClipData.newPlainText("LionAI Proxy", proxyUrl))
                                     },
-                                    contentPadding = PaddingValues(0.dp)
                                 ) {
                                     Text("📋 نسخ", color = Color(0xFFFFB800), fontSize = 11.sp)
                                 }
                             }
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "كيف يعمل: الخادم يعمل على 127.0.0.1 dentro من التطبيق ويحول طلباتك لمزود الذكاء الاصطناعي النشط (Gemini، DeepSeek، إلخ) عبر الإنترنت، ثم يعيد الرد بصيغة OpenAI-Compatible.",
+                                "كيف يعمل: الخادم يعمل على 127.0.0.1 داخل التطبيق ويحول طلباتك لمزود الذكاء الاصطناعي النشط (Gemini، DeepSeek، إلخ) عبر الإنترنت، ثم يعيد الرد بصيغة OpenAI-Compatible.",
                                 color = Color(0xFF7A7A7A),
                                 fontSize = 11.sp,
                                 maxLines = 3

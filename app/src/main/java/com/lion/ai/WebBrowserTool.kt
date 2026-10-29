@@ -14,6 +14,29 @@ object WebBrowserTool {
 
     private val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; LionAI) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36"
 
+    /** يجلب محتوى خام (JSON/نص) دون استخراج النص المرئي. */
+    fun fetchRaw(url: String, maxChars: Int = 200_000): String {
+        return try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                useCaches = false
+                setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Accept", "application/json,text/plain,*/*")
+                instanceFollowRedirects = true
+            }
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                "⚠️ تعذّر تحميل الصفحة ($status): $url"
+            } else {
+                String(connection.inputStream.readBytes(), StandardCharsets.UTF_8).take(maxChars)
+            }
+        } catch (e: Exception) {
+            "⚠️ تعذّر التصفح: ${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+
     /** يجلب صفحة ويب ويستخرج نصها المرئي. */
     fun fetch(url: String, maxChars: Int = 12_000): String {
         return try {

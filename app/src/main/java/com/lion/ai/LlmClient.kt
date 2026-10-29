@@ -44,7 +44,11 @@ object LlmClient {
     private fun currentReadTimeout(): Int = threadReadTimeout.get() ?: LLM_READ_TIMEOUT
 
     fun reloadOverrides(prefs: android.content.SharedPreferences) {
-        endpointOverrides = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
+        val base = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
+        val imported = runCatching {
+            ImportedProviders.endpoints(prefs)
+        }.getOrDefault(emptyMap())
+        endpointOverrides = base + imported
     }
 
     internal fun endpoint(provider: String, default: String): String {
@@ -166,7 +170,7 @@ object LlmClient {
     ): String {
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
-        if (apiKey.isBlank() && !providerInfo(provider).keyless) {
+        if (apiKey.isBlank() && !providerInfo(provider).keyless && !provider.startsWith("imp_")) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
         }
         if (provider == "cloudflare" && accountId.isBlank()) {
@@ -233,11 +237,14 @@ object LlmClient {
                 }
                 else -> {
                     val info = PROVIDERS.firstOrNull { it.id == provider }
-                    if (info == null || info.endpoint.isBlank()) {
+                    val target = endpoint(provider, info?.endpoint ?: "")
+                    if (info == null && target.isBlank()) {
+                        "⚠️ مزود غير معروف: $provider"
+                    } else if (target.isBlank()) {
                         "⚠️ مزود غير معروف: $provider"
                     } else {
                         callOpenAiCompatible(
-                            endpoint(provider, info.endpoint), apiKey, model, turns, message,
+                            normalizeCustomUrl(target), apiKey, model, turns, message,
                             maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                         )
                     }
