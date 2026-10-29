@@ -36,6 +36,8 @@ internal fun LionDrawerContent(
     onDelete: (ChatMeta) -> Unit,
     onShare: (ChatMeta) -> Unit
 ) {
+    val generalChats = activeChats.filter { it.mode != ChatMode.CODE.id }
+    val codeChats = activeChats.filter { it.mode == ChatMode.CODE.id }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -101,17 +103,51 @@ internal fun LionDrawerContent(
         Spacer(Modifier.height(6.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            items(activeChats, key = { it.id }) { meta ->
-                ChatRow(
-                    meta = meta,
-                    selected = meta.id == currentChat,
-                    onOpen = { onOpenChat(meta.id) },
-                    onRename = { onRename(meta) },
-                    onAutoTitle = { onAutoTitle(meta.id) },
-                    onArchiveToggle = { onArchive(meta) },
-                    onDelete = { onDelete(meta) },
-                    onShare = { onShare(meta) }
-                )
+            if (generalChats.isNotEmpty()) {
+                item(key = "mode_general_header") {
+                    Text(
+                        "💬 عام وتعلّم (${generalChats.size})",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 2.dp)
+                    )
+                }
+                items(generalChats, key = { it.id }) { meta ->
+                    ChatRow(
+                        meta = meta,
+                        selected = meta.id == currentChat,
+                        onOpen = { onOpenChat(meta.id) },
+                        onRename = { onRename(meta) },
+                        onAutoTitle = { onAutoTitle(meta.id) },
+                        onArchiveToggle = { onArchive(meta) },
+                        onDelete = { onDelete(meta) },
+                        onShare = { onShare(meta) }
+                    )
+                }
+            }
+            if (codeChats.isNotEmpty()) {
+                item(key = "mode_code_header") {
+                    Text(
+                        "🛠️ هندسة وبرمجة (${codeChats.size})",
+                        color = Color(0xFF2196F3),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 2.dp)
+                    )
+                }
+                items(codeChats, key = { it.id }) { meta ->
+                    ChatRow(
+                        meta = meta,
+                        selected = meta.id == currentChat,
+                        onOpen = { onOpenChat(meta.id) },
+                        onRename = { onRename(meta) },
+                        onAutoTitle = { onAutoTitle(meta.id) },
+                        onArchiveToggle = { onArchive(meta) },
+                        onDelete = { onDelete(meta) },
+                        onShare = { onShare(meta) }
+                    )
+                }
             }
             if (archivedChats.isNotEmpty()) {
                 item(key = "archive_header") {

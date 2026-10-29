@@ -14,7 +14,8 @@ data class ChatMeta(
     val titleSource: String,
     val archived: Boolean,
     val updatedAt: Long,
-    val count: Int
+    val count: Int,
+    val mode: String = ChatMode.GENERAL.id
 )
 
 object ChatRepository {
@@ -61,7 +62,8 @@ object ChatRepository {
             titleSource = source,
             archived = old?.archived ?: false,
             updatedAt = System.currentTimeMillis(),
-            count = messages.size
+            count = messages.size,
+            mode = ContextStore.read(prefs, id).id
         )
         if (index >= 0) list[index] = meta else list.add(meta)
         write(prefs, list)
@@ -96,6 +98,11 @@ object ChatRepository {
 
     fun delete(prefs: SharedPreferences, id: String) {
         cache.remove(id)
+        ContextStore.remove(prefs, id)
+        ManifestStore.delete(prefs, id)
+        PipelineStore.delete(prefs, id)
+        CheckpointStore.delete(prefs, id)
+        AgentSessions.clear(id)
         val list = read(prefs).filter { it.id != id }
         val legacyIds = (prefs.getString("chat_ids", "") ?: "")
             .split(",")
@@ -108,6 +115,19 @@ object ChatRepository {
             .apply()
         write(prefs, list)
     }
+
+    fun setMode(prefs: SharedPreferences, id: String, mode: ChatMode): Boolean {
+        ContextStore.write(prefs, id, mode)
+        val list = read(prefs)
+        val index = list.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            list[index] = list[index].copy(mode = mode.id)
+            write(prefs, list)
+        }
+        return true
+    }
+
+    fun modeOf(prefs: SharedPreferences, id: String): ChatMode = ContextStore.read(prefs, id)
 
     fun fallbackTitle(messages: List<Message>): String? {
         val first = messages.firstOrNull { it.isUser }?.text ?: return null
@@ -124,7 +144,9 @@ object ChatRepository {
 
     private fun read(prefs: SharedPreferences): MutableList<ChatMeta> {
         if (!prefs.contains(KEY_META)) migrate(prefs)
-        return decode(prefs.getString(KEY_META, "") ?: "")
+        return decode(prefs.getString(KEY_META, "") ?: "").mapTo(mutableListOf()) { meta ->
+            meta.copy(mode = ContextStore.read(prefs, meta.id).id)
+        }
     }
 
     private fun write(prefs: SharedPreferences, list: List<ChatMeta>) {
@@ -152,7 +174,8 @@ object ChatRepository {
                 titleSource = "auto",
                 archived = false,
                 updatedAt = now - (distinct.size - index) * 1000L,
-                count = messages.size
+                count = messages.size,
+                mode = ContextStore.read(prefs, id).id
             )
         }
         prefs.edit().putString(KEY_META, encode(list)).apply()
@@ -169,6 +192,7 @@ object ChatRepository {
                     .put("arch", it.archived)
                     .put("ts", it.updatedAt)
                     .put("n", it.count)
+                    .put("m", it.mode)
             )
         }
         return array.toString()
@@ -190,7 +214,8 @@ object ChatRepository {
                         titleSource = item.optString("src", "auto"),
                         archived = item.optBoolean("arch", false),
                         updatedAt = item.optLong("ts", 0L),
-                        count = item.optInt("n", 0)
+                        count = item.optInt("n", 0),
+                        mode = item.optString("m", ChatMode.GENERAL.id)
                     )
                 )
             }

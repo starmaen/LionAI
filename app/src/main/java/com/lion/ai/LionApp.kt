@@ -148,6 +148,7 @@ private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): Li
 @Composable
 fun LionApp() {
     val context = LocalContext.current
+    ContextHolder.install(context)
     val prefs = remember { SecurePrefs.get(context) }
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -165,6 +166,9 @@ fun LionApp() {
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
     val toolStatus = remember { mutableStateMapOf<String, String>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
+    var currentMode by remember { mutableStateOf(ChatRepository.modeOf(prefs, currentChat)) }
+    var showModePicker by remember { mutableStateOf(false) }
+    var promotionRequest by remember { mutableStateOf<String?>(null) }
     var chatMetas by remember { mutableStateOf(listOf<ChatMeta>()) }
     var scheduledItems by remember { mutableStateOf(listOf<ScheduledItem>()) }
     var renameTarget by remember { mutableStateOf<ChatMeta?>(null) }
@@ -265,6 +269,7 @@ fun LionApp() {
         prefs.edit().putString("provider", provider).putBoolean("auto_route", tab.autoRoute).apply()
         messages = ChatRepository.load(prefs, tab.chatId)
         currentChat = tab.chatId
+        currentMode = ChatRepository.modeOf(prefs, tab.chatId)
         restoreStateFor(tabId)
         prefs.edit().putString("last_chat", tab.chatId).apply()
     }
@@ -287,6 +292,8 @@ fun LionApp() {
         TabsStore.saveActive(prefs, tab.id)
         messages = emptyList()
         currentChat = chatId
+        currentMode = ContextStore.defaultMode(prefs)
+        ContextStore.write(prefs, chatId, currentMode)
         input = ""
         attachment = null
         imageAttachment = null
@@ -312,6 +319,7 @@ fun LionApp() {
             prefs.edit().putString("provider", provider).putBoolean("auto_route", target.autoRoute).apply()
             messages = ChatRepository.load(prefs, target.chatId)
             currentChat = target.chatId
+            currentMode = ChatRepository.modeOf(prefs, target.chatId)
             restoreStateFor(target.id)
             prefs.edit().putString("last_chat", target.chatId).apply()
         }
@@ -331,6 +339,7 @@ fun LionApp() {
     fun openChat(id: String) {
         messages = ChatRepository.load(prefs, id)
         currentChat = id
+        currentMode = ChatRepository.modeOf(prefs, id)
         input = ""
         attachment = null
         imageAttachment = null
@@ -342,10 +351,12 @@ fun LionApp() {
         }
     }
 
-    fun startNewChat() {
+    fun startNewChat(mode: ChatMode = ContextStore.defaultMode(prefs)) {
         val id = ChatRepository.newId()
         messages = emptyList()
         currentChat = id
+        currentMode = mode
+        ContextStore.write(prefs, id, mode)
         input = ""
         attachment = null
         imageAttachment = null
@@ -833,6 +844,7 @@ fun LionApp() {
         forcePrecise: Boolean = false
     ) {
         val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
+        val chatMode = ChatRepository.modeOf(prefs, chatId)
         val assist = !autoRoute && prefs.getBoolean("manual_assist", false)
         // «المركزي» يعمل في الوضع التلقائي، أو في الوضع اليدوي فقط إذا فعّل المستخدم المساعدة.
         val central = autoRoute || assist
@@ -840,40 +852,30 @@ fun LionApp() {
             (SmartRouter.isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL))
         val careful = central && (SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL)
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
+        val plan = planFor(kind, mode)
+        val auto = autoRoute
+        val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
+        val toolText = if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext
+        val modeProfile = ContextProfiles.of(chatMode, prefs, toolText)
         val basePrompt = when {
+            chatMode == ChatMode.CODE -> LLM_DEV_PROMPT
+            chatMode == ChatMode.LEARN -> LLM_SYSTEM_PROMPT
             kind == TaskKind.DEV -> LLM_DEV_PROMPT
             kind == TaskKind.FAST -> LLM_FAST_PROMPT
             SmartRouter.isStrict(kind) -> LLM_FACT_PROMPT
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
         }
-        val plan = planFor(kind, mode)
-        val auto = autoRoute
-        val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
-        val toolText = if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext
-        val toolGroups = if (image == null && kind != TaskKind.FAST && AiTools.agentEnabled(prefs)) {
-            val groups = AiTools.groupsFor(toolText, prefs).toMutableSet()
-            // مهمة التطوير تحتاج دائماً أدوات الفحص والتعديل والتحقق، حتى لو لم يذكر المستخدم كلمة «كود».
-            if (kind == TaskKind.DEV) {
-                groups.add(ToolGroup.FILES)
-                groups.add(ToolGroup.CODE)
-                groups.add(ToolGroup.META)
-                if (AiTools.githubReady(prefs)) groups.add(ToolGroup.GITHUB)
-            }
-            // استئناف جلسة سابقة: حتى ردّ قصير مثل «نعم» يجب أن يصل للوكيل مع سياقه وأدواته.
-            if (AgentSessions.hasProgress(chatId)) {
-                groups.add(ToolGroup.FILES)
-                groups.add(ToolGroup.CODE)
-                groups.add(ToolGroup.META)
-                if (AiTools.githubReady(prefs)) groups.add(ToolGroup.GITHUB)
-            }
-            groups
+        val toolGroups = if (chatMode == ChatMode.CODE && image == null &&
+            kind != TaskKind.FAST && modeProfile.allowTools
+        ) {
+            modeProfile.groups
         } else {
             emptySet<ToolGroup>()
         }
         loadingChats[chatId] = true
         toolStatus[chatId] = "🧠 أجهّز المهمة…"
-        val session = AgentSessions.of(chatId)
+        val session = AgentSessions.of(prefs, chatId)
         var agentComplete = true
         var agentAsked = false
         scope.launch {
@@ -886,7 +888,7 @@ fun LionApp() {
             } else {
                 emptyList<WebSource>()
             }
-            val driveContext = if (image == null && kind != TaskKind.FAST &&
+            val driveContext = if (chatMode == ChatMode.CODE && image == null && kind != TaskKind.FAST &&
                 ConnectorAuth.isConnected(prefs, "google_drive")
             ) {
                 val driveId = Connectors.extractDriveId(prompt)
@@ -900,27 +902,35 @@ fun LionApp() {
             } else {
                 null
             }
-            val githubContext = if (image == null && kind != TaskKind.FAST && AiTools.githubReady(prefs) &&
-                AiTools.detectGitHubUrl(toolText) != null
+            val githubContext = if (chatMode == ChatMode.CODE && image == null && kind != TaskKind.FAST &&
+                AiTools.githubReady(prefs) && AiTools.detectGitHubUrl(toolText) != null
             ) {
                 runCatching { AiTools.githubContext(prefs, toolText, 6000) }.getOrDefault("")
             } else {
                 ""
             }
-            val githubNote = if (kind != TaskKind.FAST &&
+            val githubNote = if (chatMode == ChatMode.CODE && kind != TaskKind.FAST &&
                 AiTools.githubMentioned(toolText) && !AiTools.githubReady(prefs)
             ) {
                 "\n\nملاحظة: GitHub غير مربوط حالياً. اطلب من المستخدم إضافة توكن GitHub من «الإعدادات ← أدوات الذكاء والتطوير»، ولا تدّعِ الوصول إلى GitHub."
             } else {
                 ""
             }
-            val toolsNote = if (kind == TaskKind.DEV && toolGroups.isEmpty() && !AiTools.agentEnabled(prefs)) {
+            val toolsNote = if (chatMode == ChatMode.CODE && kind == TaskKind.DEV &&
+                toolGroups.isEmpty() && !AiTools.agentEnabled(prefs)
+            ) {
                 "\n\nملاحظة: أدوات التطوير معطّلة من الإعدادات. لا تدّعِ أنك فحصت المستودع أو عدّلته؛ " +
                     "قدّم خطة دقيقة واطلب تفعيل «أدوات الذكاء والتطوير» لتنفيذها فعلياً."
             } else {
                 ""
             }
-            val systemPrompt = basePrompt + answerLengthSuffix() +
+            val projectBlock = if (modeProfile.injectProjectContext) {
+                ProjectContext.block(context, prefs, chatId)
+            } else {
+                ""
+            }
+            val systemPrompt = basePrompt + modeProfile.promptSuffix + projectBlock +
+                answerLengthSuffix() +
                 (if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "") + githubNote + toolsNote
             val baseLlmPrompt = if (sources.isEmpty()) {
                 prompt
@@ -974,6 +984,8 @@ fun LionApp() {
                                 contextText = toolText,
                                 timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L),
                                 session = session,
+                                chatMode = chatMode,
+                                forceExecution = kind == TaskKind.DEV || session.hasWork(),
                                 providerLabel = SmartRouter.label(route, kind),
                                 onProgress = { status -> toolStatus[chatId] = status }
                             )
@@ -1143,9 +1155,9 @@ fun LionApp() {
             toolStatus.remove(chatId)
             // الجلسة تبقى فقط إذا لم تُقبل إجابة مكتملة أو كان هناك سؤال معلّق؛ اكتمال المهمة يصفّرها.
             if (used != null && agentComplete && session.pendingQuestion == null) {
-                AgentSessions.clear(chatId)
+                AgentSessions.clear(prefs, chatId)
             } else if (!session.hasWork()) {
-                AgentSessions.clear(chatId)
+                AgentSessions.clear(prefs, chatId)
             }
             val newMessage = Message(
                 reply,
@@ -1179,6 +1191,13 @@ fun LionApp() {
         if (text.isEmpty() && file == null && image == null) return
 
         val kind = SmartRouter.classify(text, image != null, file?.text?.length ?: 0, file?.name)
+        // عزل وقت التشغيل: لا تنفيذ برمجي صامت في وضع عام/تعلّم. نطلب ترقية صريحة أولاً.
+        if (currentMode != ChatMode.CODE && file == null && image == null &&
+            ModeGuard.looksLikeCodingRequest(text, kind)
+        ) {
+            promotionRequest = text
+            return
+        }
         if (!autoRoute && image != null && kind != TaskKind.IMAGE_EDIT &&
             !LlmClient.supportsVision(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
         ) {
@@ -1566,6 +1585,47 @@ fun LionApp() {
         if (count > 0) listState.animateScrollToItem(count - 1)
     }
 
+    if (showModePicker) {
+        ModePickerDialog(
+            current = currentMode,
+            onDismiss = { showModePicker = false },
+            onSelect = { selected ->
+                showModePicker = false
+                if (selected != currentMode) {
+                    if (messages.isEmpty()) {
+                        ChatRepository.setMode(prefs, currentChat, selected)
+                        currentMode = selected
+                        refreshChats()
+                    } else {
+                        // منع تلوث السياق: وضع جديد = محادثة جديدة معزولة.
+                        startNewChat(selected)
+                        refreshChats()
+                    }
+                }
+            }
+        )
+    }
+
+    val promotion = promotionRequest
+    if (promotion != null) {
+        PromotionDialog(
+            mode = currentMode,
+            onDismiss = { promotionRequest = null },
+            onPromote = {
+                if (promotion.isNotBlank()) {
+                    val savedAttachment = attachment
+                    val savedImage = imageAttachment
+                    startNewChat(ChatMode.CODE)
+                    input = promotion
+                    attachment = savedAttachment
+                    imageAttachment = savedImage
+                    promotionRequest = null
+                    autoSendTrigger += 1
+                }
+            }
+        )
+    }
+
     val renaming = renameTarget
     if (renaming != null) {
         AlertDialog(
@@ -1705,14 +1765,18 @@ fun LionApp() {
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text("Lion AI", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-                                Text(
-                                    chatMetas.firstOrNull { it.id == currentChat }?.title
-                                        ?: ChatRepository.DEFAULT_TITLE,
-                                    color = Color(0xFF9A9A9A),
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ChatModeBadge(currentMode) { showModePicker = true }
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        chatMetas.firstOrNull { it.id == currentChat }?.title
+                                            ?: ChatRepository.DEFAULT_TITLE,
+                                        color = Color(0xFF9A9A9A),
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     },

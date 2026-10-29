@@ -544,6 +544,8 @@ fun ChatRow(
             .padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        ChatModeBadge(ChatMode.fromId(meta.mode))
+        Spacer(Modifier.width(4.dp))
         Text(
             meta.title,
             color = if (selected) Color(0xFFFFB800) else Color.White,

@@ -19,6 +19,11 @@ enum class ToolGroup(val id: String, val label: String, val icon: String) {
     UTIL("util", "أدوات مساعدة", "🧰"),
     CONNECTORS("connectors", "الموصلات", "🔌"),
     COMMS("comms", "الاتصالات", "💬"),
+    SHELL("shell", "التنفيذ والبناء", "⚡"),
+    QUALITY("quality", "بوابات الجودة", "✅"),
+    CONTROL("control", "الحوكمة والمخطط", "🛡️"),
+    MEMORY("memory", "الذاكرة ونقاط الاستئناف", "🧠"),
+    MCP("mcp", "خوادم MCP", "🔗"),
     META("meta", "إدارة الأدوات", "🧭")
 }
 
@@ -62,7 +67,9 @@ object ToolAudit {
 class ToolContext(
     val context: Context,
     val prefs: SharedPreferences,
-    val allowWrite: Boolean
+    val allowWrite: Boolean,
+    val chatId: String = "",
+    val mode: ChatMode = ChatMode.CODE
 )
 
 /** سجل الأدوات + بروتوكول استدعاء موحّد يعمل مع جميع مزودات API. */
@@ -269,7 +276,47 @@ object AiTools {
         Def("notifications_chats", ToolGroup.COMMS, """{"since_minutes":1440}""", "ملخص المحادثات من الإشعارات"),
         Def("notifications_reply", ToolGroup.COMMS, """{"key":"...","text":"..."}""", "رد مباشر على إشعار نشط (RemoteInput)", true),
         Def("notifications_dismiss", ToolGroup.COMMS, """{"key":"..."}""", "إغلاق إشعار", true),
-        Def("notifications_clear", ToolGroup.COMMS, "{}", "مسح سجل الإشعارات المحلي", true)
+        Def("notifications_clear", ToolGroup.COMMS, "{}", "مسح سجل الإشعارات المحلي", true),
+
+        // Control plane: Manifest + DAG + gates
+        Def("manifest_create", ToolGroup.CONTROL, """{"project":"my-app","root":"","entry_points":["app/src/main/java/.../MainActivity.kt"],"files":[{"path":"README.md","purpose":"...","contract":"..."}],"tasks":[{"id":"t1","role":"implementer","title":"...","depends_on":[],"files":["..."]}]}""", "إنشاء Manifest إجباري: شجرة ملفات وعقود ومهام DAG (لا كتابة كود قبله)", true),
+        Def("manifest_read", ToolGroup.CONTROL, "{}", "قراءة Manifest المحادثة الحالية"),
+        Def("manifest_update", ToolGroup.CONTROL, """{"path":"src/Main.kt","status":"written","purpose":"","contract":""}""", "تحديث حالة ملف في Manifest", true),
+        Def("manifest_validate", ToolGroup.CONTROL, """{"root":""}""", "فحص بنيوي قبل الاعتماد، وبوابة كاملة بعده"),
+        Def("gate_run", ToolGroup.QUALITY, """{"root":""}""", "بوابة الجودة الميكانيكية: Manifest + ملفات + lint + Root Reachability + HMAC"),
+        Def("root_reachability", ToolGroup.QUALITY, """{"root":""}""", "فحص وصول كل ملف مصدري إلى نقطة دخول وكشف الملفات اليتيمة"),
+        Def("gate_sign_tests", ToolGroup.QUALITY, """{"root":""}""", "توقيع ملفات الاختبار الحالية بـ HMAC-SHA256", true),
+        Def("gate_verify_tests", ToolGroup.QUALITY, """{"root":""}""", "التحقق من عدم العبث بملفات الاختبار الموقّعة"),
+        Def("pipeline_start", ToolGroup.CONTROL, """{"project":"my-app","root":""}""", "بدء دورة DAG: تخطيط ← Manifest ← تنفيذ ← بوابة ← مراجعة ← QA ← بناء", true),
+        Def("pipeline_status", ToolGroup.CONTROL, "{}", "حالة دورة التطوير الحالية والمرحلة التالية"),
+        Def("pipeline_approve", ToolGroup.CONTROL, "{}", "اعتماد Manifest بعد التحقق البنيوي والانتقال للتنفيذ", true),
+        Def("pipeline_advance", ToolGroup.CONTROL, """{"note":""}""", "الانتقال للمرحلة التالية مع فحص البوابة عند اللزوم", true),
+        Def("pipeline_reset", ToolGroup.CONTROL, "{}", "إعادة ضبط دورة التطوير لهذه المحادثة", true),
+
+        // Persistent checkpoints and long-term memory
+        Def("checkpoint_save", ToolGroup.MEMORY, """{"note":""}""", "حفظ نقطة استئناف دائمة بعد خطوة فرعية", true),
+        Def("checkpoint_resume", ToolGroup.MEMORY, "{}", "استئناف آخر نقطة محفوظة لهذه المحادثة"),
+        Def("checkpoint_list", ToolGroup.MEMORY, "{}", "قائمة نقاط الاستئناف المحفوظة"),
+        Def("checkpoint_clear", ToolGroup.MEMORY, "{}", "حذف نقطة الاستئناف الحالية", true),
+        Def("memory_save", ToolGroup.MEMORY, """{"project":"","title":"قرار معماري","body":"...","tags":["architecture"]}""", "حفظ قرار/درس معماري في الذاكرة طويلة المدى", true),
+        Def("memory_search", ToolGroup.MEMORY, """{"query":"...","limit":10}""", "البحث في قرارات المشاريع السابقة"),
+        Def("memory_list", ToolGroup.MEMORY, """{"limit":20}""", "أحدث قرارات الذاكرة طويلة المدى"),
+        Def("memory_delete", ToolGroup.MEMORY, """{"id":""}""", "حذف قرار من الذاكرة", true),
+
+        // Shell / Android build
+        Def("shell_exec", ToolGroup.SHELL, """{"command":"git status","cwd":"","timeout_sec":120}""", "تنفيذ أمر مسموح داخل مساحة العمل مع مهلة وسقف مخرجات", true),
+        Def("shell_which", ToolGroup.SHELL, """{"name":"git"}""", "التحقق من وجود أداة على الجهاز"),
+        Def("android_build", ToolGroup.SHELL, """{"root":"","task":":app:assembleDebug","timeout_sec":600}""", "بناء Gradle محلي وأخطاء محللة file:line (يتطلب JDK/SDK)", true),
+        Def("android_install_run", ToolGroup.SHELL, """{"apk":"downloads/app.apk","package_name":"com.example.app","activity":".MainActivity"}""", "تثبيت APK وتشغيله عبر adb", true),
+        Def("android_logcat", ToolGroup.SHELL, """{"filter":"","lines":300}""", "قراءة logcat مفلتر"),
+
+        // MCP servers
+        Def("mcp_servers", ToolGroup.MCP, "{}", "خوادم MCP المضافة وحالتها"),
+        Def("mcp_add_server", ToolGroup.MCP, """{"id":"files","name":"Filesystem MCP","url":"http://127.0.0.1:3001/mcp","token":"","enabled":true}""", "إضافة خادم MCP عبر Streamable HTTP", true),
+        Def("mcp_remove_server", ToolGroup.MCP, """{"id":"files"}""", "حذف خادم MCP", true),
+        Def("mcp_list_tools", ToolGroup.MCP, """{"server":"files"}""", "سرد أدوات خادم MCP"),
+        Def("mcp_call", ToolGroup.MCP, """{"server":"files","tool":"read_file","args":{"path":"README.md"}}""", "استدعاء أداة من خادم MCP", true),
+        Def("mcp_ping", ToolGroup.MCP, """{"server":"files"}""", "اختبار اتصال خادم MCP")
     )
 
     private val byName = defs.associateBy { it.name }
@@ -568,16 +615,49 @@ object AiTools {
         return found
     }
 
+    private val CODE_WRITE_TOOLS = setOf(
+        "file_write", "file_append", "file_apply_patch", "file_delete", "file_move",
+        "file_copy", "file_mkdir", "file_unzip", "code_patch", "github_write_file",
+        "github_commit_files", "github_push_workspace", "github_delete_file",
+        "github_bootstrap_project", "github_create_repo", "github_create_branch"
+    )
+
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
+        if (ctx.mode != ChatMode.CODE) {
+            return ToolResult(
+                call.name,
+                "⛔ منع عزل السياق: الأدوات لا تعمل في وضع ${ctx.mode.label}. " +
+                    "ارقِ المحادثة صراحةً إلى «هندسة وبرمجة» أولاً.",
+                false
+            )
+        }
         if (def.write && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
         }
+        val shellWrite = call.name == "shell_exec" &&
+            ShellTools.looksLikeWrite(call.args.optString("command"))
+        if ((call.name in CODE_WRITE_TOOLS || shellWrite) && ctx.chatId.isNotBlank() &&
+            !PipelineStore.canWrite(ctx.prefs, ctx.chatId)
+        ) {
+            return ToolResult(
+                call.name,
+                "⛔ حوكمة Manifest: لا يُسمح بكتابة/رفع كود قبل اعتماد Manifest هذه الجلسة. " +
+                    "استخدم manifest_create ثم pipeline_approve (أو أنهِ الدورة الحالية) أولاً.",
+                false
+            )
+        }
         val result = try {
             val output = run(ctx, call.name, call.args)
+            if (def.write && ctx.chatId.isNotBlank()) {
+                val path = call.args.optString("path").ifBlank { call.args.optString("from") }
+                if (path.isNotBlank()) ManifestStore.markFile(ctx.prefs, ctx.chatId, path, "written")
+            }
             ToolResult(call.name, output.take(16_000), true)
         } catch (e: GitHubException) {
             ToolResult(call.name, "❌ GitHub ${e.status}: ${e.message}", false)
+        } catch (e: McpException) {
+            ToolResult(call.name, "❌ MCP: ${e.message}", false)
         } catch (e: Exception) {
             ToolResult(call.name, "❌ ${e.message ?: e.javaClass.simpleName}", false)
         }
@@ -1810,8 +1890,426 @@ object AiTools {
                 NotificationStore.clear(ctx.context)
                 "✅ مُسح سجل الإشعارات المحلي"
             }
+
+            // ===== Control plane / Manifest =====
+            "manifest_create" -> {
+                requireChat(ctx)
+                val project = req(args, "project")
+                val root = args.optString("root").trim()
+                val entries = stringList(args.optJSONArray("entry_points"))
+                val files = mutableListOf<ManifestFile>()
+                args.optJSONArray("files")?.let { array ->
+                    for (i in 0 until array.length()) {
+                        when (val item = array.opt(i)) {
+                            is JSONObject -> {
+                                val path = item.optString("path").trim()
+                                if (path.isNotBlank()) {
+                                    files.add(
+                                        ManifestFile(
+                                            path = path,
+                                            purpose = item.optString("purpose"),
+                                            contract = item.optString("contract"),
+                                            required = item.optBoolean("required", true),
+                                            entry = item.optBoolean("entry", false)
+                                        )
+                                    )
+                                }
+                            }
+                            is String -> if (item.isNotBlank()) files.add(ManifestFile(item.trim()))
+                        }
+                    }
+                }
+                val tasks = mutableListOf<ManifestTask>()
+                args.optJSONArray("tasks")?.let { array ->
+                    for (i in 0 until array.length()) {
+                        val item = array.optJSONObject(i) ?: continue
+                        val id = item.optString("id").trim().ifBlank { "task_${i + 1}" }
+                        tasks.add(
+                            ManifestTask(
+                                id = id,
+                                role = item.optString("role", "implementer"),
+                                title = item.optString("title"),
+                                dependsOn = stringList(item.optJSONArray("depends_on")),
+                                files = stringList(item.optJSONArray("files")),
+                                status = item.optString("status", "pending")
+                            )
+                        )
+                    }
+                }
+                if (files.isEmpty()) throw IllegalArgumentException("Manifest يحتاج ملفاً واحداً على الأقل")
+                val manifest = BuildManifest(
+                    project = project,
+                    root = root,
+                    entryPoints = entries,
+                    files = files,
+                    tasks = tasks
+                )
+                ManifestStore.write(ctx.prefs, ctx.chatId, manifest)
+                PipelineStore.write(
+                    ctx.prefs,
+                    PipelineState(ctx.chatId, project, root, PipelinePhase.MANIFEST)
+                )
+                buildString {
+                    append("✅ أُنشئ Manifest «").append(project).append("» — ")
+                    append(files.size).append(" ملف، ").append(tasks.size).append(" مهمة DAG.\n")
+                    append("الخطوة التالية: اعرض الملفات/العقود على المستخدم ثم استخدم pipeline_approve بعد موافقته. لا تكتب كوداً قبل ذلك.\n")
+                    files.take(60).forEach { file ->
+                        append("• ").append(ManifestPaths.join(root, file.path))
+                        if (file.purpose.isNotBlank()) append(" — ").append(file.purpose)
+                        if (file.required) append(" [إلزامي]")
+                        append('\n')
+                    }
+                }
+            }
+            "manifest_read" -> {
+                val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
+                    ?: return "لا يوجد Manifest لهذه المحادثة. استخدم manifest_create أولاً."
+                buildString {
+                    append("📋 ").append(manifest.project).append(" | root=").append(manifest.root.ifBlank { "." })
+                    append(" | معتمد: ").append(if (manifest.approved) "نعم" else "لا").append('\n')
+                    append("نقاط الدخول: ").append(manifest.entryPoints.joinToString("، ").ifBlank { "تلقائي" }).append('\n')
+                    manifest.files.forEach { file ->
+                        append("- ").append(file.path).append(" [").append(file.status).append(']')
+                        if (file.contract.isNotBlank()) append(" | ").append(file.contract)
+                        append('\n')
+                    }
+                    if (manifest.tasks.isNotEmpty()) {
+                        append("\nDAG:\n")
+                        manifest.tasks.forEach { task ->
+                            append("• ").append(task.id).append(" (").append(task.role).append(") ")
+                                .append(task.title).append(" ← ").append(task.dependsOn.joinToString("، ").ifBlank { "بداية" })
+                                .append(" [").append(task.status).append("]\n")
+                        }
+                    }
+                }
+            }
+            "manifest_update" -> {
+                requireChat(ctx)
+                val current = ManifestStore.read(ctx.prefs, ctx.chatId)
+                    ?: throw IllegalArgumentException("لا يوجد Manifest. استخدم manifest_create أولاً.")
+                val path = ManifestPaths.normalize(req(args, "path"))
+                if (current.files.none { ManifestPaths.normalize(it.path) == path }) {
+                    throw IllegalArgumentException("المسار ليس ضمن Manifest: $path")
+                }
+                val status = args.optString("status", "written")
+                val updated = current.copy(
+                    files = current.files.map { file ->
+                        if (ManifestPaths.normalize(file.path) != path) file
+                        else file.copy(
+                            status = status,
+                            purpose = args.optString("purpose", file.purpose),
+                            contract = args.optString("contract", file.contract)
+                        )
+                    },
+                    updatedAt = System.currentTimeMillis()
+                )
+                ManifestStore.write(ctx.prefs, ctx.chatId, updated)
+                "✅ حُدّث $path في Manifest → $status"
+            }
+            "manifest_validate" -> {
+                requireChat(ctx)
+                val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
+                    ?: return "⛔ لا يوجد Manifest. لا يمكن التحقق."
+                // قبل الاعتماد: تحقق بنيوي فقط لأن الملفات تُكتب في مرحلة التنفيذ.
+                // بعد الاعتماد: بوابة كاملة تشمل وجود الملفات وتوازن الأقواس وRoot Reachability.
+                val check = if (manifest.approved) {
+                    val snapshot = WorkspaceSnapshot.of(ctx.context, args.optString("root").ifBlank { manifest.root })
+                    ControlPlane.evaluate(
+                        snapshot,
+                        manifest,
+                        ManifestStore.signatures(ctx.prefs, ctx.chatId),
+                        ManifestStore.hmacKey(ctx.prefs)
+                    )
+                } else {
+                    ControlPlane.validateManifest(manifest)
+                }
+                check.text()
+            }
+            "gate_run" -> {
+                requireChat(ctx)
+                ManifestStore.gate(ctx.prefs, ctx.chatId, args.optString("root")).text()
+            }
+            "root_reachability" -> {
+                val snapshot = WorkspaceSnapshot.of(ctx.context, args.optString("root"))
+                val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
+                val entries = ControlPlane.buildEntryPoints(snapshot, manifest)
+                val result = ControlPlane.reachability(snapshot, entries)
+                buildString {
+                    append("🌳 Root Reachability — مصادر: ").append(result.totalSource)
+                    append(" | واصل: ").append(result.reachable.size)
+                    append(" | يتيم: ").append(result.orphans.size).append('\n')
+                    append("نقاط الدخول: ").append(result.entryPoints.joinToString("، ").ifBlank { "لم أجد نقطة دخول" }).append('\n')
+                    if (result.orphans.isEmpty()) append("✅ لا ملفات يتيمة.")
+                    else result.orphans.forEach { append("❌ يتيم: ").append(it).append('\n') }
+                }
+            }
+            "gate_sign_tests" -> {
+                requireChat(ctx)
+                val snapshot = WorkspaceSnapshot.of(ctx.context, args.optString("root"))
+                val tests = snapshot.files.keys.filter { ControlPlane.isTest(it) }
+                if (tests.isEmpty()) return "⚠️ لا ملفات اختبار في المشروع؛ لا شيء لتوقيعه."
+                val signatures = ManifestStore.signTests(ctx.prefs, ctx.chatId, snapshot)
+                "✅ وُقّعت ${signatures.size} ملف اختبار بـ HMAC-SHA256. أي تعديل لاحق غير موقّع سيكشفه gate_verify_tests."
+            }
+            "gate_verify_tests" -> {
+                requireChat(ctx)
+                val signatures = ManifestStore.signatures(ctx.prefs, ctx.chatId)
+                if (signatures.isEmpty()) return "⚠️ لا توجد بصمات اختبار محفوظة. استخدم gate_sign_tests بعد تثبيت الاختبارات."
+                val snapshot = WorkspaceSnapshot.of(ctx.context, args.optString("root"))
+                val issues = ControlPlane.verifySignatures(snapshot, signatures, ManifestStore.hmacKey(ctx.prefs))
+                if (issues.isEmpty()) "✅ سلامة الاختبارات سليمة — لم يُكتشف عبث HMAC."
+                else issues.joinToString("\n") { it.lineText() }
+            }
+
+            // ===== DAG pipeline =====
+            "pipeline_start" -> {
+                requireChat(ctx)
+                val project = req(args, "project")
+                val root = args.optString("root")
+                PipelineStore.write(ctx.prefs, PipelineState(ctx.chatId, project, root))
+                "✅ بدأت دورة DAG لـ «$project». المرحلة: التخطيط. أنشئ Manifest ثم اعتمده قبل أي كتابة كود."
+            }
+            "pipeline_status" -> {
+                val state = PipelineStore.read(ctx.prefs, ctx.chatId)
+                    ?: return "لا دورة تطوير لهذه المحادثة."
+                buildString {
+                    append("🛠️ ").append(state.project).append(" — المرحلة: ").append(state.phase.label)
+                    append(" | Manifest معتمد: ").append(if (state.manifestApproved) "نعم" else "لا")
+                    append(" | آخر بوابة: ").append(if (state.lastGateOk) "ناجحة" else "غير مجتازة").append('\n')
+                    if (state.note.isNotBlank()) append("ملاحظة: ").append(state.note).append('\n')
+                    append("التالي: ").append(PipelinePhase.next(state.phase).label)
+                }
+            }
+            "pipeline_approve" -> {
+                requireChat(ctx)
+                val state = PipelineStore.read(ctx.prefs, ctx.chatId)
+                    ?: throw IllegalArgumentException("لا دورة تطوير. استخدم pipeline_start أولاً.")
+                val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
+                    ?: throw IllegalArgumentException("لا Manifest. استخدم manifest_create أولاً.")
+                val check = ControlPlane.validateManifest(manifest)
+                if (!check.ok) return "⛔ لا يمكن اعتماد Manifest قبل إصلاح أخطائه البنيوية:\n" + check.text()
+                ManifestStore.approve(ctx.prefs, ctx.chatId)
+                PipelineStore.write(
+                    ctx.prefs,
+                    state.copy(
+                        phase = PipelinePhase.IMPLEMENT,
+                        manifestApproved = true,
+                        lastGateOk = true,
+                        note = "اعتُمد Manifest بعد نجاح البوابة"
+                    )
+                )
+                "✅ اعتُمد Manifest وانتقلنا إلى التنفيذ. اكتب وحدة واحدة فقط ثم شغّل gate_run."
+            }
+            "pipeline_advance" -> {
+                requireChat(ctx)
+                val state = PipelineStore.read(ctx.prefs, ctx.chatId)
+                    ?: return "لا دورة تطوير لهذه المحادثة."
+                val note = args.optString("note")
+                when (state.phase) {
+                    PipelinePhase.PLAN -> {
+                        val next = state.copy(phase = PipelinePhase.MANIFEST, note = note)
+                        PipelineStore.write(ctx.prefs, next)
+                        "➡️ المرحلة: اعتماد Manifest."
+                    }
+                    PipelinePhase.MANIFEST -> {
+                        val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
+                            ?: return "⛔ لا Manifest بعد."
+                        val check = ControlPlane.validateManifest(manifest)
+                        if (!check.ok) return "⛔ رفض اعتماد Manifest — أخطاء بنيوية:\n" + check.text()
+                        ManifestStore.approve(ctx.prefs, ctx.chatId)
+                        PipelineStore.write(
+                            ctx.prefs,
+                            state.copy(
+                                phase = PipelinePhase.IMPLEMENT,
+                                manifestApproved = true,
+                                lastGateOk = true,
+                                note = note
+                            )
+                        )
+                        "✅ Manifest معتمد. ابدأ تنفيذ وحدة واحدة."
+                    }
+                    PipelinePhase.IMPLEMENT -> {
+                        val gate = ManifestStore.gate(ctx.prefs, ctx.chatId, state.root)
+                        if (!gate.ok) return "⛔ البوابة رفضت الانتقال — أصلح ثم أعد gate_run:\n" + gate.text()
+                        PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.GATE, lastGateOk = true, note = note))
+                        "✅ اجتازت البوابة. انتقل للدور: reviewer."
+                    }
+                    PipelinePhase.GATE -> {
+                        PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.REVIEW, note = note))
+                        "➡️ المرحلة: المراجعة."
+                    }
+                    PipelinePhase.REVIEW -> {
+                        PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.QA, note = note))
+                        "➡️ المرحلة: الاختبار."
+                    }
+                    PipelinePhase.QA -> {
+                        PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.BUILD, note = note))
+                        "➡️ المرحلة: البناء."
+                    }
+                    PipelinePhase.BUILD -> {
+                        PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.DONE, note = note))
+                        "✅ المرحلة النهائية: التسليم. لا تعلن النجاح إلا إذا نجح البناء/الاختبار فعلياً."
+                    }
+                    PipelinePhase.DONE -> "الدورة مكتملة بالفعل. استخدم pipeline_reset لمشروع جديد."
+                }
+            }
+            "pipeline_reset" -> {
+                PipelineStore.delete(ctx.prefs, ctx.chatId)
+                "✅ أُعيد ضبط دورة التطوير."
+            }
+
+            // ===== Checkpoints / memory =====
+            "checkpoint_save" -> {
+                requireChat(ctx)
+                val session = AgentSessions.of(ctx.prefs, ctx.chatId)
+                session.recordNote(args.optString("note").ifBlank { "checkpoint يدوي" })
+                CheckpointStore.save(ctx.prefs, session)
+                "✅ حُفظ checkpoint: ${session.stepCount()} خطوة، ${session.touchedFiles().size} ملف."
+            }
+            "checkpoint_resume" -> {
+                requireChat(ctx)
+                val session = AgentSessions.of(ctx.prefs, ctx.chatId)
+                val block = session.contextBlock()
+                if (block.isBlank()) "لا checkpoint محفوظ لهذه المحادثة."
+                else "♻️ استؤنفت آخر نقطة:\n$block"
+            }
+            "checkpoint_list" -> {
+                val list = CheckpointStore.list(ctx.prefs)
+                if (list.isEmpty()) "لا نقاط استئناف محفوظة."
+                else list.joinToString("\n") { info ->
+                    "• ${info.chatId} — ${info.task.take(60)} (${info.steps} خطوة، ${info.files} ملف)" +
+                        if (info.pending != null) " — سؤال معلّق" else ""
+                }
+            }
+            "checkpoint_clear" -> {
+                requireChat(ctx)
+                AgentSessions.clear(ctx.prefs, ctx.chatId)
+                "✅ حُذفت نقطة الاستئناف."
+            }
+            "memory_save" -> {
+                val entry = ProjectMemory.save(
+                    ctx.prefs,
+                    args.optString("project"),
+                    req(args, "title"),
+                    req(args, "body"),
+                    stringList(args.optJSONArray("tags"))
+                )
+                "✅ حُفظ قرار في الذاكرة: ${entry.title} (${entry.id})"
+            }
+            "memory_search" -> {
+                val results = ProjectMemory.search(ctx.prefs, args.optString("query"), int(args, "limit", 10))
+                if (results.isEmpty()) "لا نتائج في الذاكرة."
+                else results.joinToString("\n\n") { entry ->
+                    "🧠 ${entry.title} [${entry.project}] (${entry.id})\n${entry.body.take(1200)}"
+                }
+            }
+            "memory_list" -> {
+                val results = ProjectMemory.all(ctx.prefs).take(int(args, "limit", 20))
+                if (results.isEmpty()) "الذاكرة فارغة."
+                else results.joinToString("\n") { entry ->
+                    "• ${entry.title} [${entry.project}] — ${entry.body.take(160)} (${entry.id})"
+                }
+            }
+            "memory_delete" -> if (ProjectMemory.delete(ctx.prefs, req(args, "id"))) "✅ حُذف القرار." else "❌ لم أجد القرار."
+
+            // ===== Shell / Android =====
+            "shell_exec" -> {
+                val result = ShellTools.exec(
+                    ctx.context,
+                    req(args, "command"),
+                    int(args, "timeout_sec", 120),
+                    args.optString("cwd")
+                )
+                buildString {
+                    append(if (result.ok) "✅" else "❌").append(" exit=").append(result.exitCode)
+                    append(" (").append(result.elapsedMs).append("ms)")
+                    if (result.timedOut) append(" — انتهت المهلة")
+                    append('\n').append(result.output)
+                }
+            }
+            "shell_which" -> ShellTools.which(ctx.context, req(args, "name"))
+            "android_build" -> {
+                val result = ShellTools.buildAndroid(
+                    ctx.context,
+                    args.optString("root"),
+                    args.optString("task", ":app:assembleDebug"),
+                    int(args, "timeout_sec", 600)
+                )
+                (if (result.ok) "✅" else "❌") + " Android build exit=${result.exitCode}\n" + result.output
+            }
+            "android_install_run" -> {
+                val result = ShellTools.installAndRun(
+                    ctx.context,
+                    req(args, "apk"),
+                    args.optString("package_name"),
+                    args.optString("activity")
+                )
+                result.output
+            }
+            "android_logcat" -> ShellTools.logcat(
+                ctx.context,
+                args.optString("filter"),
+                int(args, "lines", 300)
+            ).output
+
+            // ===== MCP =====
+            "mcp_servers" -> {
+                val list = McpClient.servers(ctx.prefs)
+                if (list.isEmpty()) "لا خوادم MCP مضافة. استخدم mcp_add_server (Streamable HTTP) لربط filesystem/shell/git/android-build/session-mesh."
+                else list.joinToString("\n") { McpConfig.mask(it) }
+            }
+            "mcp_add_server" -> {
+                val name = req(args, "name")
+                val id = args.optString("id").trim().ifBlank {
+                    name.lowercase().replace(Regex("[^a-z0-9_]+"), "_").trim('_').take(32)
+                }
+                if (id.isBlank()) throw IllegalArgumentException("معرّف الخادم مطلوب")
+                McpClient.addServer(
+                    ctx.prefs,
+                    McpServer(
+                        id = id,
+                        name = name,
+                        url = req(args, "url"),
+                        token = args.optString("token"),
+                        enabled = args.optBoolean("enabled", true)
+                    )
+                )
+                "✅ أُضيف خادم MCP $id. استخدم mcp_ping ثم mcp_list_tools."
+            }
+            "mcp_remove_server" -> if (McpClient.removeServer(ctx.prefs, req(args, "id"))) "✅ حُذف خادم MCP." else "❌ غير موجود."
+            "mcp_list_tools" -> {
+                val tools = McpClient.listTools(ctx.prefs, req(args, "server"))
+                if (tools.length() == 0) "لا أدوات في هذا الخادم."
+                else buildString {
+                    append("🔗 ").append(tools.length()).append(" أداة:\n")
+                    for (i in 0 until tools.length()) {
+                        val item = tools.optJSONObject(i) ?: continue
+                        append("• ").append(item.optString("name"))
+                        val desc = item.optString("description")
+                        if (desc.isNotBlank()) append(" — ").append(desc.take(160))
+                        append('\n')
+                    }
+                }
+            }
+            "mcp_call" -> {
+                val toolArgs = when (val raw = args.opt("args")) {
+                    is JSONObject -> raw
+                    is String -> runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+                    else -> JSONObject()
+                }
+                McpClient.callTool(ctx.prefs, req(args, "server"), req(args, "tool"), toolArgs)
+            }
+            "mcp_ping" -> McpClient.ping(ctx.prefs, req(args, "server"))
+
             else -> "❌ أداة غير معروفة: $name"
         }
+    }
+
+    private fun requireChat(ctx: ToolContext): String {
+        if (ctx.chatId.isBlank()) {
+            throw IllegalArgumentException("معرّف المحادثة مطلوب لهذه الأداة")
+        }
+        return ctx.chatId
     }
 
     private fun runSummary(run: GitHubClient.WorkflowRun): String =
