@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.nio.charset.Charsets
 
 /**
  * مستعرض ويب خفيف يعمل داخل التطبيق عبر HTTP.

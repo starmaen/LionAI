@@ -144,9 +144,9 @@ object LocalAIProxy {
                 }
             }
 
-            val provider = prefs.getString("provider", "gemini").trim()
-            val apiKey = prefs.getString("api_key_$provider", "").trim()
-            val modelName = if (model.isNotBlank()) model else prefs.getString("model_$provider", "").trim()
+            val provider = (prefs.getString("provider", "gemini") ?: "gemini").trim()
+            val apiKey = (prefs.getString("api_key_$provider", "") ?: "").trim()
+            val modelName = if (model.isNotBlank()) model else (prefs.getString("model_$provider", "") ?: "").trim()
 
             val reply = LlmClient.ask(
                 message = userText,

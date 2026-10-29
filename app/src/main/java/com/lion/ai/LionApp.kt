@@ -183,7 +183,7 @@ fun LionApp() {
     var editorImage by remember { mutableStateOf<ImageAttachment?>(null) }
     var editAfterPick by remember { mutableStateOf(false) }
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
-    var autoSpeak by remember { prefs.getBoolean("auto_speak", false) }
+    var autoSpeak by remember { mutableStateOf(prefs.getBoolean("auto_speak", false)) }
     /** خادم الذكاء الاصطناعي المحلي (Proxy) يعمل على 127.0.0.1 داخل التطبيق. */
     var localProxyUrl by remember { mutableStateOf("") }
     var localProxyStarted by remember { mutableStateOf(false) }
