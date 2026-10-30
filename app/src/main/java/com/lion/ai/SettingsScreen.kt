@@ -512,6 +512,56 @@ fun SettingsScreen(
                             }
                         }
                         Spacer(Modifier.height(8.dp))
+                        var proxyReport by remember { mutableStateOf("") }
+                        var proxyBusy by remember { mutableStateOf(false) }
+                        Text("🧪 فحص الخادم ← فحص المزود ← تحديث النماذج", color = Color(0xFFFFB800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Button(
+                                enabled = !proxyBusy,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                                onClick = {
+                                    proxyBusy = true
+                                    proxyReport = "⏳ أفحص الخادم المحلي…"
+                                    settingsScope.launch {
+                                        proxyReport = withContext(Dispatchers.IO) { LocalAIProxy.healthCheck() }
+                                        proxyBusy = false
+                                    }
+                                }
+                            ) { Text("1) الخادم", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
+                            Button(
+                                enabled = !proxyBusy,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                                onClick = {
+                                    proxyBusy = true
+                                    proxyReport = "⏳ أفحص المزود الخلفي مباشرة ثم عبر الخادم…"
+                                    settingsScope.launch {
+                                        proxyReport = withContext(Dispatchers.IO) { LocalAIProxy.providerCheck(prefs) }
+                                        proxyBusy = false
+                                    }
+                                }
+                            ) { Text("2) المزود", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
+                            Button(
+                                enabled = !proxyBusy,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                                onClick = {
+                                    proxyBusy = true
+                                    proxyReport = "⏳ أستدعي قائمة النماذج من الإنترنت…"
+                                    settingsScope.launch {
+                                        proxyReport = withContext(Dispatchers.IO) { LocalAIProxy.refreshModels(prefs) }
+                                        proxyBusy = false
+                                    }
+                                }
+                            ) { Text("3) النماذج", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
+                        }
+                        if (proxyReport.isNotBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(proxyReport.take(1500), color = Color.White, fontSize = 11.sp)
+                        }
+                        Spacer(Modifier.height(8.dp))
                         val proxyUrl = LocalAIProxy.getUrl()
                         if (proxyUrl.isNotEmpty()) {
                             Text(

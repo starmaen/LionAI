@@ -215,6 +215,79 @@ object LocalAIProxy {
         }
     }
 
+    private fun httpGet(url: String, timeoutMs: Int = 8000): Pair<Int, String> {
+        val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
+            requestMethod = "GET"
+        }
+        return try {
+            val code = c.responseCode
+            val stream = if (code in 200..299) c.inputStream else c.errorStream
+            code to (stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty())
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /** الخطوة 1: هل الخادم المحلي نفسه حيّ؟ (بدون أي مزود). */
+    fun healthCheck(): String {
+        val base = getBaseUrl()
+        if (base.isBlank()) return "❌ الخادم المحلي متوقف. أعد فتح التطبيق."
+        return try {
+            val t = System.currentTimeMillis()
+            val (code, body) = httpGet("$base/health")
+            val ms = System.currentTimeMillis() - t
+            if (code in 200..299) "✅ الخادم يعمل على $base (HTTP $code، ${ms}ms)\n" + body.take(120)
+            else "❌ الخادم رد HTTP $code: " + body.take(160)
+        } catch (e: Exception) {
+            "❌ تعذّر الوصول للخادم: " + (e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    /** الخطوة 2: المزود الخلفي مباشرة ثم عبر الخادم، لتمييز عطل المزود عن عطل الخادم. */
+    fun providerCheck(prefs: SharedPreferences): String {
+        val provider = backendProvider(prefs)
+        val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
+        val model = (prefs.getString("model_$provider", "") ?: "").trim()
+            .ifBlank { LlmClient.defaultModel(provider) }
+        val account = (prefs.getString("cf_account_id", "") ?: "").trim()
+        val sb = StringBuilder("المزود الخلفي: $provider — الموديل: $model\n")
+        if (key.isBlank()) sb.append("⚠️ لا يوجد مفتاح محفوظ لهذا المزود.\n")
+        val t = System.currentTimeMillis()
+        val direct = runCatching {
+            LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, provider, emptyList(), model, account, readTimeoutMs = 20_000)
+        }.getOrElse { "❌ " + (it.message ?: "خطأ") }
+        sb.append(if (LlmClient.isErrorReply(direct)) "❌ المزود مباشرة: " else "✅ المزود مباشرة: ")
+            .append(direct.replace("\n", " ").take(140))
+            .append(" (").append(System.currentTimeMillis() - t).append("ms)\n")
+        sb.append(selfTest(prefs))
+        return sb.toString()
+    }
+
+    /** الخطوة 3: استدعاء قائمة النماذج من الإنترنت للمزود الخلفي وحفظها. */
+    fun refreshModels(prefs: SharedPreferences): String {
+        val provider = backendProvider(prefs)
+        val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
+        val account = (prefs.getString("cf_account_id", "") ?: "").trim()
+        val t = System.currentTimeMillis()
+        return try {
+            val list = LlmClient.listModels(provider, key, account)
+            if (list.isEmpty()) {
+                "⚠️ $provider رد بلا موديلات. تحقق من المفتاح أو الحصة."
+            } else {
+                ModelCatalog.saveCache(prefs, provider, list)
+                val current = (prefs.getString("model_$provider", "") ?: "").trim()
+                val note = if (current.isNotBlank() && current !in list)
+                    "\n⚠️ الموديل الحالي «$current» غير موجود في القائمة — اختر موديلاً آخر." else ""
+                "✅ ${list.size} موديل من $provider (${System.currentTimeMillis() - t}ms) وحُفظت القائمة.\n" +
+                    list.take(8).joinToString("، ") + note
+            }
+        } catch (e: Exception) {
+            "❌ تعذّر جلب الموديلات من $provider: " + (e.message ?: e.javaClass.simpleName)
+        }
+    }
+
     private fun processChatCompletion(body: String, prefs: SharedPreferences): String {
         return try {
             val json = org.json.JSONObject(body)
