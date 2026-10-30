@@ -111,11 +111,27 @@ object ToolAgent {
         val nativeTools = if (provider in LOCAL_PROVIDERS && effectiveGroups.isNotEmpty()) {
             AiTools.openAiTools(effectiveGroups, prefs)
         } else null
-        val resumeBlock = session?.contextBlock().orEmpty()
-        val modeBlock = profile.promptSuffix
-        val system = baseSystemPrompt + modeBlock + AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT +
-            AiTools.spec(effectiveGroups, prefs) +
+        // baseSystemPrompt (من LionApp) يحوي أصلاً promptSuffix وكتلة الجلسة؛ لا نكرّرهما.
+        val resumeRaw = session?.contextBlock().orEmpty()
+        val resumeBlock = if (resumeRaw.isNotBlank() && baseSystemPrompt.contains(resumeRaw.take(60))) "" else resumeRaw
+        val modeBlock = if (profile.promptSuffix.isNotBlank() &&
+            baseSystemPrompt.contains(profile.promptSuffix.take(60))
+        ) "" else profile.promptSuffix
+        fun buildSystem(g: Set<ToolGroup>): String = baseSystemPrompt + modeBlock +
+            AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT +
+            AiTools.spec(g, prefs) +
             (if (provider in LOCAL_PROVIDERS) LOCAL_TOOL_HINT else "") + resumeBlock
+        // المزودات السحابية (خاصة المجانية) لها سقف سياق/معدّل: إن كبرت التعليمات نقلّص الأدوات للنواة
+        // (والباقي متاح عبر tools_schema) بدل أن يفشل الطلب كاملاً.
+        val maxSystemChars = if (provider in LOCAL_PROVIDERS) 90_000 else 16_000
+        var system = buildSystem(effectiveGroups)
+        if (system.length > maxSystemChars) {
+            val core = effectiveGroups.filter {
+                it == ToolGroup.META || it == ToolGroup.FILES || it == ToolGroup.CODE || it == ToolGroup.GITHUB
+            }.toSet().ifEmpty { setOf(ToolGroup.META) }
+            system = buildSystem(core)
+            if (system.length > maxSystemChars) system = buildSystem(setOf(ToolGroup.META))
+        }
         val toolContext = ToolContext(
             context,
             prefs,

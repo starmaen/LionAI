@@ -126,25 +126,50 @@ object ContextProfiles {
                 injectAgentsFile = false
             )
         }
-        val base = mutableSetOf(
-            ToolGroup.FILES,
-            ToolGroup.CODE,
-            ToolGroup.SHELL,
-            ToolGroup.QUALITY,
-            ToolGroup.CONTROL,
-            ToolGroup.MEMORY,
-            ToolGroup.MCP,
-            ToolGroup.META,
-            ToolGroup.FIREBASE
-        )
-        if (AiTools.githubReady(prefs)) base.add(ToolGroup.GITHUB)
-        if (everywhere) {
-            // كل المجموعات: الويب/الموصلات/الاتصالات/قواعد البيانات/الأدوات المساعدة.
+        // وضع البرمجة: حزمة التطوير الأساسية. العام/التعلّم: مجموعة META فقط + ما يكتشفه النص،
+        // والمزيد يُحمَّل عند الحاجة عبر tools_schema (إرسال كل الأدوات مع كل رسالة كان يملأ سياق المزودات المجانية فتفشل).
+        val lean = mode != ChatMode.CODE
+        val base = if (lean) {
+            mutableSetOf(ToolGroup.META)
+        } else {
+            mutableSetOf(
+                ToolGroup.FILES,
+                ToolGroup.CODE,
+                ToolGroup.SHELL,
+                ToolGroup.QUALITY,
+                ToolGroup.CONTROL,
+                ToolGroup.MEMORY,
+                ToolGroup.MCP,
+                ToolGroup.META,
+                ToolGroup.FIREBASE
+            )
+        }
+        if (AiTools.githubReady(prefs) && !lean) base.add(ToolGroup.GITHUB)
+        var detectedAny = false
+        if (everywhere && !lean) {
+            // وضع البرمجة: كل المجموعات (ToolAgent يقلّصها تلقائياً للمزودات ذات السياق المحدود).
             base.addAll(ToolGroup.values().filter { it != ToolGroup.GITHUB || AiTools.githubReady(prefs) })
         } else {
             val detected = runCatching { AiTools.groupsFor(text, prefs) }.getOrDefault(emptySet())
-            base.addAll(detected.filter { it in OPTIONAL_GROUP })
-            if (ToolGroup.GITHUB in detected && AiTools.githubReady(prefs)) base.add(ToolGroup.GITHUB)
+            detectedAny = detected.isNotEmpty()
+            if (lean) {
+                base.addAll(detected.filter { it != ToolGroup.GITHUB || AiTools.githubReady(prefs) })
+            } else {
+                base.addAll(detected.filter { it in OPTIONAL_GROUP })
+                if (ToolGroup.GITHUB in detected && AiTools.githubReady(prefs)) base.add(ToolGroup.GITHUB)
+            }
+        }
+        if (lean && !detectedAny) {
+            // محادثة عادية (عام/تعلّم) بلا طلب أدوات: رد مباشر بسياق نظيف، دون حقن كتالوج الأدوات ولا تعليمات وكيل البرمجة.
+            return ContextProfile(
+                mode = mode,
+                allowTools = false,
+                allowWrite = false,
+                groups = emptySet(),
+                promptSuffix = if (mode == ChatMode.LEARN) LEARN_PROMPT else GENERAL_PROMPT,
+                injectProjectContext = false,
+                injectAgentsFile = false
+            )
         }
         val suffix = if (mode == ChatMode.CODE) {
             CODE_PROMPT + "\n\n" + DevRoles.prompt() + "\n\n" + ContextStore.governancePrompt(prefs)
