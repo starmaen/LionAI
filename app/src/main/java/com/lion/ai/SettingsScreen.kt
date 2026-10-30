@@ -382,8 +382,52 @@ fun SettingsScreen(
                             }
                         }
                         val backendName = backendOptions.firstOrNull { it.id == backend }?.label ?: backend
+                        var proxyAuto by remember { mutableStateOf(prefs.getBoolean("auto_route", true)) }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Button(
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (proxyAuto) Color(0xFFFFB800) else Color(0xFF2A2A2A)
+                                ),
+                                onClick = {
+                                    proxyAuto = true
+                                    prefs.edit().putBoolean("auto_route", true).apply()
+                                }
+                            ) {
+                                Text(
+                                    "🧠 تلقائي (العقل المركزي)", fontSize = 11.sp, maxLines = 1,
+                                    color = if (proxyAuto) Color(0xFF121212) else Color(0xFFE0E0E0)
+                                )
+                            }
+                            Button(
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (!proxyAuto) Color(0xFFFFB800) else Color(0xFF2A2A2A)
+                                ),
+                                onClick = {
+                                    proxyAuto = false
+                                    provider = "local_proxy"
+                                    prefs.edit()
+                                        .putBoolean("auto_route", false)
+                                        .putString("local_proxy_backend", backend)
+                                        .putString("provider", "local_proxy")
+                                        .apply()
+                                }
+                            ) {
+                                Text(
+                                    "✋ يدوي (أختار المزود)", fontSize = 11.sp, maxLines = 1,
+                                    color = if (!proxyAuto) Color(0xFF121212) else Color(0xFFE0E0E0)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
                         Text(
-                            "المزود الخلفي: $backendName — اختر من القائمة أدناه، والخادم يوجّه إليه تلقائياً بلا كتابة يدوية.",
+                            if (proxyAuto)
+                                "🧠 تلقائي: العقل المركزي يختار الأفضل والأسرع حسب نوع المحادثة (عام/تعلّم/برمجة)، وينتقل لمزود آخر عند الفشل. كل مزود أدخلت مفتاحه يشارك. اضغط مزوداً أدناه لإدخال أو تعديل مفتاحه."
+                            else
+                                "✋ يدوي: المزود المختار = $backendName ويُستعمل في الشات وكل الأوضاع. اضغط مزوداً أدناه لاختياره.",
                             color = Color(0xFFB0B0B0),
                             fontSize = 12.sp
                         )
@@ -520,6 +564,7 @@ fun SettingsScreen(
                             Button(
                                 enabled = !proxyBusy,
                                 modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                                 onClick = {
                                     proxyBusy = true
@@ -533,6 +578,7 @@ fun SettingsScreen(
                             Button(
                                 enabled = !proxyBusy,
                                 modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                                 onClick = {
                                     proxyBusy = true
@@ -546,6 +592,7 @@ fun SettingsScreen(
                             Button(
                                 enabled = !proxyBusy,
                                 modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                                 onClick = {
                                     proxyBusy = true

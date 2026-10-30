@@ -215,6 +215,19 @@ object LocalAIProxy {
         }
     }
 
+    /** المسار اليدوي: المزود الخلفي المختار وموديله المخزّن (أو الافتراضي). */
+    private fun manualRoute(prefs: SharedPreferences): Route {
+        val provider = backendProvider(prefs)
+        val stored = (prefs.getString("model_$provider", "") ?: "").trim()
+        return Route(provider, stored.ifBlank { LlmClient.defaultModel(provider) })
+    }
+
+    private fun autoProviders(prefs: SharedPreferences): List<ProviderInfo> =
+        PROVIDERS.filter {
+            it.group == ProviderGroup.API && it.id != "local_proxy" && it.id != "custom" &&
+                SmartRouter.available(prefs, it.id)
+        }
+
     private fun httpGet(url: String, timeoutMs: Int = 8000): Pair<Int, String> {
         val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
             connectTimeout = timeoutMs
@@ -245,47 +258,64 @@ object LocalAIProxy {
         }
     }
 
-    /** الخطوة 2: المزود الخلفي مباشرة ثم عبر الخادم، لتمييز عطل المزود عن عطل الخادم. */
+    /** الخطوة 2: فحص المزودات. تلقائي: كل المزودات المفعّلة (ويغذّي قياس السرعة للعقل المركزي). يدوي: المزود المختار. */
     fun providerCheck(prefs: SharedPreferences): String {
-        val provider = backendProvider(prefs)
-        val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
-        val model = (prefs.getString("model_$provider", "") ?: "").trim()
-            .ifBlank { LlmClient.defaultModel(provider) }
         val account = (prefs.getString("cf_account_id", "") ?: "").trim()
-        val sb = StringBuilder("المزود الخلفي: $provider — الموديل: $model\n")
-        if (key.isBlank()) sb.append("⚠️ لا يوجد مفتاح محفوظ لهذا المزود.\n")
-        val t = System.currentTimeMillis()
-        val direct = runCatching {
-            LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, provider, emptyList(), model, account, readTimeoutMs = 20_000)
-        }.getOrElse { "❌ " + (it.message ?: "خطأ") }
-        sb.append(if (LlmClient.isErrorReply(direct)) "❌ المزود مباشرة: " else "✅ المزود مباشرة: ")
-            .append(direct.replace("\n", " ").take(140))
-            .append(" (").append(System.currentTimeMillis() - t).append("ms)\n")
+        val auto = prefs.getBoolean("auto_route", true)
+        val targets = if (auto) autoProviders(prefs).take(10)
+        else listOfNotNull(PROVIDERS.firstOrNull { it.id == backendProvider(prefs) })
+        if (targets.isEmpty()) return "⚠️ لا يوجد أي مزود مفعّل. أدخل مفتاح مزود واحد على الأقل."
+        val sb = StringBuilder(
+            if (auto) "🧠 تلقائي: أفحص ${targets.size} مزود مفعّل…\n" else "✋ يدوي: ${targets[0].shortName}\n"
+        )
+        val speeds = mutableListOf<Pair<String, Long>>()
+        for (info in targets) {
+            val key = (prefs.getString("api_key_${info.id}", "") ?: "").trim()
+            val model = (prefs.getString("model_${info.id}", "") ?: "").trim().ifBlank { LlmClient.defaultModel(info.id) }
+            val t = System.currentTimeMillis()
+            val reply = runCatching {
+                LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, info.id, emptyList(), model, account, readTimeoutMs = 15_000)
+            }.getOrElse { "❌ " + (it.message ?: "خطأ") }
+            val ms = System.currentTimeMillis() - t
+            val ok = !LlmClient.isErrorReply(reply)
+            SmartRouter.record(Route(info.id, model), ok, ms)
+            sb.append(if (ok) "✅ " else "❌ ").append(info.shortName).append(" — ").append(model).append(" — ").append(ms).append("ms")
+            if (!ok) sb.append("\n    ").append(reply.replace("\n", " ").take(90))
+            sb.append("\n")
+            if (ok) speeds.add(info.shortName to ms)
+        }
+        speeds.minByOrNull { it.second }?.let { sb.append("⚡ الأسرع الآن: ").append(it.first).append("\n") }
         sb.append(selfTest(prefs))
         return sb.toString()
     }
 
-    /** الخطوة 3: استدعاء قائمة النماذج من الإنترنت للمزود الخلفي وحفظها. */
-    fun refreshModels(prefs: SharedPreferences): String {
-        val provider = backendProvider(prefs)
-        val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
+    private fun fetchModels(prefs: SharedPreferences, info: ProviderInfo): String {
+        val key = (prefs.getString("api_key_${info.id}", "") ?: "").trim()
         val account = (prefs.getString("cf_account_id", "") ?: "").trim()
         val t = System.currentTimeMillis()
         return try {
-            val list = LlmClient.listModels(provider, key, account)
+            val list = LlmClient.listModels(info.id, key, account)
             if (list.isEmpty()) {
-                "⚠️ $provider رد بلا موديلات. تحقق من المفتاح أو الحصة."
+                "⚠️ ${info.shortName}: رد بلا موديلات (تحقق من المفتاح/الحصة)."
             } else {
-                ModelCatalog.saveCache(prefs, provider, list)
-                val current = (prefs.getString("model_$provider", "") ?: "").trim()
-                val note = if (current.isNotBlank() && current !in list)
-                    "\n⚠️ الموديل الحالي «$current» غير موجود في القائمة — اختر موديلاً آخر." else ""
-                "✅ ${list.size} موديل من $provider (${System.currentTimeMillis() - t}ms) وحُفظت القائمة.\n" +
-                    list.take(8).joinToString("، ") + note
+                ModelCatalog.saveCache(prefs, info.id, list)
+                val current = (prefs.getString("model_${info.id}", "") ?: "").trim()
+                val note = if (current.isNotBlank() && current !in list) " ⚠️ موديلك «$current» غير موجود في القائمة" else ""
+                "✅ ${info.shortName}: ${list.size} موديل (${System.currentTimeMillis() - t}ms) — " +
+                    list.take(3).joinToString("، ") + note
             }
         } catch (e: Exception) {
-            "❌ تعذّر جلب الموديلات من $provider: " + (e.message ?: e.javaClass.simpleName)
+            "❌ ${info.shortName}: " + (e.message ?: e.javaClass.simpleName).take(90)
         }
+    }
+
+    /** الخطوة 3: تحديث النماذج من الإنترنت. تلقائي: لكل مزود مفعّل. يدوي: للمزود المختار. */
+    fun refreshModels(prefs: SharedPreferences): String {
+        val auto = prefs.getBoolean("auto_route", true)
+        val targets = if (auto) autoProviders(prefs).take(14)
+        else listOfNotNull(PROVIDERS.firstOrNull { it.id == backendProvider(prefs) })
+        if (targets.isEmpty()) return "⚠️ لا يوجد أي مزود مفعّل. أدخل مفتاح مزود واحد على الأقل."
+        return targets.joinToString("\n") { fetchModels(prefs, it) }
     }
 
     private fun processChatCompletion(body: String, prefs: SharedPreferences): String {
@@ -317,20 +347,40 @@ object LocalAIProxy {
             } else ""
             val systemPrompt = systemParts.joinToString("\n\n").ifBlank { LLM_SYSTEM_PROMPT }
 
-            val provider = backendProvider(prefs)
-            val apiKey = (prefs.getString("api_key_$provider", "") ?: "").trim()
-            val storedModel = (prefs.getString("model_$provider", "") ?: "").trim()
-            // تلقائي بالكامل: موديل المزود المخزّن، وإلا افتراضي المزود نفسه (لا نستخدم موديل البروكسي)
-            val modelName = storedModel.ifBlank { LlmClient.defaultModel(provider) }
-
-            val reply = LlmClient.ask(
-                message = userText,
-                apiKey = apiKey,
-                provider = provider,
-                history = history,
-                modelOverride = modelName,
-                systemPrompt = systemPrompt
-            )
+            // تلقائي: العقل المركزي يرتّب المزودات حسب نوع المحادثة ويجرّب البديل عند الفشل.
+            // يدوي: المزود المختار فقط (ومعه بدائل إن فُعّلت «مساعدة العقل المركزي»).
+            val auto = prefs.getBoolean("auto_route", true)
+            val kind = SmartRouter.classify(userText, false, 0, null)
+            val chosen = manualRoute(prefs)
+            val routes: List<Route> = if (auto) {
+                SmartRouter.plan(prefs, kind).ifEmpty { listOf(chosen) }
+            } else if (prefs.getBoolean("manual_assist", false)) {
+                listOf(chosen) + SmartRouter.plan(prefs, kind).filter { it.provider != chosen.provider }.take(2)
+            } else {
+                listOf(chosen)
+            }
+            var reply = ""
+            var used = routes.first()
+            for (route in routes) {
+                val key = (prefs.getString("api_key_${route.provider}", "") ?: "").trim()
+                val model = route.model.ifBlank { LlmClient.defaultModel(route.provider) }
+                val started = System.currentTimeMillis()
+                val r = LlmClient.ask(
+                    message = userText,
+                    apiKey = key,
+                    provider = route.provider,
+                    history = history,
+                    modelOverride = model,
+                    systemPrompt = systemPrompt
+                )
+                val ok = !LlmClient.isErrorReply(r)
+                SmartRouter.record(Route(route.provider, model), ok, System.currentTimeMillis() - started)
+                reply = r
+                used = Route(route.provider, model)
+                if (ok) break
+            }
+            val provider = used.provider
+            val modelName = used.model
 
             org.json.JSONObject().apply {
                 put("id", "chatcmpl-local-${System.currentTimeMillis()}")

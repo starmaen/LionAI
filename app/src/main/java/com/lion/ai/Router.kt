@@ -316,7 +316,11 @@ object SmartRouter {
         kind: TaskKind,
         mode: AnswerMode = AnswerMode.read(prefs)
     ): List<Route> {
-        val availableRoutes = candidates(kind).filter { available(prefs, it.provider) }
+        // موديل المزود الذي اخترته/حدّثته من قائمة النماذج يتقدّم على الموديل الافتراضي المكتوب في القوائم
+        // (إلا في الصور حيث يلزم موديل يدعم الرؤية).
+        val availableRoutes = candidates(kind).filter { available(prefs, it.provider) }.map {
+            if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) it else withUserModel(prefs, it)
+        }
         val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
         // المسار السريع يبقى سريعاً دائماً: لا نرفعه إلى نماذج ثقيلة مهما كان وضع الجودة.
         val fastOnly = kind == TaskKind.FAST || mode == AnswerMode.FAST
@@ -356,7 +360,37 @@ object SmartRouter {
                 }
             }
         }
+        // الأفضل والأسرع: لا يحتكر المزود الأول كل المحادثات.
+        // (1) استكشاف: كل مزود سليم لم يُقَس بعد يُجرَّب مرة واحدة فيدخل المنافسة.
+        // (2) بعد القياس: إن كان بديل ضمن أول 3 أسرع بوضوح (30%+) يتقدّم، إلا في الأسئلة الصارمة حيث الجودة أولاً.
+        if (!strict && ordered.size >= 2) {
+            val head = ordered.take(3)
+            val untried = head.drop(1).firstOrNull {
+                latency(it.provider) == 0L && (failures[it.provider] ?: 0) == 0 && explored.add(it.provider)
+            }
+            if (untried != null) {
+                ordered.remove(untried)
+                ordered.add(0, untried)
+            } else {
+                val first = latency(ordered[0].provider)
+                val best = head.drop(1).filter {
+                    val l = latency(it.provider)
+                    l > 0 && l < first - 1500 && l * 10 < first * 7
+                }.minByOrNull { latency(it.provider) }
+                if (first > 0 && best != null) {
+                    ordered.remove(best)
+                    ordered.add(0, best)
+                }
+            }
+        }
         return ordered.take(maxAttempts)
+    }
+
+    private val explored = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private fun withUserModel(prefs: SharedPreferences, route: Route): Route {
+        val saved = (prefs.getString("model_${route.provider}", "") ?: "").trim()
+        return if (saved.isNotBlank()) route.copy(model = saved) else route
     }
 
     fun label(route: Route, kind: TaskKind?): String {
