@@ -31,8 +31,7 @@ object ToolAgent {
     private val LOCAL_TOOL_HINT = """
 
 ## تعليمات إضافية للخادم المحلي (function calling)
-- لديك واجهة أدوات أصلية (tools)؛ استخدمها فوراً بدل شرح خطتك.
-- إن لم يعمل الـ tools API عند خادمك، استخدم صيغة النص:
+- إن كانت أدوات (tools) الأصلية متاحة فاستخدمها فوراً بدل شرح خطتك، وإلا استخدم صيغة النص:
   [[TOOL]]{"tool":"file_tree","args":{"path":"."}}[[/TOOL]]
 - لا تقل «سأبدأ» أو «سأفحص» دون استدعاء فعلي؛ أول رد يجب أن يحمل استدعاء أداة واحداً على الأقل.
 - بعد كل نتيجة أداة: تحقق أو أكمل، ولا تكرر نفس الاستدعاء بنفس المدخلات.
@@ -108,7 +107,9 @@ object ToolAgent {
             val extra = if (provider in LOCAL_PROVIDERS) ToolGroup.values().toList() else emptyList()
             (base + extra).toSet()
         }
-        val nativeTools = if (provider in LOCAL_PROVIDERS && effectiveGroups.isNotEmpty()) {
+        // الخادم المحلي يوجّه الطلب لمزود قد لا يدعم أدوات OpenAI ولا يمرّرها،
+        // فنستخدم بروتوكول الأدوات النصي معه لتبقى أدوات التطوير تعمل في وضع البرمجة.
+        val nativeTools = if (provider == "custom" && effectiveGroups.isNotEmpty()) {
             AiTools.openAiTools(effectiveGroups, prefs)
         } else null
         // baseSystemPrompt (من LionApp) يحوي أصلاً promptSuffix وكتلة الجلسة؛ لا نكرّرهما.
@@ -176,7 +177,8 @@ object ToolAgent {
                     accountId = accountId,
                     systemPrompt = system,
                     tools = nativeTools,
-                    readTimeoutMs = readTimeout
+                    readTimeoutMs = readTimeout,
+                    chatModeHint = chatMode
                 )
             } else null
             val nativeCalls = toolTurn?.calls.orEmpty()
@@ -189,7 +191,8 @@ object ToolAgent {
                 accountId = accountId,
                 image = null,
                 systemPrompt = system,
-                readTimeoutMs = readTimeout
+                readTimeoutMs = readTimeout,
+                chatModeHint = chatMode
             )
             if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
                 session?.providerFailed(label, reply)

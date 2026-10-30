@@ -336,7 +336,22 @@ fun SettingsScreen(
                                 ProviderCard(
                                     info = info,
                                     active = provider == info.id,
-                                    onActivate = { provider = info.id },
+                                    onActivate = {
+                                        // اختيار مزود محدد = وضع يدوي صريح، فلا يتجاوزه العقل المركزي.
+                                        val previous = (prefs.getString("provider", "") ?: "").trim()
+                                        provider = info.id
+                                        autoRouteSetting = false
+                                        val editor = prefs.edit()
+                                            .putString("provider", info.id)
+                                            .putBoolean("auto_route", false)
+                                        // اختيار البروكسي بعد مزود مباشر يحفظ ذلك المزود كخادم خلفي.
+                                        if (info.id == "local_proxy" && previous.isNotBlank() &&
+                                            previous != "local_proxy" && previous != "custom"
+                                        ) {
+                                            editor.putString("local_proxy_backend", previous)
+                                        }
+                                        editor.apply()
+                                    },
                                     keys = keys,
                                     models = models,
                                     endpoints = endpoints,
@@ -374,7 +389,65 @@ fun SettingsScreen(
                             color = if (LocalAIProxy.isRunning()) Color(0xFF4CAF50) else Color(0xFFF44336),
                             fontSize = 14.sp
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
+                        // الوضع مرتبط مباشرة بشاشة المحادثة: التلقائي يفوّض الاختيار للعقل المركزي،
+                        // واليدوي يثبّت المزود المختار أدناه بلا تبديل.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        if (autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A),
+                                        RoundedCornerShape(16.dp)
+                                    )
+                                    .clickable {
+                                        provider = "local_proxy"
+                                        autoRouteSetting = true
+                                        prefs.edit()
+                                            .putString("provider", "local_proxy")
+                                            .putBoolean("auto_route", true)
+                                            .apply()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "تلقائي (العقل المركزي)",
+                                    color = if (autoRouteSetting) Color(0xFF121212) else Color(0xFFE0E0E0),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        if (!autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A),
+                                        RoundedCornerShape(16.dp)
+                                    )
+                                    .clickable {
+                                        provider = "local_proxy"
+                                        autoRouteSetting = false
+                                        prefs.edit()
+                                            .putString("provider", "local_proxy")
+                                            .putBoolean("auto_route", false)
+                                            .apply()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "يدوي (اختر المزود)",
+                                    color = if (!autoRouteSetting) Color(0xFF121212) else Color(0xFFE0E0E0),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
                         var backend by remember { mutableStateOf(LocalAIProxy.backendProvider(prefs)) }
                         val backendOptions = remember {
                             PROVIDERS.filter {
@@ -448,9 +521,13 @@ fun SettingsScreen(
                                             .clickable {
                                                 backend = info.id
                                                 provider = "local_proxy"
+                                                // اختيار المزود الخلفي يدوياً يوقف التلقائي فوراً،
+                                                // حتى لا تتجاهله شاشة المحادثة ويُستخدم Gemini بدلاً منه.
+                                                autoRouteSetting = false
                                                 prefs.edit()
                                                     .putString("local_proxy_backend", info.id)
                                                     .putString("provider", "local_proxy")
+                                                    .putBoolean("auto_route", false)
                                                     .apply()
                                             }
                                             .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -531,9 +608,11 @@ fun SettingsScreen(
                                                 .clickable {
                                                     backend = entry.id
                                                     provider = "local_proxy"
+                                                    autoRouteSetting = false
                                                     prefs.edit()
                                                         .putString("local_proxy_backend", entry.id)
                                                         .putString("provider", "local_proxy")
+                                                        .putBoolean("auto_route", false)
                                                         .apply()
                                                 }
                                                 .padding(horizontal = 8.dp, vertical = 8.dp),

@@ -212,6 +212,10 @@ object LlmClient {
 
     fun defaultModel(provider: String): String = providerInfo(provider).defaultModel
 
+    /** ترويسات اختيارية تُخبر الخادم المحلي بوضع المحادثة الحالي. */
+    private fun proxyHeaders(mode: ChatMode?): Map<String, String> =
+        if (mode == null) emptyMap() else mapOf("X-Lion-Chat-Mode" to mode.id)
+
     fun ask(
         message: String,
         apiKey: String,
@@ -221,7 +225,8 @@ object LlmClient {
         accountId: String = "",
         image: ImageAttachment? = null,
         systemPrompt: String = LLM_SYSTEM_PROMPT,
-        readTimeoutMs: Int = 0
+        readTimeoutMs: Int = 0,
+        chatModeHint: ChatMode? = null
     ): String {
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
@@ -298,6 +303,7 @@ object LlmClient {
                     } else {
                         callOpenAiCompatible(
                             baseUrl, apiKey, model, turns, message,
+                            extraHeaders = proxyHeaders(chatModeHint),
                             maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                         )
                     }
@@ -392,11 +398,15 @@ object LlmClient {
         accountId: String = "",
         systemPrompt: String = LLM_SYSTEM_PROMPT,
         tools: JSONArray = JSONArray(),
-        readTimeoutMs: Int = 0
+        readTimeoutMs: Int = 0,
+        chatModeHint: ChatMode? = null
     ): ToolReply {
         if ((provider != "custom" && provider != "local_proxy") || tools.length() == 0) {
             return ToolReply(
-                ask(message, apiKey, provider, history, modelOverride, accountId, null, systemPrompt, readTimeoutMs),
+                ask(
+                    message, apiKey, provider, history, modelOverride, accountId, null,
+                    systemPrompt, readTimeoutMs, chatModeHint
+                ),
                 emptyList()
             )
         }
@@ -410,7 +420,10 @@ object LlmClient {
         val cap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
         return withReadTimeout(cap) {
             try {
-                callOpenAiTools(normalizeCustomUrl(raw), key, model, turns, message, systemPrompt, tools)
+                callOpenAiTools(
+                    normalizeCustomUrl(raw), key, model, turns, message, systemPrompt, tools,
+                    extraHeaders = if (provider == "local_proxy") proxyHeaders(chatModeHint) else emptyMap()
+                )
             } catch (e: Exception) {
                 ToolReply("⚠️ تعذر استدعاء أدوات الخادم: ${e.message ?: e.javaClass.simpleName}", emptyList())
             }

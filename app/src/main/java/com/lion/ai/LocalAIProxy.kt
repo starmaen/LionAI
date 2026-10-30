@@ -120,9 +120,13 @@ object LocalAIProxy {
             val path = parts[1]
 
             var contentLength = 0
+            var chatModeHeader = ""
             headers.substringAfter("\r\n", "").lineSequence().forEach { line ->
-                if (line.lowercase().startsWith("content-length:")) {
+                val lower = line.lowercase()
+                if (lower.startsWith("content-length:")) {
                     contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                } else if (lower.startsWith("x-lion-chat-mode:")) {
+                    chatModeHeader = line.substringAfter(":").trim()
                 }
             }
 
@@ -137,7 +141,7 @@ object LocalAIProxy {
 
             val response: String = when {
                 method == "POST" && path.startsWith("/v1/chat/completions") ->
-                    processChatCompletion(body, prefs)
+                    processChatCompletion(body, prefs, chatModeHeader)
                 method == "GET" && path.startsWith("/v1/models") -> {
                     val provider = backendProvider(prefs)
                     val model = (prefs.getString("model_$provider", "") ?: "").trim()
@@ -318,7 +322,26 @@ object LocalAIProxy {
         return targets.joinToString("\n") { fetchModels(prefs, it) }
     }
 
-    private fun processChatCompletion(body: String, prefs: SharedPreferences): String {
+    /** وضع المحادثة: من ترويسة التطبيق، أو من تعليمات النظام، أو الافتراضي المحفوظ. */
+    private fun chatModeOf(header: String, systemPrompt: String, prefs: SharedPreferences): ChatMode {
+        ChatMode.entries.firstOrNull { it.id == header.trim().lowercase() }?.let { return it }
+        return when {
+            systemPrompt.contains("وضع الهندسة والبرمجة") -> ChatMode.CODE
+            systemPrompt.contains("وضع التعلّم") -> ChatMode.LEARN
+            systemPrompt.contains("وضع الدردشة العامة") -> ChatMode.GENERAL
+            else -> ContextStore.defaultMode(prefs)
+        }
+    }
+
+    /** مفتاح المزود الفعلي مع دعم المزودين المستوردين (imp_*). */
+    private fun keyOf(prefs: SharedPreferences, provider: String): String =
+        (prefs.getString("api_key_$provider", "") ?: "").trim()
+
+    private fun processChatCompletion(
+        body: String,
+        prefs: SharedPreferences,
+        chatModeHeader: String = ""
+    ): String {
         return try {
             val json = org.json.JSONObject(body)
             val messages = json.optJSONArray("messages")
@@ -346,47 +369,72 @@ object LocalAIProxy {
                 messages?.optJSONObject(lastUserIndex)?.optString("content", "").orEmpty()
             } else ""
             val systemPrompt = systemParts.joinToString("\n\n").ifBlank { LLM_SYSTEM_PROMPT }
+            val chatMode = chatModeOf(chatModeHeader, systemPrompt, prefs)
+            val taskKind = SmartRouter.classify(userText, false, 0, null)
+            val answerMode = AnswerMode.read(prefs)
+            val accountId = (prefs.getString("cf_account_id", "") ?: "").trim()
 
-            // تلقائي: العقل المركزي يرتّب المزودات حسب نوع المحادثة ويجرّب البديل عند الفشل.
-            // يدوي: المزود المختار فقط (ومعه بدائل إن فُعّلت «مساعدة العقل المركزي»).
-            val auto = prefs.getBoolean("auto_route", true)
-            val kind = SmartRouter.classify(userText, false, 0, null)
-            val chosen = manualRoute(prefs)
-            val routes: List<Route> = if (auto) {
-                SmartRouter.plan(prefs, kind).ifEmpty { listOf(chosen) }
-            } else if (prefs.getBoolean("manual_assist", false)) {
-                listOf(chosen) + SmartRouter.plan(prefs, kind).filter { it.provider != chosen.provider }.take(2)
-            } else {
-                listOf(chosen)
-            }
+            // نفس سياسة التطبيق: يدوي يبقى يدوياً، والتلقائي يستخدم العقل المركزي،
+            // والمساعدة تضيف بديلاً عند فشل المزود المختار.
+            val routes = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode)
+            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(taskKind)
+            val tried = mutableListOf<String>()
             var reply = ""
-            var used = routes.first()
+            var used: Route? = null
+            var lastError = ""
+
             for (route in routes) {
-                val key = (prefs.getString("api_key_${route.provider}", "") ?: "").trim()
-                val model = route.model.ifBlank { LlmClient.defaultModel(route.provider) }
+                if (System.currentTimeMillis() >= deadline) break
                 val started = System.currentTimeMillis()
-                val r = LlmClient.ask(
+                val cap = minOf(
+                    (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L),
+                    LlmClient.attemptTimeoutMs(taskKind).toLong()
+                ).toInt()
+                val candidate = LlmClient.ask(
                     message = userText,
-                    apiKey = key,
+                    apiKey = keyOf(prefs, route.provider),
                     provider = route.provider,
                     history = history,
-                    modelOverride = model,
-                    systemPrompt = systemPrompt
+                    modelOverride = route.model,
+                    accountId = accountId,
+                    systemPrompt = systemPrompt,
+                    readTimeoutMs = cap,
+                    chatModeHint = chatMode
                 )
-                val ok = !LlmClient.isErrorReply(r)
-                SmartRouter.record(Route(route.provider, model), ok, System.currentTimeMillis() - started)
-                reply = r
-                used = Route(route.provider, model)
-                if (ok) break
+                val ok = !LlmClient.isErrorReply(candidate)
+                SmartRouter.record(route, ok, System.currentTimeMillis() - started)
+                if (ok) {
+                    reply = candidate
+                    used = route
+                    LlmClient.recordSuccess(route.provider, route.model)
+                    break
+                }
+                lastError = candidate
+                tried.add(RoutePolicy.shortName(route.provider))
             }
-            val provider = used.provider
-            val modelName = used.model
+
+            if (used == null) {
+                reply = lastError.ifBlank {
+                    "⚠️ تعذر الوصول إلى مزود يرد حالياً. تحقق من الاتصال أو جرّب مزوداً آخر."
+                }
+                if (tried.isNotEmpty()) {
+                    reply += "\n\n(جرّبت بالترتيب: " + tried.distinct().joinToString("، ") + ")"
+                }
+                if (RoutePolicy.isManual(prefs) && !RoutePolicy.assistEnabled(prefs)) {
+                    reply += "\n\n🔒 الوضع اليدوي: بقيت على المزود المختار ولم أبدّل تلقائياً. " +
+                        "تحقق من المفتاح/الموديل أو فعّل «مساعدة العقل المركزي في الوضع اليدوي»."
+                }
+            }
+
+            val usedRoute = used
+            val modelName = usedRoute?.model?.takeIf { it.isNotBlank() }
+                ?: LlmClient.defaultModel(usedRoute?.provider ?: backendProvider(prefs))
 
             org.json.JSONObject().apply {
                 put("id", "chatcmpl-local-${System.currentTimeMillis()}")
                 put("object", "chat.completion")
                 put("created", System.currentTimeMillis() / 1000)
-                put("model", modelName.ifBlank { provider })
+                put("model", modelName.ifBlank { usedRoute?.provider ?: backendProvider(prefs) })
                 put("choices", org.json.JSONArray().apply {
                     put(org.json.JSONObject().apply {
                         put("index", 0)

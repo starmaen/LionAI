@@ -926,7 +926,22 @@ val PROVIDERS = listOf(
     )
 )
 
-fun providerInfo(id: String): ProviderInfo =
-    PROVIDERS.firstOrNull { it.id == id }
-        ?: PROVIDERS.firstOrNull { it.id == "gemini" }
-        ?: PROVIDERS.first()
+fun providerInfo(id: String): ProviderInfo {
+    PROVIDERS.firstOrNull { it.id == id }?.let { return it }
+    // المزودون المستوردون (imp_*) ليسوا Gemini؛ نعيد بطاقة مستقلة حتى لا يختلط
+    // الاسم أو الموديل أو حالة الاتصال بأي مزود آخر.
+    if (id.startsWith("imp_")) {
+        val label = id.removePrefix("imp_").ifBlank { id }
+        return ProviderInfo(
+            id = id,
+            label = label,
+            tagline = "مزود مستورد",
+            docsUrl = "",
+            defaultModel = "default",
+            shortName = label,
+            keyless = true,
+            custom = true
+        )
+    }
+    return PROVIDERS.firstOrNull { it.id == "gemini" } ?: PROVIDERS.first()
+}

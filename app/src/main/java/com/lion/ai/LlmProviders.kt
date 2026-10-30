@@ -60,7 +60,8 @@ internal fun LlmClient.callOpenAiTools(
         history: List<ChatTurn>,
         message: String,
         systemPrompt: String,
-        tools: JSONArray
+        tools: JSONArray,
+        extraHeaders: Map<String, String> = emptyMap()
     ): LlmClient.ToolReply {
         val messages = JSONArray()
         messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
@@ -79,6 +80,7 @@ internal fun LlmClient.callOpenAiTools(
 
         val headers = mutableMapOf<String, String>()
         if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"
+        headers.putAll(extraHeaders)
 
         val response = postJson(url, headers, body)
         val reply = response.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
