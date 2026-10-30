@@ -163,16 +163,29 @@ object LocalAIProxy {
             val json = org.json.JSONObject(body)
             val messages = json.optJSONArray("messages")
 
-            // نأخذ آخر رسالة من المستخدم
-            var userText = ""
+            // نمرر سياق الوكيل كما هو: system (تعليمات الأدوات/الوضع) + التاريخ + آخر رسالة مستخدم.
+            val systemParts = mutableListOf<String>()
+            val history = mutableListOf<ChatTurn>()
+            var lastUserIndex = -1
             if (messages != null) {
                 for (i in 0 until messages.length()) {
-                    val msg = messages.optJSONObject(i)
-                    if (msg != null && msg.optString("role") == "user") {
-                        userText = msg.optString("content", "")
+                    if (messages.optJSONObject(i)?.optString("role") == "user") lastUserIndex = i
+                }
+                for (i in 0 until messages.length()) {
+                    val msg = messages.optJSONObject(i) ?: continue
+                    val role = msg.optString("role")
+                    val content = msg.optString("content", "")
+                    when (role) {
+                        "system" -> if (content.isNotBlank()) systemParts.add(content)
+                        "user" -> if (i != lastUserIndex && content.isNotBlank()) history.add(ChatTurn("user", content))
+                        "assistant" -> if (content.isNotBlank()) history.add(ChatTurn("assistant", content))
                     }
                 }
             }
+            val userText = if (lastUserIndex >= 0) {
+                messages?.optJSONObject(lastUserIndex)?.optString("content", "").orEmpty()
+            } else ""
+            val systemPrompt = systemParts.joinToString("\n\n").ifBlank { LLM_SYSTEM_PROMPT }
 
             val provider = backendProvider(prefs)
             val apiKey = (prefs.getString("api_key_$provider", "") ?: "").trim()
@@ -184,9 +197,9 @@ object LocalAIProxy {
                 message = userText,
                 apiKey = apiKey,
                 provider = provider,
-                history = emptyList(),
+                history = history,
                 modelOverride = modelName,
-                systemPrompt = LLM_SYSTEM_PROMPT
+                systemPrompt = systemPrompt
             )
 
             org.json.JSONObject().apply {

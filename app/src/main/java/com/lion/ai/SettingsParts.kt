@@ -224,19 +224,46 @@ fun ProviderCard(
                 }
 
                 fun testProvider() {
+                    data class Outcome(val list: List<String>, val model: String, val reply: String)
                     val key = keys[id].orEmpty()
-                    val model = models[id].orEmpty().ifBlank { info.defaultModel }
                     val account = accountId
+                    val isServer = info.custom || id == "local_proxy"
                     // نحفظ العنوان الوسيط/المخصص الحالي مؤقتاً ليشمله الاختبار
                     LlmClient.endpointOverrides =
                         LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
                     scope.launch {
-                        val reply = withContext(Dispatchers.IO) {
-                            LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, id, emptyList(), model, account)
+                        val outcome = withContext(Dispatchers.IO) {
+                            runCatching {
+                                var model = models[id].orEmpty().trim()
+                                var list = emptyList<String>()
+                                if (model.isBlank() && isServer) {
+                                    list = runCatching { LlmClient.listModels(id, key, account) }
+                                        .getOrDefault(emptyList())
+                                    model = list.firstOrNull() ?: info.defaultModel
+                                }
+                                if (model.isBlank()) model = info.defaultModel
+                                val reply = LlmClient.ask(
+                                    "أجب بكلمة واحدة فقط: تم", key, id, emptyList(), model, account
+                                )
+                                Outcome(list, model, reply)
+                            }
                         }
-                        testStatus = if (LlmClient.isErrorReply(reply)) reply
-                        else "✅ المفتاح والموديل يعملان. الرد: " + reply.take(80)
                         testing = false
+                        outcome.onSuccess { value ->
+                            if (value.list.isNotEmpty()) {
+                                modelCache[id] = value.list
+                                ModelCatalog.saveCache(prefs, id, value.list)
+                            }
+                            testStatus = when {
+                                LlmClient.isErrorReply(value.reply) -> "❌ فشل اختبار $id: " + value.reply
+                                value.list.isNotEmpty() ->
+                                    "✅ الخادم يعمل: ${value.list.size} موديل متاح، والاختبار نجح على «${value.model}». الرد: " +
+                                        value.reply.take(60)
+                                else -> "✅ يعمل على «${value.model}». الرد: " + value.reply.take(80)
+                            }
+                        }.onFailure {
+                            testStatus = "❌ فشل الاختبار: " + (it.message ?: "خطأ غير معروف")
+                        }
                     }
                 }
 

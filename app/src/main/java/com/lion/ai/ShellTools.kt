@@ -22,7 +22,25 @@ object ShellTools {
         "git", "gradle", "./gradlew", "sh", "bash", "ls", "find", "grep", "rg", "cat", "sed",
         "awk", "wc", "head", "tail", "sort", "uniq", "mkdir", "cp", "mv", "rm", "touch",
         "zip", "unzip", "tar", "adb", "emulator", "avdmanager", "sdkmanager", "apkanalyzer",
-        "apksigner", "bundletool", "java", "node", "npm", "npx", "python", "python3", "pip"
+        "apksigner", "bundletool", "java", "node", "npm", "npx", "python", "python3", "pip",
+        "pip3", "pkg", "apt", "apt-get", "which", "command"
+    )
+
+    /** حزم مسموح تثبيتها فقط (لا يُمرَّر اسم الحزمة من النموذج مباشرة إلى الصدفة). */
+    private val PACKAGES = mapOf(
+        "git" to listOf("git"),
+        "python" to listOf("python3", "python"),
+        "node" to listOf("nodejs", "node"),
+        "java" to listOf("openjdk-17-jdk-headless", "openjdk-17"),
+        "gradle" to listOf("gradle"),
+        "curl" to listOf("curl"),
+        "jq" to listOf("jq"),
+        "unzip" to listOf("unzip"),
+        "zip" to listOf("zip"),
+        "tar" to listOf("tar"),
+        "ffmpeg" to listOf("ffmpeg"),
+        "build-essential" to listOf("build-essential"),
+        "openssh" to listOf("openssh")
     )
     private val BLOCKED = listOf(
         Regex("(^|\\s)(sudo|su|mount|umount|reboot|shutdown|mkfs|dd|iptables|setenforce)(\\s|$)"),
@@ -214,6 +232,57 @@ object ShellTools {
             exitCode = if (run.ok) 0 else run.exitCode,
             elapsedMs = install.elapsedMs + run.elapsedMs
         )
+    }
+
+    /** هل الأداة موجودة على الجهاز/الخادم؟ (بلا صدفة مفتوحة) */
+    fun which(context: Context, name: String): Boolean {
+        val safe = name.trim().filter { it.isLetterOrDigit() || it in "._-" }
+        if (safe.isBlank()) return false
+        return try {
+            val process = ProcessBuilder("sh", "-c", "command -v " + safe)
+                .redirectErrorStream(true)
+                .start()
+            val done = process.waitFor(8, TimeUnit.SECONDS)
+            done && process.exitValue() == 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun installedPackages(context: Context): Map<String, Boolean> =
+        PACKAGES.keys.associateWith { which(context, it) }
+
+    /** تثبيت حزمة من قائمة بيضاء عبر مدير الحزم المتاح (pkg/apt-get). */
+    fun install(context: Context, packageName: String, timeoutSec: Int = 600): ShellResult {
+        val key = packageName.trim().lowercase()
+        val candidates = PACKAGES[key]
+            ?: return ShellResult(
+                false,
+                "⛔ حزمة غير مسموحة: $packageName. المسموح: " + PACKAGES.keys.joinToString("، "),
+                126,
+                0
+            )
+        if (which(context, key)) return ShellResult(true, "✅ $key مثبتة بالفعل.", 0, 0)
+        val manager = when {
+            which(context, "pkg") -> "pkg"
+            which(context, "apt-get") -> "apt-get"
+            which(context, "apt") -> "apt"
+            else -> ""
+        }
+        if (manager.isBlank()) {
+            return ShellResult(
+                false,
+                "❌ لا يوجد مدير حزم (pkg/apt). ثبّت «$key» يدوياً على الجهاز/الخادم: " + candidates.joinToString("/"),
+                127,
+                0
+            )
+        }
+        val command = when (manager) {
+            "pkg" -> "pkg install -y " + candidates.first()
+            else -> manager + " install -y " + candidates.first()
+        }
+        val result = exec(context, command, timeoutSec)
+        return result.copy(output = "=== $manager ===\n" + result.output.takeLast(12_000))
     }
 
     fun logcat(context: Context, filter: String = "", lines: Int = 300): ShellResult {

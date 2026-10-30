@@ -69,20 +69,33 @@ object ContextProfiles {
 
     private val GENERAL_PROMPT = """
 
-وضع الدردشة العامة (عزل وقت تشغيل):
-- هذه محادثة عامة أو ثقافية أو معرفية. لا تستخدم أي أداة ملفات أو صدفة أو Git أو GitHub أو بناء تطبيقات.
-- لا تفترض وجود مشروع برمجي، ولا تذكر مسار مشروع أو AGENTS.md أو Manifest.
-- لا تدّعِ أنك عدّلت ملفاً أو بنيت تطبيقاً؛ فهذه القدرات غير مفعّلة في هذا الوضع.
-- إن طلب المستخدم كتابة تطبيق أو تعديل كود أو بناء مشروع فاشرح له أن هذه المهمة تحتاج وضع «هندسة وبرمجة»، واقترح ترقية المحادثة صراحةً.
+وضع الدردشة العامة:
+- محادثة عامة أو ثقافية أو معرفية؛ حافظ على نبرة طبيعية ومختصرة افتراضياً.
+- لا تفترض وجود مشروع برمجي أو Manifest ما لم يذكره المستخدم أو تعثر عليه بأداة.
+- إن طُلب عمل تنفيذي فاستخدم الأدوات المتاحة فعلياً بدل الاعتذار عن عدم القدرة.
 """.trimIndent()
 
     private val LEARN_PROMPT = """
 
-وضع التعلّم (عزل وقت تشغيل):
+وضع التعلّم:
 - أنت مدرّب تعليمي. اشرح بالفهم التدريجي، واسأل أسئلة سقراطية قصيرة، واقترح تمارين عملية.
-- لا تنشئ ملفات ولا تعدّل مشاريع ولا تنفّذ أوامر صدفة أو Git.
-- يمكنك شرح الكود وإعطاء أمثلة نصية داخل الرد، لكن لا تدّعِ تنفيذها أو حفظها.
-- إن طلب المستخدم بناء مشروع فعلي أو تعديل ملفات فاقترح الترقية الصريحة إلى وضع «هندسة وبرمجة».
+- يمكنك شرح الكود داخل الرد، وإعطاء أمثلة نصية.
+- عند طلب تطبيق فعلي استخدم الأدوات المتاحة واتبع مبادئ الهندسة (تحقق قبل التسليم).
+""".trimIndent()
+
+    private val ALL_TOOLS_NOTE = """
+
+الأدوات مفعّلة في هذه المحادثة أيضاً:
+- لديك أدوات الملفات والصدفة وGit/GitHub والبحث والموصلات وFirebase عند ربطها. استخدمها عند الحاجة الفعلية.
+- لا تدّعِ نتيجة أداة لم تُنفّذ؛ وبعد كل كتابة تحقق (قراءة/فرق/بوابة).
+- للعمليات الخطرة (حذف/دفع/إرسال/تثبيت حزم) اطلب تأكيداً صريحاً في الرسالة.
+""".trimIndent()
+
+    private val NO_TOOLS_NOTE = """
+
+الأدوات غير مفعّلة في هذا الوضع:
+- لا تستخدم أي أداة ملفات أو صدفة أو Git أو GitHub، ولا تدّعِ أنك عدّلت شيئاً.
+- إن طلب المستخدم عملاً تنفيذياً فاقترح ترقية المحادثة إلى «هندسة وبرمجة» أو تفعيل «الأدوات في كل الأوضاع» من إعدادات أدوات المطور.
 """.trimIndent()
 
     private val CODE_PROMPT = """
@@ -97,44 +110,55 @@ object ContextProfiles {
 """.trimIndent()
 
     fun of(mode: ChatMode, prefs: SharedPreferences, text: String = ""): ContextProfile {
-        if (mode != ChatMode.CODE) {
+        val enabled = AiTools.agentEnabled(prefs)
+        // طلب المستخدم: الأدوات متاحة في كل الأوضاع (عام/تعلّم/برمجة) مع كل المزودات، ويمكن تعطيلها.
+        val everywhere = prefs.getBoolean("tools_everywhere", true)
+        val allowHere = enabled && (mode == ChatMode.CODE || everywhere)
+        if (!allowHere) {
+            val prompt = (if (mode == ChatMode.LEARN) LEARN_PROMPT else if (mode == ChatMode.CODE) CODE_PROMPT else GENERAL_PROMPT)
             return ContextProfile(
                 mode = mode,
                 allowTools = false,
                 allowWrite = false,
                 groups = emptySet(),
-                promptSuffix = if (mode == ChatMode.LEARN) LEARN_PROMPT else GENERAL_PROMPT,
+                promptSuffix = prompt + NO_TOOLS_NOTE,
                 injectProjectContext = false,
                 injectAgentsFile = false
             )
         }
-        val enabled = AiTools.agentEnabled(prefs)
-        val groups = if (!enabled) emptySet() else {
-            val base = mutableSetOf(
-                ToolGroup.FILES,
-                ToolGroup.CODE,
-                ToolGroup.SHELL,
-                ToolGroup.QUALITY,
-                ToolGroup.CONTROL,
-                ToolGroup.MEMORY,
-                ToolGroup.MCP,
-                ToolGroup.META,
-                ToolGroup.FIREBASE
-            )
-            if (AiTools.githubReady(prefs)) base.add(ToolGroup.GITHUB)
+        val base = mutableSetOf(
+            ToolGroup.FILES,
+            ToolGroup.CODE,
+            ToolGroup.SHELL,
+            ToolGroup.QUALITY,
+            ToolGroup.CONTROL,
+            ToolGroup.MEMORY,
+            ToolGroup.MCP,
+            ToolGroup.META,
+            ToolGroup.FIREBASE
+        )
+        if (AiTools.githubReady(prefs)) base.add(ToolGroup.GITHUB)
+        if (everywhere) {
+            // كل المجموعات: الويب/الموصلات/الاتصالات/قواعد البيانات/الأدوات المساعدة.
+            base.addAll(ToolGroup.values().filter { it != ToolGroup.GITHUB || AiTools.githubReady(prefs) })
+        } else {
             val detected = runCatching { AiTools.groupsFor(text, prefs) }.getOrDefault(emptySet())
             base.addAll(detected.filter { it in OPTIONAL_GROUP })
             if (ToolGroup.GITHUB in detected && AiTools.githubReady(prefs)) base.add(ToolGroup.GITHUB)
-            base
+        }
+        val suffix = if (mode == ChatMode.CODE) {
+            CODE_PROMPT + "\n\n" + DevRoles.prompt() + "\n\n" + ContextStore.governancePrompt(prefs)
+        } else {
+            (if (mode == ChatMode.LEARN) LEARN_PROMPT else GENERAL_PROMPT) + ALL_TOOLS_NOTE
         }
         return ContextProfile(
             mode = mode,
-            allowTools = enabled && groups.isNotEmpty(),
+            allowTools = enabled && base.isNotEmpty(),
             allowWrite = enabled && AiTools.allowWrite(prefs),
-            groups = groups,
-            promptSuffix = CODE_PROMPT + "\n\n" + DevRoles.prompt() + "\n\n" + ContextStore.governancePrompt(prefs),
-            injectProjectContext = true,
-            injectAgentsFile = true
+            groups = base,
+            promptSuffix = suffix,
+            injectProjectContext = mode == ChatMode.CODE,
+            injectAgentsFile = mode == ChatMode.CODE
         )
     }
 }
@@ -199,11 +223,20 @@ object ModeGuard {
             "\\.kt\\b|\\.java\\b|\\.py\\b|\\.js\\b|\\.ts\\b|\\.tsx\\b|```)"
     )
 
+    private val ACCESS_TARGET = Regex(
+        "(ملف|ملفات|مستودع|مستودعات|ريبو|إنترنت|انترنت|رابط|روابط|موقع|ويب|github|api|جهازي|ملفاتي|مساحة العمل|workspace)"
+    )
+    private val ACCESS_ACTION = Regex(
+        "(وصول|أصل|اوصل|ادخل|دخول|افتح|فتح|اقرأ|قراءة|عدل|تعديل|عدّل|تعديلها|فحص|حلل|تنفيذ|نفذ|جلب|تحميل|رفع|كتابة)"
+    )
+
     fun looksLikeCodingRequest(text: String, kind: TaskKind): Boolean {
         if (kind == TaskKind.DEV) return true
         val normalized = TextNorm.forMatch(text)
         if (normalized.contains("```")) return true
-        return CODE_ACTION.containsMatchIn(normalized) && CODE_TARGET.containsMatchIn(normalized)
+        if (CODE_ACTION.containsMatchIn(normalized) && CODE_TARGET.containsMatchIn(normalized)) return true
+        // طلبات الوصول للأدوات (ملفات/مستودعات/مواقع) في وضع غير برمجي يجب أن تعرض الترقية.
+        return ACCESS_TARGET.containsMatchIn(normalized) && ACCESS_ACTION.containsMatchIn(normalized)
     }
 
     fun promotionOffer(mode: ChatMode): String = when (mode) {

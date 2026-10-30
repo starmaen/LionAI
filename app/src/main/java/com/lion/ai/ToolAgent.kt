@@ -25,6 +25,9 @@ object ToolAgent {
     private val ASK_ALT = Regex("\\[\\[QUESTION\\]\\](.*?)\\[\\[/QUESTION\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val TRAILING_QUESTION = Regex("[?؟]\\s*$")
 
+    /** مزودات تعمل كخادم محلي: تُزوَّد بكل الأدوات وتُخاطَب بصيغة الأدوات المناسبة. */
+    private val LOCAL_PROVIDERS = setOf("custom", "local_proxy")
+
     private val LOCAL_TOOL_HINT = """
 
 ## تعليمات إضافية للخادم المحلي (function calling)
@@ -102,7 +105,7 @@ object ToolAgent {
         val effectiveGroups = if (!profile.allowTools) emptySet() else {
             val base = groups.filter { it in profile.groups }
             // الخادم المحلي (custom) يملك الجهاز والملفات: زوّده بكل المجموعات لا بالمجموعة المرصودة للنص فقط.
-            val extra = if (provider == "custom") ToolGroup.values().toList() else emptyList()
+            val extra = if (provider in LOCAL_PROVIDERS) ToolGroup.values().toList() else emptyList()
             (base + extra).toSet()
         }
         val nativeTools = if (provider == "custom" && effectiveGroups.isNotEmpty()) {
@@ -112,7 +115,7 @@ object ToolAgent {
         val modeBlock = profile.promptSuffix
         val system = baseSystemPrompt + modeBlock + AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT +
             AiTools.spec(effectiveGroups, prefs) +
-            (if (provider == "custom") LOCAL_TOOL_HINT else "") + resumeBlock
+            (if (provider in LOCAL_PROVIDERS) LOCAL_TOOL_HINT else "") + resumeBlock
         val toolContext = ToolContext(
             context,
             prefs,

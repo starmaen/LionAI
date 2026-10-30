@@ -161,11 +161,22 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
 
             "qwen" -> {
                 requireKey(apiKey)
-                val json = getJson(
+                val endpoints = listOf(
                     "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
-                    bearer
+                    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models"
                 )
-                idsOf(json.optJSONArray("data"), "id")
+                var lastError: Exception? = null
+                var found: List<String> = emptyList()
+                for (url in endpoints) {
+                    try {
+                        found = idsOf(getJson(url, bearer).optJSONArray("data"), "id")
+                        if (found.isNotEmpty()) break
+                    } catch (e: Exception) {
+                        lastError = e
+                    }
+                }
+                if (found.isEmpty() && lastError != null) lastError?.let { throw it }
+                found
             }
 
             "hf" -> {

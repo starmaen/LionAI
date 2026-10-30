@@ -30,6 +30,16 @@ LionAI أصبح: أوضاع محادثة معزولة (GENERAL / CODE / LEARN) +
 - وثائق: `docs/PLAYBOOK.md` و`docs/CONNECTIONS.md`.
 - إصلاح اختبار: أرقام org.json قد تكون BigDecimal → استخدم `is Number`.
 
+## جولة «كل الأدوات في كل الأوضاع»
+- `ContextProfiles.of`: `tools_everywhere` (افتراضي true) يمنح العام/التعلّم/البرمجة كل المجموعات، مع ملاحظات بردود مناسبة لكل وضع.
+- `LionApp`: إزالة شرط CODE عن `toolGroups`، وتعطيل حوار الترقية عند تفعيل الأدوات الشاملة.
+- `LocalAIProxy`: يمرّر system + history + آخر رسالة (كان يُسقط تعليمات الأدوات — سبب عدم استخدامها).
+- `LocalAIProxy`: اختيار مزود الخلفية من أدوات المطور (`local_proxy_backend`).
+- Qwen: تجربة dashscope الدولي/الصيني تلقائياً في المحادثة وجلب الموديلات.
+- `testProvider`: للخوادم يجلب الموديلات ويختار أول موديل ويختبره، ويعرض العدد.
+- ShellTools: `which` + `install` (pkg/apt) + قائمة حزم بيضاء؛ `toolchain_status`/`toolchain_install`/`tools_catalog`.
+- DevTools: حقول مزود الخلفية + تبديل الأدوات الشاملة + فحص/تثبيت الحزم.
+
 ## قائمة الفحص المطلوبة (أرسل النتائج لكل بند)
 1. **مزود مخصص حقيقي**: شغّل LiteLLM أو Ollama (حاسوب/Termux) على نفس الشبكة، ثم:
    - Base URL مثل `http://192.168.1.5:4000/v1` (LiteLLM) أو `http://192.168.1.5:11434/v1` (Ollama).

@@ -631,6 +631,11 @@ private fun ToolManagerTab(
     var fbKey by remember { mutableStateOf(prefs.getString("firebase_api_key", "").orEmpty()) }
     var fbToken by remember { mutableStateOf(prefs.getString("firebase_id_token", "").orEmpty()) }
     var fbBucket by remember { mutableStateOf(prefs.getString("firebase_bucket", "").orEmpty()) }
+    var backend by remember { mutableStateOf(prefs.getString("local_proxy_backend", "").orEmpty()) }
+    var toolsEverywhere by remember { mutableStateOf(prefs.getBoolean("tools_everywhere", true)) }
+    var toolReport by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
         Text("🧠 مدير الأدوات", color = T_GOLD, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -711,6 +716,75 @@ private fun ToolManagerTab(
             textStyle = TextStyle(color = Color.White, fontSize = 12.sp),
             colors = toolFieldColors()
         )
+        Spacer(Modifier.height(10.dp))
+        HorizontalDivider(color = Color(0xFF2A2A2A))
+        Spacer(Modifier.height(10.dp))
+        Text("🖥️ خادم محلي — مزود الخلفية", color = T_GOLD, fontWeight = FontWeight.Bold)
+        Text(
+            "الخادم المحلي يوجّه الطلبات لهذا المزود. اتركه فارغاً لاستخدام المزود النشط. أمثلة: gemini, deepseek, qwen, openrouter, groq.",
+            color = T_MUTED,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        OutlinedTextField(
+            value = backend,
+            onValueChange = { backend = it; prefs.edit().putString("local_proxy_backend", it.trim()).apply() },
+            label = { Text("معرّف مزود الخلفية", color = T_MUTED) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+            colors = toolFieldColors()
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = toolsEverywhere, onCheckedChange = {
+                toolsEverywhere = it
+                prefs.edit().putBoolean("tools_everywhere", it).apply()
+            }, colors = SwitchDefaults.colors(checkedThumbColor = T_GOLD))
+            Spacer(Modifier.width(8.dp))
+            Text("تفعيل كل الأدوات في الأوضاع الثلاثة (عام/تعلّم/برمجة)", color = Color.White, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("📦 حزم الجهاز/الخادم", color = T_GOLD, fontWeight = FontWeight.Bold)
+        Text(
+            "تثبيت الأدوات الناقصة (git/java/gradle/node/python/jq/ffmpeg...) عبر pkg أو apt داخل الجهاز أو الخادم الداخلي.",
+            color = T_MUTED,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    scope.launch {
+                        toolReport = withContext(Dispatchers.IO) { AiTools.toolchainReport(ToolContext(context, prefs, AiTools.allowWrite(prefs))) }
+                        working = false
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
+            ) { Text(if (working) "…" else "🔍 فحص", color = T_GOLD) }
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    scope.launch {
+                        toolReport = withContext(Dispatchers.IO) {
+                            listOf("git", "unzip", "curl", "jq").joinToString("\n") { pkg ->
+                                val result = ShellTools.install(context, pkg)
+                                (if (result.ok) "✅ " else "❌ ") + pkg + ": " + result.output.takeLast(300)
+                            }
+                        }
+                        working = false
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
+            ) { Text("⬇️ تثبيت الأساسيات", color = T_GOLD) }
+        }
+        if (toolReport.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(toolReport.take(4000), color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
         Spacer(Modifier.height(10.dp))
         Text("الأدوات المتاحة", color = T_GOLD, fontWeight = FontWeight.Bold)
         listOf(

@@ -244,6 +244,29 @@ object LlmClient {
                 "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
                 "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
                 "aihorde" -> callAiHorde(message, apiKey, model, turns, image, systemPrompt)
+                "qwen" -> {
+                    val primary = endpoint("qwen", providerInfo("qwen").endpoint)
+                    try {
+                        callOpenAiCompatible(
+                            primary, apiKey, model, turns, message,
+                            maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                        )
+                    } catch (primaryError: Exception) {
+                        // المفتاح الصيني والدولي يستخدمان نطاقين مختلفين؛ جرّب الآخر تلقائياً.
+                        if (!primary.contains("dashscope")) throw primaryError
+                        val fallback = if (primary.contains("dashscope-intl"))
+                            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+                        else "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+                        try {
+                            callOpenAiCompatible(
+                                fallback, apiKey, model, turns, message,
+                                maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                            )
+                        } catch (secondaryError: Exception) {
+                            throw primaryError
+                        }
+                    }
+                }
                 "local_proxy" -> {
                     val baseUrl = LocalAIProxy.getUrl()
                     if (baseUrl.isBlank()) {

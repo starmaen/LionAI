@@ -881,9 +881,7 @@ fun LionApp() {
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
         }
-        val toolGroups = if (chatMode == ChatMode.CODE && image == null &&
-            kind != TaskKind.FAST && modeProfile.allowTools
-        ) {
+        val toolGroups = if (image == null && kind != TaskKind.FAST && modeProfile.allowTools) {
             modeProfile.groups
         } else {
             emptySet<ToolGroup>()
@@ -1310,6 +1308,7 @@ fun LionApp() {
         val kind = SmartRouter.classify(text, image != null, file?.text?.length ?: 0, file?.name)
         // عزل وقت التشغيل: لا تنفيذ برمجي صامت في وضع عام/تعلّم. نطلب ترقية صريحة أولاً.
         if (currentMode != ChatMode.CODE && file == null && image == null &&
+            !prefs.getBoolean("tools_everywhere", true) &&
             ModeGuard.looksLikeCodingRequest(text, kind)
         ) {
             promotionRequest = text

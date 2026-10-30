@@ -328,11 +328,14 @@ object AiTools {
         // Shell / Android build
         Def("shell_exec", ToolGroup.SHELL, """{"command":"git status","cwd":"","timeout_sec":120}""", "تنفيذ أمر مسموح داخل مساحة العمل مع مهلة وسقف مخرجات", true),
         Def("shell_which", ToolGroup.SHELL, """{"name":"git"}""", "التحقق من وجود أداة على الجهاز"),
+        Def("toolchain_status", ToolGroup.SHELL, "{}", "حالة الحزم الأساسية (git/java/gradle/node/python/jq...) على الجهاز/الخادم"),
+        Def("toolchain_install", ToolGroup.SHELL, """{"package":"git"}""", "تثبيت حزمة أساسية من قائمة بيضاء عبر pkg/apt", true),
         Def("android_build", ToolGroup.SHELL, """{"root":"","task":":app:assembleDebug","timeout_sec":600}""", "بناء Gradle محلي وأخطاء محللة file:line (يتطلب JDK/SDK)", true),
         Def("android_install_run", ToolGroup.SHELL, """{"apk":"downloads/app.apk","package_name":"com.example.app","activity":".MainActivity"}""", "تثبيت APK وتشغيله عبر adb", true),
         Def("android_logcat", ToolGroup.SHELL, """{"filter":"","lines":300}""", "قراءة logcat مفلتر"),
 
         // MCP servers
+        Def("tools_catalog", ToolGroup.META, "{}", "جرد كل الأدوات وحالتها: متاح/يحتاج ربط/يحتاج كتابة/يحتاج تثبيت"),
         Def("mcp_servers", ToolGroup.MCP, "{}", "خوادم MCP المضافة وحالتها"),
         Def("mcp_add_server", ToolGroup.MCP, """{"id":"files","name":"Filesystem MCP","url":"http://127.0.0.1:3001/mcp","token":"","enabled":true}""", "إضافة خادم MCP عبر Streamable HTTP", true),
         Def("mcp_remove_server", ToolGroup.MCP, """{"id":"files"}""", "حذف خادم MCP", true),
@@ -599,6 +602,41 @@ object AiTools {
         return builder.toString()
     }
 
+    private val TOOLCHAIN = listOf(
+        "git" to "Git", "java" to "JDK", "gradle" to "Gradle", "adb" to "ADB",
+        "node" to "Node.js", "npm" to "npm", "python3" to "Python", "pip3" to "pip",
+        "unzip" to "unzip", "curl" to "curl", "jq" to "jq", "pkg" to "مدير الحزم pkg",
+        "apt-get" to "مدير الحزم apt"
+    )
+
+    fun toolchainReport(ctx: ToolContext): String = buildString {
+        append("حالة الأدوات على الجهاز/الخادم:\n")
+        TOOLCHAIN.forEach { (binary, label) ->
+            append(if (ShellTools.which(ctx.context, binary)) "✅ " else "❌ ")
+                .append(label).append(" (").append(binary).append(")\n")
+        }
+        append("\nللتحميل: استخدم toolchain_install باسم الحزمة (git/python/node/java/gradle/curl/jq/unzip/ffmpeg...).")
+    }
+
+    /** جرد كامل: يوضح سبب تعذّر استدعاء أداة وما المطلوب لتفعيلها. */
+    fun catalog(ctx: ToolContext): String = buildString {
+        append("جرد الأدوات (").append(defs.size).append(" أداة):\n")
+        defs.groupBy { it.group }.entries.sortedBy { it.key.ordinal }.forEach { (group, list) ->
+            append("\n[").append(group.icon).append(' ').append(group.label).append("] ")
+            append(list.size).append(" أداة\n")
+            list.forEach { def ->
+                val state = when {
+                    def.connector != null && !ConnectorAuth.isConnected(ctx.prefs, def.connector) ->
+                        "يحتاج ربط ${def.connector}"
+                    def.write && !ctx.allowWrite -> "تحتاج تفعيل الكتابة"
+                    else -> "متاح"
+                }
+                append("• ").append(def.name).append(" — ").append(state).append('\n')
+            }
+        }
+        append("\nملاحظة: مجموعات الأدوات تُفعَّل حسب الوضع؛ الخادم المحلي يحصل على كل المجموعات.")
+    }
+
     /** مخطط أدوات OpenAI/function-calling للخوادم المتوافقة (LiteLLM/Ollama). */
     fun openAiTools(groups: Set<ToolGroup>, prefs: SharedPreferences): JSONArray {
         val array = JSONArray()
@@ -709,8 +747,8 @@ object AiTools {
         }
         val shellWrite = call.name == "shell_exec" &&
             ShellTools.looksLikeWrite(call.args.optString("command"))
-        if ((call.name in CODE_WRITE_TOOLS || shellWrite) && ctx.chatId.isNotBlank() &&
-            !PipelineStore.canWrite(ctx.prefs, ctx.chatId)
+        if ((call.name in CODE_WRITE_TOOLS || shellWrite) && ctx.mode == ChatMode.CODE &&
+            ctx.chatId.isNotBlank() && !PipelineStore.canWrite(ctx.prefs, ctx.chatId)
         ) {
             return ToolResult(
                 call.name,
@@ -1458,6 +1496,15 @@ object AiTools {
             )
             "secret_scan" -> SecurityTools.scan(ctx.context, args.optString("path"))
             "site_probe" -> WebTools.probe(req(args, "url"))
+
+            "toolchain_status" -> AiTools.toolchainReport(ctx)
+            "toolchain_install" -> {
+                if (!ctx.allowWrite) throw IllegalArgumentException("تثبيت الحزم يحتاج «السماح بالكتابة».")
+                val pkg = req(args, "package")
+                val result = ShellTools.install(ctx.context, pkg, int(args, "timeout_sec", 600))
+                (if (result.ok) "✅ " else "❌ ") + "تثبيت $pkg:\n" + result.output
+            }
+            "tools_catalog" -> catalog(ctx)
 
             "code_analyze" -> {
                 val name = args.optString("name", "code.txt")
