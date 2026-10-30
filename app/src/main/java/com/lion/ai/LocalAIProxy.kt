@@ -80,18 +80,11 @@ object LocalAIProxy {
         if (!running) return
         val full = getUrl()
         val base = getBaseUrl()
-        val edit = prefs.edit()
+        // لا نلمس مزود «مخصص»: للبروكسي بطاقة واحدة مستقلة، فلا ننشئ مساراً ثانياً.
+        prefs.edit()
             .putString("local_proxy_url", full)
             .putString("local_proxy_base_url", base)
-        val existing = (prefs.getString("endpoint_custom", "") ?: "").trim()
-        if (existing.isBlank() ||
-            existing.contains("127.0.0.1") ||
-            existing.contains("localhost") ||
-            existing.contains("local_proxy")
-        ) {
-            edit.putString("endpoint_custom", full)
-        }
-        edit.apply()
+            .apply()
     }
 
     /** المزود الخلفي الفعلي الذي يوجّه إليه الخادم (لا يكون أبداً local_proxy/custom). */
@@ -168,7 +161,6 @@ object LocalAIProxy {
     private fun processChatCompletion(body: String, prefs: SharedPreferences): String {
         return try {
             val json = org.json.JSONObject(body)
-            val model = json.optString("model", "").trim()
             val messages = json.optJSONArray("messages")
 
             // نأخذ آخر رسالة من المستخدم
@@ -185,7 +177,8 @@ object LocalAIProxy {
             val provider = backendProvider(prefs)
             val apiKey = (prefs.getString("api_key_$provider", "") ?: "").trim()
             val storedModel = (prefs.getString("model_$provider", "") ?: "").trim()
-            val modelName = storedModel.ifBlank { model }
+            // تلقائي بالكامل: موديل المزود المخزّن، وإلا افتراضي المزود نفسه (لا نستخدم موديل البروكسي)
+            val modelName = storedModel.ifBlank { LlmClient.defaultModel(provider) }
 
             val reply = LlmClient.ask(
                 message = userText,

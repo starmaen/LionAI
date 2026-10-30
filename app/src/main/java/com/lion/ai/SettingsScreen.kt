@@ -313,10 +313,12 @@ fun SettingsScreen(
             SettingsSection(
                 title = "🔑 المزودات الأساسية (API)",
                 subtitle = "اضغط على المزود لفتح مفتاحه وموديله وزر الاختبار. الدائرة ● = المزود النشط",
-                badge = "${PROVIDERS.count { it.group == ProviderGroup.API }} مزود",
+                badge = "${PROVIDERS.count { it.group == ProviderGroup.API && it.id != "local_proxy" }} مزود",
                 initiallyExpanded = true
             ) {
-                val apiProviders = PROVIDERS.filter { it.group == ProviderGroup.API }
+                val apiProviders = PROVIDERS.filter {
+                    it.group == ProviderGroup.API && it.id != "local_proxy"
+                }
                 listOf(
                     "🔧 مخصص (Gateway / LiteLLM)" to apiProviders.filter { it.custom },
                     "🆓 بدون مفتاح" to apiProviders.filter { !it.custom && it.keyless },
@@ -386,32 +388,54 @@ fun SettingsScreen(
                             fontSize = 12.sp
                         )
                         Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            backendOptions.forEach { info ->
-                                val selected = info.id == backend
-                                Box(
-                                    modifier = Modifier
-                                        .background(
-                                            if (selected) Color(0xFFFFB800) else Color(0xFF2A2A2A),
-                                            RoundedCornerShape(16.dp)
+                        backendOptions.chunked(3).forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowItems.forEach { info ->
+                                    val selected = info.id == backend
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .background(
+                                                if (selected) Color(0xFFFFB800) else Color(0xFF2A2A2A),
+                                                RoundedCornerShape(16.dp)
+                                            )
+                                            .clickable {
+                                                backend = info.id
+                                                provider = "local_proxy"
+                                                prefs.edit()
+                                                    .putString("local_proxy_backend", info.id)
+                                                    .putString("provider", "local_proxy")
+                                                    .apply()
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            if (info.id == "openai") "ChatGPT" else info.shortName,
+                                            color = if (selected) Color(0xFF121212) else Color(0xFFE0E0E0),
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                                         )
-                                        .clickable {
-                                            backend = info.id
-                                            prefs.edit().putString("local_proxy_backend", info.id).apply()
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Text(
-                                        if (info.id == "openai") "ChatGPT" else info.shortName,
-                                        color = if (selected) Color(0xFF121212) else Color(0xFFE0E0E0),
-                                        fontSize = 11.sp,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                                    )
+                                    }
                                 }
+                                repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
                             }
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        val selectedInfo = backendOptions.firstOrNull { it.id == backend }
+                        if (selectedInfo != null && !selectedInfo.keyless &&
+                            (keys[backend] ?: "").isBlank() && !backend.startsWith("imp_")
+                        ) {
+                            Text(
+                                "⚠️ أدخل مفتاح ${selectedInfo.shortName} من بطاقته أدناه، ثم يعمل تلقائياً.",
+                                color = Color(0xFFFFB800),
+                                fontSize = 11.sp
+                            )
                         }
                         Spacer(Modifier.height(6.dp))
                         val activeBackendModel = (prefs.getString("model_$backend", "") ?: "")
@@ -449,7 +473,11 @@ fun SettingsScreen(
                                             )
                                             .clickable {
                                                 backend = entry.id
-                                                prefs.edit().putString("local_proxy_backend", entry.id).apply()
+                                                provider = "local_proxy"
+                                                prefs.edit()
+                                                    .putString("local_proxy_backend", entry.id)
+                                                    .putString("provider", "local_proxy")
+                                                    .apply()
                                             }
                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                     ) {
