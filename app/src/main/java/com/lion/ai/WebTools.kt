@@ -244,7 +244,13 @@ object WebTools {
         }
     }
 
-    fun httpRequest(url: String, method: String = "GET", body: String = "", contentType: String = "application/json"): String {
+    fun httpRequest(
+        url: String,
+        method: String = "GET",
+        body: String = "",
+        contentType: String = "application/json",
+        headers: Map<String, String> = emptyMap()
+    ): String {
         validate(url)
         val verb = method.uppercase().let { if (it in setOf("GET", "POST", "PUT", "PATCH", "DELETE")) it else "GET" }
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -255,6 +261,7 @@ object WebTools {
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "LionAI/1.7 (Android)")
             setRequestProperty("Accept", "application/json,text/plain,*/*")
+            headers.forEach { (name, value) -> setRequestProperty(name, value) }
             if (body.isNotBlank()) {
                 doOutput = true
                 setRequestProperty("Content-Type", contentType)
@@ -271,6 +278,52 @@ object WebTools {
             return raw
         } finally {
             connection.disconnect()
+        }
+    }
+
+    /** فحص موقع/API قبل الربط: الحالة، الرؤوس الأمنية، وهل يحتاج مصادقة. */
+    fun probe(url: String): String {
+        validate(url)
+        var status = 0
+        var contentType = ""
+        var redirect: String? = null
+        val security = StringBuilder()
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "HEAD"
+            connectTimeout = 15_000
+            readTimeout = 20_000
+            useCaches = false
+            instanceFollowRedirects = false
+            setRequestProperty("User-Agent", "LionAI/1.7 (Android)")
+        }
+        try {
+            status = conn.responseCode
+            contentType = conn.contentType.orEmpty()
+            redirect = conn.getHeaderField("Location")
+            listOf(
+                "Strict-Transport-Security" to "HSTS",
+                "Content-Security-Policy" to "CSP",
+                "X-Frame-Options" to "X-Frame",
+                "X-Content-Type-Options" to "nosniff"
+            ).forEach { (header, label) ->
+                conn.getHeaderField(header)?.let { security.append("• $label: ").append(it.take(80)).append('\n') }
+            }
+        } finally {
+            conn.disconnect()
+        }
+        val authNote = when (status) {
+            401, 403 -> "🔐 يحتاج مصادقة (مفتاح/توكن)."
+            in 200..299 -> "✅ الوصول العام متاح."
+            301, 302, 303, 307, 308 -> "↪️ تحويل إلى: ${redirect ?: "غير معروف"}"
+            in 400..499 -> "⚠️ الطلب مرفوض (HTTP $status)."
+            else -> "⚠️ استجابة غير متوقعة (HTTP $status)."
+        }
+        return buildString {
+            append("HTTP ").append(status).append('\n')
+            append("النوع: ").append(contentType.ifBlank { "غير معروف" }).append('\n')
+            append(authNote).append('\n')
+            if (security.isNotBlank()) append("\nالرؤوس الأمنية:\n").append(security)
+            append("\nنصيحة: إن كان الموقع عاماً استخدم web_fetch، وإن كان API فاستخدم web_api أو موصلاً مخصصاً، ولا تضع المفتاح في الملفات.")
         }
     }
 

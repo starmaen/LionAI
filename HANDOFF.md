@@ -21,6 +21,15 @@ LionAI أصبح: أوضاع محادثة معزولة (GENERAL / CODE / LEARN) +
 - تحذير فوري تحت حقل Base URL أثناء الكتابة، وزر «اختبار الاتصال بالخادم» أصبح بعد حقل الرابط (بدل اختبار المفتاح).
 - اختبارات جديدة في `CustomProviderTest` (scheme + رفض روابط التوثيق).
 
+## مضاف في هذه الجولة (Function Calling + Firebase + أمن)
+- `LlmClient.askWithTools` + `callOpenAiTools`: أدوات `tools` أصلية لمزود `custom`، مع fallback تلقائي لبروتوكول النص.
+- `ToolAgent`: الخادم المحلي يحصل على **كل** مجموعات الأدوات، مع تعليمات function-calling مخصصة.
+- مجموعة أدوات `FIREBASE`: `firebase_status`, `firestore_get`, `firestore_query`, `firestore_set`, `storage_list` (REST، بلا SDK).
+- `secret_scan` (فحص أسرار قبل الدفع) و`site_probe` (فحص موقع/API قبل الربط).
+- إعدادات Firebase في «أدوات الذكاء والتطوير» (Project/API key/ID token/Bucket).
+- وثائق: `docs/PLAYBOOK.md` و`docs/CONNECTIONS.md`.
+- إصلاح اختبار: أرقام org.json قد تكون BigDecimal → استخدم `is Number`.
+
 ## قائمة الفحص المطلوبة (أرسل النتائج لكل بند)
 1. **مزود مخصص حقيقي**: شغّل LiteLLM أو Ollama (حاسوب/Termux) على نفس الشبكة، ثم:
    - Base URL مثل `http://192.168.1.5:4000/v1` (LiteLLM) أو `http://192.168.1.5:11434/v1` (Ollama).

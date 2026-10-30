@@ -627,6 +627,10 @@ private fun ToolManagerTab(
     var write by remember { mutableStateOf(prefs.getBoolean("agent_write", true)) }
     val token = (prefs.getString("github_token", "") ?: "").trim()
     val repo = (prefs.getString("github_default_repo", "") ?: "").trim()
+    var fbProject by remember { mutableStateOf(prefs.getString("firebase_project", "").orEmpty()) }
+    var fbKey by remember { mutableStateOf(prefs.getString("firebase_api_key", "").orEmpty()) }
+    var fbToken by remember { mutableStateOf(prefs.getString("firebase_id_token", "").orEmpty()) }
+    var fbBucket by remember { mutableStateOf(prefs.getString("firebase_bucket", "").orEmpty()) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
         Text("🧠 مدير الأدوات", color = T_GOLD, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -658,6 +662,55 @@ private fun ToolManagerTab(
         Text("حالة GitHub: " + if (token.isBlank()) "غير متصل ❌" else "متصل ✅", color = if (token.isBlank()) T_RED else T_GREEN)
         Text("المستودع الافتراضي: " + repo.ifBlank { "غير محدد" }, color = T_MUTED, fontSize = 12.sp)
         Text("مساحة العمل: " + FileTools.root(context).absolutePath, color = T_MUTED, fontSize = 11.sp)
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider(color = Color(0xFF2A2A2A))
+        Spacer(Modifier.height(10.dp))
+        Text("🔥 Firebase (REST)", color = T_GOLD, fontWeight = FontWeight.Bold)
+        Text(
+            "بدون SDK: Firestore وStorage عبر REST. الأمان في قواعد Firestore/Storage. اترك Token فارغاً إن كانت القواعد عامة للقراءة.",
+            color = T_MUTED,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        OutlinedTextField(
+            value = fbProject,
+            onValueChange = { fbProject = it; prefs.edit().putString("firebase_project", it.trim()).apply() },
+            label = { Text("Project ID", color = T_MUTED) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+            colors = toolFieldColors()
+        )
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = fbKey,
+            onValueChange = { fbKey = it; prefs.edit().putString("firebase_api_key", it.trim()).apply() },
+            label = { Text("Web API Key", color = T_MUTED) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+            colors = toolFieldColors()
+        )
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = fbBucket,
+            onValueChange = { fbBucket = it; prefs.edit().putString("firebase_bucket", it.trim()).apply() },
+            label = { Text("Storage Bucket (اختياري)", color = T_MUTED) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+            colors = toolFieldColors()
+        )
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = fbToken,
+            onValueChange = { fbToken = it; prefs.edit().putString("firebase_id_token", it.trim()).apply() },
+            label = { Text("ID Token (اختياري — للكتابة)", color = T_MUTED) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = TextStyle(color = Color.White, fontSize = 12.sp),
+            colors = toolFieldColors()
+        )
         Spacer(Modifier.height(10.dp))
         Text("الأدوات المتاحة", color = T_GOLD, fontWeight = FontWeight.Bold)
         listOf(
@@ -667,7 +720,9 @@ private fun ToolManagerTab(
             "🗄️ SQLite: استعلام/مخطط/JSON" to ToolGroup.DATABASE,
             "🔍 الكود: مقاييس/تعقيد/اعتماديات" to ToolGroup.CODE,
             "🧰 أدوات: JSON/Base64/Hash/Regex" to ToolGroup.UTIL,
-            "🔌 الموصلات: Drive/Gmail/Calendar/Notion/Slack" to ToolGroup.CONNECTORS
+            "🔌 الموصلات: Drive/Gmail/Calendar/Notion/Slack" to ToolGroup.CONNECTORS,
+            "🔥 Firebase: Firestore/Storage عبر REST" to ToolGroup.FIREBASE,
+            "🛡️ الأمان: فحص الأسرار + بوابات الجودة" to ToolGroup.QUALITY
         ).forEach { (label, _) ->
             Text("• $label", color = Color.White, fontSize = 12.sp)
         }

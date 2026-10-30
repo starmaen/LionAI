@@ -118,7 +118,8 @@ object ContextProfiles {
                 ToolGroup.CONTROL,
                 ToolGroup.MEMORY,
                 ToolGroup.MCP,
-                ToolGroup.META
+                ToolGroup.META,
+                ToolGroup.FIREBASE
             )
             if (AiTools.githubReady(prefs)) base.add(ToolGroup.GITHUB)
             val detected = runCatching { AiTools.groupsFor(text, prefs) }.getOrDefault(emptySet())

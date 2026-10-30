@@ -15,6 +15,7 @@ enum class ToolGroup(val id: String, val label: String, val icon: String) {
     WEB("web", "الويب", "🌐"),
     FILES("files", "الملفات", "📁"),
     DATABASE("database", "قواعد البيانات", "🗄️"),
+    FIREBASE("firebase", "Firebase", "🔥"),
     CODE("code", "محلل الكود", "🔍"),
     UTIL("util", "أدوات مساعدة", "🧰"),
     CONNECTORS("connectors", "الموصلات", "🔌"),
@@ -159,6 +160,15 @@ object AiTools {
         Def("db_import_json", ToolGroup.DATABASE, """{"db":"app","table":"items","json":"[{\\"name\\":\\"A\\"}]","replace":false}""", "استيراد JSON إلى جدول", true),
         Def("db_export_json", ToolGroup.DATABASE, """{"db":"app","table":"items"}""", "تصدير جدول JSON"),
         Def("db_delete", ToolGroup.DATABASE, """{"db":"old"}""", "حذف قاعدة بيانات", true),
+
+        // Firebase عبر REST (Firestore + Storage)
+        Def("firebase_status", ToolGroup.FIREBASE, "{}", "حالة إعداد Firebase (Project/API key/Token) دون كشف الأسرار"),
+        Def("firestore_get", ToolGroup.FIREBASE, """{"path":"users/uid"}""", "قراءة مستند Firestore"),
+        Def("firestore_query", ToolGroup.FIREBASE, """{"collection":"users","limit":20,"page_token":""}""", "سرد مستندات مجموعة Firestore"),
+        Def("firestore_set", ToolGroup.FIREBASE, """{"path":"users/uid","data":{"name":"A"},"merge":true}""", "كتابة/تحديث مستند Firestore", true),
+        Def("storage_list", ToolGroup.FIREBASE, """{"bucket":"my-app.appspot.com","prefix":"","limit":20}""", "سرد ملفات Firebase Storage"),
+        Def("secret_scan", ToolGroup.QUALITY, """{"path":""}""", "فحص مساحة العمل بحثاً عن مفاتيح/أسرار قبل الدفع"),
+        Def("site_probe", ToolGroup.WEB, """{"url":"https://example.com"}""", "فحص موقع/API: الحالة والرؤوس الأمنية ومتطلبات المصادقة")
 
         // Code
         Def("code_analyze", ToolGroup.CODE, """{"name":"Main.kt","code":"..."}""", "تحليل كود نصي: مقاييس/تعقيد/TODO/اعتماديات"),
@@ -628,7 +638,7 @@ object AiTools {
             val value = example.opt(key)
             val type = when (value) {
                 is Boolean -> "boolean"
-                is Int, is Long, is Double, is Float -> "number"
+                is Number -> "number"
                 is JSONArray -> "array"
                 is JSONObject -> "object"
                 else -> "string"
@@ -1409,6 +1419,45 @@ object AiTools {
                 val ok = DatabaseTools.delete(ctx.context, req(args, "db"))
                 if (ok) "✅ حُذفت قاعدة البيانات" else "لم توجد"
             }
+
+            "firebase_status" -> FirebaseTools.status(ctx.prefs)
+            "firestore_get" -> FirebaseTools.get(
+                ctx.prefs,
+                args.optString("project"),
+                req(args, "path"),
+                args.optString("token")
+            )
+            "firestore_query" -> FirebaseTools.query(
+                ctx.prefs,
+                args.optString("project"),
+                req(args, "collection"),
+                int(args, "limit", 20),
+                args.optString("page_token"),
+                args.optString("token")
+            )
+            "firestore_set" -> {
+                if (!ctx.allowWrite) throw IllegalArgumentException("الكتابة معطّلة. فعّل «السماح بالكتابة» أولاً.")
+                val data = runCatching { JSONObject(req(args, "data")) }.getOrElse {
+                    args.optJSONObject("data") ?: throw IllegalArgumentException("مرّر data ككائن JSON")
+                }
+                FirebaseTools.set(
+                    ctx.prefs,
+                    args.optString("project"),
+                    req(args, "path"),
+                    data,
+                    args.optBoolean("merge", true),
+                    args.optString("token")
+                )
+            }
+            "storage_list" -> FirebaseTools.storageList(
+                ctx.prefs,
+                args.optString("bucket"),
+                args.optString("prefix"),
+                int(args, "limit", 20),
+                args.optString("token")
+            )
+            "secret_scan" -> SecurityTools.scan(ctx.context, args.optString("path"))
+            "site_probe" -> WebTools.probe(req(args, "url"))
 
             "code_analyze" -> {
                 val name = args.optString("name", "code.txt")
