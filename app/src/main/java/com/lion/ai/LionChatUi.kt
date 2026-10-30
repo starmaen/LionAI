@@ -36,6 +36,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,6 +50,49 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+@Composable
+private fun TypingDots() {
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(320)
+            tick = (tick + 1) % 4
+        }
+    }
+    val frames = listOf("●  ○  ○", "○  ●  ○", "○  ○  ●", "○  ●  ○")
+    Text(frames[tick], color = Color(0xFFFFB800), fontSize = 14.sp, modifier = Modifier.padding(8.dp))
+}
+
+/** سجل عمل حي: الخطوات المنجزة (✅/❌) ثم الخطوة الجارية بنقاط متحركة. */
+@Composable
+private fun WorkLog(lines: List<String>) {
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            tick = (tick + 1) % 3
+        }
+    }
+    val dots = listOf("·", "··", "···")[tick]
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF1E1E1E),
+        modifier = Modifier.padding(8.dp).fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            lines.forEachIndexed { i, line ->
+                val last = i == lines.lastIndex
+                val done = line.startsWith("✅") || line.startsWith("❌")
+                Text(
+                    if (last && !done) "$line $dots" else line,
+                    color = if (last) Color(0xFFFFB800) else Color(0xFFB0B0B0),
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
 
 @Composable
 internal fun LionMessageList(
@@ -85,16 +134,8 @@ internal fun LionMessageList(
                     }
                     if (loading) {
                         item {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(8.dp)
-                            ) {
-                                Text(
-                                    progress ?: "... يفكر",
-                                    color = Color(0xFFB0B0B0),
-                                    fontSize = 13.sp
-                                )
-                            }
+                            val lines = (progress ?: "").split("\n").filter { it.isNotBlank() }
+                            if (lines.isEmpty()) TypingDots() else WorkLog(lines)
                         }
                     }
                 }

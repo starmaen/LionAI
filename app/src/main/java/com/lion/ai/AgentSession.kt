@@ -227,6 +227,10 @@ class AgentSession(val chatId: String) {
         if (lastTask.isNotBlank()) {
             builder.append("المهمة الأصلية: ").append(lastTask.take(500)).append('\n')
         }
+        builder.append(
+            if (completed) "الحالة: ✅ اكتملت آخر مهمة؛ الرسالة الحالية غالباً متابعة أو تعديل أو مهمة جديدة، فابنِ على الملفات المتغيرة أدناه.\n"
+            else "الحالة: ⏸ لم تكتمل؛ أكمل من آخر نقطة.\n"
+        )
         if (providers.isNotEmpty()) {
             builder.append("المزودات التي جُرّبت بالترتيب: ").append(providers.joinToString(" ← ")).append('\n')
         }

@@ -877,7 +877,7 @@ fun LionApp() {
             emptySet<ToolGroup>()
         }
         loadingChats[chatId] = true
-        toolStatus[chatId] = "🧠 أجهّز المهمة…"
+        toolStatus[chatId] = ""
         val session = AgentSessions.of(prefs, chatId)
         var agentComplete = true
         var agentAsked = false

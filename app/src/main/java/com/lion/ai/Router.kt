@@ -130,8 +130,26 @@ object SmartRouter {
     private val TRIVIAL_PHRASE = Regex(
         "(هل (انت|أنت) (هنا|موجود|متاح|جاهز)|(انت|أنت) هنا|^هل تعمل$|" +
             "بماذا يجب (ان|أن) تعمل|ماذا يجب (ان|أن) تفعل|ماذا تستطيع|ماذا يمكنك (ان|أن) تفعل|" +
-            "ما وظيفتك|ما دورك|ما (هي )?مهامك|كيف (أ|ا)?ستخدمك)"
+            "ما وظيفتك|ما دورك|ما (هي )?مهامك|كيف (أ|ا)?ستخدمك|"+
+            "كيف (ت|ا)?فكر|كيف (تعمل|تشتغل|تتعلم)|من (صنعك|طورك|برمجك|انشاك|صممك)|"+
+            "ما (هو )?(نموذجك|موديلك)|ماذا تفعل)"
     )
+
+    private val QUICK_START = Regex(
+        "^(ما|ماذا|من|كم|اين|لماذا|ليش|كيف|هل|what|who|how|why|where|is|are|do|does|can)(\\s|$)"
+    )
+    /** يستثني الأسماء والتواريخ والمناصب والأحداث الحالية: هذه تحتاج مصادر وتحققاً فلا تدخل المسار السريع. */
+    private val QUICK_EXCLUDE = Regex(
+        "(من هو|من هي|متي|تاريخ|سنه|عام\\s|ميلاد|وفاه|رئيس|ملك|وزير|حكوم|الان|حاليا|اليوم|الحالي|احدث|اخر|" +
+            "اسعار|سعر|فيلم|مسلسل|اغنيه|اغاني|ممثل|فنان|دستور|قانون|معاهده|وثيقه|اتفاقيه|\\d{4}|http|www\\.)"
+    )
+
+    /** سؤال عام قصير ومستقر (تعريف/رقم/عاصمة...): يُجاب فوراً بلا بحث ويب ولا تحقق ولا تفكير طويل. */
+    fun isQuickQuestion(text: String): Boolean {
+        if (text.length > 60 || text.contains('\n')) return false
+        val t = TextNorm.forMatch(text).trim()
+        return QUICK_START.containsMatchIn(t) && !QUICK_EXCLUDE.containsMatchIn(t)
+    }
 
     /** هل النص مجاملة/سؤال سطحي قصير يستحق رداً فورياً دون تفكير عميق؟ */
     fun isSmallTalk(text: String): Boolean {
@@ -156,6 +174,7 @@ object SmartRouter {
         if (CODE_WORDS.containsMatchIn(t)) return TaskKind.CODE
         if (REASONING_WORDS.containsMatchIn(t) || MATH_EXPR.containsMatchIn(t)) return TaskKind.REASONING
         if (WRITING_WORDS.containsMatchIn(t)) return TaskKind.WRITING
+        if (attachmentChars == 0 && !CURRENT_WORDS.containsMatchIn(t) && isQuickQuestion(text)) return TaskKind.FAST
         if (FACT_WORDS.containsMatchIn(t) || CURRENT_WORDS.containsMatchIn(t)) return TaskKind.FACTUAL
         return TaskKind.GENERAL
     }

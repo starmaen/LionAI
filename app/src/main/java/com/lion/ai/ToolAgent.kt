@@ -53,6 +53,8 @@ object ToolAgent {
         - إذا فشلت أداة، اقرأ الخطأ، صحّح المدخلات، وأعد المحاولة مرة أو مرتين ثم اشرح العائق.
         - لديك وصول حقيقي إلى GitHub وGoogle Drive وGmail عبر الأدوات المذكورة في نهاية هذه التعليمات. لا تعتذر عن عدم القدرة على الوصول قبل استدعاء الأداة المناسبة، وإذا كان التوكن ناقصاً فاشرح للمستخدم من أين يضيفه.
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
+        - عند الانتهاء قدّم ملخصاً واضحاً بالعربية: ما أُنجز فعلاً، الملفات التي قرأتها/عدّلتها، نتيجة التحقق، وما لم يُنجز مع الخطوة التالية. لا تكتفِ بكلمات قليلة.
+        - إن لم تنتهِ المهمة فقل ذلك صراحةً وحدّد ما تبقى، ولا تُوحِ بأنها اكتملت.
         - إن كنت تعمل داخل «جلسة عمل مستمرة» فأنت تكمل مهمة بدأها مزود آخر؛ لا تكرر الخطوات الناجحة، وافحص الحالة الحالية أولاً.
 
         التفاعل مع المستخدم (مهم):
@@ -157,16 +159,52 @@ object ToolAgent {
         val deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
 
         val maxSteps = if (chatMode == ChatMode.CODE) MAX_STEPS else 6
+        // سجل العمل الحي: يظهر في الواجهة (✅ منجز / ❌ فشل / خطوة جارية) ويُلخَّص في تقرير نهائي ثابت لا يعتمد على النموذج.
+        val workLog = mutableListOf<String>()
+        val readFiles = LinkedHashSet<String>()
+        val writtenFiles = LinkedHashSet<String>()
+        val failedSteps = mutableListOf<String>()
+        var okCount = 0
+        var failCount = 0
+        fun publish(active: String?) {
+            onProgress?.invoke((workLog.takeLast(5) + listOfNotNull(active?.let { "⏳ $it" })).joinToString("\n"))
+        }
+        fun statusReport(complete: Boolean, why: String): String {
+            val sb = StringBuilder("\n\n——\n📋 تقرير التنفيذ\n")
+            if (complete) {
+                sb.append("• الحالة: ✅ اكتملت المهمة\n")
+            } else {
+                sb.append("• الحالة: ⏸ لم تكتمل").append(if (why.isNotBlank()) " — $why" else "").append('\n')
+                sb.append("• للمتابعة: اكتب «أكمل» وسأتابع من نفس النقطة دون إعادة ما تم.\n")
+            }
+            sb.append("• الأدوات: ").append(okCount + failCount).append(" (✅ ").append(okCount)
+            if (failCount > 0) sb.append(" · ❌ ").append(failCount)
+            sb.append(")\n")
+            if (readFiles.isNotEmpty()) {
+                sb.append("• قُرئ: ").append(readFiles.take(6).joinToString("، "))
+                if (readFiles.size > 6) sb.append(" …(+").append(readFiles.size - 6).append(")")
+                sb.append('\n')
+            }
+            if (writtenFiles.isNotEmpty()) {
+                sb.append("• عُدّل/أُنشئ: ").append(writtenFiles.take(8).joinToString("، "))
+                if (writtenFiles.size > 8) sb.append(" …(+").append(writtenFiles.size - 8).append(")")
+                sb.append('\n')
+            }
+            if (failedSteps.isNotEmpty()) sb.append("• أخطاء: ").append(failedSteps.takeLast(3).joinToString("، ")).append('\n')
+            sb.append("• المزود: ").append(label)
+            return sb.toString()
+        }
+        fun finish(text: String, complete: Boolean, why: String = ""): Result =
+            Result(if (used.isEmpty()) text else text + statusReport(complete, why), used, complete)
         for (step in 0 until maxSteps) {
             if (System.currentTimeMillis() > deadline) {
                 session?.recordNote("انتهى وقت التنفيذ قبل اكتمال المهمة")
-                return Result(
+                return finish(
                     "⚠️ انتهى وقت تنفيذ الأدوات قبل اكتمال المهمة. آخر ملاحظات:\n\n" + current.take(3000),
-                    used,
-                    complete = false
+                    false, "انتهى الوقت المسموح"
                 )
             }
-            onProgress?.invoke("🧠 $label يخطط للخطوة ${step + 1}…")
+            publish("🧠 $label يخطط للخطوة ${step + 1}")
             val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, 90_000L).toInt()
             val toolTurn = if (nativeTools != null && nativeTools.length() > 0) {
                 LlmClient.askWithTools(
@@ -198,11 +236,10 @@ object ToolAgent {
             if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
                 session?.providerFailed(label, reply)
                 val progress = session?.contextBlock(2200).orEmpty()
-                return Result(
+                return finish(
                     reply + if (progress.isBlank()) "" else
                         "\n\n♻️ حُفظ تقدّم المهمة، وسيكملها المزود التالي من نفس النقطة.",
-                    used,
-                    complete = false
+                    false, "تعذّر المزود الحالي"
                 )
             }
 
@@ -241,10 +278,9 @@ object ToolAgent {
                         continue
                     }
                     if (!report.ok) {
-                        return Result(
+                        return finish(
                             reply + "\n\n⛔ لم أعلن الاكتمال لأن البوابة رفضت:\n" + report.text(),
-                            used,
-                            complete = false
+                            false, "بوابة الجودة رفضت الإنهاء"
                         )
                     }
                 }
@@ -277,10 +313,9 @@ object ToolAgent {
                     session?.markCompleted()
                     session?.let { CheckpointStore.save(prefs, it) }
                 }
-                return Result(
+                return finish(
                     answer + if (lastGateText.isNotBlank() && lastGateOk) "\n\n——\n✅ بوابة الجودة: " + lastGateText.lineSequence().firstOrNull().orEmpty() else "",
-                    used,
-                    complete = true
+                    true
                 )
             }
 
@@ -293,11 +328,10 @@ object ToolAgent {
             }
             if (repeated >= 2) {
                 session?.recordNote("توقفت الأدوات لتكرار نفس الاستدعاء دون تقدّم")
-                return Result(
+                return finish(
                     "⚠️ توقفت لأن الأداة تكرّرت بنفس المدخلات ثلاث مرات دون تقدّم.\nآخر نتيجة:\n\n" +
                         current.take(3000),
-                    used,
-                    complete = false
+                    false, "تكرار نفس الاستدعاء دون تقدّم"
                 )
             }
 
@@ -306,10 +340,25 @@ object ToolAgent {
             historyBuffer.add(ChatTurn("assistant", assistantText))
 
             val observations = calls.map { call ->
-                onProgress?.invoke("🛠️ " + call.name.removePrefix("github_").replace('_', ' '))
+                val path = call.args.optString("path").ifBlank { call.args.optString("from") }
+                val target = path.ifBlank {
+                    call.args.optString("query").ifBlank { call.args.optString("url").ifBlank { call.args.optString("command") } }
+                }.replace('\n', ' ').takeLast(48)
+                val desc = call.name.removePrefix("github_").replace('_', ' ') + if (target.isBlank()) "" else " ← $target"
+                publish("🛠️ $desc")
                 used.add(call.name.removePrefix("github_"))
                 val result = AiTools.execute(toolContext, call)
-                val path = call.args.optString("path").ifBlank { call.args.optString("from") }
+                workLog.add((if (result.ok) "✅ " else "❌ ") + desc)
+                if (result.ok) {
+                    okCount++
+                    if (path.isNotBlank()) {
+                        if (call.name in GATE_WRITE_TOOLS) writtenFiles.add(path.takeLast(60)) else readFiles.add(path.takeLast(60))
+                    }
+                } else {
+                    failCount++
+                    failedSteps.add(call.name.removePrefix("github_") + if (target.isBlank()) "" else " ($target)")
+                }
+                publish(null)
                 session?.recordTool(call.name, result.ok, result.output, path)
                 "${if (result.ok) "✅" else "❌"} ${call.name}\n${result.output}"
             }
@@ -331,12 +380,11 @@ object ToolAgent {
         }
 
         session?.recordNote("وصل الوكيل للحد الأقصى من الخطوات دون إنهاء")
-        return Result(
+        return finish(
             "⚠️ وصلت إلى الحد الأقصى ($maxSteps خطوات) قبل إنهاء المهمة.\n" +
                 "آخر نتيجة أدوات:\n\n" + current.take(3000) +
                 "\n\nيمكنك أن تطلب مني المتابعة أو تحديد خطوة أصغر.",
-            used,
-            complete = false
+            false, "بلغت حد الخطوات ($maxSteps)"
         )
     }
 
@@ -356,7 +404,6 @@ object ToolAgent {
             .replace(ASK_ALT, "")
             .trim()
         if (used.isEmpty()) return clean.ifBlank { "لم أجد حاجة لاستخدام أدوات." }
-        val listing = used.distinct().joinToString("، ")
-        return clean.ifBlank { "✅ اكتملت العملية." } + "\n\n——\n🛠️ الأدوات المستخدمة: $listing"
+        return clean.ifBlank { "✅ اكتملت العملية." }
     }
 }
