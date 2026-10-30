@@ -612,7 +612,7 @@ object AiTools {
     fun toolchainReport(ctx: ToolContext): String = buildString {
         append("حالة الأدوات على الجهاز/الخادم:\n")
         TOOLCHAIN.forEach { (binary, label) ->
-            append(if (ShellTools.which(ctx.context, binary)) "✅ " else "❌ ")
+            append(if (ShellTools.available(ctx.context, binary)) "✅ " else "❌ ")
                 .append(label).append(" (").append(binary).append(")\n")
         }
         append("\nللتحميل: استخدم toolchain_install باسم الحزمة (git/python/node/java/gradle/curl/jq/unzip/ffmpeg...).")
@@ -734,14 +734,6 @@ object AiTools {
 
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
-        if (ctx.mode != ChatMode.CODE) {
-            return ToolResult(
-                call.name,
-                "⛔ منع عزل السياق: الأدوات لا تعمل في وضع ${ctx.mode.label}. " +
-                    "ارقِ المحادثة صراحةً إلى «هندسة وبرمجة» أولاً.",
-                false
-            )
-        }
         if (def.write && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
         }

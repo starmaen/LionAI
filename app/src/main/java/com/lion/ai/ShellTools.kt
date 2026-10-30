@@ -235,7 +235,7 @@ object ShellTools {
     }
 
     /** هل الأداة موجودة على الجهاز/الخادم؟ (بلا صدفة مفتوحة) */
-    fun which(context: Context, name: String): Boolean {
+    fun available(context: Context, name: String): Boolean {
         val safe = name.trim().filter { it.isLetterOrDigit() || it in "._-" }
         if (safe.isBlank()) return false
         return try {
@@ -250,7 +250,7 @@ object ShellTools {
     }
 
     fun installedPackages(context: Context): Map<String, Boolean> =
-        PACKAGES.keys.associateWith { which(context, it) }
+        PACKAGES.keys.associateWith { available(context, it) }
 
     /** تثبيت حزمة من قائمة بيضاء عبر مدير الحزم المتاح (pkg/apt-get). */
     fun install(context: Context, packageName: String, timeoutSec: Int = 600): ShellResult {
@@ -262,11 +262,11 @@ object ShellTools {
                 126,
                 0
             )
-        if (which(context, key)) return ShellResult(true, "✅ $key مثبتة بالفعل.", 0, 0)
+        if (available(context, key)) return ShellResult(true, "✅ $key مثبتة بالفعل.", 0, 0)
         val manager = when {
-            which(context, "pkg") -> "pkg"
-            which(context, "apt-get") -> "apt-get"
-            which(context, "apt") -> "apt"
+            available(context, "pkg") -> "pkg"
+            available(context, "apt-get") -> "apt-get"
+            available(context, "apt") -> "apt"
             else -> ""
         }
         if (manager.isBlank()) {
