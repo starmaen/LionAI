@@ -142,6 +142,7 @@ object AiTools {
         Def("file_mkdir", ToolGroup.FILES, """{"path":"src"}""", "إنشاء مجلد", true),
         Def("file_zip_list", ToolGroup.FILES, """{"path":"project.zip"}""", "محتويات أرشيف ZIP"),
         Def("file_zip_read", ToolGroup.FILES, """{"path":"project.zip","entry":"README.md"}""", "قراءة مدخل من ZIP"),
+        Def("file_present", ToolGroup.FILES, """{"path":"dist/app.zip"}""", "تسليم ملف أو مجلد للمستخدم كبطاقة تنزيل في الشات (المجلد يُضغط ZIP تلقائياً). استدعِها بعد إنشاء أي ملف مطلوب"),
         Def("file_zip_create", ToolGroup.FILES, """{"target":"project.zip","sources":["src","README.md"]}""", "إنشاء ZIP", true),
         Def("file_unzip", ToolGroup.FILES, """{"path":"project.zip","target":"project","overwrite":false}""", "فك ضغط ZIP داخل مساحة العمل", true),
         Def("file_append", ToolGroup.FILES, """{"path":"notes.txt","content":"..."}""", "إضافة نص إلى نهاية ملف", true),
@@ -378,7 +379,7 @@ object AiTools {
         if (web.containsMatchIn(t)) groups.add(ToolGroup.WEB)
         val files = Regex(
             "(\\.zip\\b|\\.csv\\b|\\.json\\b|\\.ya?ml\\b|\\.xml\\b|\\.txt\\b|\\.kt\\b|\\.java\\b|\\.py\\b|\\.js\\b|" +
-                "ملف|ملفات|مجلد|مشروع|مساحة العمل|workspace|zip|أرشيف|ارشيف|csv|yaml|xml|احفظ|أحفظ|اكتب ملف|أنشئ ملف|انشئ ملف|اقرأ ملف|قراءة ملف|" +
+                "ملف|ملفات|مجلد|مشروع|مساحة العمل|workspace|zip|ضغط|للتنزيل|للتحميل|pdf|docx|xlsx|أرشيف|ارشيف|csv|yaml|xml|احفظ|أحفظ|اكتب ملف|أنشئ ملف|انشئ ملف|اقرأ ملف|قراءة ملف|" +
                 "ابحث في الملفات|ابحث في المشروع|بحث في الملفات|بحث في الكود|grep|فك الضغط|فك ضغط|استخرج الملفات|استخراج الملفات|" +
                 "شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين|patch|تعديل ملف|احذف ملف)"
         )
@@ -1379,6 +1380,19 @@ object AiTools {
                 }.orEmpty()
                 val entry = FileTools.zipCreate(ctx.context, req(args, "target"), sources)
                 "✅ أُنشئ ${entry.path} (${entry.size} بايت)"
+            }
+            "file_present" -> {
+                val path = req(args, "path")
+                val target = resolveWorkspace(ctx, path)
+                if (!target.exists()) throw IllegalArgumentException("غير موجود: $path")
+                val rel = FileTools.relative(ctx.context, target)
+                if (rel.isBlank() || rel == ".") throw IllegalArgumentException("حدّد ملفاً أو مجلداً فرعياً محدداً")
+                val deliver = if (target.isDirectory) {
+                    FileTools.zipCreate(ctx.context, "deliverables/" + target.name + ".zip", listOf(rel)).path
+                } else {
+                    rel
+                }
+                "✅ جاهز للتنزيل: $deliver\n" + FileDelivery.marker(deliver)
             }
             "file_unzip" -> {
                 val count = FileTools.extractZip(

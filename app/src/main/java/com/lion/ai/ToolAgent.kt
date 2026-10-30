@@ -53,6 +53,7 @@ object ToolAgent {
         - إذا فشلت أداة، اقرأ الخطأ، صحّح المدخلات، وأعد المحاولة مرة أو مرتين ثم اشرح العائق.
         - لديك وصول حقيقي إلى GitHub وGoogle Drive وGmail عبر الأدوات المذكورة في نهاية هذه التعليمات. لا تعتذر عن عدم القدرة على الوصول قبل استدعاء الأداة المناسبة، وإذا كان التوكن ناقصاً فاشرح للمستخدم من أين يضيفه.
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
+        - عندما يطلب المستخدم ملفاً أو مجلداً أو ZIP: أنشئه بأدوات الملفات (file_write ثم file_zip_create عند الحاجة) ثم استدعِ file_present لتسليمه كبطاقة تنزيل، ولا تلصق محتوى الملف الكبير في الرد. أما المقاطع القصيرة فضعها في كتلة كود قابلة للنسخ.
         - عند الانتهاء قدّم ملخصاً واضحاً بالعربية: ما أُنجز فعلاً، الملفات التي قرأتها/عدّلتها، نتيجة التحقق، وما لم يُنجز مع الخطوة التالية. لا تكتفِ بكلمات قليلة.
         - إن لم تنتهِ المهمة فقل ذلك صراحةً وحدّد ما تبقى، ولا تُوحِ بأنها اكتملت.
         - إن كنت تعمل داخل «جلسة عمل مستمرة» فأنت تكمل مهمة بدأها مزود آخر؛ لا تكرر الخطوات الناجحة، وافحص الحالة الحالية أولاً.
@@ -164,6 +165,7 @@ object ToolAgent {
         val readFiles = LinkedHashSet<String>()
         val writtenFiles = LinkedHashSet<String>()
         val failedSteps = mutableListOf<String>()
+        val presented = LinkedHashSet<String>()
         var okCount = 0
         var failCount = 0
         fun publish(active: String?) {
@@ -194,8 +196,10 @@ object ToolAgent {
             sb.append("• المزود: ").append(label)
             return sb.toString()
         }
-        fun finish(text: String, complete: Boolean, why: String = ""): Result =
-            Result(if (used.isEmpty()) text else text + statusReport(complete, why), used, complete)
+        fun finish(text: String, complete: Boolean, why: String = ""): Result {
+            val cards = if (presented.isEmpty()) "" else "\n\n" + presented.joinToString("\n") { FileDelivery.marker(it) }
+            return Result(if (used.isEmpty()) text else text + statusReport(complete, why) + cards, used, complete)
+        }
         for (step in 0 until maxSteps) {
             if (System.currentTimeMillis() > deadline) {
                 session?.recordNote("انتهى وقت التنفيذ قبل اكتمال المهمة")
@@ -349,6 +353,12 @@ object ToolAgent {
                 used.add(call.name.removePrefix("github_"))
                 val result = AiTools.execute(toolContext, call)
                 workLog.add((if (result.ok) "✅ " else "❌ ") + desc)
+                if (result.ok && call.name == "file_present") {
+                    FileDelivery.paths(result.output).forEach { presented.add(it) }
+                }
+                if (result.ok && call.name == "file_zip_create") {
+                    call.args.optString("target").trim().takeIf { it.isNotBlank() }?.let { presented.add(it) }
+                }
                 if (result.ok) {
                     okCount++
                     if (path.isNotBlank()) {

@@ -49,6 +49,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -243,6 +250,13 @@ private fun removeCodeBlocks(text: String): String {
 }
 
 @Composable
+private fun ActionIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(34.dp)) {
+        Icon(icon, contentDescription = description, tint = Color(0xFF8A8A8A), modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
 fun Bubble(
     message: Message,
     context: Context,
@@ -259,24 +273,21 @@ fun Bubble(
     ) {
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = if (message.isUser) Color(0xFFFFB800) else Color(0xFF2A2A2A)
+                containerColor = if (message.isUser) Color(0xFF2B2B2B) else Color.Transparent
             ),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.widthIn(max = 320.dp)
+            shape = RoundedCornerShape(if (message.isUser) 18.dp else 0.dp),
+            modifier = (if (message.isUser) Modifier.widthIn(max = 300.dp) else Modifier.fillMaxWidth())
+                .pointerInput(message.text) {
+                    detectTapGestures(onLongPress = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Lion AI", FileDelivery.strip(message.text)))
+                    })
+                }
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                // عرض الأكواد في صناديق منفصلة
-                val codeBlocks = if (!message.isUser) extractCodeBlocks(message.text) else emptyList()
+            Column(modifier = Modifier.padding(if (message.isUser) 12.dp else 4.dp)) {
                 val links = if (!message.isUser) extractLinks(message.text) else emptyList()
-                val cleanText = if (!message.isUser) removeCodeBlocks(message.text).trim() else message.text
-                val displayText = if (!message.isUser) AnswerGuard.sanitizeForDisplay(cleanText) else cleanText
-                
-                if (displayText.isNotEmpty()) {
-                    Text(
-                        displayText,
-                        color = if (message.isUser) Color(0xFF0D0D0D) else Color.White,
-                        fontSize = 15.sp
-                    )
+                if (message.text.isNotBlank()) {
+                    MessageContent(message.text, message.isUser, context)
                 }
 
                 if (message.replyTo?.isNotBlank() == true) {
@@ -289,56 +300,6 @@ fun Bubble(
                     )
                 }
 
-                if (message.isUser && message.text.isNotEmpty()) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Spacer(Modifier.weight(1f))
-                        TextButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("سؤال المستخدم", message.text))
-                            },
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("📋 نسخ السؤال", color = Color(0xFF0D0D0D), fontSize = 10.sp)
-                        }
-                    }
-                }
-                
-                // عرض كل كتلة كود في صندوق منفصل مع زر نسخ
-                codeBlocks.forEach { (lang, code) ->
-                    Spacer(Modifier.height(8.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("📝 $lang", color = Color(0xFFFFB800), fontSize = 11.sp)
-                                TextButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
-                                    },
-                                    contentPadding = PaddingValues(0.dp)
-                                ) {
-                                    Text("📋 نسخ", color = Color(0xFFFFB800), fontSize = 10.sp)
-                                }
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                code,
-                                color = Color(0xFFB0B0B0),
-                                fontSize = 12.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState())
-                            )
-                        }
-                    }
-                }
-                
                 // عرض الروابط في بطاقات منفصلة
                 if (links.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
@@ -509,39 +470,20 @@ fun Bubble(
                     }
                 }
                 if (!message.isUser) {
-                    Spacer(Modifier.height(8.dp))
-                    Row {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ActionIcon(Icons.Filled.ContentCopy, "نسخ") {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Lion AI", FileDelivery.strip(message.text)))
+                        }
                         if (canRegenerate) {
-                            TextButton(onClick = onRegenerate) {
-                                Text("🔄 إعادة", color = Color(0xFFFFB800), fontSize = 12.sp)
-                            }
+                            ActionIcon(Icons.Filled.Refresh, "إعادة", onRegenerate)
                         }
-                        TextButton(onClick = onReply) {
-                            Text("↩ رد على هذا الرد", color = Color(0xFFFFB800), fontSize = 12.sp)
+                        ActionIcon(Icons.AutoMirrored.Filled.Reply, "رد على هذا الرد", onReply)
+                        ActionIcon(Icons.AutoMirrored.Filled.VolumeUp, "استماع") {
+                            tts?.speak(FileDelivery.strip(message.text).take(500), TextToSpeech.QUEUE_FLUSH, null, null)
                         }
-                        TextButton(onClick = {
-                            val clipboard = context.getSystemService(
-                                Context.CLIPBOARD_SERVICE
-                            ) as ClipboardManager
-                            clipboard.setPrimaryClip(
-                                ClipData.newPlainText("Lion AI", message.text)
-                            )
-                        }) {
-                            Text("📋 نسخ", color = Color(0xFFFFB800), fontSize = 12.sp)
-                        }
-                        TextButton(onClick = {
-                            tts?.speak(
-                                message.text.take(500),
-                                TextToSpeech.QUEUE_FLUSH,
-                                null,
-                                null
-                            )
-                        }) {
-                            Text("🔊 استماع", color = Color(0xFFFFB800), fontSize = 12.sp)
-                        }
-                        TextButton(onClick = { tts?.stop() }) {
-                            Text("⏹ إيقاف", color = Color(0xFFFFB800), fontSize = 12.sp)
-                        }
+                        ActionIcon(Icons.Filled.Stop, "إيقاف") { tts?.stop() }
                     }
                 }
             }
