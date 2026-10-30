@@ -223,30 +223,38 @@ fun ProviderCard(
                     )
                 }
 
-                // زر الاختبار تحت المفتاح مباشرة
-                TextButton(
-                    enabled = !testing,
-                    onClick = {
-                        testing = true
-                        testStatus = "⏳ أختبر المفتاح..."
-                        val key = keys[id].orEmpty()
-                        val model = models[id].orEmpty()
-                        val account = accountId
-                        // نحفظ العنوان الوسيط الحالي مؤقتاً ليشمله الاختبار
-                        LlmClient.endpointOverrides = LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
-                        scope.launch {
-                            val reply = withContext(Dispatchers.IO) {
-                                LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, id, emptyList(), model, account)
-                            }
-                            testStatus = if (LlmClient.isErrorReply(reply)) reply else "✅ المفتاح والموديل يعملان. الرد: " + reply.take(80)
-                            testing = false
+                fun testProvider() {
+                    val key = keys[id].orEmpty()
+                    val model = models[id].orEmpty().ifBlank { info.defaultModel }
+                    val account = accountId
+                    // نحفظ العنوان الوسيط/المخصص الحالي مؤقتاً ليشمله الاختبار
+                    LlmClient.endpointOverrides =
+                        LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
+                    scope.launch {
+                        val reply = withContext(Dispatchers.IO) {
+                            LlmClient.ask("أجب بكلمة واحدة فقط: تم", key, id, emptyList(), model, account)
                         }
+                        testStatus = if (LlmClient.isErrorReply(reply)) reply
+                        else "✅ المفتاح والموديل يعملان. الرد: " + reply.take(80)
+                        testing = false
                     }
-                ) {
-                    Text("🧪 اختبار المفتاح والموديل", color = Amber, fontSize = 12.sp)
                 }
-                if (testStatus.isNotBlank()) {
-                    Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+
+                // زر الاختبار تحت المفتاح مباشرة (للمخصص يظهر بعد حقل Base URL)
+                if (id != "custom") {
+                    TextButton(
+                        enabled = !testing,
+                        onClick = {
+                            testing = true
+                            testStatus = "⏳ أختبر المفتاح..."
+                            testProvider()
+                        }
+                    ) {
+                        Text("🧪 اختبار المفتاح والموديل", color = Amber, fontSize = 12.sp)
+                    }
+                    if (testStatus.isNotBlank()) {
+                        Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -306,24 +314,30 @@ fun ProviderCard(
                 TextButton(
                     enabled = !refreshing,
                     onClick = {
-                        refreshing = true
-                        modelStatus = "⏳ جارٍ جلب القائمة..."
-                        val key = keys[id].orEmpty().trim()
-                        val account = accountId.trim()
-                        LlmClient.endpointOverrides = LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching { LlmClient.listModels(id, key, account) }
+                        val problem = if (id == "custom") LlmClient.customUrlProblem(endpoints[id].orEmpty()) else null
+                        if (problem != null) {
+                            modelStatus = "⚠️ $problem"
+                        } else {
+                            refreshing = true
+                            modelStatus = "⏳ جارٍ جلب القائمة..."
+                            val key = keys[id].orEmpty().trim()
+                            val account = accountId.trim()
+                            LlmClient.endpointOverrides =
+                                LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching { LlmClient.listModels(id, key, account) }
+                                }
+                                val list = result.getOrNull()
+                                if (!list.isNullOrEmpty()) {
+                                    modelCache[id] = list
+                                    ModelCatalog.saveCache(prefs, id, list)
+                                    modelStatus = "✅ تم جلب ${list.size} موديل. افتح القائمة ▼ للاختيار."
+                                } else {
+                                    modelStatus = "⚠️ " + (result.exceptionOrNull()?.message ?: "لم يتم العثور على موديلات")
+                                }
+                                refreshing = false
                             }
-                            val list = result.getOrNull()
-                            if (!list.isNullOrEmpty()) {
-                                modelCache[id] = list
-                                ModelCatalog.saveCache(prefs, id, list)
-                                modelStatus = "✅ تم جلب ${list.size} موديل. افتح القائمة ▼ للاختيار."
-                            } else {
-                                modelStatus = "⚠️ " + (result.exceptionOrNull()?.message ?: "لم يتم العثور على موديلات")
-                            }
-                            refreshing = false
                         }
                     }
                 ) {
@@ -367,6 +381,26 @@ fun ProviderCard(
                         color = Color(0xFF9A9A9A),
                         fontSize = 11.sp
                     )
+                    if (info.custom) {
+                        val typed = endpoints[id].orEmpty()
+                        val problem = if (typed.isBlank()) null else LlmClient.customUrlProblem(typed)
+                        if (problem != null) {
+                            Text("⚠️ $problem", color = Color(0xFFFFB300), fontSize = 11.sp)
+                        }
+                        TextButton(
+                            enabled = !testing,
+                            onClick = {
+                                testing = true
+                                testStatus = "⏳ أختبر الاتصال بالخادم..."
+                                testProvider()
+                            }
+                        ) {
+                            Text("🧪 اختبار الاتصال بالخادم", color = Amber, fontSize = 12.sp)
+                        }
+                        if (testStatus.isNotBlank()) {
+                            Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                        }
+                    }
                 }
 
                 if (info.modelHint.isNotBlank()) {

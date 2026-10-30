@@ -78,10 +78,41 @@ object LlmClient {
     internal fun normalizeCustomUrl(raw: String): String {
         var url = raw.trim().trimEnd('/')
         if (url.isBlank()) return ""
+        if (!url.contains("://")) {
+            val host = url.substringBefore('/').substringBefore(':').lowercase()
+            val second172 = host.split('.').getOrNull(1)?.toIntOrNull() ?: -1
+            val private = host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2" ||
+                host.startsWith("192.168.") || host.startsWith("10.") ||
+                (host.startsWith("172.") && second172 in 16..31)
+            url = (if (private) "http://" else "https://") + url
+        }
         if (url.endsWith("/chat/completions")) return url
         if (url.endsWith("/models")) return url.removeSuffix("/models") + "/chat/completions"
         if (url.endsWith("/v1")) return "$url/chat/completions"
         return "$url/v1/chat/completions"
+    }
+
+    /**
+     * يشرح سبب رفض Base URL المخصص، أو null إذا كان صالحًا.
+     * أهم حالة: المستخدم يلصق رابط التوثيق (docs.litellm.ai) بدل خادمه.
+     */
+    internal fun customUrlProblem(raw: String): String? {
+        val url = raw.trim()
+        if (url.isBlank()) {
+            return "أدخل Base URL لخادمك، مثل http://192.168.1.10:4000/v1 (LiteLLM) أو http://192.168.1.10:11434/v1 (Ollama)."
+        }
+        val lower = url.lowercase()
+        val docsHosts = listOf(
+            "docs.litellm.ai", "litellm.ai/docs", "github.com", "ollama.com/library",
+            "openrouter.ai/docs", "platform.openai.com/docs", ".html", "/docs"
+        )
+        if (docsHosts.any { lower.contains(it) }) {
+            return "هذا رابط توثيق وليس خادمًا. المزود المخصص يتصل بخادم OpenAI-Compatible تشغّله أنت (LiteLLM/Ollama) أو بوابة جاهزة. بدون خادم استخدم Gemini أو OpenRouter من قائمة المزودات أعلاه."
+        }
+        if (!isSafeEndpoint(normalizeCustomUrl(url))) {
+            return "رابط غير مقبول: استخدم https:// للخوادم العامة، أو http:// لعنوان محلي (localhost / 192.168 / 10.x / 172.16-31)."
+        }
+        return null
     }
 
     private fun openCodeId(prefix: String): String =
@@ -225,9 +256,10 @@ object LlmClient {
                     }
                 }
                 "custom" -> {
-                    val raw = endpoint("custom", "")
-                    if (raw.isBlank()) {
-                        "⚠️ لم يُضبط مزود مخصص بعد. افتح الإعدادات ← المزودات الأساسية ← «مخصص»، وأدخل Base URL لخادم LiteLLM/Ollama/OpenAI-Compatible."
+                    val raw = endpointOverrides["custom"]?.trim().orEmpty()
+                    val problem = customUrlProblem(raw)
+                    if (problem != null) {
+                        "⚠️ $problem"
                     } else {
                         callOpenAiCompatible(
                             normalizeCustomUrl(raw), apiKey, model, turns, message,

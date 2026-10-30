@@ -56,7 +56,7 @@ val PROVIDERS = listOf(
         shortName = "مخصص",
         keyless = true,
         custom = true,
-        modelHint = "أدخل Base URL مثل http://192.168.1.5:4000/v1 أو الرابط الكامل .../v1/chat/completions. المفتاح اختياري (اتركه فارغاً للبوابات المحلية). اكتب اسم الموديل كما يعرّفه خادمك، وزر «تحديث» يجلب /models إن كان مدعوماً.",
+        modelHint = "لا تلصق رابط التوثيق (docs.litellm.ai)! هذا الحقل يريد خادمًا شغّالًا: LiteLLM أو Ollama على حاسوبك/شبكتك، أو بوابة OpenAI-Compatible جاهزة. مثال: http://192.168.1.5:4000/v1 أو http://192.168.1.5:11434/v1. المفتاح اختياري (اتركه فارغاً للبوابات المحلية). اكتب اسم الموديل كما يعرّفه خادمك، وزر «تحديث» يجلب /models إن كان مدعوماً. بدون خادم، استخدم Gemini أو OpenRouter.",
         models = emptyList()
     ),
     ProviderInfo(
