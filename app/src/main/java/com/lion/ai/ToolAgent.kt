@@ -108,7 +108,7 @@ object ToolAgent {
             val extra = if (provider in LOCAL_PROVIDERS) ToolGroup.values().toList() else emptyList()
             (base + extra).toSet()
         }
-        val nativeTools = if (provider == "custom" && effectiveGroups.isNotEmpty()) {
+        val nativeTools = if (provider in LOCAL_PROVIDERS && effectiveGroups.isNotEmpty()) {
             AiTools.openAiTools(effectiveGroups, prefs)
         } else null
         val resumeBlock = session?.contextBlock().orEmpty()
@@ -138,7 +138,8 @@ object ToolAgent {
         var lastGateText = ""
         val deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
 
-        for (step in 0 until MAX_STEPS) {
+        val maxSteps = if (chatMode == ChatMode.CODE) MAX_STEPS else 6
+        for (step in 0 until maxSteps) {
             if (System.currentTimeMillis() > deadline) {
                 session?.recordNote("انتهى وقت التنفيذ قبل اكتمال المهمة")
                 return Result(
@@ -311,7 +312,7 @@ object ToolAgent {
 
         session?.recordNote("وصل الوكيل للحد الأقصى من الخطوات دون إنهاء")
         return Result(
-            "⚠️ وصلت إلى الحد الأقصى ($MAX_STEPS خطوات) قبل إنهاء المهمة.\n" +
+            "⚠️ وصلت إلى الحد الأقصى ($maxSteps خطوات) قبل إنهاء المهمة.\n" +
                 "آخر نتيجة أدوات:\n\n" + current.take(3000) +
                 "\n\nيمكنك أن تطلب مني المتابعة أو تحديد خطوة أصغر.",
             used,

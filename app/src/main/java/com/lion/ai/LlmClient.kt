@@ -27,7 +27,6 @@ object LlmClient {
     fun diagnostics(): String = buildString {
         append("الخادم المحلي: ")
         append(if (LocalAIProxy.isRunning()) "يعمل — " + LocalAIProxy.getUrl() else "غير مفعّل ❌")
-        append("\nالمزود النشط: ").append(endpointOverrides["__none__"] ?: "")
         if (lastSuccess.isNotEmpty()) {
             append("\n\n✅ نجح مؤخراً:\n")
             lastSuccess.entries.take(12).forEach { (provider, info) -> append("• ").append(provider).append(": ").append(info).append('\n') }
@@ -395,27 +394,25 @@ object LlmClient {
         tools: JSONArray = JSONArray(),
         readTimeoutMs: Int = 0
     ): ToolReply {
-        if (provider != "custom" || tools.length() == 0) {
+        if ((provider != "custom" && provider != "local_proxy") || tools.length() == 0) {
             return ToolReply(
                 ask(message, apiKey, provider, history, modelOverride, accountId, null, systemPrompt, readTimeoutMs),
                 emptyList()
             )
         }
         val key = apiKey.filterNot { it.isWhitespace() }
-        val raw = endpointOverrides["custom"]?.trim().orEmpty()
+        val raw = if (provider == "local_proxy") LocalAIProxy.getUrl()
+            else endpointOverrides["custom"]?.trim().orEmpty()
         val problem = customUrlProblem(raw)
         if (problem != null) return ToolReply("⚠️ $problem", emptyList())
-        val model = modelOverride.trim().ifBlank { providerInfo("custom").defaultModel }
+        val model = modelOverride.trim().ifBlank { providerInfo(provider).defaultModel }
         val turns = normalize(history)
         val cap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
         return withReadTimeout(cap) {
             try {
                 callOpenAiTools(normalizeCustomUrl(raw), key, model, turns, message, systemPrompt, tools)
             } catch (e: Exception) {
-                ToolReply(
-                    ask(message, key, provider, turns, model, accountId, null, systemPrompt, readTimeoutMs),
-                    emptyList()
-                )
+                ToolReply("⚠️ تعذر استدعاء أدوات الخادم: ${e.message ?: e.javaClass.simpleName}", emptyList())
             }
         }
     }
