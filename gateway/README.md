@@ -23,13 +23,13 @@ pinned: false
 
 إذا كان `huggingface.co` غير محجوب على جهازك:
 
-1. أنشئ توكن من https://huggingface.co/settings/tokens بصلاحية **Read** (ويكفي لحساب Inference Providers).
+1. أنشئ توكن **Fine-grained** من https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained مع تفعيل **Make calls to Inference Providers**.
 2. افتح التطبيق ← الإعدادات ← مزود **Hugging Face Inference** ← الصق التوكن.
 3. اضغط «تحديث» واختر الموديل:
    `deepseek-ai/DeepSeek-V4.1-Flash-1017`
 4. إن لم يظهر، اكتبه يدوياً في حقل الموديل.
 
-> حصة Hugging Face المجانية محدودة شهرياً (Inference Providers). النموذج قد يُوجَّه إلى Novita أو مزود آخر متاح.
+> ⚠️ راوتر Hugging Face **لا يوفّر أي موديل مجاني** حالياً (كل الموديلات مدفوعة بالاستخدام)، وحصة الحساب المجانية صغيرة جداً. إن ظهر خطأ 402/403 فالمشكلة رصيد وليست التوكن. للاستخدام المجاني استخدم Groq أو OpenRouter (موديلات `:free`) عبر البوابة أدناه.
 
 ---
 
@@ -54,7 +54,7 @@ pinned: false
 7. في التطبيق: الإعدادات ← مزود **مخصص (OpenAI-Compatible)**:
    - **Base URL**: `https://<اسم-المستخدم>-lionai-gateway.hf.space/v1`
    - **المفتاح**: نفس `RELAY_TOKEN`
-   - **الموديل**: `hf/deepseek-ai/DeepSeek-V4.1-Flash-1017`
+   - **الموديل**: `groq/openai/gpt-oss-120b` (مجاني) أو `openrouter/deepseek/deepseek-chat-v3-0324:free`
    - اضغط «تحديث» لعرض كل الموديلات المتاحة.
 
 ---

@@ -387,7 +387,7 @@ val PROVIDERS = listOf(
         defaultModel = "deepseek-ai/DeepSeek-V4.1-Flash-1017",
         shortName = "HF",
         endpoint = "https://router.huggingface.co/v1/chat/completions",
-        modelHint = "استخدم توكن Hugging Face (صلاحية Inference). البوابة توجه الطلب إلى مزودي الاستدلال المتاحين تلقائياً.",
+        modelHint = "يتطلب توكن Fine-grained بصلاحية «Make calls to Inference Providers» ورصيد/حصة استدلال. راوتر HF لا يوفّر موديلات مجانية؛ للاستخدام المجاني استخدم OpenRouter (موديلات :free) أو Groq عبر البوابة.",
         models = listOf(
             "deepseek-ai/DeepSeek-V4.1-Flash-1017",
             "deepseek-ai/DeepSeek-V4.1-Flash",

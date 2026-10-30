@@ -347,13 +347,21 @@ object LlmClient {
                     "اختر موديلاً مدفوعاً برصيد Zen من قائمة «تحديث»، أو استخدم مزود OpenCode Go إن كان لديك اشتراك."
             }
             when (e.status) {
-                402 -> if (provider.startsWith("opencode")) {
-                    "💳 لا يوجد رصيد كافٍ في OpenCode لهذا الموديل المدفوع. أضف رصيداً في opencode.ai/console أو استخدم مزود OpenCode Go."
-                } else {
-                    "⚠️ خطأ من المزود (402): ${e.message}"
+                402 -> when {
+                    provider.startsWith("opencode") ->
+                        "💳 لا يوجد رصيد كافٍ في OpenCode لهذا الموديل المدفوع. أضف رصيداً في opencode.ai/console أو استخدم مزود OpenCode Go."
+                    provider == "hf" ->
+                        "💳 لا يوجد رصيد استدلال كافٍ في حساب Hugging Face. أضف رصيداً من huggingface.co/settings/billing أو استخدم مزوداً مجانياً مثل OpenRouter (موديلات :free) أو Groq."
+                    else -> "⚠️ خطأ من المزود (402): ${e.message}"
                 }
-                401, 403 -> "🔑 المفتاح غير صالح أو لا يملك صلاحية لهذا الموديل (${e.status}).\n${e.message}" +
-                    regionHint(provider, e.message.orEmpty())
+                401, 403 -> if (provider == "hf") {
+                    "🔑 توكن Hugging Face غير مقبول (${e.status}).\n" +
+                        "أنشئ توكن Fine-grained وفيه صلاحية «Make calls to Inference Providers»، وتأكد أن الحساب يملك رصيداً/حصة استدلال. " +
+                        "راوتر HF لا يقدّم موديلات مجانية؛ للاستخدام المجاني جرّب OpenRouter (موديلات :free) أو Groq.\n${e.message}"
+                } else {
+                    "🔑 المفتاح غير صالح أو لا يملك صلاحية لهذا الموديل (${e.status}).\n${e.message}" +
+                        regionHint(provider, e.message.orEmpty())
+                }
                 404 -> "⚠️ الموديل «$model» غير متاح لهذا المفتاح، أو أن المزود رفض الطلب. جرّب موديلاً آخر من الإعدادات." +
                     regionHint(provider, e.message.orEmpty())
                 429 -> "⏳ تجاوزت حد الاستخدام المجاني مؤقتاً. انتظر قليلاً ثم أعد المحاولة.\n${e.message}"
