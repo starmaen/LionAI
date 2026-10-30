@@ -382,32 +382,31 @@ fun SettingsScreen(
                             }
                         }
                         val backendName = backendOptions.firstOrNull { it.id == backend }?.label ?: backend
-                        var proxyAuto by remember { mutableStateOf(prefs.getBoolean("auto_route", true)) }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Button(
                                 modifier = Modifier.weight(1f),
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (proxyAuto) Color(0xFFFFB800) else Color(0xFF2A2A2A)
+                                    containerColor = if (autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
                                 ),
                                 onClick = {
-                                    proxyAuto = true
+                                    autoRouteSetting = true
                                     prefs.edit().putBoolean("auto_route", true).apply()
                                 }
                             ) {
                                 Text(
                                     "🧠 تلقائي (العقل المركزي)", fontSize = 11.sp, maxLines = 1,
-                                    color = if (proxyAuto) Color(0xFF121212) else Color(0xFFE0E0E0)
+                                    color = if (autoRouteSetting) Color(0xFF121212) else Color(0xFFE0E0E0)
                                 )
                             }
                             Button(
                                 modifier = Modifier.weight(1f),
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (!proxyAuto) Color(0xFFFFB800) else Color(0xFF2A2A2A)
+                                    containerColor = if (!autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
                                 ),
                                 onClick = {
-                                    proxyAuto = false
+                                    autoRouteSetting = false
                                     provider = "local_proxy"
                                     prefs.edit()
                                         .putBoolean("auto_route", false)
@@ -418,13 +417,13 @@ fun SettingsScreen(
                             ) {
                                 Text(
                                     "✋ يدوي (أختار المزود)", fontSize = 11.sp, maxLines = 1,
-                                    color = if (!proxyAuto) Color(0xFF121212) else Color(0xFFE0E0E0)
+                                    color = if (!autoRouteSetting) Color(0xFF121212) else Color(0xFFE0E0E0)
                                 )
                             }
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            if (proxyAuto)
+                            if (autoRouteSetting)
                                 "🧠 تلقائي: العقل المركزي يختار الأفضل والأسرع حسب نوع المحادثة (عام/تعلّم/برمجة)، وينتقل لمزود آخر عند الفشل. كل مزود أدخلت مفتاحه يشارك. اضغط مزوداً أدناه لإدخال أو تعديل مفتاحه."
                             else
                                 "✋ يدوي: المزود المختار = $backendName ويُستعمل في الشات وكل الأوضاع. اضغط مزوداً أدناه لاختياره.",
