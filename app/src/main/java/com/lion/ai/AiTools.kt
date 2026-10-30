@@ -168,7 +168,7 @@ object AiTools {
         Def("firestore_set", ToolGroup.FIREBASE, """{"path":"users/uid","data":{"name":"A"},"merge":true}""", "كتابة/تحديث مستند Firestore", true),
         Def("storage_list", ToolGroup.FIREBASE, """{"bucket":"my-app.appspot.com","prefix":"","limit":20}""", "سرد ملفات Firebase Storage"),
         Def("secret_scan", ToolGroup.QUALITY, """{"path":""}""", "فحص مساحة العمل بحثاً عن مفاتيح/أسرار قبل الدفع"),
-        Def("site_probe", ToolGroup.WEB, """{"url":"https://example.com"}""", "فحص موقع/API: الحالة والرؤوس الأمنية ومتطلبات المصادقة")
+        Def("site_probe", ToolGroup.WEB, """{"url":"https://example.com"}""", "فحص موقع/API: الحالة والرؤوس الأمنية ومتطلبات المصادقة"),
 
         // Code
         Def("code_analyze", ToolGroup.CODE, """{"name":"Main.kt","code":"..."}""", "تحليل كود نصي: مقاييس/تعقيد/TODO/اعتماديات"),
