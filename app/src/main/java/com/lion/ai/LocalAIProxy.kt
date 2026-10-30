@@ -377,7 +377,10 @@ object LocalAIProxy {
             // نفس سياسة التطبيق: يدوي يبقى يدوياً، والتلقائي يستخدم العقل المركزي،
             // والمساعدة تضيف بديلاً عند فشل المزود المختار.
             val routes = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode)
-            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(taskKind)
+            val manual = RoutePolicy.isManual(prefs)
+            // اليدوي: المزود المختار يأخذ مهلة المهمة كاملة، وبعدها وقت إضافي للبدائل.
+            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(taskKind) + (if (manual) 60_000L else 0L)
+            val chosenProvider = routes.firstOrNull()?.provider
             val tried = mutableListOf<String>()
             var reply = ""
             var used: Route? = null
@@ -386,10 +389,12 @@ object LocalAIProxy {
             for (route in routes) {
                 if (System.currentTimeMillis() >= deadline) break
                 val started = System.currentTimeMillis()
-                val cap = minOf(
-                    (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L),
+                val perAttempt = if (manual && route.provider == chosenProvider) {
+                    SmartRouter.timeoutMs(taskKind)
+                } else {
                     LlmClient.attemptTimeoutMs(taskKind).toLong()
-                ).toInt()
+                }
+                val cap = minOf((deadline - System.currentTimeMillis()).coerceAtLeast(5_000L), perAttempt).toInt()
                 val candidate = LlmClient.ask(
                     message = userText,
                     apiKey = keyOf(prefs, route.provider),
@@ -427,6 +432,14 @@ object LocalAIProxy {
             }
 
             val usedRoute = used
+            // يدوي: إن أجاب بديل بدل مزودك المختار فاذكر ذلك صراحة (إلا في ردود الأدوات حتى لا نكسر تحليلها).
+            if (manual && usedRoute != null && chosenProvider != null && usedRoute.provider != chosenProvider &&
+                !reply.contains("[[TOOL]]") && !reply.contains("[[ASK]]")
+            ) {
+                reply += "\n\n↪️ مزودك المختار (" + RoutePolicy.shortName(chosenProvider) + ") لم يرد" +
+                    (if (lastError.isNotBlank()) ": " + lastError.replace("\n", " ").take(140) else "") +
+                    "، فأجاب " + RoutePolicy.shortName(usedRoute.provider) + " بدلاً منه."
+            }
             val modelName = usedRoute?.model?.takeIf { it.isNotBlank() }
                 ?: LlmClient.defaultModel(usedRoute?.provider ?: backendProvider(prefs))
 

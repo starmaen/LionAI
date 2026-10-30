@@ -961,7 +961,9 @@ fun LionApp() {
             var lastErrorReply = ""
             var sawFalseClaim = false
             val failed = mutableListOf<String>()
-            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(kind)
+            // اليدوي: مزودك المختار يأخذ مهلة المهمة كاملة، ثم وقت إضافي للبدائل (لا تبديل صامت بسبب بطء المزود).
+            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(kind) + (if (manualMode) 60_000L else 0L)
+            val chosenProvider = plan.firstOrNull()?.provider
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
             val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
             for (route in routesToTry) {
@@ -969,7 +971,9 @@ fun LionApp() {
                 val started = System.currentTimeMillis()
                 // الخادم المحلي قد يجرّب بديلاً داخلياً عند فشل المزود؛ نمنحه مهلة المهمة
                 // كاملة حتى لا ينتهي وقت العميل قبل أن يصل البديل.
-                val routeBudget = if (route.provider == RoutePolicy.LOCAL_PROXY) {
+                val routeBudget = if (route.provider == RoutePolicy.LOCAL_PROXY ||
+                    (manualMode && route.provider == chosenProvider)
+                ) {
                     SmartRouter.timeoutMs(kind)
                 } else {
                     LlmClient.attemptTimeoutMs(kind).toLong()
@@ -1112,6 +1116,15 @@ fun LionApp() {
                             "تحقق من المفتاح/الموديل أو اختر مزوداً آخر، أو فعّل «مساعدة العقل المركزي في الوضع اليدوي» من الإعدادات."
                     }
                 }
+            }
+            // اليدوي: إن أجاب مزود غير الذي اخترته (بعد فشل اختياري) فأخبر المستخدم صراحة بالسبب.
+            val switchedTo = used
+            if (manualMode && switchedTo != null && chosenProvider != null &&
+                switchedTo.provider != chosenProvider && !reply.startsWith("⚠️")
+            ) {
+                reply += "\n\n↪️ مزودك المختار (" + RoutePolicy.shortName(chosenProvider) + ") لم يرد" +
+                    (if (lastErrorReply.isNotBlank()) ": " + lastErrorReply.replace("\n", " ").take(140) else "") +
+                    "، فأجاب " + RoutePolicy.shortName(switchedTo.provider) + " بدلاً منه."
             }
             // العقل المركزي يدقّق الإجابات غير الموثوقة أو المعرفية غير المدعومة بمصادر.
             val answeredBy = used

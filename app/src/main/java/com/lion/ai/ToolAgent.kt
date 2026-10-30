@@ -104,7 +104,7 @@ object ToolAgent {
         val effectiveGroups = if (!profile.allowTools) emptySet() else {
             val base = groups.filter { it in profile.groups }
             // الخادم المحلي (custom) يملك الجهاز والملفات: زوّده بكل المجموعات لا بالمجموعة المرصودة للنص فقط.
-            val extra = if (provider in LOCAL_PROVIDERS) ToolGroup.values().toList() else emptyList()
+            val extra = if (provider == "custom") ToolGroup.values().toList() else emptyList()
             (base + extra).toSet()
         }
         // الخادم المحلي يوجّه الطلب لمزود قد لا يدعم أدوات OpenAI ولا يمرّرها،
@@ -124,7 +124,8 @@ object ToolAgent {
             (if (provider in LOCAL_PROVIDERS) LOCAL_TOOL_HINT else "") + resumeBlock
         // المزودات السحابية (خاصة المجانية) لها سقف سياق/معدّل: إن كبرت التعليمات نقلّص الأدوات للنواة
         // (والباقي متاح عبر tools_schema) بدل أن يفشل الطلب كاملاً.
-        val maxSystemChars = if (provider in LOCAL_PROVIDERS) 90_000 else 16_000
+        // custom = خادمك الشخصي (سياق كبير). local_proxy يمرّر الطلب لمزود سحابي بسياق محدود، فيأخذ السقف السحابي.
+        val maxSystemChars = if (provider == "custom") 90_000 else 16_000
         var system = buildSystem(effectiveGroups)
         if (system.length > maxSystemChars) {
             val core = effectiveGroups.filter {
