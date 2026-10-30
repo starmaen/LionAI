@@ -1,0 +1,62 @@
+services:
+  - type: web
+    name: lionai-gateway
+    runtime: python
+    plan: free
+    healthCheckPath: /health
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: RELAY_TOKEN
+        generateValue: true
+      - key: RELAY_DEFAULT_MODEL
+        value: groq/openai/gpt-oss-120b
+      - key: UPSTREAM_TIMEOUT
+        value: "120"
+      # اختياري: أضف مزودات/منصات دون تعديل الكود (JSON).
+      - key: EXTRA_PROVIDERS
+        sync: false
+      # أضف مفاتيح المزودات التي تريدها من لوحة Render.
+      # المفاتيح الفارغة تعني أن المزود غير مفعّل.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: GITHUB_MODELS_TOKEN
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: TOGETHER_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: SAMBANOVA_API_KEY
+        sync: false
+      - key: CHUTES_API_KEY
+        sync: false
+      - key: NEBIUS_API_KEY
+        sync: false
+      - key: HYPERBOLIC_API_KEY
+        sync: false
+      - key: NOVITA_API_KEY
+        sync: false
+      - key: DEEPINFRA_API_KEY
+        sync: false
+      - key: SCALEWAY_API_KEY
+        sync: false
+      - key: SILICONFLOW_API_KEY
+        sync: false
+      - key: MODELSCOPE_API_KEY
+        sync: false
+      - key: AIMLAPI_KEY
+        sync: false
+      - key: REQUESTY_API_KEY
+        sync: false

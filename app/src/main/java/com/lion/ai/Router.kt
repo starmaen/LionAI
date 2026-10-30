@@ -201,7 +201,8 @@ object SmartRouter {
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("llm7", "default"),
+            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"), r("llm7", "default"),
             r("aihorde", "auto")
         )
         TaskKind.FACTUAL -> listOf(
@@ -211,7 +212,8 @@ object SmartRouter {
             r("zai", "glm-4.7-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
-            r("kilo", "kilo-auto/free"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"), r("llm7", "default")
+            r("kilo", "kilo-auto/free"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"), r("llm7", "default")
         )
         TaskKind.CODE -> listOf(
             r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
@@ -221,6 +223,7 @@ object SmartRouter {
             r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("cohere", "north-mini-code-1-0"), r("ollama", "deepseek-v4-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"),
             r("llm7", "default"), r("ovh", "gpt-oss-120b"), r("aihorde", "auto")
         )
         // مهام التطوير تحتاج نماذج قوية في اتباع الأدوات وتعديل المستودعات، مع بدائل مجانية قادرة.
@@ -234,6 +237,7 @@ object SmartRouter {
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"),
             r("openrouter", "cohere/north-mini-code:free"), r("ollama", "deepseek-v4-flash"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"),
             r("llm7", "default"), r("ovh", "gpt-oss-120b")
         )
         TaskKind.REASONING -> listOf(
@@ -243,6 +247,7 @@ object SmartRouter {
             r("cloudflare", "@cf/openai/gpt-oss-120b"), r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"),
             r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"), r("llm7", "DeepSeek-V4-Flash-0731"),
             r("cohere", "command-a-03-2025"), r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"),
             r("ovh", "gpt-oss-120b")
         )
         TaskKind.WRITING -> listOf(
@@ -251,6 +256,7 @@ object SmartRouter {
             r("ollama", "gpt-oss:120b"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("zai", "glm-4.7-flash"),
             r("llm7", "default"), r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+            r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"),
             r("ovh", "gpt-oss-120b"), r("aihorde", "auto")
         )
         TaskKind.VISION -> listOf(
@@ -259,7 +265,7 @@ object SmartRouter {
             r("openrouter", "google/gemma-4-31b-it:free"), r("kilo", "stepfun/step-3.7-flash:free"),
             r("cloudflare", "@cf/meta/llama-4-scout-17b-16e-instruct"),
             r("nvidia", "meta/llama-3.2-90b-vision-instruct"),
-            r("ovh", "Qwen3.8-27B")
+            r("ovh", "Qwen3.8-27B"), r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017")
         )
         TaskKind.IMAGE_EDIT -> listOf(
             r("gemini", "gemini-3.8-flash"), r("groq", "openai/gpt-oss-120b"), r("claude", "claude-haiku-5-5"),
@@ -270,14 +276,15 @@ object SmartRouter {
             r("gemini", "gemini-3.8-flash"), r("kilo", "nvidia/nemotron-3.5-lightning:free"),
             r("openrouter", "nvidia/nemotron-3.5-lightning:free"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("ollama", "deepseek-v4-flash"), r("mistral", "mistral-medium-latest"), r("claude", "claude-sonnet-5-5"),
-            r("llm7", "DeepSeek-V4-Flash-0731")
+            r("llm7", "DeepSeek-V4-Flash-0731"),
+            r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017")
         )
     }
 
     /** مزودات نعتبرها قوية بما يكفي للأسئلة المعرفية الحساسة. */
     private val TRUSTED_FACTUAL = setOf(
         "gemini", "groq", "claude", "openai", "deepseek", "mistral",
-        "cohere", "nvidia", "zai", "cloudflare", "together", "ovh", "ollama"
+        "cohere", "nvidia", "zai", "cloudflare", "together", "ovh", "ollama", "hf"
     )
 
     fun isStrict(kind: TaskKind): Boolean = kind == TaskKind.FACTUAL || kind == TaskKind.LONG_DOC

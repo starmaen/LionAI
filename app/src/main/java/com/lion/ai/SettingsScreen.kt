@@ -566,7 +566,8 @@ fun SettingsScreen(
                         )
 
                         // مزودون محفوظون سابقاً (اختيار سريع فقط — دون رابط أو كتابة)
-                        val importedList = remember { ImportedProviders.list(prefs) }
+                        var importedVersion by remember { mutableStateOf(0) }
+                        val importedList = remember(importedVersion) { ImportedProviders.list(prefs) }
                         if (importedList.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
                             Text(
@@ -616,6 +617,53 @@ fun SettingsScreen(
                                 }
                                 Spacer(Modifier.height(6.dp))
                             }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        var importJson by remember { mutableStateOf("") }
+                        var importNote by remember { mutableStateOf("") }
+                        Text(
+                            "➕ استيراد مزود/منصة (OpenAI-Compatible JSON)",
+                            color = Color(0xFF64B5F6),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = importJson,
+                            onValueChange = { importJson = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                            placeholder = {
+                                Text(
+                                    """[{"label":"Gateway","baseUrl":"https://host/v1","model":"hf/deepseek-ai/DeepSeek-V4.1-Flash-1017","apiKey":"..."}]""",
+                                    color = Color(0xFF707070),
+                                    fontSize = 10.sp
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF64B5F6),
+                                unfocusedBorderColor = Color(0xFF3A3A3A),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            )
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Button(
+                            onClick = {
+                                val added = ImportedProviders.importFrom(prefs, importJson)
+                                importNote = if (added > 0) {
+                                    "✅ أُضيف $added مزود. اضغط اسمه أدناه لتفعيله."
+                                } else {
+                                    "⚠️ لم يُضف شيء — تحقق من JSON (baseUrl مطلوب)."
+                                }
+                                importJson = ""
+                                importedVersion++
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF64B5F6))
+                        ) { Text("استيراد", color = Color(0xFF0D0D0D), fontSize = 12.sp) }
+                        if (importNote.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(importNote, color = Color(0xFFB0B0B0), fontSize = 11.sp)
                         }
                         Spacer(Modifier.height(8.dp))
                         var proxyReport by remember { mutableStateOf("") }

@@ -383,12 +383,17 @@ val PROVIDERS = listOf(
         id = "hf",
         label = "Hugging Face Inference",
         tagline = "نماذج مفتوحة المصدر — مجاني/محدود",
-        docsUrl = "https://huggingface.co/docs/api-inference",
-        defaultModel = "meta-llama/Llama-3.1-8B-Instruct",
+        docsUrl = "https://huggingface.co/docs/inference-providers",
+        defaultModel = "deepseek-ai/DeepSeek-V4.1-Flash-1017",
         shortName = "HF",
         endpoint = "https://router.huggingface.co/v1/chat/completions",
-        modelHint = "ممتاز للتجارب والنماذج المفتوحة.",
-        models = listOf("meta-llama/Llama-3.1-8B-Instruct")
+        modelHint = "استخدم توكن Hugging Face (صلاحية Inference). البوابة توجه الطلب إلى مزودي الاستدلال المتاحين تلقائياً.",
+        models = listOf(
+            "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+            "deepseek-ai/DeepSeek-V4.1-Flash",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "Qwen/Qwen3-235B-A22B-Instruct-2507"
+        )
     ),
     ProviderInfo(
         id = "fireworks",
