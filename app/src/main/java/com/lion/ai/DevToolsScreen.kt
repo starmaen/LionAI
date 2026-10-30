@@ -634,6 +634,7 @@ private fun ToolManagerTab(
     var backend by remember { mutableStateOf(prefs.getString("local_proxy_backend", "").orEmpty()) }
     var toolsEverywhere by remember { mutableStateOf(prefs.getBoolean("tools_everywhere", true)) }
     var toolReport by remember { mutableStateOf("") }
+    var providerReport by remember { mutableStateOf("") }
     var working by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -743,6 +744,80 @@ private fun ToolManagerTab(
             }, colors = SwitchDefaults.colors(checkedThumbColor = T_GOLD))
             Spacer(Modifier.width(8.dp))
             Text("تفعيل كل الأدوات في الأوضاع الثلاثة (عام/تعلّم/برمجة)", color = Color.White, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        HorizontalDivider(color = Color(0xFF2A2A2A))
+        Spacer(Modifier.height(10.dp))
+        Text("🧪 اختبار المزودات والخادم", color = T_GOLD, fontWeight = FontWeight.Bold)
+        Text(
+            "اختبار الخادم يرسل طلباً عبر HTTP إلى 127.0.0.1 (المسار نفسه الذي يستخدمه التطبيق). فحص المزودات يجرّب كل مزود متاح بكلمة واحدة.",
+            color = T_MUTED,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    providerReport = "⏳ أختبر الخادم المحلي…"
+                    scope.launch {
+                        providerReport = withContext(Dispatchers.IO) { LocalAIProxy.selfTest(prefs) }
+                        working = false
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
+            ) { Text("🖥️ اختبار الخادم", color = T_GOLD) }
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    providerReport = "⏳ أختبر كل المزودات المتاحة… قد يستغرق دقيقة."
+                    scope.launch {
+                        providerReport = withContext(Dispatchers.IO) {
+                            val rows = mutableListOf<String>()
+                            PROVIDERS.filter { it.group == ProviderGroup.API }.take(14).forEach { info ->
+                                if (!SmartRouter.available(prefs, info.id)) {
+                                    rows.add("⚪ " + info.shortName + ": غير متاح (مفتاح/إعداد ناقص)")
+                                    return@forEach
+                                }
+                                val key = (prefs.getString("api_key_" + info.id, "") ?: "").trim()
+                                val account = (prefs.getString("cf_account_id", "") ?: "").trim()
+                                val model = (prefs.getString("model_" + info.id, "") ?: "").trim()
+                                val reply = runCatching {
+                                    LlmClient.ask(
+                                        "أجب بكلمة واحدة فقط: تم", key, info.id, emptyList(), model, account,
+                                        readTimeoutMs = 15_000
+                                    )
+                                }.getOrElse { "❌ " + (it.message ?: "خطأ") }
+                                rows.add(
+                                    (if (LlmClient.isErrorReply(reply)) "❌ " else "✅ ") +
+                                        info.shortName + ": " + reply.replace("\n", " ").take(80)
+                                )
+                            }
+                            rows.joinToString("\n")
+                        }
+                        working = false
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
+            ) { Text("📡 فحص المزودات", color = T_GOLD) }
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    providerReport = "⏳ أجمع التشخيص…"
+                    scope.launch {
+                        providerReport = withContext(Dispatchers.IO) { LlmClient.diagnostics() }
+                        working = false
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
+            ) { Text("🧾 تشخيص", color = T_GOLD) }
+        }
+        if (providerReport.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(providerReport.take(4000), color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(10.dp))
         Text("📦 حزم الجهاز/الخادم", color = T_GOLD, fontWeight = FontWeight.Bold)

@@ -14,6 +14,31 @@ object LlmClient {
     @Volatile
     var endpointOverrides: Map<String, String> = emptyMap()
 
+    /** تشخيص آخر الأخطاء/النجاح لكل مزود — يظهر في «أدوات المطور» لإثبات الحالة. */
+    private val lastErrors = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val lastSuccess = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun recordSuccess(provider: String, model: String) {
+        lastErrors.remove(provider)
+        lastSuccess[provider] = "$model — " +
+            java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date())
+    }
+
+    fun diagnostics(): String = buildString {
+        append("الخادم المحلي: ")
+        append(if (LocalAIProxy.isRunning()) "يعمل — " + LocalAIProxy.getUrl() else "غير مفعّل ❌")
+        append("\nالمزود النشط: ").append(endpointOverrides["__none__"] ?: "")
+        if (lastSuccess.isNotEmpty()) {
+            append("\n\n✅ نجح مؤخراً:\n")
+            lastSuccess.entries.take(12).forEach { (provider, info) -> append("• ").append(provider).append(": ").append(info).append('\n') }
+        }
+        if (lastErrors.isNotEmpty()) {
+            append("\n❌ أخطاء أخيرة:\n")
+            lastErrors.entries.take(12).forEach { (provider, info) -> append("• ").append(provider).append(": ").append(info).append('\n') }
+        }
+        if (lastSuccess.isEmpty() && lastErrors.isEmpty()) append("\nلا محاولات مسجّلة بعد.")
+    }
+
     /**
      * مهلة القراءة الخاصة بنداء واحد. تتيح للمنسّق فرض سقف زمني قصير على الردود السريعة
      * (المجاملات) من دون تغيير المهلة العامة لباقي النداءات.
@@ -307,6 +332,7 @@ object LlmClient {
             }
         } catch (e: LlmException) {
             val raw = e.message.orEmpty()
+            lastErrors[provider] = "HTTP ${e.status}: " + raw.take(200)
             if (provider.startsWith("opencode") &&
                 (raw.contains("FreeUsageLimit", ignoreCase = true) ||
                     raw.contains("Free usage limit", ignoreCase = true) ||
@@ -329,6 +355,7 @@ object LlmClient {
                 else -> "⚠️ خطأ من المزود (${e.status}): ${e.message}"
             }
         } catch (e: Exception) {
+            lastErrors[provider] = "اتصال: " + (e.message ?: e.javaClass.simpleName).take(200)
             "⚠️ تعذر الاتصال بالمزود: ${e.message ?: e.javaClass.simpleName}"
         }
         }

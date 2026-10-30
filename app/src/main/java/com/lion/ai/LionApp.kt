@@ -979,7 +979,7 @@ fun LionApp() {
                     (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L),
                     LlmClient.attemptTimeoutMs(kind).toLong()
                 ).toInt()
-                val agentResult = if (toolGroups.isNotEmpty()) {
+                var agentResult = if (toolGroups.isNotEmpty()) {
                     withContext(Dispatchers.IO) {
                         runCatching {
                             ToolAgent.run(
@@ -1005,6 +1005,31 @@ fun LionApp() {
                     }
                 } else {
                     null
+                }
+                // إن فشل مسار الأدوات (خطأ مزود) نجرّب رداً عادياً بنفس المزود حتى لا تتوقف المحادثة.
+                val failedAgent = agentResult
+                if (failedAgent != null && !failedAgent.complete && failedAgent.tools.isEmpty() &&
+                    LlmClient.isErrorReply(failedAgent.answer)
+                ) {
+                    val plain = withContext(Dispatchers.IO) {
+                        runCatching {
+                            LlmClient.ask(
+                                message = llmPrompt,
+                                apiKey = keyOf(route.provider),
+                                provider = route.provider,
+                                history = requestHistory,
+                                modelOverride = route.model,
+                                accountId = accountId(),
+                                image = image,
+                                systemPrompt = systemPrompt,
+                                readTimeoutMs = attemptCap
+                            )
+                        }.getOrNull()
+                    }
+                    if (plain != null && !LlmClient.isErrorReply(plain)) {
+                        agentResult = ToolAgent.Result(plain, emptyList())
+                        toolStatus[chatId] = "↩️ تم تجاهل الأدوات مؤقتاً (فشل مسار الأدوات)"
+                    }
                 }
                 val r = agentResult?.answer ?: withContext(Dispatchers.IO) {
                     LlmClient.ask(
@@ -1037,6 +1062,7 @@ fun LionApp() {
                     reply = r
                     used = route
                     toolNames = agentResult?.tools.orEmpty()
+                    LlmClient.recordSuccess(route.provider, route.model)
                     break
                 }
                 if (!error && !falseClaim && fallback == null) fallback = route to r

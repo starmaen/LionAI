@@ -2,8 +2,6 @@ package com.lion.ai
 
 import android.content.Context
 import android.content.SharedPreferences
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -98,63 +96,122 @@ object LocalAIProxy {
     }
 
     private fun handleClient(client: Socket, prefs: SharedPreferences) {
-        var reader: BufferedReader? = null
         var out: OutputStream? = null
         try {
             client.soTimeout = 60_000
-            reader = BufferedReader(InputStreamReader(client.inputStream))
+            val input = client.inputStream
             out = client.outputStream
 
-            val requestLine = reader.readLine() ?: return
+            // قراءة الرؤوس كبايتات (وليس محارف) حتى لا يتشوّه UTF-8 العربي.
+            val headerBuffer = java.io.ByteArrayOutputStream()
+            var tail = 0
+            while (headerBuffer.size() < 64_000) {
+                val byte = input.read()
+                if (byte < 0) break
+                headerBuffer.write(byte)
+                tail = ((tail shl 8) or byte) and 0xFFFFFFFF.toInt()
+                if (tail == 0x0D0A0D0A) break
+            }
+            val headers = headerBuffer.toString("ISO-8859-1")
+            val requestLine = headers.substringBefore("\r\n")
             val parts = requestLine.split(" ")
             if (parts.size < 2) return
             val method = parts[0]
             val path = parts[1]
 
-            // قراءة الرؤوس
             var contentLength = 0
-            while (true) {
-                val header = reader.readLine() ?: break
-                if (header.isBlank()) break
-                val lower = header.lowercase()
-                if (lower.startsWith("content-length:")) {
-                    contentLength = header.substringAfter(":").trim().toIntOrNull() ?: 0
+            headers.substringAfter("\r\n", "").lineSequence().forEach { line ->
+                if (line.lowercase().startsWith("content-length:")) {
+                    contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
                 }
             }
 
-            // قراءة الجسم
-            val body = if (contentLength > 0) {
-                val chars = CharArray(contentLength)
-                reader.read(chars, 0, contentLength)
-                String(chars)
-            } else ""
+            val bodyBytes = ByteArray(contentLength.coerceIn(0, 4_000_000))
+            var read = 0
+            while (read < bodyBytes.size) {
+                val count = input.read(bodyBytes, read, bodyBytes.size - read)
+                if (count < 0) break
+                read += count
+            }
+            val body = String(bodyBytes, 0, read, Charsets.UTF_8)
 
-            if (method == "POST" && path == "/v1/chat/completions") {
-                val response = processChatCompletion(body, prefs)
-                val bytes = response.toByteArray(Charsets.UTF_8)
-                out.write("HTTP/1.1 200 OK\r\n".toByteArray(Charsets.US_ASCII))
-                out.write("Content-Type: application/json; charset=utf-8\r\n".toByteArray(Charsets.US_ASCII))
-                out.write("Content-Length: ${bytes.size}\r\n".toByteArray(Charsets.US_ASCII))
-                out.write("Connection: close\r\n".toByteArray(Charsets.US_ASCII))
-                out.write("\r\n".toByteArray(Charsets.US_ASCII))
-                out.write(bytes)
-                out.flush()
-            } else {
+            val response: String = when {
+                method == "POST" && path.startsWith("/v1/chat/completions") ->
+                    processChatCompletion(body, prefs)
+                method == "GET" && path.startsWith("/v1/models") -> {
+                    val provider = backendProvider(prefs)
+                    val model = (prefs.getString("model_$provider", "") ?: "").trim()
+                        .ifBlank { LlmClient.defaultModel(provider) }
+                    org.json.JSONObject().apply {
+                        put("object", "list")
+                        put("data", org.json.JSONArray().put(
+                            org.json.JSONObject().put("id", model).put("object", "model")
+                        ))
+                    }.toString()
+                }
+                method == "GET" && (path.startsWith("/health") || path == "/") ->
+                    org.json.JSONObject().put("status", "ok").put("server", "LionAI local proxy").toString()
+                else -> ""
+            }
+
+            if (response.isEmpty()) {
                 val msg = "404 Not Found"
                 val bytes = msg.toByteArray(Charsets.US_ASCII)
                 out.write("HTTP/1.1 404 Not Found\r\n".toByteArray(Charsets.US_ASCII))
                 out.write("Content-Length: ${bytes.size}\r\n".toByteArray(Charsets.US_ASCII))
-                out.write("Connection: close\r\n".toByteArray(Charsets.US_ASCII))
-                out.write("\r\n".toByteArray(Charsets.US_ASCII))
+                out.write("Connection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                out.write(bytes)
+                out.flush()
+            } else {
+                val bytes = response.toByteArray(Charsets.UTF_8)
+                out.write("HTTP/1.1 200 OK\r\n".toByteArray(Charsets.US_ASCII))
+                out.write("Content-Type: application/json; charset=utf-8\r\n".toByteArray(Charsets.US_ASCII))
+                out.write("Content-Length: ${bytes.size}\r\n".toByteArray(Charsets.US_ASCII))
+                out.write("Connection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
                 out.write(bytes)
                 out.flush()
             }
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
-            try { reader?.close() } catch (_: Exception) {}
             try { out?.close() } catch (_: Exception) {}
             try { client.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** اختبار شامل من طرف إلى طرف: يرسل طلباً عبر HTTP إلى الخادم المحلي نفسه. */
+    fun selfTest(prefs: SharedPreferences): String {
+        val url = getUrl()
+        if (url.isBlank()) return "❌ الخادم المحلي غير مفعّل. أعد فتح التطبيق أو شغّله من الإعدادات."
+        return try {
+            val payload = org.json.JSONObject().apply {
+                put("model", "self-test")
+                put("messages", org.json.JSONArray().put(
+                    org.json.JSONObject().put("role", "user").put("content", "أجب بكلمة واحدة فقط: تم")
+                ))
+            }.toString()
+            val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 15_000
+                readTimeout = 90_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            connection.disconnect()
+            val json = runCatching { org.json.JSONObject(raw) }.getOrNull()
+            val content = json?.optJSONArray("choices")?.optJSONObject(0)
+                ?.optJSONObject("message")?.optString("content", "").orEmpty()
+            if (status !in 200..299) {
+                "❌ الخادم رد HTTP $status: " + (json?.optJSONObject("error")?.optString("message") ?: raw.take(300))
+            } else {
+                "✅ الخادم المحلي يعمل (HTTP $status). الرد: " + content.take(120)
+            }
+        } catch (e: Exception) {
+            "❌ تعذّر الوصول للخادم المحلي: " + (e.message ?: e.javaClass.simpleName)
         }
     }
 
