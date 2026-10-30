@@ -53,6 +53,55 @@ internal fun LlmClient.callOpenAiCompatible(
         return content.ifBlank { "لم يصل رد من المزود." }
     }
 
+internal fun LlmClient.callOpenAiTools(
+        url: String,
+        apiKey: String,
+        model: String,
+        history: List<ChatTurn>,
+        message: String,
+        systemPrompt: String,
+        tools: JSONArray
+    ): LlmClient.ToolReply {
+        val messages = JSONArray()
+        messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
+        history.forEach { turn ->
+            messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
+        }
+        messages.put(JSONObject().put("role", "user").put("content", message))
+
+        val body = JSONObject()
+            .put("model", model)
+            .put("messages", messages)
+            .put("tools", tools)
+            .put("tool_choice", "auto")
+            .put("max_tokens", LLM_OPENAI_MAX_TOKENS)
+            .put("temperature", LLM_TEMPERATURE)
+
+        val headers = mutableMapOf<String, String>()
+        if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"
+
+        val response = postJson(url, headers, body)
+        val reply = response.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+        val text = reply?.optString("content", "").orEmpty()
+            .takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+        val calls = mutableListOf<ToolCall>()
+        val rawCalls = reply?.optJSONArray("tool_calls")
+        if (rawCalls != null) {
+            for (index in 0 until rawCalls.length()) {
+                val fn = rawCalls.optJSONObject(index)?.optJSONObject("function") ?: continue
+                val name = fn.optString("name").trim()
+                if (name.isBlank()) continue
+                val args = when (val rawArgs = fn.opt("arguments")) {
+                    is JSONObject -> rawArgs
+                    is String -> runCatching { JSONObject(rawArgs) }.getOrDefault(JSONObject())
+                    else -> JSONObject()
+                }
+                calls.add(ToolCall(name, args, ""))
+            }
+        }
+        return LlmClient.ToolReply(text, calls)
+    }
+
 internal fun LlmClient.callGemini(
         message: String,
         apiKey: String,

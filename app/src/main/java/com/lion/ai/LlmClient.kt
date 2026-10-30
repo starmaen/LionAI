@@ -327,6 +327,49 @@ object LlmClient {
         }
     }
 
+    /** رد نموذج مع استدعاءات أدوات أصلية (function calling). */
+    data class ToolReply(val text: String, val calls: List<ToolCall>)
+
+    /**
+     * مسار الأدوات الأصلي للخادم المحلي المتوافق مع OpenAI.
+     * إن لم يدعم الخادم tools API نعود تلقائياً لبروتوكول النص [[TOOL]] بدل الفشل.
+     */
+    suspend fun askWithTools(
+        message: String,
+        apiKey: String,
+        provider: String,
+        history: List<ChatTurn>,
+        modelOverride: String = "",
+        accountId: String = "",
+        systemPrompt: String = LLM_SYSTEM_PROMPT,
+        tools: JSONArray = JSONArray(),
+        readTimeoutMs: Int = 0
+    ): ToolReply {
+        if (provider != "custom" || tools.length() == 0) {
+            return ToolReply(
+                ask(message, apiKey, provider, history, modelOverride, accountId, null, systemPrompt, readTimeoutMs),
+                emptyList()
+            )
+        }
+        val key = apiKey.filterNot { it.isWhitespace() }
+        val raw = endpointOverrides["custom"]?.trim().orEmpty()
+        val problem = customUrlProblem(raw)
+        if (problem != null) return ToolReply("⚠️ $problem", emptyList())
+        val model = modelOverride.trim().ifBlank { providerInfo("custom").defaultModel }
+        val turns = normalize(history)
+        val cap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
+        return withReadTimeout(cap) {
+            try {
+                callOpenAiTools(normalizeCustomUrl(raw), key, model, turns, message, systemPrompt, tools)
+            } catch (e: Exception) {
+                ToolReply(
+                    ask(message, key, provider, turns, model, accountId, null, systemPrompt, readTimeoutMs),
+                    emptyList()
+                )
+            }
+        }
+    }
+
     private fun normalize(history: List<ChatTurn>): List<ChatTurn> {
         val result = mutableListOf<ChatTurn>()
         history.forEach { turn ->

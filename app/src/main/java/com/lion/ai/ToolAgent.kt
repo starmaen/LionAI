@@ -25,6 +25,16 @@ object ToolAgent {
     private val ASK_ALT = Regex("\\[\\[QUESTION\\]\\](.*?)\\[\\[/QUESTION\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val TRAILING_QUESTION = Regex("[?؟]\\s*$")
 
+    private val LOCAL_TOOL_HINT = """
+
+## تعليمات إضافية للخادم المحلي (function calling)
+- لديك واجهة أدوات أصلية (tools)؛ استخدمها فوراً بدل شرح خطتك.
+- إن لم يعمل الـ tools API عند خادمك، استخدم صيغة النص:
+  [[TOOL]]{"tool":"file_tree","args":{"path":"."}}[[/TOOL]]
+- لا تقل «سأبدأ» أو «سأفحص» دون استدعاء فعلي؛ أول رد يجب أن يحمل استدعاء أداة واحداً على الأقل.
+- بعد كل نتيجة أداة: تحقق أو أكمل، ولا تكرر نفس الاستدعاء بنفس المدخلات.
+""".trimIndent()
+
     private val PROMPT = """
         أنت الآن وكيل برمجة وتطوير داخل Lion AI، وتعمل بأسلوب مهندس برمجيات محترف:
         1) افهم الطلب وحدّد الملفات أو المستودع أو الأداة المناسبة.
@@ -89,11 +99,20 @@ object ToolAgent {
         session?.setMode(chatMode)
         session?.let { CheckpointStore.save(prefs, it) }
         val profile = ContextProfiles.of(chatMode, prefs, contextText)
-        val effectiveGroups = if (!profile.allowTools) emptySet() else groups.filter { it in profile.groups }.toSet()
+        val effectiveGroups = if (!profile.allowTools) emptySet() else {
+            val base = groups.filter { it in profile.groups }
+            // الخادم المحلي (custom) يملك الجهاز والملفات: زوّده بكل المجموعات لا بالمجموعة المرصودة للنص فقط.
+            val extra = if (provider == "custom") ToolGroup.values().toList() else emptyList()
+            (base + extra).toSet()
+        }
+        val nativeTools = if (provider == "custom" && effectiveGroups.isNotEmpty()) {
+            AiTools.openAiTools(effectiveGroups, prefs)
+        } else null
         val resumeBlock = session?.contextBlock().orEmpty()
         val modeBlock = profile.promptSuffix
         val system = baseSystemPrompt + modeBlock + AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT +
-            AiTools.spec(effectiveGroups, prefs) + resumeBlock
+            AiTools.spec(effectiveGroups, prefs) +
+            (if (provider == "custom") LOCAL_TOOL_HINT else "") + resumeBlock
         val toolContext = ToolContext(
             context,
             prefs,
@@ -126,7 +145,22 @@ object ToolAgent {
                 )
             }
             onProgress?.invoke("🧠 $label يخطط للخطوة ${step + 1}…")
-            val reply = LlmClient.ask(
+            val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, 90_000L).toInt()
+            val toolTurn = if (nativeTools != null && nativeTools.length() > 0) {
+                LlmClient.askWithTools(
+                    message = current,
+                    apiKey = apiKey,
+                    provider = provider,
+                    history = historyBuffer,
+                    modelOverride = model,
+                    accountId = accountId,
+                    systemPrompt = system,
+                    tools = nativeTools,
+                    readTimeoutMs = readTimeout
+                )
+            } else null
+            val nativeCalls = toolTurn?.calls.orEmpty()
+            val reply = toolTurn?.text ?: LlmClient.ask(
                 message = current,
                 apiKey = apiKey,
                 provider = provider,
@@ -135,9 +169,9 @@ object ToolAgent {
                 accountId = accountId,
                 image = null,
                 systemPrompt = system,
-                readTimeoutMs = (deadline - System.currentTimeMillis()).coerceIn(10_000L, 90_000L).toInt()
+                readTimeoutMs = readTimeout
             )
-            if (LlmClient.isErrorReply(reply)) {
+            if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
                 session?.providerFailed(label, reply)
                 val progress = session?.contextBlock(2200).orEmpty()
                 return Result(
@@ -161,7 +195,7 @@ object ToolAgent {
                 )
             }
 
-            val calls = AiTools.parseCalls(reply)
+            val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
             if (calls.isEmpty()) {
                 // بوابة ميكانيكية: لا يُقبل إعلان الانتهاء إذا كان Manifest قائماً والبوابة لم تجتز.
                 val manifest = if (chatMode == ChatMode.CODE && session != null) {
@@ -243,8 +277,9 @@ object ToolAgent {
                 )
             }
 
+            val assistantText = reply.ifBlank { "(استدعاء أدوات)" }
             historyBuffer.add(ChatTurn("user", current))
-            historyBuffer.add(ChatTurn("assistant", reply))
+            historyBuffer.add(ChatTurn("assistant", assistantText))
 
             val observations = calls.map { call ->
                 onProgress?.invoke("🛠️ " + call.name.removePrefix("github_").replace('_', ' '))

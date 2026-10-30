@@ -589,6 +589,55 @@ object AiTools {
         return builder.toString()
     }
 
+    /** مخطط أدوات OpenAI/function-calling للخوادم المتوافقة (LiteLLM/Ollama). */
+    fun openAiTools(groups: Set<ToolGroup>, prefs: SharedPreferences): JSONArray {
+        val array = JSONArray()
+        if (groups.isEmpty()) return array
+        defs.asSequence()
+            .filter { it.group in groups && (it.connector == null || ConnectorAuth.isConnected(prefs, it.connector)) }
+            .forEach { def ->
+                array.put(
+                    JSONObject()
+                        .put("type", "function")
+                        .put(
+                            "function",
+                            JSONObject()
+                                .put("name", def.name)
+                                .put(
+                                    "description",
+                                    def.description + if (def.write) " — عملية كتابة تحتاج طلباً صريحاً" else ""
+                                )
+                                .put(
+                                    "parameters",
+                                    JSONObject()
+                                        .put("type", "object")
+                                        .put("properties", schemaFrom(def.signature))
+                                        .put("additionalProperties", true)
+                                )
+                        )
+                )
+            }
+        return array
+    }
+
+    /** يحوّل مثال الوسائط في التوقيع إلى خصائص JSON Schema مبسطة. */
+    internal fun schemaFrom(signature: String): JSONObject {
+        val properties = JSONObject()
+        val example = runCatching { JSONObject(signature.ifBlank { "{}" }) }.getOrNull() ?: return properties
+        example.keys().forEach { key ->
+            val value = example.opt(key)
+            val type = when (value) {
+                is Boolean -> "boolean"
+                is Int, is Long, is Double, is Float -> "number"
+                is JSONArray -> "array"
+                is JSONObject -> "object"
+                else -> "string"
+            }
+            properties.put(key, JSONObject().put("type", type))
+        }
+        return properties
+    }
+
     fun parseCalls(text: String): List<ToolCall> {
         val found = mutableListOf<ToolCall>()
         val blocks = mutableListOf<String>()
