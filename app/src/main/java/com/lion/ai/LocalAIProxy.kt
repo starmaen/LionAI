@@ -420,9 +420,9 @@ object LocalAIProxy {
                 if (tried.isNotEmpty()) {
                     reply += "\n\n(جرّبت بالترتيب: " + tried.distinct().joinToString("، ") + ")"
                 }
-                if (RoutePolicy.isManual(prefs) && !RoutePolicy.assistEnabled(prefs)) {
-                    reply += "\n\n🔒 الوضع اليدوي: بقيت على المزود المختار ولم أبدّل تلقائياً. " +
-                        "تحقق من المفتاح/الموديل أو فعّل «مساعدة العقل المركزي في الوضع اليدوي»."
+                if (RoutePolicy.isManual(prefs)) {
+                    reply += "\n\n🔒 الوضع اليدوي: تعذّر مزودك المختار ثم جرّبت بدائل تلقائياً. " +
+                        "تحقق من المفتاح/الموديل أو اختر مزوداً آخر."
                 }
             }
 

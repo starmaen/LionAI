@@ -35,6 +35,21 @@ object RoutePolicy {
         return Route(provider, modelFor(prefs, provider))
     }
 
+    /** اسم المزود الفعلي المعروض في شاشة المحادثة. */
+    fun effectiveName(prefs: SharedPreferences): String {
+        val provider = selectedProvider(prefs)
+        val actual = if (provider == LOCAL_PROXY) LocalAIProxy.backendProvider(prefs) else provider
+        return shortName(actual)
+    }
+
+    /** وصف قصير تحت صندوق الكتابة: محلي / مجاني / مدفوع. */
+    fun effectiveNote(prefs: SharedPreferences): String {
+        val provider = selectedProvider(prefs)
+        if (provider == LOCAL_PROXY) return "محلي"
+        val info = providerInfo(provider)
+        return if (info.keyless || info.free) "مجاني" else "مدفوع"
+    }
+
     /** المزود الفعلي خلف الخادم المحلي، أو المزود المختار مباشرة. */
     fun effectiveProvider(prefs: SharedPreferences): String {
         val provider = selectedProvider(prefs)
@@ -57,20 +72,34 @@ object RoutePolicy {
         return Route(provider, modelFor(prefs, provider))
     }
 
-    /** خطة شاشة المحادثة. */
+    /**
+     * خطة شاشة المحادثة.
+     * - التلقائي: العقل المركزي يختار مباشرة من المزودات (لا يفرض الخادم المحلي).
+     * - اليدوي: المزود المختار أولاً، ثم بدائل تلقائية فقط إذا فشل. لا يتدخل
+     *   العقل المركزي في الاختيار طالما المزود المختار يرد.
+     */
     fun appPlan(prefs: SharedPreferences, kind: TaskKind, mode: AnswerMode): List<Route> {
         val chosen = appManualRoute(prefs)
-        // عند اختيار الخادم المحلي في الوضع التلقائي نترك الاختيار للخادم نفسه،
-        // لأنه هو من يدير المزودات ويطبّق نفس سياسة الأوضاع. البدائل المباشرة تبقى شبكة أمان في runChat.
-        if (!isManual(prefs) && chosen.provider == LOCAL_PROXY) return listOf(chosen)
+        if (isManual(prefs)) {
+            val rescue = CentralBrain.rescueRoutes(prefs, kind, listOf(chosen), image = false)
+            return combine(
+                manual = true,
+                assist = true,
+                chosen = chosen,
+                central = emptyList(),
+                rescue = rescue,
+                limit = 6
+            )
+        }
         val central = SmartRouter.plan(prefs, kind, mode)
+            .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
         return combine(
-            manual = isManual(prefs),
-            assist = assistEnabled(prefs),
+            manual = false,
+            assist = false,
             chosen = chosen,
             central = central,
             rescue = emptyList(),
-            limit = 3
+            limit = 6
         )
     }
 
@@ -84,21 +113,23 @@ object RoutePolicy {
         mode: AnswerMode,
         chatMode: ChatMode
     ): List<Route> {
+        val manual = isManual(prefs)
         val chosen = serverBackendRoute(prefs)
         val central = SmartRouter.plan(prefs, kind, mode)
             .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
         val expand = CentralBrain.policy(kind, chatMode, central = true).expandFallbacks
-        val rescue = if ((!isManual(prefs) || assistEnabled(prefs)) && expand) {
-            CentralBrain.rescueRoutes(prefs, kind, central, image = false)
+        // اليدوي: المزود المختار أولاً ثم بدائل عند فشله. التلقائي: العقل المركزي ثم البدائل.
+        val rescue = if (manual || expand) {
+            CentralBrain.rescueRoutes(prefs, kind, if (manual) listOf(chosen) else central, image = false)
                 .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
         } else {
             emptyList()
         }
         return combine(
-            manual = isManual(prefs),
-            assist = assistEnabled(prefs),
+            manual = manual,
+            assist = true,
             chosen = chosen,
-            central = central,
+            central = if (manual) emptyList() else central,
             rescue = rescue,
             limit = 6
         ).filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }

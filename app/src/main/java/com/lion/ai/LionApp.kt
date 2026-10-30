@@ -849,9 +849,9 @@ fun LionApp() {
         val chatMode = ChatRepository.modeOf(prefs, chatId)
         // نفس مصدر الحقيقة الذي يستخدمه الخادم المحلي والإعدادات.
         val manualMode = RoutePolicy.isManual(prefs)
-        val assist = RoutePolicy.assistEnabled(prefs)
-        // «المركزي» يعمل في الوضع التلقائي، أو في الوضع اليدوي فقط إذا فعّل المستخدم المساعدة.
-        val central = !manualMode || assist
+        // «المركزي» يدير الاختيار والتحقق في التلقائي فقط. في اليدوي لا يتدخل
+        // طالما مزودك يرد؛ البديل يعمل فقط عند فشله (انظر rescueRoutes أدناه).
+        val central = !manualMode
         val strict = central &&
             (SmartRouter.isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL))
         val careful = central && (SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL)
@@ -946,12 +946,14 @@ fun LionApp() {
             val llmPrompt = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
             // العقل المركزي يضمن أن لكل مجال مزوداً بديلاً جاهزاً عند فشل المسار الأساسي.
-            val rescueRoutes = if (central && mission.expandFallbacks) {
+            // في اليدوي: لا يتدخل العقل المركزي إلا إذا توقف المزود المختار عن الرد.
+            val rescueRoutes = if (manualMode || (central && mission.expandFallbacks)) {
                 CentralBrain.rescueRoutes(prefs, kind, plan, image != null)
+                    .filterNot { route -> plan.any { it.provider == route.provider } }
             } else {
                 emptyList()
             }
-            val routesToTry = plan + rescueRoutes
+            val routesToTry = (plan + rescueRoutes).distinctBy { it.provider }
             var reply = ""
             var used: Route? = null
             var fallback: Pair<Route, String>? = null
@@ -1277,8 +1279,22 @@ fun LionApp() {
                     }
                 }
             }
-            val via = used?.let {
-                SmartRouter.label(it, if (auto) kind else null) +
+            val via = used?.let { route ->
+                // البروكسي المحلي لا يعرض موديله الافتراضي؛ نعرض المزود الخلفي الفعلي في اليدوي،
+                // وفي التلقائي نُبقي القرار للعقل المركزي بدل الإيحاء بمزود ثابت.
+                val routeLabel = if (route.provider == RoutePolicy.LOCAL_PROXY) {
+                    if (auto) {
+                        "محلي · العقل المركزي"
+                    } else {
+                        val backend = LocalAIProxy.backendProvider(prefs)
+                        val model = RoutePolicy.modelFor(prefs, backend)
+                            .ifBlank { providerInfo(backend).defaultModel }
+                        RoutePolicy.shortName(backend) + " · " + model + " · محلي"
+                    }
+                } else {
+                    SmartRouter.label(route, if (auto) kind else null)
+                }
+                routeLabel +
                     (if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else "") +
                     (if (toolNames.isNotEmpty()) " · 🧰 " + toolNames.distinct().take(4).joinToString("، ") else "") +
                     (if (agentAsked) " · 💬 بانتظار ردك" else "") +
@@ -1688,6 +1704,8 @@ fun LionApp() {
             },
             onDismiss = { showModelSheet = false },
             onChooseAuto = {
+                // التلقائي = العقل المركزي يدير المزودات مباشرة. لا نغيّر مزودك
+                // المحفوظ حتى يعود إليه الوضع اليدوي كما هو.
                 prefs.edit().putBoolean("auto_route", true).apply()
                 autoRoute = true
                 showModelSheet = false
@@ -2018,7 +2036,20 @@ fun LionApp() {
                     input = input,
                     onInputChange = { input = it },
                     autoRoute = autoRoute,
-                    providerLabel = RoutePolicy.effectiveLabel(prefs),
+                    providerLabel = RoutePolicy.shortName(
+                        if (selectedProvider == RoutePolicy.LOCAL_PROXY) {
+                            LocalAIProxy.backendProvider(prefs)
+                        } else {
+                            selectedProvider
+                        }
+                    ),
+                    providerNote = when {
+                        selectedProvider == RoutePolicy.LOCAL_PROXY -> "محلي"
+                        providerInfo(selectedProvider).keyless ||
+                            providerInfo(selectedProvider).free -> "مجاني"
+                        else -> "مدفوع"
+                    },
+                    modeLabel = currentMode.icon + " " + currentMode.short,
                     sending = loadingChats[currentChat] == true,
                     canSend = input.isNotBlank() || attachment != null || imageAttachment != null,
                     onEditImage = { img ->

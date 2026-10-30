@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -107,6 +108,8 @@ internal fun LionInputBar(
     onInputChange: (String) -> Unit,
     autoRoute: Boolean,
     providerLabel: String,
+    providerNote: String,
+    modeLabel: String,
     sending: Boolean,
     canSend: Boolean,
     onEditImage: (ImageAttachment) -> Unit,
@@ -212,7 +215,40 @@ internal fun LionInputBar(
                                 cursorColor = Color(0xFFFFB800)
                             )
                         )
-                        Spacer(Modifier.height(2.dp))
+                        // اسم المزود/الوضع في سطر مستقل أسفل صندوق الكتابة،
+                        // حتى لا يزاحم زر الإرسال ولا يغطي المؤشر.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val providerLine = (
+                                if (autoRoute) {
+                                    "🧠 تلقائي (العقل المركزي)"
+                                } else {
+                                    "🔒 $providerLabel" +
+                                        (if (providerNote.isNotBlank()) " ($providerNote)" else "")
+                                }
+                                ) + if (modeLabel.isNotBlank()) " · $modeLabel" else ""
+                            TextButton(
+                                onClick = onChooseModel,
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    providerLine,
+                                    color = Color(0xFFFFB800),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Icon(
+                                    Icons.Filled.ArrowDropDown,
+                                    "اختيار الموديل",
+                                    tint = Color(0xFFFFB800),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -225,23 +261,6 @@ internal fun LionInputBar(
                             }
                             InputAction(Icons.Filled.Mic, "صوت") { onVoice() }
                             Spacer(Modifier.weight(1f))
-                            TextButton(
-                                onClick = onChooseModel,
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    if (autoRoute) "🧠 تلقائي" else "🔒 $providerLabel",
-                                    color = Color(0xFFFFB800),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Icon(
-                                    Icons.Filled.ArrowDropDown,
-                                    "اختيار الموديل",
-                                    tint = Color(0xFFFFB800),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
                             IconButton(
                                 onClick = onOpenWeb,
                                 modifier = Modifier.size(32.dp)
