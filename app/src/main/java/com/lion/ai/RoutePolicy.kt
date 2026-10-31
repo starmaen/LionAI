@@ -91,12 +91,16 @@ object RoutePolicy {
                 limit = 6
             )
         }
-        val central = SmartRouter.plan(prefs, kind, mode)
+        val direct = SmartRouter.plan(prefs, kind, mode)
             .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+        // التلقائي: الخادم المحلي هو المنفّذ، والعقل المركزي يختار أفضل مزود داخله.
+        // إن لم يكن الخادم جاهزاً نعود للتوجيه المباشر بلا أي تغيير في السلوك.
+        val server = if (LocalAIProxy.getUrl().isNotBlank()) Route(LOCAL_PROXY, "") else null
+        val central = (if (server != null) listOf(server) else emptyList()) + direct
         return combine(
             manual = false,
             assist = false,
-            chosen = chosen,
+            chosen = direct.firstOrNull() ?: chosen,
             central = central,
             rescue = emptyList(),
             limit = 6

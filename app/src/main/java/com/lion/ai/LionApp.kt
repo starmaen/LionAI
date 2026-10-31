@@ -1731,17 +1731,11 @@ fun LionApp() {
                         Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
                     )
                 } else {
-                    val previous = (prefs.getString("provider", "") ?: "").trim()
-                    val editor = prefs.edit()
+                    // اختيار المزود الفردي مباشرة؛ لا يمس إعداد الخادم المحلي إطلاقاً.
+                    prefs.edit()
                         .putString("provider", info.id)
                         .putBoolean("auto_route", false)
-                    // اختيار البروكسي بعد مزود مباشر يحفظ ذلك المزود كخادم خلفي.
-                    if (info.id == RoutePolicy.LOCAL_PROXY && previous.isNotBlank() &&
-                        previous != RoutePolicy.LOCAL_PROXY && previous != RoutePolicy.CUSTOM
-                    ) {
-                        editor.putString("local_proxy_backend", previous)
-                    }
-                    editor.apply()
+                        .apply()
                     selectedProvider = info.id
                     autoRoute = false
                     showModelSheet = false

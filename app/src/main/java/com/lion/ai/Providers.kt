@@ -433,8 +433,9 @@ val PROVIDERS = listOf(
         defaultModel = "grok-2-latest",
         shortName = "Grok",
         endpoint = "https://api.x.ai/v1/chat/completions",
-        modelHint = "خيار قوي ومفيد في تنوع المزودات.",
-        models = listOf("grok-2-latest")
+        modelHint = "خيار قوي ومفيد في تنوع المزودات. مدفوع على api.x.ai؛ يمكن استبدال العنوان من «عنوان وسيط» ببوابة متوافقة مع OpenAI.",
+        models = listOf("grok-2-latest"),
+        free = false
     ),
     // ===== دردشات الويب المجانية (بدون مفتاح) =====
     ProviderInfo(

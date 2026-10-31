@@ -426,13 +426,9 @@ fun SettingsScreen(
                                     containerColor = if (!autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
                                 ),
                                 onClick = {
-                                    // اليدوي يوقف تدخّل العقل المركزي ولا يغيّر المزود؛
-                                    // اختيار المزود نفسه يتم من البطاقات أدناه.
+                                    // اليدوي يوقف تدخّل العقل المركزي ولا يغيّر المزود ولا الخادم.
                                     autoRouteSetting = false
-                                    prefs.edit()
-                                        .putBoolean("auto_route", false)
-                                        .putString("local_proxy_backend", backend)
-                                        .apply()
+                                    prefs.edit().putBoolean("auto_route", false).apply()
                                 }
                             ) {
                                 Text(
@@ -494,8 +490,9 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 rowItems.forEach { info ->
-                                    // التحديد يعكس المزود الفعلي (مباشر) لا مجرد مزود الخادم.
-                                    val selected = !autoRouteSetting && provider == info.id
+                                    // شبكة الخادم: تختار مزودَ routing الخادم فقط، مستقلة تماماً
+                                    // عن المزود الفردي النشط في المحادثة.
+                                    val selected = info.id == backend
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
@@ -505,13 +502,8 @@ fun SettingsScreen(
                                             )
                                             .clickable {
                                                 backend = info.id
-                                                provider = info.id
-                                                // اختيار مزود مباشر = وضع يدوي صريح يبقى محفوظاً.
-                                                autoRouteSetting = false
                                                 prefs.edit()
                                                     .putString("local_proxy_backend", info.id)
-                                                    .putString("provider", info.id)
-                                                    .putBoolean("auto_route", false)
                                                     .apply()
                                             }
                                             .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -591,13 +583,10 @@ fun SettingsScreen(
                                                     RoundedCornerShape(16.dp)
                                                 )
                                                 .clickable {
+                                                    // مزود الخادم الخلفي فقط، بلا تغيير مزود المحادثة.
                                                     backend = entry.id
-                                                    provider = "local_proxy"
-                                                    autoRouteSetting = false
                                                     prefs.edit()
                                                         .putString("local_proxy_backend", entry.id)
-                                                        .putString("provider", "local_proxy")
-                                                        .putBoolean("auto_route", false)
                                                         .apply()
                                                 }
                                                 .padding(horizontal = 8.dp, vertical = 8.dp),
