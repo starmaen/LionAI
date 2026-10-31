@@ -78,9 +78,15 @@ object RoutePolicy {
      * - اليدوي: المزود المختار أولاً، ثم بدائل تلقائية فقط إذا فشل. لا يتدخل
      *   العقل المركزي في الاختيار طالما المزود المختار يرد.
      */
-    fun appPlan(prefs: SharedPreferences, kind: TaskKind, mode: AnswerMode): List<Route> {
+    fun appPlan(
+        prefs: SharedPreferences,
+        kind: TaskKind,
+        mode: AnswerMode,
+        chatId: String = ActiveChat.id
+    ): List<Route> {
         val chosen = appManualRoute(prefs)
         if (isManual(prefs)) {
+            ProviderStick.clear(prefs, chatId)
             val rescue = CentralBrain.rescueRoutes(prefs, kind, listOf(chosen), image = false)
             return combine(
                 manual = true,
@@ -91,8 +97,10 @@ object RoutePolicy {
                 limit = 6
             )
         }
-        val direct = SmartRouter.plan(prefs, kind, mode)
-            .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+        val direct = applySticky(
+            prefs, kind, chatId,
+            SmartRouter.plan(prefs, kind, mode).filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+        )
         // التلقائي: الخادم المحلي هو المنفّذ، والعقل المركزي يختار أفضل مزود داخله.
         // إن لم يكن الخادم جاهزاً نعود للتوجيه المباشر بلا أي تغيير في السلوك.
         val server = if (LocalAIProxy.getUrl().isNotBlank()) Route(LOCAL_PROXY, "") else null
@@ -108,6 +116,26 @@ object RoutePolicy {
     }
 
     /**
+     * ثبات المزود: في التلقائي، المزود الذي أجاب آخر مرة في هذه المحادثة يبقى هو المزود طالما يرد،
+     * فلا يبدّله العقل المركزي من تلقاء نفسه. يتغير فقط عند فشله أو عند تغيير المستخدم الاختيار يدوياً
+     * (يتغير توقيع الإعدادات فيبطل الثبات). أسئلة المجاملة السريعة والصور تُستثنى.
+     */
+    fun applySticky(prefs: SharedPreferences, kind: TaskKind, chatId: String, routes: List<Route>): List<Route> {
+        if (chatId.isBlank() || isManual(prefs)) return routes
+        if (kind == TaskKind.FAST || kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) return routes
+        val stick = ProviderStick.get(prefs, chatId) ?: return routes
+        if (stick == LOCAL_PROXY || stick == CUSTOM) return routes
+        if (!SmartRouter.available(prefs, stick) || SmartRouter.failureCount(stick) >= 2) return routes
+        val existing = routes.firstOrNull { it.provider == stick }
+        val route = existing ?: Route(
+            stick,
+            SmartRouter.candidates(kind).firstOrNull { it.provider == stick }?.model
+                ?.takeIf { it.isNotBlank() } ?: modelFor(prefs, stick)
+        )
+        return listOf(route) + routes.filter { it.provider != stick }
+    }
+
+    /**
      * خطة الخادم المحلي. التلقائي يستخدم العقل المركزي، واليدوي يبقى يدوياً،
      * ومساعدة العقل المركزي تضيف البدائل فقط عند فشل المزود المختار.
      */
@@ -115,12 +143,16 @@ object RoutePolicy {
         prefs: SharedPreferences,
         kind: TaskKind,
         mode: AnswerMode,
-        chatMode: ChatMode
+        chatMode: ChatMode,
+        chatId: String = ActiveChat.id
     ): List<Route> {
         val manual = isManual(prefs)
         val chosen = serverBackendRoute(prefs)
-        val central = SmartRouter.plan(prefs, kind, mode)
-            .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+        if (manual) ProviderStick.clear(prefs, chatId)
+        val central = applySticky(
+            prefs, kind, chatId,
+            SmartRouter.plan(prefs, kind, mode).filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+        )
         val expand = CentralBrain.policy(kind, chatMode, central = true).expandFallbacks
         // اليدوي: المزود المختار أولاً ثم بدائل عند فشله. التلقائي: العقل المركزي ثم البدائل.
         val rescue = if (manual || expand) {
@@ -157,5 +189,40 @@ object RoutePolicy {
             else -> listOf(chosen) + central + rescue
         }
         return routes.distinctBy { it.provider }.take(limit.coerceAtLeast(1))
+    }
+}
+
+/** معرّف المحادثة النشطة (تضبطه شاشة المحادثة قبل الإرسال ويقرؤه الخادم المحلي داخل التطبيق). */
+object ActiveChat {
+    @Volatile
+    var id: String = ""
+}
+
+/** يحفظ لكل محادثة المزود الذي نجح آخر مرة في التلقائي، مع توقيع الإعدادات لإبطاله عند أي تغيير يدوي. */
+object ProviderStick {
+    private fun key(chatId: String) = "route_stick_$chatId"
+
+    private fun signature(prefs: SharedPreferences): String =
+        RoutePolicy.isManual(prefs).toString() + "|" + RoutePolicy.selectedProvider(prefs) + "|" +
+            LocalAIProxy.backendProvider(prefs)
+
+    fun get(prefs: SharedPreferences, chatId: String): String? {
+        if (chatId.isBlank()) return null
+        val raw = prefs.getString(key(chatId), null) ?: return null
+        val provider = raw.substringBefore('|')
+        val sig = raw.substringAfter('|', "")
+        return if (provider.isNotBlank() && sig == signature(prefs)) provider else null
+    }
+
+    fun set(prefs: SharedPreferences, chatId: String, provider: String) {
+        if (chatId.isBlank() || provider.isBlank()) return
+        if (provider == RoutePolicy.LOCAL_PROXY || provider == RoutePolicy.CUSTOM) return
+        if (RoutePolicy.isManual(prefs)) return
+        val value = provider + "|" + signature(prefs)
+        if (prefs.getString(key(chatId), null) != value) prefs.edit().putString(key(chatId), value).apply()
+    }
+
+    fun clear(prefs: SharedPreferences, chatId: String) {
+        if (chatId.isNotBlank() && prefs.contains(key(chatId))) prefs.edit().remove(key(chatId)).apply()
     }
 }

@@ -181,6 +181,7 @@ object AiTools {
         Def("code_translate_save", ToolGroup.CODE, """{"path":"a.py","text":"","name":"","to":"Kotlin","out":"","notes":""}""", "ترجمة كود إلى لغة أخرى وحفظ الناتج داخل مساحة العمل", true),
         Def("dependency_audit", ToolGroup.CODE, """{"path":"","online":true,"max_files":5000}""", "تدقيق المكتبات: Gradle/Maven/npm/Python/Dart/Rust/Go + ثغرات OSV + تعارض الإصدارات"),
         Def("library_versions", ToolGroup.CODE, """{"path":"","name":"react","ecosystem":"npm","current_version":"18.0.0","max":12,"online":true}""", "أحدث إصدار وترخيص للمكتبات + مقارنة المثبّت (تقفّي الترقيات)"),
+        Def("build_diagnose", ToolGroup.CODE, """{"repo":"owner/name","run_id":0,"file":"","text":""}""", "تشخيص فشل البناء: يجلب سجل آخر عملية فاشلة (أو run_id أو ملف سجل أو نص) ويستخرج المهمة والسبب والأخطاء ملف:سطر مع مقتطف الكود"),
         Def("code_doctor", ToolGroup.CODE, """{"path":"","online":false,"max_files":3000}""", "تقرير جاهزية شامل: بنية، صحة كود، اختبارات، سلسلة بناء، اعتماديات، وحكم نهائي"),
 
         // Utilities
@@ -330,7 +331,7 @@ object AiTools {
         Def("shell_exec", ToolGroup.SHELL, """{"command":"git status","cwd":"","timeout_sec":120}""", "تنفيذ أمر مسموح داخل مساحة العمل مع مهلة وسقف مخرجات", true),
         Def("shell_which", ToolGroup.SHELL, """{"name":"git"}""", "التحقق من وجود أداة على الجهاز"),
         Def("toolchain_status", ToolGroup.SHELL, "{}", "حالة الحزم الأساسية (git/java/gradle/node/python/jq...) على الجهاز/الخادم"),
-        Def("toolchain_install", ToolGroup.SHELL, """{"package":"git"}""", "تثبيت حزمة أساسية من قائمة بيضاء عبر pkg/apt", true),
+        Def("toolchain_install", ToolGroup.SHELL, """{"package":"git"}""", "تثبيت أداة تطوير من قائمة بيضاء عبر pkg/apt، أو من الإنترنت اختيارياً بصيغة pip:ruff أو npm:typescript", true),
         Def("android_build", ToolGroup.SHELL, """{"root":"","task":":app:assembleDebug","timeout_sec":600}""", "بناء Gradle محلي وأخطاء محللة file:line (يتطلب JDK/SDK)", true),
         Def("android_install_run", ToolGroup.SHELL, """{"apk":"downloads/app.apk","package_name":"com.example.app","activity":".MainActivity"}""", "تثبيت APK وتشغيله عبر adb", true),
         Def("android_logcat", ToolGroup.SHELL, """{"filter":"","lines":300}""", "قراءة logcat مفلتر"),
@@ -1630,6 +1631,29 @@ $code
                         args.optBoolean("online", true)
                     )
                 }
+            }
+            "build_diagnose" -> {
+                val text = args.optString("text")
+                val file = args.optString("file")
+                val raw = when {
+                    text.isNotBlank() -> text
+                    file.isNotBlank() -> FileTools.read(ctx.context, file, 3_000_000).text
+                    else -> {
+                        val (owner, repo) = repoOf(ctx, args)
+                        var runId = args.optLong("run_id", 0L)
+                        if (runId <= 0L) {
+                            val runs = GitHubClient.listWorkflowRuns(token, owner, repo, 15)
+                            runId = runs.firstOrNull { it.conclusion == "failure" }?.id ?: runs.firstOrNull()?.id ?: 0L
+                        }
+                        if (runId <= 0L) throw IllegalArgumentException("لا توجد عمليات بناء لهذا المستودع")
+                        val jobs = GitHubClient.listRunJobs(token, owner, repo, runId)
+                        val failing = jobs.filter { it.conclusion == "failure" }.ifEmpty { jobs }
+                        failing.joinToString("\n") { job ->
+                            runCatching { GitHubClient.jobLog(token, owner, repo, job.id, 1_500_000) }.getOrDefault("")
+                        }
+                    }
+                }
+                BuildDiagnose.report(ctx.context, raw)
             }
             "code_doctor" -> CodeDoctor.report(
                 ctx.context,

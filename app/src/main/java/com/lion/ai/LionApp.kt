@@ -878,6 +878,7 @@ fun LionApp() {
         }
         loadingChats[chatId] = true
         toolStatus[chatId] = ""
+        ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
         var agentComplete = true
         var agentAsked = false
@@ -964,6 +965,7 @@ fun LionApp() {
             // اليدوي: مزودك المختار يأخذ مهلة المهمة كاملة، ثم وقت إضافي للبدائل (لا تبديل صامت بسبب بطء المزود).
             val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(kind) + (if (manualMode) 60_000L else 0L)
             val chosenProvider = plan.firstOrNull()?.provider
+            val stickProvider = if (manualMode) null else ProviderStick.get(prefs, chatId)
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
             val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
             for (route in routesToTry) {
@@ -1061,13 +1063,14 @@ fun LionApp() {
                     AnswerGuard.claimsCompletedAction(r)
                 if (falseClaim) sawFalseClaim = true
                 val low = !error && noTools &&
-                    (falseClaim || (central && AnswerGuard.isLowQuality(r, kind, prompt)))
+                    (falseClaim || (central && route.provider != stickProvider && AnswerGuard.isLowQuality(r, kind, prompt)))
                 SmartRouter.record(route, !error && !low, System.currentTimeMillis() - started)
                 if (!error && !low) {
                     reply = r
                     used = route
                     toolNames = agentResult?.tools.orEmpty()
                     LlmClient.recordSuccess(route.provider, route.model)
+                    if (!manualMode && kind != TaskKind.FAST) ProviderStick.set(prefs, chatId, route.provider)
                     break
                 }
                 if (!error && !falseClaim && fallback == null) fallback = route to r

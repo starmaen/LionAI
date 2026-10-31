@@ -23,7 +23,10 @@ object ShellTools {
         "awk", "wc", "head", "tail", "sort", "uniq", "mkdir", "cp", "mv", "rm", "touch",
         "zip", "unzip", "tar", "adb", "emulator", "avdmanager", "sdkmanager", "apkanalyzer",
         "apksigner", "bundletool", "java", "node", "npm", "npx", "python", "python3", "pip",
-        "pip3", "pkg", "apt", "apt-get", "which", "command"
+        "pip3", "pkg", "apt", "apt-get", "which", "command",
+        "make", "cmake", "clang", "clang++", "go", "cargo", "rustc", "php", "ruby", "sqlite3", "shellcheck",
+        "patch", "diff", "wget", "tree", "fd", "openssl", "ruff", "flake8", "black", "mypy", "pytest",
+        "eslint", "prettier", "tsc"
     )
 
     /** حزم مسموح تثبيتها فقط (لا يُمرَّر اسم الحزمة من النموذج مباشرة إلى الصدفة). */
@@ -40,8 +43,27 @@ object ShellTools {
         "tar" to listOf("tar"),
         "ffmpeg" to listOf("ffmpeg"),
         "build-essential" to listOf("build-essential"),
-        "openssh" to listOf("openssh")
+        "openssh" to listOf("openssh"),
+        // أدوات تطوير اختيارية (المفتاح = اسم الأمر الذي يُفحص وجوده)
+        "rg" to listOf("ripgrep"),
+        "make" to listOf("make"),
+        "cmake" to listOf("cmake"),
+        "clang" to listOf("clang"),
+        "go" to listOf("golang"),
+        "cargo" to listOf("rust"),
+        "php" to listOf("php"),
+        "ruby" to listOf("ruby"),
+        "sqlite3" to listOf("sqlite"),
+        "shellcheck" to listOf("shellcheck"),
+        "patch" to listOf("patch"),
+        "tree" to listOf("tree"),
+        "fd" to listOf("fd"),
+        "wget" to listOf("wget"),
+        "openssl" to listOf("openssl")
     )
+    /** أدوات مسموح استيرادها عبر pip/npm من الإنترنت (اختيارياً): الاسم يجب أن يكون في القائمة. */
+    private val PIP_TOOLS = setOf("ruff", "flake8", "black", "mypy", "pytest", "pylint", "bandit")
+    private val NPM_TOOLS = setOf("typescript", "eslint", "prettier", "tsx", "jshint")
     private val BLOCKED = listOf(
         Regex("(^|\\s)(sudo|su|mount|umount|reboot|shutdown|mkfs|dd|iptables|setenforce)(\\s|$)"),
         Regex("rm\\s+-[a-z]*r[a-z]*f?\\s+/(\\s|$)"),
@@ -255,6 +277,17 @@ object ShellTools {
     /** تثبيت حزمة من قائمة بيضاء عبر مدير الحزم المتاح (pkg/apt-get). */
     fun install(context: Context, packageName: String, timeoutSec: Int = 600): ShellResult {
         val key = packageName.trim().lowercase()
+        if (key.startsWith("pip:") || key.startsWith("npm:")) {
+            val kind = key.substringBefore(':')
+            val name = key.substringAfter(':')
+            val allowed = if (kind == "pip") PIP_TOOLS else NPM_TOOLS
+            if (name !in allowed) {
+                return ShellResult(false, "⛔ أداة غير مسموحة: $name. المسموح ($kind): " + allowed.sorted().joinToString("، "), 126, 0)
+            }
+            val command = if (kind == "pip") "pip install --user $name" else "npm install -g $name"
+            val result = exec(context, command, timeoutSec)
+            return result.copy(output = "=== $kind ===\n" + result.output.takeLast(12_000))
+        }
         val candidates = PACKAGES[key]
             ?: return ShellResult(
                 false,

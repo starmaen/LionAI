@@ -73,6 +73,7 @@ object SmartRouter {
     }
 
     fun latency(provider: String): Long = latencyMs[provider] ?: 0L
+    fun failureCount(provider: String): Int = failures[provider] ?: 0
 
     private val CODE_WORDS = Regex(
         "(كود|برمج|سكربت|دال[ةه]|دوال|خطا برمجي|compile|exception|stack ?trace|\\bbug\\b|debug|function|" +

@@ -412,6 +412,7 @@ object LocalAIProxy {
                     reply = candidate
                     used = route
                     LlmClient.recordSuccess(route.provider, route.model)
+                    if (!manual && taskKind != TaskKind.FAST) ProviderStick.set(prefs, ActiveChat.id, route.provider)
                     break
                 }
                 lastError = candidate
