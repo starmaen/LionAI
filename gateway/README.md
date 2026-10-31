@@ -216,3 +216,10 @@ curl http://127.0.0.1:8080/health
 - البوابة عامة لكنها محمية بالتوكن؛ من يملك التوكن يستهلك مفاتيحك.
 - يمكنك تدوير التوكن من إعدادات الاستضافة في أي وقت.
 - استخدم Space بحالة Public (الكود فقط ظاهر، والـ Secrets مخفية) أو Private مع تمرير توكن HF — لكن Private يتطلب مصادقة إضافية من التطبيق.
+
+---
+
+## بديل مجاني بلا بطاقة: Cloudflare Workers
+
+إذا كان Render أو Hugging Face يطلبان بطاقة/PRO، استخدم نسخة Cloudflare Worker الجاهزة في مجلد [`worker/`](../worker/README.md).
+تعمل على خطة Workers Free بلا بطاقة: لوحة ويب على `/`، و`/v1/models` و`/v1/chat/completions`.

@@ -1,0 +1,7 @@
+name = "lionai-gateway"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# الأسرار لا تُكتب هنا. أضفها من لوحة Cloudflare:
+# Workers & Pages → lionai-gateway → Settings → Variables and Secrets
+# أو محلياً عبر: npx wrangler secret put RELAY_TOKEN
