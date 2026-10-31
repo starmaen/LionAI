@@ -759,7 +759,7 @@ fun SettingsScreen(
                                                         gwSelectedModel = ""
                                                         gwModelsBusy = true
                                                         gwModels = emptyList()
-                                                        gwReport = "ℹ️ ${info.shortName}: افحص المزود ثم اختر موديلاً أو اضغط «تفعيل»."
+                                                        gwReport = "ℹ️ ${info.label}: افحص المزود ثم اختر موديلاً واضغط «حفظ الموديل»."
                                                         settingsScope.launch {
                                                             val all = withContext(Dispatchers.IO) {
                                                                 WebGateway.listModels(prefs)
