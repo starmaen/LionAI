@@ -120,6 +120,61 @@ object WebGateway {
         }
     }
 
+    /** فحص مزود محدد عبر الخادم (طلب حقيقي قصير) قبل تفعيله. */
+    fun testProvider(prefs: SharedPreferences, provider: String, model: String): String {
+        val config = load(prefs)
+        if (config.url.isBlank()) return "⚠️ أدخل رابط الخادم أولاً."
+        if (config.token.isBlank()) return "⚠️ أدخل مفتاح الخادم (RELAY_TOKEN) أولاً."
+        val pid = provider.trim()
+        if (!supports(pid)) return "⚠️ هذا المزود غير مدعوم عبر الخادم — استخدم الوضع المباشر."
+        val actualModel = model.trim().ifBlank { LlmClient.defaultModel(pid) }
+        val gatewayModel = gatewayModel(pid, actualModel)
+        val body = org.json.JSONObject().apply {
+            put("model", gatewayModel)
+            put(
+                "messages",
+                org.json.JSONArray().put(
+                    org.json.JSONObject()
+                        .put("role", "user")
+                        .put("content", "أجب بكلمة واحدة فقط: تم")
+                )
+            )
+            put("max_tokens", 8)
+            put("temperature", 0)
+        }.toString()
+        val started = System.currentTimeMillis()
+        return try {
+            val connection = (URL(chatUrl(config.url)).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 45_000
+                requestMethod = "POST"
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Authorization", "Bearer ${config.token}")
+            }
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            connection.disconnect()
+            val ms = System.currentTimeMillis() - started
+            val json = runCatching { org.json.JSONObject(raw) }.getOrNull()
+            if (code !in 200..299) {
+                val message = json?.optJSONObject("error")?.optString("message").orEmpty()
+                    .ifBlank { json?.optJSONObject("error")?.optString("code").orEmpty() }
+                    .ifBlank { raw.take(180) }
+                "❌ $gatewayModel — HTTP $code: $message"
+            } else {
+                val content = json?.optJSONArray("choices")?.optJSONObject(0)
+                    ?.optJSONObject("message")?.optString("content", "").orEmpty().trim()
+                if (content.isBlank()) "⚠️ رد فارغ من $gatewayModel (HTTP $code، ${ms}ms)"
+                else "✅ $gatewayModel يعمل عبر الخادم (${ms}ms): ${content.take(80)}"
+            }
+        } catch (e: Exception) {
+            "❌ تعذّر فحص $gatewayModel: ${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+
     /** جلب موديلات البوابة (اختياري) — يتطلب RELAY_TOKEN. */
     fun listModels(prefs: SharedPreferences): List<String> {
         val config = load(prefs)

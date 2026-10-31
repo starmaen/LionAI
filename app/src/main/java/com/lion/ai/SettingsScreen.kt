@@ -590,7 +590,7 @@ fun SettingsScreen(
                         }
                         SettingsSection(
                             title = "🌐 مزودات خادم الويب",
-                            subtitle = "اختياري: مباشر أو عبر Cloudflare/Render مع رجوع تلقائي",
+                            subtitle = "اختياري: مباشر أو عبر Cloudflare/Render — افحص ثم فعّل",
                             badge = WebGateway.modeLabel(gwMode),
                             nested = true
                         ) {
@@ -672,7 +672,28 @@ fun SettingsScreen(
                                             gwBusy = false
                                         }
                                     }
-                                ) { Text("🔗 اختبار الخادم", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
+                                ) { Text("1) الخادم", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
+                                Button(
+                                    enabled = !gwBusy,
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                                    onClick = {
+                                        val pid = gwModelsFor.ifBlank { backend }
+                                        val model = gwSelectedModel.ifBlank {
+                                            (prefs.getString("model_$pid", "") ?: "").trim()
+                                        }
+                                        gwBusy = true
+                                        gwReport = "⏳ أفحص ${providerInfo(pid).shortName} عبر الخادم…"
+                                        saveGateway()
+                                        settingsScope.launch {
+                                            gwReport = withContext(Dispatchers.IO) {
+                                                WebGateway.testProvider(prefs, pid, model)
+                                            }
+                                            gwBusy = false
+                                        }
+                                    }
+                                ) { Text("2) المزود", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
                                 Button(
                                     enabled = !gwBusy,
                                     modifier = Modifier.weight(1f),
@@ -680,19 +701,27 @@ fun SettingsScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                                     onClick = {
                                         gwBusy = true
-                                        gwReport = "⏳ أجلب موديلات الخادم…"
+                                        gwReport = "⏳ أحدّث موديلات الخادم…"
                                         saveGateway()
                                         settingsScope.launch {
                                             val models = withContext(Dispatchers.IO) { WebGateway.listModels(prefs) }
+                                            val pid = gwModelsFor.ifBlank { backend }
+                                            if (models.isNotEmpty() && pid.isNotBlank()) {
+                                                val subs = models.filter { it.startsWith("$pid/") }
+                                                    .map { it.removePrefix("$pid/") }
+                                                if (subs.isNotEmpty()) {
+                                                    gwModels = subs.distinct().take(30)
+                                                }
+                                            }
                                             gwReport = if (models.isEmpty()) {
                                                 "⚠️ لا موديلات — تحقق من الرابط و RELAY_TOKEN."
                                             } else {
-                                                "✅ ${models.size} موديل:\n" + models.take(8).joinToString("\n")
+                                                "✅ ${models.size} موديلاً متاحاً من الخادم."
                                             }
                                             gwBusy = false
                                         }
                                     }
-                                ) { Text("📋 الموديلات", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
+                                ) { Text("3) النماذج", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
                             }
                             if (gwReport.isNotBlank()) {
                                 Spacer(Modifier.height(6.dp))
@@ -700,7 +729,7 @@ fun SettingsScreen(
                             }
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "المزودات المدعومة عبر الخادم (اختر واحداً لتفعيله):",
+                                "المزودات المدعومة عبر الخادم (اختر للفحص ثم فعّل):",
                                 color = Color(0xFFB0B0B0),
                                 fontSize = 11.sp
                             )
@@ -714,29 +743,27 @@ fun SettingsScreen(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         rowItems.forEach { info ->
-                                            val selected = info.id == backend
+                                            val active = info.id == backend && provider == RoutePolicy.LOCAL_PROXY
+                                            val browsing = info.id == gwModelsFor
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .background(
-                                                        if (selected) Color(0xFFFFB800) else Color(0xFF2A2A2A),
+                                                        when {
+                                                            active -> Color(0xFFFFB800)
+                                                            browsing -> Color(0xFF64B5F6)
+                                                            else -> Color(0xFF2A2A2A)
+                                                        },
                                                         RoundedCornerShape(16.dp)
                                                     )
                                                     .clickable {
-                                                        backend = info.id
-                                                        provider = RoutePolicy.LOCAL_PROXY
-                                                        autoRouteSetting = false
-                                                        prefs.edit()
-                                                            .putString("local_proxy_backend", info.id)
-                                                            .putString("provider", RoutePolicy.LOCAL_PROXY)
-                                                            .putBoolean("auto_route", false)
-                                                            .apply()
-                                                        // المستوى الثاني: موديلات هذا المزود من الخادم.
+                                                        // اختيار للفحص فقط — لا يفعّل شيئاً بعد.
                                                         gwModelsFor = info.id
                                                         gwSelectedModel =
                                                             (prefs.getString("model_${info.id}", "") ?: "").trim()
                                                         gwModelsBusy = true
                                                         gwModels = emptyList()
+                                                        gwReport = "ℹ️ ${info.shortName}: افحص المزود ثم اختر موديلاً أو اضغط «تفعيل»."
                                                         settingsScope.launch {
                                                             val all = withContext(Dispatchers.IO) {
                                                                 WebGateway.listModels(prefs)
@@ -757,12 +784,12 @@ fun SettingsScreen(
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
-                                                    info.shortName,
-                                                    color = if (selected) Color(0xFF121212) else Color(0xFFE0E0E0),
+                                                    info.shortName + if (active) " ✓" else "",
+                                                    color = if (active || browsing) Color(0xFF121212) else Color(0xFFE0E0E0),
                                                     fontSize = 11.sp,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
-                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                                    fontWeight = if (active || browsing) FontWeight.Bold else FontWeight.Normal
                                                 )
                                             }
                                         }
@@ -807,10 +834,17 @@ fun SettingsScreen(
                                                         )
                                                         .clickable {
                                                             gwSelectedModel = modelId
+                                                            backend = gwModelsFor
+                                                            provider = RoutePolicy.LOCAL_PROXY
+                                                            autoRouteSetting = false
                                                             prefs.edit()
                                                                 .putString("model_$gwModelsFor", modelId)
+                                                                .putString("local_proxy_backend", gwModelsFor)
+                                                                .putString("provider", RoutePolicy.LOCAL_PROXY)
+                                                                .putBoolean("auto_route", false)
                                                                 .apply()
                                                             LlmClient.reloadOverrides(prefs)
+                                                            gwReport = "✅ فُعّل $gwModelsFor/$modelId عبر الخادم."
                                                         }
                                                         .padding(horizontal = 6.dp, vertical = 6.dp),
                                                     contentAlignment = Alignment.Center
@@ -835,6 +869,24 @@ fun SettingsScreen(
                                         color = Color(0xFF4CAF50),
                                         fontSize = 10.sp
                                     )
+                                    Spacer(Modifier.height(4.dp))
+                                    Button(
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                                        onClick = {
+                                            backend = gwModelsFor
+                                            provider = RoutePolicy.LOCAL_PROXY
+                                            autoRouteSetting = false
+                                            prefs.edit()
+                                                .putString("model_$gwModelsFor", gwSelectedModel)
+                                                .putString("local_proxy_backend", gwModelsFor)
+                                                .putString("provider", RoutePolicy.LOCAL_PROXY)
+                                                .putBoolean("auto_route", false)
+                                                .apply()
+                                            LlmClient.reloadOverrides(prefs)
+                                            gwReport = "✅ فُعّل $gwModelsFor/$gwSelectedModel عبر الخادم."
+                                        }
+                                    ) { Text("✅ تفعيل هذا المزود", color = Color(0xFF0D0D0D), fontSize = 11.sp) }
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
