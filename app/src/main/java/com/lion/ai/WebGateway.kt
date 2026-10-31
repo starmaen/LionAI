@@ -99,6 +99,20 @@ object WebGateway {
 
     fun chatUrl(raw: String): String = LlmClient.normalizeCustomUrl(raw)
 
+    /** يطبّع الرابط ليصبح https://host/v1 (يضيف المخطط والمسار عند نقصهما). */
+    fun normalizeBase(raw: String): String {
+        var url = raw.trim().trimEnd('/')
+        if (url.isBlank()) return ""
+        if (!url.contains("://")) url = "https://$url"
+        val afterScheme = url.substringAfter("://", "")
+        val path = afterScheme.substringAfter('/', "")
+        return when {
+            path.isBlank() -> "$url/v1"
+            path == "v1" || path.endsWith("/v1") -> url
+            else -> url
+        }
+    }
+
     fun healthUrl(raw: String): String =
         chatUrl(raw).removeSuffix("/chat/completions").removeSuffix("/v1").trimEnd('/') + "/health"
 
@@ -137,6 +151,9 @@ object WebGateway {
                 val active = providers?.length() ?: 0
                 "✅ الخادم يعمل (HTTP $code) — $active مزود مفعّل.\n$url"
             }
+        } catch (e: java.net.UnknownHostException) {
+            "❌ تعذّر حل اسم النطاق (DNS) لـ ${e.message ?: "الخادم"}.\n" +
+                "جرّب: إيقاف Private DNS أو ضبطه على 1.1.1.1، أو VPN، أو افتح الرابط في المتصفح."
         } catch (e: Exception) {
             "❌ تعذّر الوصول للخادم: ${e.message ?: e.javaClass.simpleName}"
         }
@@ -192,6 +209,9 @@ object WebGateway {
                 if (content.isBlank()) "⚠️ رد فارغ من $gatewayModel (HTTP $code، ${ms}ms)"
                 else "✅ $gatewayModel يعمل عبر الخادم (${ms}ms): ${content.take(80)}"
             }
+        } catch (e: java.net.UnknownHostException) {
+            "❌ تعذّر حل اسم النطاق (DNS) لخادم الويب.\n" +
+                "جرّب إيقاف Private DNS أو ضبطه على 1.1.1.1، أو استخدم VPN."
         } catch (e: Exception) {
             "❌ تعذّر فحص $gatewayModel: ${e.message ?: e.javaClass.simpleName}"
         }

@@ -581,9 +581,11 @@ fun SettingsScreen(
                         var gwModelsBusy by remember { mutableStateOf(false) }
                         var gwSelectedModel by remember { mutableStateOf("") }
                         fun saveGateway() {
+                            val normalized = WebGateway.normalizeBase(gwUrl)
+                            if (normalized.isNotBlank() && normalized != gwUrl.trim()) gwUrl = normalized
                             prefs.edit()
                                 .putString(WebGateway.KEY_MODE, gwMode)
-                                .putString(WebGateway.KEY_URL, gwUrl.trim())
+                                .putString(WebGateway.KEY_URL, normalized)
                                 .putString(WebGateway.KEY_TOKEN, gwToken.filterNot { it.isWhitespace() })
                                 .apply()
                             LlmClient.reloadOverrides(prefs)

@@ -396,6 +396,10 @@ object LlmClient {
                 429 -> "⏳ تجاوزت حد الاستخدام المجاني مؤقتاً. انتظر قليلاً ثم أعد المحاولة.\n${e.message}"
                 else -> "⚠️ خطأ من المزود (${e.status}): ${e.message}"
             }
+        } catch (e: java.net.UnknownHostException) {
+            lastErrors[provider] = "DNS: " + (e.message ?: "").take(200)
+            "⚠️ تعذّر حل اسم النطاق (DNS) للخادم.\n" +
+                "جرّب: إيقاف Private DNS أو ضبطه على 1.1.1.1، أو VPN، أو افتح الرابط في المتصفح للتأكد."
         } catch (e: Exception) {
             lastErrors[provider] = "اتصال: " + (e.message ?: e.javaClass.simpleName).take(200)
             "⚠️ تعذر الاتصال بالمزود: ${e.message ?: e.javaClass.simpleName}"
