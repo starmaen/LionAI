@@ -393,6 +393,16 @@ fun SettingsScreen(
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "تفعيل الخادم المحلي في التوجيه",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            ProviderToggle(prefs = prefs, id = RoutePolicy.LOCAL_PROXY)
+                        }
+                        Spacer(Modifier.height(8.dp))
                         var backend by remember { mutableStateOf(LocalAIProxy.backendProvider(prefs)) }
                         val backendOptions = remember {
                             PROVIDERS.filter {
@@ -605,6 +615,16 @@ fun SettingsScreen(
                                 color = Color(0xFF9A9A9A),
                                 fontSize = 10.sp
                             )
+                            Spacer(Modifier.height(6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "تفعيل خادم الويب",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ProviderToggle(prefs = prefs, id = WebGateway.ENABLED_ID)
+                            }
                             Spacer(Modifier.height(6.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1144,6 +1164,8 @@ fun SettingsScreen(
                                         fontSize = 12.sp
                                     )
                                 }
+                                ProviderToggle(prefs = prefs, id = info.id)
+                                Spacer(Modifier.width(6.dp))
                                 TextButton(onClick = { openPage() }) {
                                     Text("فتح ↗", color = Color(0xFFFFB800), fontSize = 12.sp)
                                 }

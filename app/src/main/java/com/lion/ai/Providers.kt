@@ -1,5 +1,7 @@
 package com.lion.ai
 
+import android.content.SharedPreferences
+
 /** تصنيف المزودات: API، دردشات ويب، وأدوات صور/صوت/فيديو. */
 enum class ProviderGroup(val title: String, val icon: String) {
     API("مزودات API (مفتاح أو بدون مفتاح)", "🔑"),
@@ -994,6 +996,14 @@ val PROVIDERS = listOf(
         webviewUrl = "https://app.runwayml.com"
     )
 )
+
+/** هل المزود مفعّل؟ الافتراضي مفعّل حتى لا يتغير سلوك الإصدارات السابقة. */
+fun providerEnabled(prefs: SharedPreferences, id: String): Boolean =
+    prefs.getBoolean("enabled_$id", true)
+
+fun setProviderEnabled(prefs: SharedPreferences, id: String, enabled: Boolean) {
+    prefs.edit().putBoolean("enabled_$id", enabled).apply()
+}
 
 fun providerInfo(id: String): ProviderInfo {
     PROVIDERS.firstOrNull { it.id == id }?.let { return it }

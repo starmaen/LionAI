@@ -25,6 +25,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -114,6 +116,28 @@ fun SettingsSection(
 }
 
 /**
+ * مفتاح تفعيل/تعطيل مزود مستقل. يُحفظ فوراً، ويُستبعد المزود المعطّل من
+ * التوجيه التلقائي والبدائل دون المساس باختيارك اليدوي المحفوظ.
+ */
+@Composable
+fun ProviderToggle(
+    prefs: SharedPreferences,
+    id: String,
+    onChange: (Boolean) -> Unit = {}
+) {
+    var enabled by remember(id) { mutableStateOf(providerEnabled(prefs, id)) }
+    Switch(
+        checked = enabled,
+        onCheckedChange = { value ->
+            enabled = value
+            setProviderEnabled(prefs, id, value)
+            onChange(value)
+        },
+        colors = SwitchDefaults.colors(checkedThumbColor = Amber)
+    )
+}
+
+/**
  * بطاقة مزود API قابلة للطي: المفتاح والموديل وزرا التحديث والاختبار تحت اسم المزود مباشرة.
  * الدائرة = المزود النشط (يُحفظ كالسابق في prefs عبر زر الحفظ).
  */
@@ -165,6 +189,8 @@ fun ProviderCard(
                 Text(info.label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Text(info.tagline, color = Color(0xFF9A9A9A), fontSize = 11.sp)
             }
+            ProviderToggle(prefs = prefs, id = id)
+            Spacer(Modifier.width(6.dp))
             Text(
                 when {
                     hasKey -> "✅ مفتاح"

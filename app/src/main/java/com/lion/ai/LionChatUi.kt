@@ -147,7 +147,6 @@ internal fun LionInputBar(
     imageAttachment: ImageAttachment?,
     input: String,
     onInputChange: (String) -> Unit,
-    autoRoute: Boolean,
     providerLabel: String,
     providerNote: String,
     modeLabel: String,
@@ -262,14 +261,9 @@ internal fun LionInputBar(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val providerLine = (
-                                if (autoRoute) {
-                                    "🧠 تلقائي (العقل المركزي)"
-                                } else {
-                                    "🔒 $providerLabel" +
-                                        (if (providerNote.isNotBlank()) " ($providerNote)" else "")
-                                }
-                                ) + if (modeLabel.isNotBlank()) " · $modeLabel" else ""
+                            val providerLine = providerLabel +
+                                (if (providerNote.isNotBlank()) " · $providerNote" else "") +
+                                (if (modeLabel.isNotBlank()) " · $modeLabel" else "")
                             TextButton(
                                 onClick = onChooseModel,
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)

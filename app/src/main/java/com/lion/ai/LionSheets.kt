@@ -31,6 +31,7 @@ internal fun ModelPickerSheet(
     sheetState: SheetState,
     autoRoute: Boolean,
     selectedProvider: String,
+    enabled: (String) -> Boolean,
     modelFor: (ProviderInfo) -> String,
     onDismiss: () -> Unit,
     onChooseAuto: () -> Unit,
@@ -83,7 +84,7 @@ Column(
             )
         }
     }
-    PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->
+    PROVIDERS.filter { it.group == ProviderGroup.API && enabled(it.id) }.forEach { info ->
         val configured = modelFor(info)
         Row(
             modifier = Modifier

@@ -947,8 +947,10 @@ fun LionApp() {
             val llmPrompt = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
             // العقل المركزي يضمن أن لكل مجال مزوداً بديلاً جاهزاً عند فشل المسار الأساسي.
-            // في اليدوي: لا يتدخل العقل المركزي إلا إذا توقف المزود المختار عن الرد.
-            val rescueRoutes = if (manualMode || (central && mission.expandFallbacks)) {
+            // في اليدوي: لا يتدخل العقل المركزي إلا إذا فعّل المستخدم «مساعدة العقل المركزي».
+            val rescueRoutes = if ((manualMode && RoutePolicy.assistEnabled(prefs)) ||
+                (central && mission.expandFallbacks)
+            ) {
                 CentralBrain.rescueRoutes(prefs, kind, plan, image != null)
                     .filterNot { route -> plan.any { it.provider == route.provider } }
             } else {
@@ -1070,6 +1072,7 @@ fun LionApp() {
                     used = route
                     toolNames = agentResult?.tools.orEmpty()
                     LlmClient.recordSuccess(route.provider, route.model)
+                    LastRoute.set(prefs, chatId, route)
                     if (!manualMode && kind != TaskKind.FAST) ProviderStick.set(prefs, chatId, route.provider)
                     break
                 }
@@ -1101,6 +1104,7 @@ fun LionApp() {
                 } else if (f != null && f.second.isNotBlank() && canUseFallback) {
                     reply = f.second
                     used = f.first
+                    LastRoute.set(prefs, chatId, f.first)
                     reply += if (sources.isNotEmpty() && auto && strict) {
                         "\n\n✅ الإجابة مستندة إلى مصادر الويب أعلاه، لكنها من مزود أقل قوة من المعتاد؛ راجع التفاصيل الحساسة."
                     } else if (strict) {
@@ -1707,6 +1711,7 @@ fun LionApp() {
             sheetState = modelSheetState,
             autoRoute = autoRoute,
             selectedProvider = selectedProvider,
+            enabled = { providerEnabled(prefs, it) },
             modelFor = { info ->
                 if (info.id == RoutePolicy.LOCAL_PROXY) {
                     // نعرض المزود الخلفي الفعلي، لا اسم البروكسي أو موديله الافتراضي.
@@ -2040,24 +2045,31 @@ fun LionApp() {
                         .padding(12.dp)
                 )
 
+                // المزود العامل: آخر مزود أجاب فعلياً في هذه المحادثة (أو المختار يدوياً).
+                val lastAnswered = LastRoute.get(prefs, currentChat)?.provider
+                val workingProvider = if (!autoRoute) {
+                    selectedProvider
+                } else {
+                    lastAnswered?.takeIf { it.isNotBlank() }
+                        ?: ProviderStick.get(prefs, currentChat)
+                        ?: selectedProvider
+                }
+                val workingBackend = if (workingProvider == RoutePolicy.LOCAL_PROXY) {
+                    LocalAIProxy.backendProvider(prefs)
+                } else {
+                    workingProvider
+                }
+                WebGateway.load(prefs)
                 LionInputBar(
                     attachment = attachment,
                     imageAttachment = imageAttachment,
                     input = input,
                     onInputChange = { input = it },
-                    autoRoute = autoRoute,
-                    providerLabel = RoutePolicy.shortName(
-                        if (selectedProvider == RoutePolicy.LOCAL_PROXY) {
-                            LocalAIProxy.backendProvider(prefs)
-                        } else {
-                            selectedProvider
-                        }
-                    ),
+                    providerLabel = RoutePolicy.shortName(workingBackend),
                     providerNote = when {
-                        selectedProvider == RoutePolicy.LOCAL_PROXY -> "محلي"
-                        providerInfo(selectedProvider).keyless ||
-                            providerInfo(selectedProvider).free -> "مجاني"
-                        else -> "مدفوع"
+                        workingProvider == RoutePolicy.LOCAL_PROXY -> "محلي"
+                        WebGateway.shouldRoute(workingBackend) -> "🌐"
+                        else -> ""
                     },
                     modeLabel = currentMode.icon + " " + currentMode.short,
                     sending = loadingChats[currentChat] == true,

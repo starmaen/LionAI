@@ -22,6 +22,9 @@ object WebGateway {
     const val KEY_TOKEN = "web_gateway_token"
     const val KEY_MODE = "web_gateway_mode"
 
+    /** معرّف مفتاح التفعيل المستقل لخادم الويب (settings → enabled_web_gateway). */
+    const val ENABLED_ID = "web_gateway"
+
     const val MODE_OFF = "off"
     const val MODE_AUTO = "auto"
     const val MODE_ONLY = "only"
@@ -56,7 +59,7 @@ object WebGateway {
     fun providerLabel(provider: String): String =
         providers.firstOrNull { it.id == provider }?.label ?: provider
 
-    data class Config(val url: String, val token: String, val mode: String) {
+    data class Config(val url: String, val token: String, val mode: String, val enabled: Boolean = true) {
         val configured: Boolean get() = url.isNotBlank()
     }
 
@@ -67,7 +70,8 @@ object WebGateway {
         val config = Config(
             url = (prefs.getString(KEY_URL, "") ?: "").trim(),
             token = (prefs.getString(KEY_TOKEN, "") ?: "").trim().filterNot { it.isWhitespace() },
-            mode = normalizeMode(prefs.getString(KEY_MODE, MODE_OFF))
+            mode = normalizeMode(prefs.getString(KEY_MODE, MODE_OFF)),
+            enabled = providerEnabled(prefs, ENABLED_ID)
         )
         cached = config
         return config
@@ -95,7 +99,8 @@ object WebGateway {
     /** هل نمرّر هذا المزود عبر الخادم الخارجي في الوضع الحالي؟ */
     fun shouldRoute(provider: String): Boolean {
         val config = cached
-        return config.mode != MODE_OFF &&
+        return config.enabled &&
+            config.mode != MODE_OFF &&
             config.configured &&
             config.token.isNotBlank() &&
             supports(provider)

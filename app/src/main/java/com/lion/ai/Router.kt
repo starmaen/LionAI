@@ -328,6 +328,7 @@ object SmartRouter {
         }
 
     fun available(prefs: SharedPreferences, provider: String): Boolean {
+        if (!providerEnabled(prefs, provider)) return false
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
         if (provider == "custom") {
             return (prefs.getString("endpoint_custom", "") ?: "").trim().isNotEmpty()
