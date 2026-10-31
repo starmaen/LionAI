@@ -165,8 +165,7 @@ val PROVIDERS = listOf(
             "@cf/openai/gpt-oss-120b",
             "@cf/qwen/qwen2.5-coder-32b-instruct"
         ),
-        keyless = true,
-        group = ProviderGroup.API
+        keyless = true
     ),
     ProviderInfo(
         id = "openrouter",
