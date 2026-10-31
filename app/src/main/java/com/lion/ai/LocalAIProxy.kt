@@ -86,13 +86,20 @@ object LocalAIProxy {
     }
 
     /** المزود الخلفي الفعلي الذي يوجّه إليه الخادم (لا يكون أبداً local_proxy/custom). */
+    private val NON_CHAT_BACKENDS = setOf(
+        "cfai", "llm7", "pollinations", "playground", "recraft",
+        "firefly", "elevenlabs", "runway"
+    )
+
     fun backendProvider(prefs: SharedPreferences): String {
         val active = (prefs.getString("provider", "gemini") ?: "gemini").trim()
         val stored = (prefs.getString("local_proxy_backend", "") ?: "").trim()
         val candidate = stored.ifBlank {
             if (active == "local_proxy" || active == "custom") "gemini" else active
         }
-        return if (candidate == "local_proxy" || candidate == "custom" || candidate.isBlank()) "gemini" else candidate
+        if (candidate == "local_proxy" || candidate == "custom" || candidate.isBlank()) return "gemini"
+        if (candidate in NON_CHAT_BACKENDS) return "gemini"
+        return candidate
     }
 
     private fun handleClient(client: Socket, prefs: SharedPreferences) {

@@ -26,11 +26,33 @@ object WebGateway {
     const val MODE_AUTO = "auto"
     const val MODE_ONLY = "only"
 
-    /** المزودات التي تدعمها بوابة الويب (نفس معرّفات gateway/server.py). */
-    val supported: Set<String> = linkedSetOf(
-        "gemini", "groq", "openrouter", "cohere", "mistral", "together",
-        "cloudflare", "nvidia", "qwen", "hf", "fireworks", "pollinations", "llm7"
+    /** مزود محادثة تدعمه بوابة الويب (نفس معرّفات worker/src/index.js). */
+    data class GatewayProvider(val id: String, val label: String, val defaultModel: String)
+
+    val providers: List<GatewayProvider> = listOf(
+        GatewayProvider("cfai", "Workers AI", "@cf/meta/llama-3.1-8b-instruct"),
+        GatewayProvider("gemini", "Gemini", "gemini-2.5-flash"),
+        GatewayProvider("groq", "Groq", "openai/gpt-oss-120b"),
+        GatewayProvider("cerebras", "Cerebras", "gpt-oss-120b"),
+        GatewayProvider("openrouter", "OpenRouter", "google/gemma-4-31b-it:free"),
+        GatewayProvider("hf", "HuggingFace", "meta-llama/Llama-3.3-70B-Instruct"),
+        GatewayProvider("mistral", "Mistral", "mistral-small-latest"),
+        GatewayProvider("together", "Together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
+        GatewayProvider("nvidia", "NVIDIA", "meta/llama-3.3-70b-instruct"),
+        GatewayProvider("qwen", "Qwen", "qwen-turbo"),
+        GatewayProvider("cohere", "Cohere", "command-r-08-2024"),
+        GatewayProvider("fireworks", "Fireworks", "accounts/fireworks/models/llama-v3p3-70b-instruct"),
+        GatewayProvider("pollinations", "Pollinations", "openai"),
+        GatewayProvider("llm7", "LLM7", "default")
     )
+
+    val supported: Set<String> = providers.mapTo(linkedSetOf()) { it.id }
+
+    fun defaultModel(provider: String): String =
+        providers.firstOrNull { it.id == provider }?.defaultModel.orEmpty()
+
+    fun providerLabel(provider: String): String =
+        providers.firstOrNull { it.id == provider }?.label ?: provider
 
     data class Config(val url: String, val token: String, val mode: String) {
         val configured: Boolean get() = url.isNotBlank()
@@ -127,7 +149,7 @@ object WebGateway {
         if (config.token.isBlank()) return "⚠️ أدخل مفتاح الخادم (RELAY_TOKEN) أولاً."
         val pid = provider.trim()
         if (!supports(pid)) return "⚠️ هذا المزود غير مدعوم عبر الخادم — استخدم الوضع المباشر."
-        val actualModel = model.trim().ifBlank { LlmClient.defaultModel(pid) }
+        val actualModel = model.trim().ifBlank { defaultModel(pid) }
         val gatewayModel = gatewayModel(pid, actualModel)
         val body = org.json.JSONObject().apply {
             put("model", gatewayModel)

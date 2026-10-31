@@ -208,6 +208,8 @@ const PROVIDERS = {
     ["moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview"], "Moonshot Kimi (free credits)"],
   cloudflare: ["CLOUDFLARE_API_TOKEN", "",
     ["@cf/openai/gpt-oss-120b", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/qwen/qwen2.5-coder-32b-instruct"], "Cloudflare Workers AI (free)"],
+  cfai: ["", "",
+    ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen2.5-coder-32b-instruct"], "Cloudflare Workers AI (binding, keyless)"],
   pollinations: ["", "https://text.pollinations.ai/openai",
     ["openai", "mistral"], "Pollinations (keyless)"],
   llm7: ["", "https://api.llm7.io/v1",
@@ -264,6 +266,7 @@ function configured(env) {
     const spec = PROVIDERS[pid];
     if (spec[0] !== "" && !trim(env[spec[0]])) continue;
     if (pid === "cloudflare" && !providerBase(pid, spec, env)) continue;
+    if (pid === "cfai" && !env.AI) continue;
     out[pid] = spec;
   }
   return out;
@@ -410,6 +413,34 @@ const ALLOWED_FIELDS = [
   "tools", "tool_choice", "user", "n", "logprobs", "top_logprobs"
 ];
 
+async function handleCfAi(payload, model, env) {
+  if (!env.AI) return errorResponse(400, "Workers AI binding is not available", "invalid_request_error", CORS);
+  const input = { messages: payload.messages };
+  for (const k of ["max_tokens", "temperature", "top_p", "seed", "tools"]) {
+    if (Object.prototype.hasOwnProperty.call(payload, k)) input[k] = payload[k];
+  }
+  let res;
+  try {
+    res = await env.AI.run(model, input);
+  } catch (e) {
+    return errorResponse(502, "Workers AI " + model + " failed: " + (e && e.message ? e.message : "error"), "upstream_error", CORS);
+  }
+  if (res && Array.isArray(res.choices)) {
+    if (!res.model) res.model = model;
+    if (!res.object) res.object = "chat.completion";
+    return jsonResponse(res, 200, CORS);
+  }
+  const text = typeof res === "string" ? res : (res && (res.response || res.result || res.text || "")) || "";
+  return jsonResponse({
+    id: "chatcmpl-cfai-" + Date.now(),
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: model,
+    choices: [{ index: 0, message: { role: "assistant", content: String(text) }, finish_reason: "stop" }],
+    usage: (res && res.usage) || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+  }, 200, CORS);
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Api-Key",
@@ -491,6 +522,7 @@ async function handleChat(request, env) {
   }
 
   const { pid, model, spec } = resolved;
+  if (pid === "cfai") return await handleCfAi(payload, model, env);
   const key = spec[0] ? trim(env[spec[0]]) : "";
   const base = providerBase(pid, spec, env);
   if (!base) return errorResponse(400, "Provider " + pid + " is not configured", "invalid_request_error", CORS);

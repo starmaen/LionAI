@@ -680,11 +680,9 @@ fun SettingsScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                                     onClick = {
                                         val pid = gwModelsFor.ifBlank { backend }
-                                        val model = gwSelectedModel.ifBlank {
-                                            (prefs.getString("model_$pid", "") ?: "").trim()
-                                        }
+                                        val model = gwSelectedModel.ifBlank { WebGateway.defaultModel(pid) }
                                         gwBusy = true
-                                        gwReport = "⏳ أفحص ${providerInfo(pid).shortName} عبر الخادم…"
+                                        gwReport = "⏳ أفحص ${WebGateway.providerLabel(pid)} عبر الخادم…"
                                         saveGateway()
                                         settingsScope.launch {
                                             gwReport = withContext(Dispatchers.IO) {
@@ -734,8 +732,7 @@ fun SettingsScreen(
                                 fontSize = 11.sp
                             )
                             Spacer(Modifier.height(6.dp))
-                            WebGateway.supported
-                                .mapNotNull { id -> PROVIDERS.firstOrNull { it.id == id } }
+                            WebGateway.providers
                                 .chunked(3)
                                 .forEach { rowItems ->
                                     Row(
@@ -759,8 +756,7 @@ fun SettingsScreen(
                                                     .clickable {
                                                         // اختيار للفحص فقط — لا يفعّل شيئاً بعد.
                                                         gwModelsFor = info.id
-                                                        gwSelectedModel =
-                                                            (prefs.getString("model_${info.id}", "") ?: "").trim()
+                                                        gwSelectedModel = ""
                                                         gwModelsBusy = true
                                                         gwModels = emptyList()
                                                         gwReport = "ℹ️ ${info.shortName}: افحص المزود ثم اختر موديلاً أو اضغط «تفعيل»."
@@ -771,11 +767,7 @@ fun SettingsScreen(
                                                             val subs = all
                                                                 .filter { it.startsWith("${info.id}/") }
                                                                 .map { it.removePrefix("${info.id}/") }
-                                                            val fallback = ModelCatalog.options(
-                                                                info,
-                                                                ModelCatalog.cached(prefs, info.id)
-                                                            )
-                                                            gwModels = (subs.ifEmpty { fallback })
+                                                            gwModels = (subs.ifEmpty { listOf(info.defaultModel) })
                                                                 .distinct().take(30)
                                                             gwModelsBusy = false
                                                         }
@@ -784,7 +776,7 @@ fun SettingsScreen(
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
-                                                    info.shortName + if (active) " ✓" else "",
+                                                    info.label + if (active) " ✓" else "",
                                                     color = if (active || browsing) Color(0xFF121212) else Color(0xFFE0E0E0),
                                                     fontSize = 11.sp,
                                                     maxLines = 1,
@@ -798,10 +790,9 @@ fun SettingsScreen(
                                     Spacer(Modifier.height(6.dp))
                                 }
                             if (gwModelsFor.isNotBlank()) {
-                                val modelInfo = PROVIDERS.firstOrNull { it.id == gwModelsFor }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    "🧩 الموديلات الفرعية لـ ${modelInfo?.shortName ?: gwModelsFor}:",
+                                    "🧩 الموديلات الفرعية لـ ${WebGateway.providerLabel(gwModelsFor)}:",
                                     color = Color(0xFFFFB800),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -834,17 +825,13 @@ fun SettingsScreen(
                                                         )
                                                         .clickable {
                                                             gwSelectedModel = modelId
-                                                            backend = gwModelsFor
-                                                            provider = RoutePolicy.LOCAL_PROXY
-                                                            autoRouteSetting = false
                                                             prefs.edit()
                                                                 .putString("model_$gwModelsFor", modelId)
-                                                                .putString("local_proxy_backend", gwModelsFor)
-                                                                .putString("provider", RoutePolicy.LOCAL_PROXY)
-                                                                .putBoolean("auto_route", false)
+                                                                .putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO)
                                                                 .apply()
+                                                            gwMode = WebGateway.MODE_AUTO
                                                             LlmClient.reloadOverrides(prefs)
-                                                            gwReport = "✅ فُعّل $gwModelsFor/$modelId عبر الخادم."
+                                                            gwReport = "✅ حُفظ $gwModelsFor/$modelId. اختر المزود نفسه من قائمة المزودات، وسيمرّ عبر الخادم في وضع «خادم أولاً»."
                                                         }
                                                         .padding(horizontal = 6.dp, vertical = 6.dp),
                                                     contentAlignment = Alignment.Center
@@ -874,19 +861,15 @@ fun SettingsScreen(
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
                                         onClick = {
-                                            backend = gwModelsFor
-                                            provider = RoutePolicy.LOCAL_PROXY
-                                            autoRouteSetting = false
                                             prefs.edit()
                                                 .putString("model_$gwModelsFor", gwSelectedModel)
-                                                .putString("local_proxy_backend", gwModelsFor)
-                                                .putString("provider", RoutePolicy.LOCAL_PROXY)
-                                                .putBoolean("auto_route", false)
+                                                .putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO)
                                                 .apply()
+                                            gwMode = WebGateway.MODE_AUTO
                                             LlmClient.reloadOverrides(prefs)
-                                            gwReport = "✅ فُعّل $gwModelsFor/$gwSelectedModel عبر الخادم."
+                                            gwReport = "✅ حُفظ $gwModelsFor/$gwSelectedModel. اختر المزود من القائمة الرئيسية — سيمرّ عبر الخادم تلقائياً."
                                         }
-                                    ) { Text("✅ تفعيل هذا المزود", color = Color(0xFF0D0D0D), fontSize = 11.sp) }
+                                    ) { Text("💾 حفظ الموديل", color = Color(0xFF0D0D0D), fontSize = 11.sp) }
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
