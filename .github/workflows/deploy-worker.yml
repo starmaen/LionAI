@@ -1,0 +1,40 @@
+name: Deploy LionAI Gateway Worker
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check Cloudflare credentials
+      env:
+        CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      run: |
+        if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ]; then
+          echo "::error::أضف CLOUDFLARE_API_TOKEN و CLOUDFLARE_ACCOUNT_ID في GitHub → Settings → Secrets and variables → Actions"
+          exit 1
+        fi
+
+    - name: Deploy Worker
+      uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        workingDirectory: worker
+        command: deploy
