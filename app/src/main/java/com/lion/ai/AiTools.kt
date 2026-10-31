@@ -242,7 +242,7 @@ object AiTools {
         Def("connector_request", ToolGroup.CONNECTORS, """{"path":"/items","method":"POST","body":"{}"}""", "طلب GET/POST/PUT/PATCH إلى خدمة REST المخصّصة", true, "generic"),
 
         // Developer execution loop
-        Def("github_push_workspace", ToolGroup.GITHUB, """{"repo":"owner/name","path":"repos/owner/name","branch":"main","message":"...","delete_missing":false,"dry_run":true}""", "رفع مجلد مساحة العمل دفعة واحدة عبر مقارنة blob (يدعم الثنائي والحذف الاختياري)", true),
+        Def("github_push_workspace", ToolGroup.GITHUB, """{"repo":"owner/name","path":"repos/owner/name","branch":"main","message":"...","delete_missing":false,"dry_run":true,"confirm_large":false}""", "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً", true),
         Def("github_get_run", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "حالة عملية بناء واحدة"),
         Def("github_wait_run", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","run_id":0,"timeout_sec":420}""", "انتظار انتهاء أحدث بناء ثم إرجاع سجل الفشل تلقائياً"),
         Def("github_run_logs", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123,"max_chars":12000}""", "سجل وظائف عملية بناء كامل (للفشل والنجاح)"),
@@ -1797,13 +1797,19 @@ $code
                 val path = args.optString("path").trim().ifBlank { "repos/$owner/$repo" }
                 val dir = resolveWorkspace(ctx, path)
                 if (!dir.isDirectory) throw IllegalArgumentException("المسار ليس مجلداً: $path")
+                if (File(dir, "repos").isDirectory) {
+                    throw IllegalArgumentException(
+                        "⛔ هذا جذر مساحة العمل ويحوي مشاريع أخرى (repos/…). حدّد مجلد المستودع نفسه، مثل repos/$owner/$repo."
+                    )
+                }
                 GitHubClient.commitWorkspace(
                     token, owner, repo,
                     branch = args.optString("branch"),
                     message = args.optString("message", "تحديث من Lion AI"),
                     localRoot = dir,
                     deleteMissing = args.optBoolean("delete_missing", false),
-                    dryRun = args.optBoolean("dry_run", false)
+                    dryRun = args.optBoolean("dry_run", false),
+                    confirmLarge = args.optBoolean("confirm_large", false)
                 )
             }
             "github_get_run" -> {

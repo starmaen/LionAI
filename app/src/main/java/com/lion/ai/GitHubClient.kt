@@ -1030,7 +1030,8 @@ object GitHubClient {
         deleteMissing: Boolean = false,
         dryRun: Boolean = false,
         maxFiles: Int = 400,
-        maxBytesPerFile: Long = 20L * 1024 * 1024
+        maxBytesPerFile: Long = 20L * 1024 * 1024,
+        confirmLarge: Boolean = false
     ): String {
         if (!localRoot.isDirectory) throw IllegalArgumentException("مجلد مساحة العمل غير موجود: ${localRoot.path}")
         val targetBranch = branch.ifBlank { getRepo(token, owner, repo).defaultBranch }
@@ -1042,11 +1043,14 @@ object GitHubClient {
             ".git", ".gradle", ".idea", "build", "node_modules", "__pycache__", ".venv", "venv",
             "dist", "target", ".dart_tool", "Pods", ".next", ".lion-backup", ".lion-tmp"
         )
+        val rootOnlyExcludes = setOf("repos", "downloads", "FETCH_HEAD")
         val local = linkedMapOf<String, File>()
         fun walk(dir: File) {
             val children = dir.listFiles() ?: return
             children.sortedBy { it.name }.forEach { child ->
                 if (child.name in excludes) return@forEach
+                // مجلدات جذرية لا تخص المستودع (نسخ مستنسخة ومشاريع أخرى وتنزيلات) لا تُرفع أبداً.
+                if (dir == root && child.name in rootOnlyExcludes) return@forEach
                 val canonical = runCatching { child.canonicalFile }.getOrNull() ?: return@forEach
                 if (!canonical.path.startsWith(root.path + File.separator) && canonical != root) return@forEach
                 if (child.isDirectory) walk(child) else if (child.isFile && !child.name.startsWith(".lion-")) {
@@ -1067,6 +1071,14 @@ object GitHubClient {
         }
         val deleted = if (deleteMissing) remote.keys.filterNot { local.containsKey(it) } else emptyList()
         if (changed.isEmpty() && deleted.isEmpty()) return "لا توجد تغييرات لرفعها إلى $owner/$repo@$targetBranch"
+        // وقاية من رفع ملفات دخيلة: عدد كبير من الملفات الجديدة دفعة واحدة يحتاج تأكيداً صريحاً.
+        val brandNew = changed.count { it.first !in remote }
+        if (brandNew > 30 && !confirmLarge) {
+            throw IllegalArgumentException(
+                "⛔ سيُنشأ $brandNew ملفاً جديداً دفعة واحدة، وقد تكون ملفات دخيلة من مشاريع أخرى في مساحة العمل. " +
+                    "راجع القائمة بـ dry_run=true، ومرّر confirm_large=true فقط إن كان ذلك مقصوداً."
+            )
+        }
         if (changed.size + deleted.size > maxFiles.coerceIn(1, 500)) {
             throw IllegalArgumentException("عدد الملفات المتغيرة كبير جداً (${changed.size + deleted.size})")
         }
