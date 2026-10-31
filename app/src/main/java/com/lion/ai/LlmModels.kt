@@ -226,5 +226,5 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
 
             else -> emptyList()
         }
-        return ids.distinct().sorted().take(200)
+        return ModelRank.sorted(ids.distinct()).take(200)
     }

@@ -21,7 +21,7 @@ object ModelCatalog {
         prefs.edit().putString("models_cache_$providerId", array.toString()).apply()
     }
 
-    /** القائمة الجاهزة + ما جُلب من الإنترنت + الافتراضي، بدون تكرار. */
+    /** القائمة الجاهزة + ما جُلب من الإنترنت + الافتراضي، بدون تكرار، والأقوى أولاً. */
     fun options(info: ProviderInfo, cached: List<String>): List<String> =
-        (info.models + cached + info.defaultModel).distinct()
+        ModelRank.sorted((info.models + cached + info.defaultModel).distinct())
 }

@@ -357,9 +357,11 @@ fun ProviderCard(
                                 }
                                 val list = result.getOrNull()
                                 if (!list.isNullOrEmpty()) {
-                                    modelCache[id] = list
-                                    ModelCatalog.saveCache(prefs, id, list)
-                                    modelStatus = "✅ تم جلب ${list.size} موديل. افتح القائمة ▼ للاختيار."
+                                    val ranked = ModelRank.sorted(list)
+                                    modelCache[id] = ranked
+                                    ModelCatalog.saveCache(prefs, id, ranked)
+                                    modelStatus = "✅ تم جلب ${ranked.size} موديل — الأقوى: " +
+                                        (ModelRank.strongest(ranked) ?: "—") + ". افتح القائمة ▼."
                                 } else {
                                     modelStatus = "⚠️ " + (result.exceptionOrNull()?.message ?: "لم يتم العثور على موديلات")
                                 }

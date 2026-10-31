@@ -81,7 +81,6 @@ pinned: false
 | `groq` | `GROQ_API_KEY` | طبقة مجانية سخية وسريعة |
 | `cerebras` | `CEREBRAS_API_KEY` | طبقة مجانية، سرعة عالية |
 | `gemini` | `GEMINI_API_KEY` | Google AI Studio |
-| `github` | `GITHUB_MODELS_TOKEN` | GitHub PAT بصلاحية `models:read` |
 | `mistral` | `MISTRAL_API_KEY` | طبقة مجانية |
 | `together` | `TOGETHER_API_KEY` | موديلات `-free` |
 | `openrouter` | `OPENROUTER_API_KEY` | موديلات `:free` |
@@ -110,7 +109,6 @@ pinned: false
 | Groq | https://console.groq.com/keys |
 | Cerebras | https://cloud.cerebras.ai |
 | Gemini | https://aistudio.google.com/apikey |
-| GitHub Models | https://github.com/settings/tokens (fine-grained + `models:read`) |
 | Mistral | https://console.mistral.ai/api-keys |
 | Together | https://api.together.xyz/settings/api-keys |
 | OpenRouter | https://openrouter.ai/keys |

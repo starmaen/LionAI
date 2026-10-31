@@ -64,12 +64,6 @@ PROVIDERS = {
         ["deepseek-ai/DeepSeek-V4.1-Flash-1017", "meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen3-235B-A22B-Instruct-2507"],
         "Hugging Face Inference Providers",
     ),
-    "github": (
-        "GITHUB_MODELS_TOKEN",
-        "https://models.inference.ai.azure.com",
-        ["gpt-4o", "gpt-4o-mini", "o1", "Meta-Llama-3.1-405B-Instruct"],
-        "GitHub Models (free with GitHub PAT)",
-    ),
     "mistral": (
         "MISTRAL_API_KEY",
         "https://api.mistral.ai/v1",
@@ -85,7 +79,7 @@ PROVIDERS = {
     "openrouter": (
         "OPENROUTER_API_KEY",
         "https://openrouter.ai/api/v1",
-        ["deepseek/deepseek-chat-v3-0324:free", "meta-llama/llama-3.3-70b-instruct:free"],
+        ["nvidia/nemotron-3-ultra-550b-a55b:free", "thinkingmachines/inkling:free", "google/gemma-4-31b-it:free"],
         "OpenRouter (free models)",
     ),
     "nvidia": (

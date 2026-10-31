@@ -139,13 +139,15 @@ val PROVIDERS = listOf(
         tagline = "خطة مجانية — gpt-oss-120b بسرعة عالية",
         docsUrl = "https://console.groq.com/docs/rate-limits",
         defaultModel = "openai/gpt-oss-120b",
-        modelHint = "كل موديلات Groq متاحة بالخطة المجانية ضمن حدود الطلبات اليومية لكل موديل.",
+        modelHint = "كل موديلات Groq متاحة بالخطة المجانية ضمن حدود الطلبات اليومية لكل موديل. الأقوى عادةً: openai/gpt-oss-120b و meta-llama/llama-4-maverick-17b-128e-instruct و moonshotai/kimi-k2-instruct.",
         models = listOf(
             "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
             "meta-llama/llama-4-scout-17b-16e-instruct",
+            "meta-llama/llama-4-maverick-17b-128e-instruct",
+            "moonshotai/kimi-k2-instruct",
             "groq/compound",
             "groq/compound-mini"
         )
@@ -153,11 +155,17 @@ val PROVIDERS = listOf(
     ProviderInfo(
         id = "openrouter",
         label = "OpenRouter",
-        tagline = "موديلات :free — 50 طلباً يومياً",
+        tagline = "موديلات :free — منها نماذج كبيرة (Nemotron 550B)",
         docsUrl = "https://openrouter.ai/docs/api-reference/limits",
-        defaultModel = "cohere/north-mini-code:free",
-        modelHint = "زر «تحديث» يجلب كل الموديلات المجانية (:free) الحالية، ولا يحتاج مفتاحاً للقائمة.",
-        models = listOf("cohere/north-mini-code:free")
+        defaultModel = "nvidia/nemotron-3-ultra-550b-a55b:free",
+        modelHint = "زر «تحديث» يجلب كل الموديلات المجانية (:free) الحالية، ولا يحتاج مفتاحاً للقائمة. أقوى الخيارات المجانية: nvidia/nemotron-3-ultra-550b-a55b:free و thinkingmachines/inkling:free (سياق مليون) و google/gemma-4-31b-it:free.",
+        models = listOf(
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "thinkingmachines/inkling:free",
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "cohere/north-mini-code:free"
+        )
     ),
     ProviderInfo(
         id = "cohere",

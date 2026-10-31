@@ -200,7 +200,7 @@ object SmartRouter {
             r("zai", "glm-4.7-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
-            r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
+            r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
             r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
             r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"), r("llm7", "default"),
             r("aihorde", "auto")
@@ -219,7 +219,7 @@ object SmartRouter {
             r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
             r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
             r("opencode-console", "deepseek-v4.1-flash"), r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
-            r("kilo", "poolside/laguna-s-2.1:free"), r("openrouter", "cohere/north-mini-code:free"),
+            r("kilo", "poolside/laguna-s-2.1:free"), r("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
             r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("cohere", "north-mini-code-1-0"), r("ollama", "deepseek-v4-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
@@ -235,7 +235,7 @@ object SmartRouter {
             r("zai", "glm-4.7-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
             r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"),
-            r("openrouter", "cohere/north-mini-code:free"), r("ollama", "deepseek-v4-flash"),
+            r("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), r("ollama", "deepseek-v4-flash"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"),
             r("llm7", "default"), r("ovh", "gpt-oss-120b")
@@ -245,7 +245,7 @@ object SmartRouter {
             r("groq", "openai/gpt-oss-120b"), r("gemini", "gemini-3.8-flash"), r("ollama", "deepseek-v4-flash"),
             r("nvidia", "nvidia/nemotron-3-super-120b-a12b"), r("zai", "glm-4.7-flash"),
             r("cloudflare", "@cf/openai/gpt-oss-120b"), r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"),
-            r("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"), r("llm7", "DeepSeek-V4-Flash-0731"),
+            r("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), r("llm7", "DeepSeek-V4-Flash-0731"),
             r("cohere", "command-a-03-2025"), r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"),
             r("ovh", "gpt-oss-120b")
