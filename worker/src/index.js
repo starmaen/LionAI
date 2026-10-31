@@ -163,7 +163,7 @@ const PROVIDERS = {
   cerebras: ["CEREBRAS_API_KEY", "https://api.cerebras.ai/v1",
     ["gpt-oss-120b", "llama-3.3-70b", "qwen-3-32b"], "Cerebras (free tier)"],
   gemini: ["GEMINI_API_KEY", "https://generativelanguage.googleapis.com/v1beta/openai",
-    ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"], "Google Gemini (free tier)"],
+    ["gemini-flash-latest", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash", "gemini-pro-latest"], "Google Gemini (free tier)"],
   hf: ["HF_TOKEN", "https://router.huggingface.co/v1",
     ["deepseek-ai/DeepSeek-V4.1-Flash-1017", "meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen3-235B-A22B-Instruct-2507"], "Hugging Face Inference Providers"],
   mistral: ["MISTRAL_API_KEY", "https://api.mistral.ai/v1",
@@ -209,7 +209,7 @@ const PROVIDERS = {
   cloudflare: ["CLOUDFLARE_API_TOKEN", "",
     ["@cf/openai/gpt-oss-120b", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/qwen/qwen2.5-coder-32b-instruct"], "Cloudflare Workers AI (free)"],
   cfai: ["", "",
-    ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen2.5-coder-32b-instruct"], "Cloudflare Workers AI (binding, keyless)"],
+    ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen2.5-coder-32b-instruct"], "Cloudflare Workers AI (binding, keyless)"],
   pollinations: ["", "https://text.pollinations.ai/openai",
     ["openai", "mistral"], "Pollinations (keyless)"],
   llm7: ["", "https://api.llm7.io/v1",
@@ -342,7 +342,8 @@ async function upstreamModels(pid, spec, env) {
   try {
     const r = await fetchJson(base + "/models", key, PROVIDER_HEADERS[pid], 8000);
     const items = (r.data && r.data.data) || [];
-    const ids = items.map((m) => trim(String((m && m.id) || ""))).filter(Boolean);
+    let ids = items.map((m) => trim(String((m && m.id) || ""))).filter(Boolean);
+    if (pid === "gemini") ids = ids.map((id) => id.replace(/^models\//, ""));
     if (ids.length) return ids.slice(0, 200);
   } catch (e) { /* fall back to defaults */ }
   return spec[2].slice();
@@ -396,7 +397,8 @@ function resolveModel(model, conf, env) {
   const slash = model.indexOf("/");
   if (slash > 0) {
     const pid = model.slice(0, slash);
-    const rest = model.slice(slash + 1);
+    let rest = model.slice(slash + 1);
+    if (pid === "gemini") rest = rest.replace(/^models\//, "");
     if (Object.prototype.hasOwnProperty.call(conf, pid) && rest) {
       return { pid: pid, model: rest, spec: conf[pid] };
     }

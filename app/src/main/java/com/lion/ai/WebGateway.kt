@@ -30,8 +30,8 @@ object WebGateway {
     data class GatewayProvider(val id: String, val label: String, val defaultModel: String)
 
     val providers: List<GatewayProvider> = listOf(
-        GatewayProvider("cfai", "Workers AI", "@cf/meta/llama-3.1-8b-instruct"),
-        GatewayProvider("gemini", "Gemini", "gemini-2.5-flash"),
+        GatewayProvider("cfai", "Workers AI", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+        GatewayProvider("gemini", "Gemini", "gemini-flash-latest"),
         GatewayProvider("groq", "Groq", "openai/gpt-oss-120b"),
         GatewayProvider("cerebras", "Cerebras", "gpt-oss-120b"),
         GatewayProvider("openrouter", "OpenRouter", "google/gemma-4-31b-it:free"),

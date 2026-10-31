@@ -62,12 +62,12 @@ val PROVIDERS = listOf(
     ProviderInfo(
         id = "gemini",
         label = "Google Gemini (API)",
-        tagline = "Free Tier — gemini-3.8-flash مجاني",
+        tagline = "Free Tier — gemini-flash-latest مجاني",
         docsUrl = "https://ai.google.dev/gemini-api/docs/pricing",
-        defaultModel = "gemini-3.8-flash",
+        defaultModel = "gemini-flash-latest",
         shortName = "Gemini",
         modelHint = "الموديلات المجانية تتغير، وبعض موديلات Pro مدفوعة. زر «تحديث» يعرض موديلات حسابك؛ راجع صفحة الأسعار.",
-        models = listOf("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite")
+        models = listOf("gemini-flash-latest", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash", "gemini-pro-latest", "gemini-3.1-flash-lite")
     ),
     ProviderInfo(
         id = "opencode",
