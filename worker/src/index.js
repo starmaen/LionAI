@@ -163,7 +163,7 @@ const PROVIDERS = {
   cerebras: ["CEREBRAS_API_KEY", "https://api.cerebras.ai/v1",
     ["gpt-oss-120b", "llama-3.3-70b", "qwen-3-32b"], "Cerebras (free tier)"],
   gemini: ["GEMINI_API_KEY", "https://generativelanguage.googleapis.com/v1beta/openai",
-    ["gemini-flash-latest", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash", "gemini-pro-latest"], "Google Gemini (free tier)"],
+    ["gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.8-flash", "gemini-3.1-flash-lite"], "Google Gemini (free tier)"],
   hf: ["HF_TOKEN", "https://router.huggingface.co/v1",
     ["deepseek-ai/DeepSeek-V4.1-Flash-1017", "meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen3-235B-A22B-Instruct-2507"], "Hugging Face Inference Providers"],
   mistral: ["MISTRAL_API_KEY", "https://api.mistral.ai/v1",
