@@ -501,9 +501,15 @@ fun SettingsScreen(
                                                 RoundedCornerShape(16.dp)
                                             )
                                             .clickable {
+                                                // اختيار مزود الخادم = تفعيل يدوي صريح:
+                                                // تتحول المحادثة كلها إلى الخادم بهذا المزود فوراً.
                                                 backend = info.id
+                                                provider = RoutePolicy.LOCAL_PROXY
+                                                autoRouteSetting = false
                                                 prefs.edit()
                                                     .putString("local_proxy_backend", info.id)
+                                                    .putString("provider", RoutePolicy.LOCAL_PROXY)
+                                                    .putBoolean("auto_route", false)
                                                     .apply()
                                             }
                                             .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -583,10 +589,14 @@ fun SettingsScreen(
                                                     RoundedCornerShape(16.dp)
                                                 )
                                                 .clickable {
-                                                    // مزود الخادم الخلفي فقط، بلا تغيير مزود المحادثة.
+                                                    // مزود خلفي مستورد = تفعيل يدوي للخادم به فوراً.
                                                     backend = entry.id
+                                                    provider = RoutePolicy.LOCAL_PROXY
+                                                    autoRouteSetting = false
                                                     prefs.edit()
                                                         .putString("local_proxy_backend", entry.id)
+                                                        .putString("provider", RoutePolicy.LOCAL_PROXY)
+                                                        .putBoolean("auto_route", false)
                                                         .apply()
                                                 }
                                                 .padding(horizontal = 8.dp, vertical = 8.dp),
