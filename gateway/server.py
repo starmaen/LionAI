@@ -154,6 +154,46 @@ PROVIDERS = {
         ["openai/gpt-4o-mini", "deepseek/deepseek-chat"],
         "Requesty (free credits)",
     ),
+    "cohere": (
+        "COHERE_API_KEY",
+        "https://api.cohere.ai/compatibility/v1",
+        ["command-a-03-2025", "command-r-plus-08-2024", "command-r-08-2024"],
+        "Cohere (trial/free)",
+    ),
+    "fireworks": (
+        "FIREWORKS_API_KEY",
+        "https://api.fireworks.ai/inference/v1",
+        [
+            "accounts/fireworks/models/llama-v3p3-70b-instruct",
+            "accounts/fireworks/models/deepseek-v3",
+            "accounts/fireworks/models/qwen3-235b-a22b",
+        ],
+        "Fireworks (free credits)",
+    ),
+    "zhipu": (
+        "ZHIPU_API_KEY",
+        "https://open.bigmodel.cn/api/paas/v4",
+        ["glm-4-flash", "glm-4.5-flash", "glm-4-flashx"],
+        "Z.ai / GLM (free models)",
+    ),
+    "qwen": (
+        "DASHSCOPE_API_KEY",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        ["qwen-turbo", "qwen-plus", "qwen-max", "qwen3-coder-plus"],
+        "Qwen / DashScope (free quota)",
+    ),
+    "moonshot": (
+        "MOONSHOT_API_KEY",
+        "https://api.moonshot.ai/v1",
+        ["moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview"],
+        "Moonshot Kimi (free credits)",
+    ),
+    "cloudflare": (
+        "CLOUDFLARE_API_TOKEN",
+        "",
+        ["@cf/openai/gpt-oss-120b", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/qwen/qwen2.5-coder-32b-instruct"],
+        "Cloudflare Workers AI (free)",
+    ),
     # مزودات بلا مفتاح
     "pollinations": (
         "",
@@ -257,11 +297,27 @@ def _env_key(spec) -> str:
     return os.environ.get(spec[0], "").strip() if spec[0] else ""
 
 
+def _provider_base(pid: str, spec) -> str:
+    """يعيد عنوان المزود، مع بناء عنوان Cloudflare من Account ID."""
+    if pid == "cloudflare":
+        acc = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        if not acc:
+            return ""
+        return f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/v1"
+    return spec[1].rstrip("/")
+
+
 def configured() -> dict[str, tuple]:
     out = {}
     for pid, spec in PROVIDERS.items():
-        if spec[0] == "" or _env_key(spec):
+        if spec[0] == "":
             out[pid] = spec
+            continue
+        if not _env_key(spec):
+            continue
+        if pid == "cloudflare" and not _provider_base(pid, spec):
+            continue
+        out[pid] = spec
     return out
 
 
@@ -283,7 +339,7 @@ def _http_json(url: str, key: str, payload=None, timeout=None, extra: dict | Non
 
 def _upstream_models(pid: str, spec) -> list[str]:
     key = _env_key(spec)
-    base = spec[1].rstrip("/")
+    base = _provider_base(pid, spec)
     try:
         status, data = _http_json(base + "/models", key, timeout=8, extra=PROVIDER_HEADERS.get(pid))
         items = data.get("data") if isinstance(data, dict) else None
@@ -350,6 +406,176 @@ def resolve_model(model: str) -> tuple[str, str, tuple] | None:
     return None
 
 
+def status_payload() -> dict:
+    conf = configured()
+    providers = []
+    for pid in sorted(PROVIDERS):
+        spec = PROVIDERS[pid]
+        keyless = spec[0] == ""
+        providers.append(
+            {
+                "id": pid,
+                "label": spec[3],
+                "base_url": _provider_base(pid, spec),
+                "configured": pid in conf,
+                "keyless": keyless,
+                "env_key": spec[0] or None,
+                "models": list(spec[2][:8]),
+            }
+        )
+    return {
+        "name": "LionAI Free Gateway",
+        "status": "ok",
+        "auth_required": bool(RELAY_TOKEN),
+        "default_model": DEFAULT_MODEL or None,
+        "timeout": UPSTREAM_TIMEOUT,
+        "counts": {"total": len(providers), "active": len(conf)},
+        "providers": providers,
+    }
+
+
+HTML_PAGE = r"""<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LionAI Gateway — مزودات الذكاء الاصطناعي</title>
+<style>
+  :root{
+    --bg:#0b0f14;--card:#131a23;--card2:#1a2431;--line:#243040;
+    --txt:#e8eef7;--muted:#8fa3b8;--accent:#f5b301;--ok:#2ecc71;--off:#5b6b7d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1b2a3d 0%,var(--bg) 55%);
+    color:var(--txt);font-family:system-ui,"Segoe UI",Tahoma,Arial,sans-serif;line-height:1.6}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 18px 60px}
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+  .logo{font-size:38px;filter:drop-shadow(0 4px 10px rgba(245,179,1,.25))}
+  h1{margin:0;font-size:26px}
+  .sub{color:var(--muted);font-size:14px;margin-top:2px}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;
+    font-size:12.5px;font-weight:600;border:1px solid var(--line);background:var(--card2)}
+  .badge .dot{width:8px;height:8px;border-radius:50%;background:var(--off)}
+  .badge.on .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:24px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .stat .k{color:var(--muted);font-size:12.5px}
+  .stat .v{font-size:22px;font-weight:700;margin-top:4px;word-break:break-all}
+  .endpoint{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:26px}
+  .endpoint .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  code{background:#0a0e13;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
+    display:inline-block;font-size:13.5px;direction:ltr;color:#cfe4ff;max-width:100%;overflow:auto}
+  button{cursor:pointer;background:var(--accent);color:#1a1200;border:0;border-radius:10px;
+    padding:9px 16px;font-weight:700;font-size:13.5px}
+  button:active{transform:translateY(1px)}
+  .hint{color:var(--muted);font-size:12.5px;margin-top:10px}
+  h2{font-size:17px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;
+    position:relative;overflow:hidden;transition:.2s}
+  .card::before{content:"";position:absolute;inset-inline-start:0;top:0;bottom:0;width:4px;background:var(--off)}
+  .card.active::before{background:var(--ok)}
+  .card:hover{border-color:#33465e;transform:translateY(-2px)}
+  .card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .card h3{margin:0;font-size:15.5px}
+  .card .id{color:var(--muted);font-size:12px;direction:ltr;text-align:right;margin-top:2px}
+  .tag{font-size:11.5px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+  .tag.ok{color:var(--ok);border-color:rgba(46,204,113,.4);background:rgba(46,204,113,.08)}
+  .tag.no{color:var(--muted)}
+  .tag.free{color:var(--accent);border-color:rgba(245,179,1,.35);background:rgba(245,179,1,.08)}
+  .models{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:11.5px;background:#0a0e13;border:1px solid var(--line);border-radius:8px;
+    padding:3px 8px;direction:ltr;color:#9fb6cf}
+  .models-more{font-size:11.5px;color:var(--muted);align-self:center}
+  footer{margin-top:34px;color:var(--muted);font-size:12.5px;text-align:center}
+  a{color:var(--accent);text-decoration:none}
+  .loading{color:var(--muted);text-align:center;padding:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🦁</div>
+    <div>
+      <h1>LionAI Gateway</h1>
+      <div class="sub">بوابة واحدة بصيغة OpenAI-Compatible تجمع مزودات الذكاء الاصطناعي خلف رابط واحد</div>
+    </div>
+    <span class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">جارٍ التحميل…</span></span>
+  </header>
+
+  <div class="hero">
+    <div class="stat"><div class="k">المزودون المفعّلون</div><div class="v" id="activeCount">—</div></div>
+    <div class="stat"><div class="k">إجمالي المزودات المدعومة</div><div class="v" id="totalCount">—</div></div>
+    <div class="stat"><div class="k">حماية التوكن</div><div class="v" id="authState">—</div></div>
+    <div class="stat"><div class="k">الموديل الافتراضي</div><div class="v" id="defaultModel" style="font-size:14px">—</div></div>
+  </div>
+
+  <div class="endpoint">
+    <h2>🔌 نقطة الاتصال (Base URL)</h2>
+    <div class="row">
+      <code id="baseUrl">—</code>
+      <button onclick="copyBase()">نسخ</button>
+    </div>
+    <div class="hint">
+      في التطبيق: الإعدادات ← مخصص (OpenAI-Compatible) ← الصق الرابط أعلاه مع إضافة <code style="display:inline;padding:1px 6px">/v1</code>،
+      والمفتاح = <b>RELAY_TOKEN</b>، ثم اضغط «تحديث» لاختيار الموديل بصيغة <code style="display:inline;padding:1px 6px">provider/model</code>.
+    </div>
+  </div>
+
+  <h2>🧠 المزودات المتاحة</h2>
+  <div class="grid" id="grid"><div class="loading">جارٍ جلب حالة المزودات…</div></div>
+
+  <footer>
+    LionAI · <a href="/v1/models">قائمة الموديلات (تتطلب التوكن)</a> · <a href="/health">فحص الصحة</a>
+  </footer>
+</div>
+<script>
+async function copyBase(){
+  try{ await navigator.clipboard.writeText(location.origin + "/v1"); }
+  catch(e){}
+}
+function el(tag, cls, text){const e=document.createElement(tag); if(cls)e.className=cls; if(text!=null)e.textContent=text; return e;}
+async function load(){
+  const badge=document.getElementById('statusBadge');
+  try{
+    const r=await fetch('/api/status',{cache:'no-store'});
+    const d=await r.json();
+    badge.classList.add('on');
+    document.getElementById('statusText').textContent='متصل';
+    document.getElementById('activeCount').textContent=d.counts.active;
+    document.getElementById('totalCount').textContent=d.counts.total;
+    document.getElementById('authState').textContent=d.auth_required?'مفعّلة 🔒':'مفتوحة ⚠️';
+    document.getElementById('defaultModel').textContent=d.default_model||'تلقائي';
+    document.getElementById('baseUrl').textContent=location.origin+'/v1';
+    const grid=document.getElementById('grid'); grid.innerHTML='';
+    const sorted=[...d.providers].sort((a,b)=>(b.configured-a.configured)||a.id.localeCompare(b.id));
+    for(const p of sorted){
+      const c=el('div','card'+(p.configured?' active':''));
+      const top=el('div','top');
+      const left=el('div');
+      left.appendChild(el('h3',null,p.label));
+      left.appendChild(el('div','id',p.id+'/…'));
+      top.appendChild(left);
+      const tag=el('span','tag '+(p.configured?'ok':'no'),p.configured?'مفعّل':'غير مفعّل');
+      top.appendChild(tag);
+      c.appendChild(top);
+      const ms=el('div','models');
+      (p.models||[]).slice(0,6).forEach(m=>ms.appendChild(el('span','chip',m)));
+      if(p.keyless) ms.appendChild(el('span','tag free','بلا مفتاح'));
+      c.appendChild(ms);
+      grid.appendChild(c);
+    }
+  }catch(e){
+    document.getElementById('statusText').textContent='تعذّر الاتصال';
+    document.getElementById('grid').innerHTML='<div class="loading">تعذّر جلب البيانات من الخادم.</div>';
+  }
+}
+load();
+</script>
+</body>
+</html>"""
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "LionAIGateway/1.0"
 
@@ -373,6 +599,15 @@ class Handler(BaseHTTPRequestHandler):
     def _error(self, code: int, message: str, etype: str = "invalid_request_error"):
         self._send(code, {"error": {"message": message, "type": etype, "code": code}})
 
+    def _send_html(self, code: int, html: str):
+        body = html.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
+
     def _authorized(self) -> bool:
         if not RELAY_TOKEN:
             return True
@@ -391,6 +626,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path == "/":
+            self._send_html(200, HTML_PAGE)
+            return
+        if path == "/api/status":
+            self._send(200, status_payload())
+            return
+        if path == "/api/info":
             self._send(
                 200,
                 {
@@ -451,7 +692,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         pid, model, spec = resolved
         key = _env_key(spec)
-        base = spec[1].rstrip("/")
+        base = _provider_base(pid, spec)
         url = base + "/chat/completions"
 
         allowed = {

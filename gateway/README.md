@@ -16,6 +16,7 @@ pinned: false
 - لا اعتماديات: Python القياسي فقط.
 - مفاتيح المزودات تبقى على الخادم (Secrets) ولا تدخل التطبيق.
 - التطبيق يحتاج قيمة واحدة فقط: `RELAY_TOKEN`.
+- صفحة ويب للعرض على المسار `/` تُظهر المزودات المفعلة والموديلات (JSON على `/api/status`).
 
 ---
 
@@ -96,6 +97,12 @@ pinned: false
 | `modelscope` | `MODELSCOPE_API_KEY` | حصة مجانية |
 | `aimlapi` | `AIMLAPI_KEY` | طبقة مجانية |
 | `requesty` | `REQUESTY_API_KEY` | رصيد مجاني |
+| `cohere` | `COHERE_API_KEY` | طبقة تجريبية مجانية |
+| `fireworks` | `FIREWORKS_API_KEY` | رصيد مجاني |
+| `zhipu` | `ZHIPU_API_KEY` | موديلات GLM-Flash مجانية |
+| `qwen` | `DASHSCOPE_API_KEY` | حصة مجانية (DashScope الدولي) |
+| `moonshot` | `MOONSHOT_API_KEY` | رصيد مجاني (Kimi) |
+| `cloudflare` | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | 10k Neuron/يوم مجاناً |
 | `pollinations` | — | بلا مفتاح |
 | `llm7` | — | بلا مفتاح |
 
@@ -124,6 +131,12 @@ pinned: false
 | ModelScope | https://modelscope.cn/my/myaccesstoken |
 | AI/ML API | https://aimlapi.com/app/keys |
 | Requesty | https://app.requesty.ai/api-keys |
+| Cohere | https://dashboard.cohere.com/api-keys |
+| Fireworks | https://fireworks.ai/account/api-keys |
+| Z.ai / GLM | https://open.bigmodel.cn/usercenter/apikeys |
+| Qwen / DashScope | https://bailian.console.aliyun.com |
+| Moonshot Kimi | https://platform.moonshot.ai/console/api-keys |
+| Cloudflare | https://dash.cloudflare.com/profile/api-tokens |
 
 ---
 
