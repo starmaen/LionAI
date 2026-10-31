@@ -233,6 +233,10 @@ object LlmClient {
         val apiKey = apiKey.filterNot { it.isWhitespace() }
         val gateway = WebGateway.current()
         val viaGateway = WebGateway.shouldRoute(provider)
+        if (provider == "cfai" && !viaGateway) {
+            return "⚠️ Workers AI مجاني لكنه يعمل عبر خادم الويب فقط.\n" +
+                "الإعدادات ← الخادم المحلي ← 🌐 مزودات خادم الويب ← «خادم أولاً» مع الرابط و RELAY_TOKEN."
+        }
         if (apiKey.isBlank() && !viaGateway && !providerInfo(provider).keyless && !provider.startsWith("imp_")) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
         }

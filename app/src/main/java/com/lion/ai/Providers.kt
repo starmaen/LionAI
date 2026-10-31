@@ -153,6 +153,22 @@ val PROVIDERS = listOf(
         )
     ),
     ProviderInfo(
+        id = "cfai",
+        label = "Cloudflare Workers AI",
+        tagline = "مجاني بلا مفتاح — يعمل عبر خادم الويب فقط",
+        docsUrl = "https://developers.cloudflare.com/workers-ai/models/",
+        defaultModel = "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        shortName = "Workers AI",
+        modelHint = "يُنفَّذ داخل بوابة الخادم (Cloudflare) بلا مفتاح. اختر «خادم أولاً» أو «خادم فقط» في تبويب مزودات خادم الويب.",
+        models = listOf(
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            "@cf/openai/gpt-oss-120b",
+            "@cf/qwen/qwen2.5-coder-32b-instruct"
+        ),
+        keyless = true,
+        group = ProviderGroup.API
+    ),
+    ProviderInfo(
         id = "openrouter",
         label = "OpenRouter",
         tagline = "موديلات :free — منها نماذج كبيرة (Nemotron 550B)",
