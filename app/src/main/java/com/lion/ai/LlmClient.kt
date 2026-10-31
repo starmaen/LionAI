@@ -73,6 +73,7 @@ object LlmClient {
             ImportedProviders.endpoints(prefs)
         }.getOrDefault(emptyMap())
         endpointOverrides = base + imported
+        WebGateway.load(prefs)
     }
 
     internal fun endpoint(provider: String, default: String): String {
@@ -230,10 +231,12 @@ object LlmClient {
     ): String {
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
-        if (apiKey.isBlank() && !providerInfo(provider).keyless && !provider.startsWith("imp_")) {
+        val gateway = WebGateway.current()
+        val viaGateway = WebGateway.shouldRoute(provider)
+        if (apiKey.isBlank() && !viaGateway && !providerInfo(provider).keyless && !provider.startsWith("imp_")) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
         }
-        if (provider == "cloudflare" && accountId.isBlank()) {
+        if (provider == "cloudflare" && !viaGateway && accountId.isBlank()) {
             return "⚠️ أدخل Cloudflare Account ID من الإعدادات"
         }
 
@@ -242,6 +245,28 @@ object LlmClient {
         val cap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
 
         return withReadTimeout(cap) {
+            // خيار الخادم الخارجي: لا يمنع الوضع المباشر ولا يلغيه.
+            if (viaGateway) {
+                val gwModel = WebGateway.gatewayModel(provider, model)
+                val attempt = runCatching {
+                    callOpenAiCompatible(
+                        WebGateway.chatUrl(gateway.url), gateway.token, gwModel, turns, message,
+                        maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                    )
+                }
+                val reply = attempt.getOrNull()
+                if (reply != null && !isErrorReply(reply)) {
+                    recordSuccess(provider, "$gwModel · خادم")
+                    return@withReadTimeout reply
+                }
+                if (gateway.mode == WebGateway.MODE_ONLY) {
+                    val why = attempt.exceptionOrNull()?.message ?: reply ?: "لا رد من الخادم"
+                    lastErrors[provider] = "gateway: " + why.take(200)
+                    return@withReadTimeout "⚠️ تعذّر الخادم الخارجي ($provider): ${why.take(160)}\n" +
+                        "بدّل الوضع إلى «خادم أولاً» أو «مباشر» من الإعدادات ← الخادم المحلي."
+                }
+                // MODE_AUTO: نكمل تلقائياً إلى المزوّد المباشر بنفس مفتاحه.
+            }
             try {
             when (provider) {
                 "gemini" -> callGemini(message, apiKey, model, turns, image, systemPrompt)
