@@ -576,6 +576,10 @@ fun SettingsScreen(
                         var gwToken by remember { mutableStateOf(prefs.getString(WebGateway.KEY_TOKEN, "").orEmpty()) }
                         var gwReport by remember { mutableStateOf("") }
                         var gwBusy by remember { mutableStateOf(false) }
+                        var gwModels by remember { mutableStateOf<List<String>>(emptyList()) }
+                        var gwModelsFor by remember { mutableStateOf("") }
+                        var gwModelsBusy by remember { mutableStateOf(false) }
+                        var gwSelectedModel by remember { mutableStateOf("") }
                         fun saveGateway() {
                             prefs.edit()
                                 .putString(WebGateway.KEY_MODE, gwMode)
@@ -727,6 +731,27 @@ fun SettingsScreen(
                                                             .putString("provider", RoutePolicy.LOCAL_PROXY)
                                                             .putBoolean("auto_route", false)
                                                             .apply()
+                                                        // المستوى الثاني: موديلات هذا المزود من الخادم.
+                                                        gwModelsFor = info.id
+                                                        gwSelectedModel =
+                                                            (prefs.getString("model_${info.id}", "") ?: "").trim()
+                                                        gwModelsBusy = true
+                                                        gwModels = emptyList()
+                                                        settingsScope.launch {
+                                                            val all = withContext(Dispatchers.IO) {
+                                                                WebGateway.listModels(prefs)
+                                                            }
+                                                            val subs = all
+                                                                .filter { it.startsWith("${info.id}/") }
+                                                                .map { it.removePrefix("${info.id}/") }
+                                                            val fallback = ModelCatalog.options(
+                                                                info,
+                                                                ModelCatalog.cached(prefs, info.id)
+                                                            )
+                                                            gwModels = (subs.ifEmpty { fallback })
+                                                                .distinct().take(30)
+                                                            gwModelsBusy = false
+                                                        }
                                                     }
                                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                                                 contentAlignment = Alignment.Center
@@ -745,6 +770,73 @@ fun SettingsScreen(
                                     }
                                     Spacer(Modifier.height(6.dp))
                                 }
+                            if (gwModelsFor.isNotBlank()) {
+                                val modelInfo = PROVIDERS.firstOrNull { it.id == gwModelsFor }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "🧩 الموديلات الفرعية لـ ${modelInfo?.shortName ?: gwModelsFor}:",
+                                    color = Color(0xFFFFB800),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                when {
+                                    gwModelsBusy -> Text(
+                                        "⏳ أجلب الموديلات من الخادم…",
+                                        color = Color(0xFF9A9A9A),
+                                        fontSize = 10.sp
+                                    )
+                                    gwModels.isEmpty() -> Text(
+                                        "لا موديلات معروضة — اكتب الموديل يدوياً في بطاقة المزود بالأعلى، أو اضغط «📋 الموديلات».",
+                                        color = Color(0xFF9A9A9A),
+                                        fontSize = 10.sp
+                                    )
+                                    else -> gwModels.chunked(2).forEach { modelRow ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            modelRow.forEach { modelId ->
+                                                val chosen = modelId == gwSelectedModel
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .background(
+                                                            if (chosen) Color(0xFF4CAF50) else Color(0xFF1F1F1F),
+                                                            RoundedCornerShape(8.dp)
+                                                        )
+                                                        .clickable {
+                                                            gwSelectedModel = modelId
+                                                            prefs.edit()
+                                                                .putString("model_$gwModelsFor", modelId)
+                                                                .apply()
+                                                            LlmClient.reloadOverrides(prefs)
+                                                        }
+                                                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        modelId,
+                                                        color = if (chosen) Color(0xFF0D0D0D) else Color(0xFFCFCFCF),
+                                                        fontSize = 9.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                            repeat(2 - modelRow.size) { Spacer(Modifier.weight(1f)) }
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                    }
+                                }
+                                if (gwSelectedModel.isNotBlank()) {
+                                    Text(
+                                        "الموديل المختار: $gwSelectedModel",
+                                        color = Color(0xFF4CAF50),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 "🔒 الوضع المباشر يبقى متاحاً دائماً: مفاتيح المزودات محفوظة كما هي، ويمكنك العودة بضغطة «مباشر». وعند تعطّل الخادم في وضع «خادم أولاً» يكمل التطبيق تلقائياً بالمفتاح المباشر.",
