@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Build with Gradle
+        run: |
+          if [ -f build.gradle.kts ] || [ -f build.gradle ]; then
+            ./gradlew build
+          else
+            echo "No Gradle build file found, skipping build."
+          fi
+      - name: Run tests
+        run: |
+          if [ -f build.gradle.kts ] || [ -f build.gradle ]; then
+            ./gradlew test
+          else
+            echo "No Gradle build file found, skipping tests."
+          fi
+      - name: Run UI tests
+        run: |
+          if [ -f build.gradle.kts ] || [ -f build.gradle ]; then
+            ./gradlew connectedAndroidTest
+          else
+            echo "No Android test configuration found, skipping UI tests."
+          fi

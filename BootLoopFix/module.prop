@@ -1,0 +1,6 @@
+id=bootloop_protector
+name=Magisk BootLoop Protector & Fixer
+virgin=v1.2
+versionCode=12
+author=Lion AI
+description=وحدة ذكية لحماية النظام وإصلاح أسباب الـ Bootloop وتعطيل الخدمات التالفة تلقائياً عند الإقلاع.

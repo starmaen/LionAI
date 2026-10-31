@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/navigation_warehouses"
+        android:icon="@drawable/ic_warehouse"
+        android:title="المستودعات" />
+    <item
+        android:id="@+id/navigation_products"
+        android:icon="@drawable/ic_product"
+        android:title="الأصناف" />
+    <item
+        android:id="@+id/navigation_customers"
+        android:icon="@drawable/ic_customer"
+        android:title="العملاء" />
+    <item
+        android:id="@+id/navigation_suppliers"
+        android:icon="@drawable/ic_supplier"
+        android:title="الموردين" />
+    <item
+        android:id="@+id/navigation_reports"
+        android:icon="@drawable/ic_report"
+        android:title="التقارير" />
+</menu>

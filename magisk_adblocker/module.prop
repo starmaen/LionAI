@@ -1,0 +1,6 @@
+id=magiskadblocker
+name=Magisk AdBlocker
+version=1.0
+versionCode=1
+author=LionAI
+description=Block ads system-wide using hosts file.

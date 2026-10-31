@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/warehouseListFragment">
+
+    <fragment
+        android:id="@+id/warehouseListFragment"
+        android:name="com.example.accounting.ui.WarehouseListFragment"
+        android:label="المستودعات" />
+
+    <fragment
+        android:id="@+id/productListFragment"
+        android:name="com.example.accounting.ui.ProductListFragment"
+        android:label="الأصناف" />
+
+    <fragment
+        android:id="@+id/customerListFragment"
+        android:name="com.example.accounting.ui.CustomerListFragment"
+        android:label="العملاء" />
+
+    <fragment
+        android:id="@+id/supplierListFragment"
+        android:name="com.example.accounting.ui.SupplierListFragment"
+        android:label="الموردين" />
+
+    <fragment
+        android:id="@+id/reportFragment"
+        android:name="com.example.accounting.ui.ReportFragment"
+        android:label="التقارير" />
+
+</navigation>

@@ -1,0 +1,6 @@
+id=myadblocker
+name=MyAdBlocker
+version=1.0
+versionCode=1
+author=YourName
+description=حجب الإعلانات على مستوى الجهاز باستخدام hosts وdnsmasq

@@ -1,0 +1,43 @@
+name: Release Lion AI
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      LION_KEYSTORE_PASSWORD: ${{ secrets.LION_KEYSTORE_PASSWORD }}
+      LION_KEY_PASSWORD: ${{ secrets.LION_KEY_PASSWORD }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Run unit tests
+      run: ./gradlew testDebugUnitTest --stacktrace
+
+    - name: Build signed release APK
+      run: ./gradlew assembleRelease --stacktrace
+
+    - name: Upload APK to GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: app/build/outputs/apk/release/*.apk
+        generate_release_notes: true
