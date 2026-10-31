@@ -723,9 +723,33 @@ fun SettingsScreen(
                                     }
                                 ) { Text("3) النماذج", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
                             }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "🧠 في «تلقائي» يدخل العقل المركزي مزودات الخادم ضمن اختياره (وضع «خادم أولاً/فقط»)، وفي «يدوي» يبقى مزودك المختار ولا يتبدل إلا إن توقف.",
+                                color = Color(0xFF9A9A9A),
+                                fontSize = 10.sp
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Button(
+                                enabled = !gwBusy,
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                                onClick = {
+                                    val pid = gwModelsFor.ifBlank { backend }
+                                    val model = gwSelectedModel.ifBlank { RoutePolicy.modelFor(prefs, pid) }
+                                    gwBusy = true
+                                    gwReport = "⏳ أفحص ${RoutePolicy.shortName(pid)} عبر المسارات الثلاثة (مباشر / خادم ويب / خادم محلي)…"
+                                    saveGateway()
+                                    settingsScope.launch {
+                                        gwReport = withContext(Dispatchers.IO) { RouteDiagnostics.report(prefs, pid, model) }
+                                        gwBusy = false
+                                    }
+                                }
+                            ) { Text("🔬 فحص المسارات الثلاثة", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
                             if (gwReport.isNotBlank()) {
                                 Spacer(Modifier.height(6.dp))
-                                Text(gwReport.take(1200), color = Color.White, fontSize = 10.sp)
+                                Text(gwReport.take(2400), color = Color.White, fontSize = 10.sp)
                             }
                             Spacer(Modifier.height(8.dp))
                             Text(

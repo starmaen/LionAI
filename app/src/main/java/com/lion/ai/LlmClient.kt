@@ -227,12 +227,13 @@ object LlmClient {
         image: ImageAttachment? = null,
         systemPrompt: String = LLM_SYSTEM_PROMPT,
         readTimeoutMs: Int = 0,
-        chatModeHint: ChatMode? = null
+        chatModeHint: ChatMode? = null,
+        forceDirect: Boolean = false
     ): String {
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
         val gateway = WebGateway.current()
-        val viaGateway = WebGateway.shouldRoute(provider)
+        val viaGateway = !forceDirect && WebGateway.shouldRoute(provider)
         if (provider == "cfai" && !viaGateway) {
             return "⚠️ Workers AI مجاني لكنه يعمل عبر خادم الويب فقط.\n" +
                 "الإعدادات ← الخادم المحلي ← 🌐 مزودات خادم الويب ← «خادم أولاً» مع الرابط و RELAY_TOKEN."

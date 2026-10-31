@@ -43,7 +43,9 @@ object WebGateway {
         GatewayProvider("cohere", "Cohere", "command-r-08-2024"),
         GatewayProvider("fireworks", "Fireworks", "accounts/fireworks/models/llama-v3p3-70b-instruct"),
         GatewayProvider("pollinations", "Pollinations", "openai"),
-        GatewayProvider("llm7", "LLM7", "default")
+        GatewayProvider("llm7", "LLM7", "default"),
+        GatewayProvider("sambanova", "SambaNova", "Meta-Llama-3.3-70B-Instruct"),
+        GatewayProvider("unorouter", "UnoRouter", "deepseek-v4-pro:free")
     )
 
     val supported: Set<String> = providers.mapTo(linkedSetOf()) { it.id }
@@ -80,6 +82,15 @@ object WebGateway {
     }
 
     fun supports(provider: String): Boolean = supported.contains(provider)
+
+    /** المزودات المفعّلة فعلاً على الخادم (تُحدَّث عند فحص الخادم أو جلب الموديلات). فارغة = غير معروف بعد. */
+    @Volatile
+    private var remoteIds: Set<String> = emptySet()
+
+    fun remoteHas(provider: String): Boolean = remoteIds.isEmpty() || provider in remoteIds
+
+    /** هل يستطيع العقل المركزي استخدام هذا المزود عبر الخادم الآن؟ */
+    fun routedAvailable(provider: String): Boolean = shouldRoute(provider) && remoteHas(provider)
 
     /** هل نمرّر هذا المزود عبر الخادم الخارجي في الوضع الحالي؟ */
     fun shouldRoute(provider: String): Boolean {
@@ -148,6 +159,7 @@ object WebGateway {
             } else {
                 val providers = runCatching { org.json.JSONObject(body).optJSONObject("providers") }
                     .getOrNull()
+                if (providers != null) remoteIds = providers.keys().asSequence().toSet()
                 val active = providers?.length() ?: 0
                 "✅ الخادم يعمل (HTTP $code) — $active مزود مفعّل.\n$url"
             }
@@ -234,12 +246,14 @@ object WebGateway {
             connection.disconnect()
             if (code !in 200..299) return emptyList()
             val data = org.json.JSONObject(body).optJSONArray("data") ?: return emptyList()
-            buildList {
+            val ids = buildList<String> {
                 for (i in 0 until data.length()) {
                     val id = data.optJSONObject(i)?.optString("id", "").orEmpty().trim()
                     if (id.isNotBlank()) add(id)
                 }
             }
+            if (ids.isNotEmpty()) remoteIds = ids.map { it.substringBefore('/') }.toSet()
+            ids
         } catch (e: Exception) {
             emptyList()
         }

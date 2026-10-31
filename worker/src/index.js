@@ -176,6 +176,8 @@ const PROVIDERS = {
     ["openai/gpt-oss-120b", "meta/llama-3.3-70b-instruct"], "NVIDIA NIM (free credits)"],
   sambanova: ["SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1",
     ["DeepSeek-R1", "Meta-Llama-3.3-70B-Instruct", "Llama-4-Maverick-17B-128E-Instruct"], "SambaNova (free tier)"],
+  unorouter: ["UNOROUTER_API_KEY", "https://api.unorouter.com/v1",
+    ["deepseek-v4-pro:free", "glm-5.2:free", "gpt-5.5:free", "qwen3.5-397b-a17b:free"], "UnoRouter (free models)"],
   chutes: ["CHUTES_API_KEY", "https://llm.chutes.ai/v1",
     ["deepseek-ai/DeepSeek-V3-0324", "Qwen/Qwen3-235B-A22B"], "Chutes (cheap/free)"],
   nebius: ["NEBIUS_API_KEY", "https://api.studio.nebius.ai/v1",

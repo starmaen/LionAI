@@ -141,7 +141,7 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
                 out
             }
 
-            "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "together" -> {
+            "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "together", "cerebras", "unorouter", "sambanova" -> {
                 val info = providerInfo(provider)
                 if (!info.keyless) requireKey(apiKey)
                 val url = info.endpoint.removeSuffix("/chat/completions") + "/models"
@@ -155,6 +155,7 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
                     }
                     "zai" -> found.filter { it.lowercase().contains("glm") }
                     "llm7" -> (listOf("default", "fast") + found).distinct()
+                    "unorouter" -> found.filter { it.endsWith(":free") }.ifEmpty { found }
                     else -> found
                 }
             }

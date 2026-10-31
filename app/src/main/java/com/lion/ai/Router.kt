@@ -184,7 +184,20 @@ object SmartRouter {
     private fun r(provider: String, model: String) = Route(provider, model)
 
     /** قوائم الأفضلية لكل نوع مهمة (من الأفضل إلى الأقل). تُصفّى حسب المزودات المتاحة لديك. */
-    fun candidates(kind: TaskKind): List<Route> = when (kind) {
+    /** مزودات مجانية إضافية تدخل كل أنواع المهام (عدا الصور) كبدائل واستكشاف، فلا تبقى معطّلة. */
+    private val EXTRA_FREE = listOf(
+        r("cerebras", "gpt-oss-120b"),
+        r("unorouter", "deepseek-v4-pro:free"),
+        r("sambanova", "Meta-Llama-3.3-70B-Instruct")
+    )
+
+    fun candidates(kind: TaskKind): List<Route> {
+        val base = baseCandidates(kind)
+        if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) return base
+        return base + EXTRA_FREE.filter { extra -> base.none { it.provider == extra.provider } }
+    }
+
+    private fun baseCandidates(kind: TaskKind): List<Route> = when (kind) {
         TaskKind.FAST -> listOf(
             r("groq", "openai/gpt-oss-20b"), r("gemini", "gemini-3.5-flash-lite"), r("mistral", "mistral-small-latest"),
             r("kilo", "kilo-auto/free"), r("llm7", "fast"), r("nvidia", "openai/gpt-oss-20b"),
@@ -319,6 +332,8 @@ object SmartRouter {
         if (provider == "custom") {
             return (prefs.getString("endpoint_custom", "") ?: "").trim().isNotEmpty()
         }
+        // مزود يخدمه خادم الويب (مفتاحه على الخادم) يُحسب متاحاً للعقل المركزي حتى بلا مفتاح محلي.
+        if (WebGateway.routedAvailable(provider)) return true
         val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
         if (provider == "cloudflare" && (prefs.getString("cf_account_id", "") ?: "").isBlank()) return false
         return info.keyless || key.isNotEmpty()

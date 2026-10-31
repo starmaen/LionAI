@@ -94,6 +94,12 @@ PROVIDERS = {
         ["DeepSeek-R1", "Meta-Llama-3.3-70B-Instruct", "Llama-4-Maverick-17B-128E-Instruct"],
         "SambaNova (free tier)",
     ),
+    "unorouter": (
+        "UNOROUTER_API_KEY",
+        "https://api.unorouter.com/v1",
+        ["deepseek-v4-pro:free", "glm-5.2:free", "gpt-5.5:free", "qwen3.5-397b-a17b:free"],
+        "UnoRouter (free models)",
+    ),
     "chutes": (
         "CHUTES_API_KEY",
         "https://llm.chutes.ai/v1",

@@ -168,6 +168,46 @@ val PROVIDERS = listOf(
         keyless = true
     ),
     ProviderInfo(
+        id = "cerebras",
+        label = "Cerebras",
+        tagline = "أسرع استدلال مجاني — gpt-oss-120b",
+        docsUrl = "https://inference-docs.cerebras.ai/",
+        defaultModel = "gpt-oss-120b",
+        endpoint = "https://api.cerebras.ai/v1/chat/completions",
+        modelHint = "مفتاح من cloud.cerebras.ai (قد يطلب التسجيل بطاقة للتحقق). سياق الخطة المجانية أصغر من المدفوعة. زر «تحديث» يجلب الموديلات الحالية.",
+        models = listOf("gpt-oss-120b", "llama-3.3-70b", "qwen-3-32b")
+    ),
+    ProviderInfo(
+        id = "unorouter",
+        label = "UnoRouter",
+        tagline = "بوابة مجانية: مئات الموديلات :free بمفتاح واحد",
+        docsUrl = "https://unorouter.com/en/docs",
+        defaultModel = "deepseek-v4-pro:free",
+        shortName = "UnoRouter",
+        endpoint = "https://api.unorouter.com/v1/chat/completions",
+        modelHint = "مفتاح مجاني من unorouter.com/token (دخول Discord أو GitHub، بلا بطاقة). حد الموديل المجاني نحو طلب كل دقيقة لكل موديل، فبدّل بين الموديلات عند 429. زر «تحديث» يجلب الموديلات المجانية الحية.",
+        models = listOf(
+            "deepseek-v4-pro:free",
+            "glm-5.2:free",
+            "gpt-5.5:free",
+            "qwen3.5-397b-a17b:free",
+            "nemotron-3-ultra-550b-a55b:free",
+            "minimax-m2.7:free",
+            "gemma-4-31b-it:free",
+            "glm-4.5-flash:free"
+        )
+    ),
+    ProviderInfo(
+        id = "sambanova",
+        label = "SambaNova",
+        tagline = "خطة مجانية — Llama وDeepSeek بسرعة عالية",
+        docsUrl = "https://docs.sambanova.ai/",
+        defaultModel = "Meta-Llama-3.3-70B-Instruct",
+        endpoint = "https://api.sambanova.ai/v1/chat/completions",
+        modelHint = "مفتاح من cloud.sambanova.ai. الموديلات المتاحة تتغير؛ زر «تحديث» يجلب القائمة الحالية.",
+        models = listOf("Meta-Llama-3.3-70B-Instruct", "DeepSeek-R1", "Llama-4-Maverick-17B-128E-Instruct")
+    ),
+    ProviderInfo(
         id = "openrouter",
         label = "OpenRouter",
         tagline = "موديلات :free — منها نماذج كبيرة (Nemotron 550B)",
