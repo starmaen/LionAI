@@ -1,0 +1,15 @@
+diff --git a/worker/wrangler.toml b/worker/wrangler.toml
+index 3d7758b..ee1fc8a 100644
+--- a/worker/wrangler.toml
++++ b/worker/wrangler.toml
+@@ -5,3 +5,10 @@ compatibility_date = "2025-01-01"
+ # الأسرار لا تُكتب هنا. أضفها من لوحة Cloudflare:
+ # Workers & Pages → lionai-gateway → Settings → Variables and Secrets
+ # أو محلياً عبر: npx wrangler secret put RELAY_TOKEN
++
++# يحفظ المتغيرات التي أضفتها من لوحة Cloudflare عند كل نشر تلقائي من GitHub
++keep_vars = true
++
++# ربط Workers AI (مزود cfai المجاني بلا مفتاح) حتى لا يضيع عند النشر من GitHub
++[ai]
++binding = "AI"
