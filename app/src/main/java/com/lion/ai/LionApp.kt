@@ -2146,6 +2146,8 @@ fun LionApp() {
                 } else {
                     workingProvider
                 }
+                val workingModel = (prefs.getString("model_$workingBackend", "") ?: "")
+                    .ifBlank { providerInfo(workingBackend).defaultModel }
                 WebGateway.load(prefs)
                 val workingKind = hubKindOf(workingProvider, prefs)
                 LionComposer(
@@ -2154,6 +2156,7 @@ fun LionApp() {
                     input = input,
                     onInputChange = { input = it },
                     providerLabel = RoutePolicy.shortName(workingBackend),
+                    providerModel = workingModel,
                     providerKind = workingKind,
                     modeLabel = currentMode.icon + " " + currentMode.short,
                     loading = loadingChats[currentChat] == true,

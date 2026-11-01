@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,6 +40,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,9 +49,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -385,6 +390,7 @@ internal fun LionComposer(
     input: String,
     onInputChange: (String) -> Unit,
     providerLabel: String,
+    providerModel: String,
     providerKind: HubCategory?,
     modeLabel: String,
     loading: Boolean,
@@ -417,7 +423,7 @@ internal fun LionComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp)
+                .padding(horizontal = 4.dp, vertical = 6.dp)
                 .navigationBarsPadding()
         ) {
             if (file != null || image != null) {
@@ -477,125 +483,142 @@ internal fun LionComposer(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                FilledIconButton(
-                    onClick = { if (loading) onStop() else onSend() },
-                    enabled = loading || canSend,
-                    modifier = Modifier.size(46.dp),
-                    shape = RoundedCornerShape(15.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (loading) Color(0xFF3A1F1F) else Gold,
-                        contentColor = if (loading) Color(0xFFFF7A7A) else Color(0xFF0D0D0D),
-                        disabledContainerColor = Color(0xFF2A2A2A),
-                        disabledContentColor = Color(0xFF6E6E6E)
-                    )
-                ) {
-                    Icon(
-                        if (loading) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
-                        if (loading) "إيقاف" else "إرسال",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Surface(
-                    color = Color(0xFF1F1F1F),
-                    shape = CircleShape,
+                    color = Color(0xFF111111),
+                    shape = RoundedCornerShape(26.dp),
                     modifier = Modifier
-                        .size(38.dp)
-                        .clickable(onClick = onVoice)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Filled.Mic,
-                            "مكرفون المساعد",
-                            tint = Color(0xFFE0E0E0),
-                            modifier = Modifier.size(19.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(4.dp))
-                Surface(
-                    color = Color(0xFF181818),
-                    shape = RoundedCornerShape(22.dp),
-                    modifier = Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .border(
                             1.dp,
-                            if (input.isNotBlank()) Gold.copy(alpha = 0.55f) else Color(0xFF2A2A2A),
-                            RoundedCornerShape(22.dp)
+                            if (input.isNotBlank()) Gold.copy(alpha = 0.60f) else Color(0xFF2A2A2A),
+                            RoundedCornerShape(26.dp)
                         )
                 ) {
-                    Row(
-                        modifier = Modifier.padding(start = 12.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
+                    Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.CenterStart
+                                .fillMaxWidth()
+                                .heightIn(min = 46.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (input.isEmpty()) {
-                                Text(
-                                    "اكتب رسالتك...",
-                                    color = Color(0xFF6E6E6E),
-                                    fontSize = 14.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                            FilledIconButton(
+                                onClick = { if (loading) onStop() else onSend() },
+                                enabled = loading || canSend,
+                                modifier = Modifier.size(42.dp),
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = if (loading) Color(0xFF3A1F1F) else Gold,
+                                    contentColor = if (loading) Color(0xFFFF7A7A) else Color(0xFF0D0D0D),
+                                    disabledContainerColor = Color(0xFF2A2A2A),
+                                    disabledContentColor = Color(0xFF6E6E6E)
                                 )
-                            }
-                            BasicTextField(
-                                value = input,
-                                onValueChange = onInputChange,
-                                textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                                cursorBrush = SolidColor(Gold),
-                                maxLines = 5,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        Spacer(Modifier.width(4.dp))
-                        Surface(
-                            color = Color(0xFF262626),
-                            shape = RoundedCornerShape(50),
-                            modifier = Modifier
-                                .border(1.dp, Color(0xFF3A3A3A), RoundedCornerShape(50))
-                                .clickable(onClick = onChooseModel)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (providerKind != null) {
-                                    Text(providerKind.icon, fontSize = 10.sp)
-                                    Spacer(Modifier.width(3.dp))
-                                }
-                                Text(
-                                    providerLabel,
-                                    color = Gold,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 88.dp)
-                                )
                                 Icon(
-                                    Icons.Filled.ArrowDropDown,
-                                    "اختيار الموديل",
-                                    tint = Gold,
-                                    modifier = Modifier.size(14.dp)
+                                    if (loading) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
+                                    if (loading) "إيقاف" else "إرسال",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(2.dp))
+                            IconButton(onClick = onVoice, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    Icons.Filled.Mic,
+                                    "مكرفون المساعد",
+                                    tint = Color(0xFFD0D0D0),
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                if (input.isEmpty()) {
+                                    Text(
+                                        "اكتب رسالتك...",
+                                        color = Color(0xFF6E6E6E),
+                                        fontSize = 14.sp,
+                                        textAlign = TextAlign.End,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                BasicTextField(
+                                    value = input,
+                                    onValueChange = onInputChange,
+                                    textStyle = TextStyle(
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        textAlign = TextAlign.End
+                                    ),
+                                    cursorBrush = SolidColor(Gold),
+                                    maxLines = 5,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
-                        IconButton(onClick = onAttachFile, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                Icons.Filled.Add,
-                                "إرفاق ملف",
-                                tint = Color(0xFFD0D0D0),
-                                modifier = Modifier.size(20.dp)
-                            )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 6.dp, end = 4.dp, bottom = 2.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = Color(0xFF1E1E1E),
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier
+                                    .border(1.dp, Color(0xFF333333), RoundedCornerShape(50))
+                                    .clickable(onClick = onChooseModel)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (providerKind != null) {
+                                        Text(providerKind.icon, fontSize = 9.sp)
+                                        Spacer(Modifier.width(3.dp))
+                                    }
+                                    Text(
+                                        providerLabel,
+                                        color = Gold,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 60.dp)
+                                    )
+                                    if (providerModel.isNotBlank()) {
+                                        Text(
+                                            " · " + providerModel,
+                                            color = Color(0xFF9A9A9A),
+                                            fontSize = 9.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.widthIn(max = 96.dp)
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Filled.ArrowDropDown,
+                                        "اختيار الموديل",
+                                        tint = Gold,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(2.dp))
+                            IconButton(onClick = onAttachFile, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    "إرفاق ملف",
+                                    tint = Color(0xFFD0D0D0),
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
                         }
                     }
                 }
