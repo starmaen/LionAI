@@ -206,12 +206,11 @@ fun ProviderCard(
 
         if (expanded) {
             Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                TextButton(onClick = onActivate) {
+                    Text(if (active) "✖ إلغاء المزود" else "✔ استخدم هذا المزود", color = if (active) Color(0xFFFF3333) else Amber, fontSize = 12.sp)
+                }
                 if (active) {
                     Text("● المزود النشط حالياً", color = Amber, fontSize = 12.sp)
-                } else {
-                    TextButton(onClick = onActivate) {
-                        Text("✔ استخدم هذا المزود", color = Amber, fontSize = 12.sp)
-                    }
                 }
 
                 Spacer(Modifier.height(4.dp))
@@ -293,24 +292,42 @@ fun ProviderCard(
                     }
                 }
 
-                // زر الاختبار تحت المفتاح مباشرة (للمخصص يظهر بعد حقل Base URL)
-                if (id != "custom") {
-                    TextButton(
-                        enabled = !testing,
-                        onClick = {
+                // زر الاختبار تحت المفتاح - يتكيف تلقائياً بناءً على نوع المزود
+                var testButtonLabel by remember { mutableStateOf("") }
+                var testButtonOnClick by remember { mutableStateOf<Unit?>(() -> Unit) {}}
+
+                when {
+                    info.custom && endpoints[id].isNotBlank() -> {
+                        testButtonLabel = "🧪 اختبار الاتصال بالخادم"
+                        testButtonOnClick = {
+                            testing = true
+                            testStatus = "⏳ أختبر الاتصال بالخادم..."
+                            testProvider()
+                        }
+                    }
+                    id != "custom" -> {
+                        testButtonLabel = "🧪 اختبار المفتاح والموديل"
+                        testButtonOnClick = {
                             testing = true
                             testStatus = "⏳ أختبر المفتاح..."
                             testProvider()
                         }
+                    }
+                }
+
+                if (testButtonLabel.isNotBlank()) {
+                    TextButton(
+                        enabled = !testing,
+                        onClick = testButtonOnClick
                     ) {
-                        Text("🧪 اختبار المفتاح والموديل", color = Amber, fontSize = 12.sp)
+                        Text(testButtonLabel, color = Amber, fontSize = 12.sp)
                     }
                     if (testStatus.isNotBlank()) {
                         Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+Spacer(Modifier.height(8.dp))
                 Text(
                     if (info.free) "الموديل — اختر من القائمة أو اكتب اسماً" else "الموديل (اختياري)",
                     color = Color.White,
@@ -442,18 +459,27 @@ fun ProviderCard(
                         if (problem != null) {
                             Text("⚠️ $problem", color = Color(0xFFFFB300), fontSize = 11.sp)
                         }
-                        TextButton(
-                            enabled = !testing,
-                            onClick = {
-                                testing = true
-                                testStatus = "⏳ أختبر الاتصال بالخادم..."
-                                testProvider()
+                        when {
+                            endpoints[id].isNotBlank() -> {
+                                testButtonLabel = "🧪 اختبار الاتصال بالخادم"
+                                testButtonOnClick = {
+                                    testing = true
+                                    testStatus = "⏳ أختبر الاتصال بالخادم..."
+                                    testProvider()
+                                }
                             }
-                        ) {
-                            Text("🧪 اختبار الاتصال بالخادم", color = Amber, fontSize = 12.sp)
+                            else -> {}
                         }
-                        if (testStatus.isNotBlank()) {
-                            Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                        if (testButtonLabel.isNotBlank()) {
+                            TextButton(
+                                enabled = !testing,
+                                onClick = testButtonOnClick
+                            ) {
+                                Text(testButtonLabel, color = Amber, fontSize = 12.sp)
+                            }
+                            if (testStatus.isNotBlank()) {
+                                Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                            }
                         }
                     }
                 }

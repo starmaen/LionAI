@@ -136,13 +136,37 @@ fun HubChipsRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // الأوضاع الثلاثة فقط (عام/برمجة/تعلّم) بدل خلطها مع أزرار أخرى.
-        ChatMode.entries.forEach { item ->
-            HubPill(
-                "${item.icon} ${item.short}",
-                selected = item == mode,
-                accent = Color(item.color)
-            ) { onSelectMode(item) }
+        // أيقونة واحدة للوضع تظهر قائمة منسدلة عند اللمس
+        var modeMenuOpen by remember { mutableStateOf(false) }
+        HubPill(
+            modifier = Modifier.size(44.dp),
+            selected = false,
+            onClick = { modeMenuOpen = !modeMenuOpen }
+        ) {
+            Icon(
+                if (modeMenuOpen) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
+                tint = Color(0xFFFFB800),
+                contentDescription = "اختيار وضع المحادثة"
+            )
+        }
+        DropdownMenu(
+            expanded = modeMenuOpen,
+            onDismissRequest = { modeMenuOpen = false },
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .offset { offset ->
+                    offset.copy(y = 56.dp)
+                }
+        ) {
+            DropdownMenuItem(onClick = { onSelectMode(mode.copy(id = "general")); modeMenuOpen = false }) {
+                Text("💬 عام", color = if (mode.id == "general") Color(0xFFFFB800) else Color.White, fontSize = 12.sp)
+            }
+            DropdownMenuItem(onClick = { onSelectMode(mode.copy(id = "code")); modeMenuOpen = false }) {
+                Text("🛠️ برمجة", color = if (mode.id == "code") Color(0xFFFFB800) else Color.White, fontSize = 12.sp)
+            }
+            DropdownMenuItem(onClick = { onSelectMode(mode.copy(id = "learn")); modeMenuOpen = false }) {
+                Text("🎓 تعلم", color = if (mode.id == "learn") Color(0xFFFFB800) else Color.White, fontSize = 12.sp)
+            }
         }
         Box(
             modifier = Modifier
