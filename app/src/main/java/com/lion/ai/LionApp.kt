@@ -116,6 +116,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -220,6 +222,12 @@ fun LionApp() {
     val webSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showMediaSheet by remember { mutableStateOf(false) }
     val mediaSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var hubCategory by remember { mutableStateOf<HubCategory?>(null) }
+    val hubSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var thinking by remember { mutableStateOf(prefs.getBoolean("thinking_mode", false)) }
+    var gatewayMode by remember { mutableStateOf(WebGateway.load(prefs).mode) }
+    var gatewayEnabled by remember { mutableStateOf(providerEnabled(prefs, WebGateway.ENABLED_ID)) }
+    val chatJobs = remember { hashMapOf<String, Job>() }
 
     // علامات التبويب: نضمن وجود علامة نشطة واحدة على الأقل عند الإقلاع
     if (tabs.isEmpty()) {
@@ -870,6 +878,10 @@ fun LionApp() {
             SmartRouter.isStrict(kind) -> LLM_FACT_PROMPT
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
+        } + if (prefs.getBoolean("thinking_mode", false)) {
+            "\n\nفكّر خطوة بخطوة أولاً، ثم قدّم الإجابة النهائية بوضوح."
+        } else {
+            ""
         }
         val toolGroups = if (image == null && kind != TaskKind.FAST && modeProfile.allowTools) {
             modeProfile.groups
@@ -883,6 +895,13 @@ fun LionApp() {
         var agentComplete = true
         var agentAsked = false
         scope.launch {
+            val self = currentCoroutineContext()[Job]
+            if (self != null) {
+                chatJobs[chatId] = self
+                self.invokeOnCompletion {
+                    if (chatJobs[chatId] === self) chatJobs.remove(chatId)
+                }
+            }
             // المصادر والروابط (يوتيوب/أنغامي/يوتيوب ميوزيك) ميزة مستقلة يحكمها إعدادها،
             // وتبقى تعمل في الوضع اليدوي أيضاً ولا يلغيها العقل المركزي.
             val sources = if (CentralBrain.shouldSearch(prefs, kind, chatMode, prompt, central)) {
@@ -1351,6 +1370,24 @@ fun LionApp() {
         }
     }
 
+    /** يوقف توليد الرد الحالي فوراً دون حذف ما وصل منه. */
+    fun stopChat() {
+        val id = currentChat
+        chatJobs.remove(id)?.cancel()
+        loadingChats[id] = false
+        toolStatus[id] = ""
+    }
+
+    /** تعقيب/سؤال طارئ: يوقف الرد الجاري ثم يرسل المدخل الجديد كرسالة متابعة. */
+    fun sendFollowUp() {
+        if (input.isBlank() && attachment == null && imageAttachment == null) {
+            stopChat()
+            return
+        }
+        stopChat()
+        sendMessage()
+    }
+
     fun sendMessage() {
         if (loadingChats[currentChat] == true) return
         val text = input.trim()
@@ -1777,6 +1814,56 @@ fun LionApp() {
         )
     }
 
+    val hub = hubCategory
+    if (hub != null) {
+        ProviderHubSheet(
+            sheetState = hubSheetState,
+            category = hub,
+            prefs = prefs,
+            selectedProvider = selectedProvider,
+            gatewayMode = gatewayMode,
+            gatewayEnabled = gatewayEnabled,
+            onDismiss = { hubCategory = null },
+            onSelectProvider = { id ->
+                prefs.edit()
+                    .putString("provider", id)
+                    .putBoolean("auto_route", false)
+                    .apply()
+                selectedProvider = id
+                autoRoute = false
+                if (hub == HubCategory.EXTERNAL) {
+                    prefs.edit().putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO).apply()
+                    setProviderEnabled(prefs, WebGateway.ENABLED_ID, true)
+                    gatewayMode = WebGateway.MODE_AUTO
+                    gatewayEnabled = true
+                    WebGateway.load(prefs)
+                }
+                hubCategory = null
+                syncActiveTab()
+            },
+            onOpenWeb = { url ->
+                hubCategory = null
+                context.startActivity(
+                    Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", url)
+                )
+            },
+            onGatewayEnabled = { value ->
+                setProviderEnabled(prefs, WebGateway.ENABLED_ID, value)
+                gatewayEnabled = value
+                WebGateway.load(prefs)
+            },
+            onGatewayMode = { value ->
+                prefs.edit().putString(WebGateway.KEY_MODE, value).apply()
+                gatewayMode = value
+                WebGateway.load(prefs)
+            },
+            onOpenSettings = {
+                hubCategory = null
+                showSettings = true
+            }
+        )
+    }
+
     LaunchedEffect(messages.size, loadingChats[currentChat]) {
         val count = messages.size + if (loadingChats[currentChat] == true) 1 else 0
         if (count > 0) listState.animateScrollToItem(count - 1)
@@ -2060,19 +2147,18 @@ fun LionApp() {
                     workingProvider
                 }
                 WebGateway.load(prefs)
-                LionInputBar(
+                val workingKind = hubKindOf(workingProvider, prefs)
+                LionComposer(
                     attachment = attachment,
                     imageAttachment = imageAttachment,
                     input = input,
                     onInputChange = { input = it },
                     providerLabel = RoutePolicy.shortName(workingBackend),
-                    providerNote = when {
-                        workingProvider == RoutePolicy.LOCAL_PROXY -> "محلي"
-                        WebGateway.shouldRoute(workingBackend) -> "🌐"
-                        else -> ""
-                    },
+                    providerKind = workingKind,
                     modeLabel = currentMode.icon + " " + currentMode.short,
-                    sending = loadingChats[currentChat] == true,
+                    loading = loadingChats[currentChat] == true,
+                    autoRoute = autoRoute,
+                    thinking = thinking,
                     canSend = input.isNotBlank() || attachment != null || imageAttachment != null,
                     onEditImage = { img ->
                         editorImage = img
@@ -2084,15 +2170,22 @@ fun LionApp() {
                     },
                     onQuickPrompt = { input = it },
                     onAttachFile = { fileLauncher.launch("*/*") },
-                    onAttachImage = {
-                        imageLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
                     onVoice = { startVoice() },
                     onChooseModel = { showModelSheet = true },
-                    onOpenWeb = { showWebSheet = true },
-                    onOpenMedia = { showMediaSheet = true },
+                    onOpenMode = { showModePicker = true },
+                    onToggleAuto = {
+                        autoRoute = !autoRoute
+                        prefs.edit().putBoolean("auto_route", autoRoute).apply()
+                        syncActiveTab()
+                    },
+                    onToggleThinking = {
+                        thinking = !thinking
+                        prefs.edit().putBoolean("thinking_mode", thinking).apply()
+                    },
+                    onOpenCategory = { hubCategory = it },
+                    onStop = { stopChat() },
+                    onFollowUp = { sendFollowUp() },
+                    onOpenSettings = { showSettings = true },
                     onSend = { sendMessage() }
                 )
             }
