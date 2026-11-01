@@ -66,15 +66,13 @@ class ArenaActivity : Activity() {
             )
         }
 
-        // تقليص ارتفاع الـ WebView للأعلى بمقدار شريط النظام السفلي تماماً لئلا يغطيه أبداً
+        // لا نترك هوامش خارجية في WebView؛ الصفحات يجب أن تملأ الشاشة بالكامل.
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
-            ).apply {
-                topMargin = statusBarHeight
-                bottomMargin = navBarHeight
-            }
+            )
+            setBackgroundColor(Color.parseColor("#121212"))
         }
 
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -88,7 +86,6 @@ class ArenaActivity : Activity() {
             max = 100
         }
 
-        // زر إغلاق مباشر: يعود للصفحة الرئيسية للتطبيق فوراً بضغطة واحدة
         val density = resources.displayMetrics.density
         val closeButton = TextView(this).apply {
             text = "✕"
@@ -126,6 +123,8 @@ class ArenaActivity : Activity() {
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
+            setSupportMultipleWindows(true)
+            allowUniversalAccessFromFileURLs = true
 
             userAgentString = userAgentString
                 .replace("; wv", "")
@@ -196,52 +195,14 @@ class ArenaActivity : Activity() {
             (function() {
                 try {
                     Object.defineProperty(navigator, 'webdriver', { get: () => false });
-                    
-                    if (!document.getElementById('lion-bottom-fix')) {
-                        const style = document.createElement('style');
-                        style.id = 'lion-bottom-fix';
-                        style.innerHTML = `
-                            body, html {
-                                padding-bottom: 40px !important;
-                            }
-                            div.fixed, div.sticky {
-                                bottom: 10px !important;
-                            }
-                        `;
-                        document.head.appendChild(style);
-                    }
-
-                    window.__lionRemoveModal = function() {
-                        const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"], div.fixed.inset-0');
-                        dialogs.forEach(el => {
-                            if (el.innerText && (el.innerText.includes('Terms of Use') || el.innerText.includes('Agree') || el.innerText.includes('Failed to accept'))) {
-                                el.remove();
-                            }
-                        });
-                        const overlays = document.querySelectorAll('div[data-state="open"], div.bg-black\\/50');
-                        overlays.forEach(el => {
-                            if (!el.querySelector('textarea')) {
-                                el.remove();
-                            }
-                        });
-                        document.body.style.pointerEvents = 'auto';
-                        document.body.style.overflow = 'auto';
-                    };
-
-                    if (!window.__lionObserverStarted) {
-                        window.__lionObserverStarted = true;
-                        const observer = new MutationObserver(() => {
-                            window.__lionRemoveModal();
-                        });
-                        observer.observe(document.body, { childList: true, subtree: true });
-                    }
-
-                    setInterval(window.__lionRemoveModal, 200);
-
+                    document.documentElement.style.overflow = 'auto';
+                    document.body && (document.body.style.overflow = 'auto');
+                    document.body && (document.body.style.paddingBottom = '0px');
+                    document.body && (document.body.style.marginBottom = '0px');
                 } catch(e) {}
             })();
         """.trimIndent()
-        webView.evaluateJavascript(js, null)
+        runCatching { webView.evaluateJavascript(js, null) }
     }
 
     @Deprecated("Deprecated in Java")
