@@ -29,7 +29,7 @@ jobs:
       run: |
         TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d '[:space:]')
         ACCOUNT=$(printf '%s' "$RAW_ACCOUNT" | tr -d '[:space:]')
-        FP="prefix=${TOKEN:0:4} token_len=${#TOKEN} account_len=${#ACCOUNT}"
+        FP="token_len=${#TOKEN} account_len=${#ACCOUNT}"
         echo "credential fingerprint: $FP"
         if [ -z "$TOKEN" ] || [ -z "$ACCOUNT" ]; then
           echo "::error::$FP — أضف CLOUDFLARE_API_TOKEN و CLOUDFLARE_ACCOUNT_ID في GitHub → Settings → Secrets and variables → Actions"
@@ -67,7 +67,7 @@ jobs:
         CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       run: |
         emit() { echo "::error::$1"; }
-        emit "prefix=${CLOUDFLARE_API_TOKEN:0:5} token_len=${#CLOUDFLARE_API_TOKEN} account_len=${#CLOUDFLARE_ACCOUNT_ID}"
+        emit "token_len=${#CLOUDFLARE_API_TOKEN} account_len=${#CLOUDFLARE_ACCOUNT_ID}"
         V=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify)
         emit "verify=$(echo "$V" | tr -d '\n' | cut -c1-350)"
         A=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID")

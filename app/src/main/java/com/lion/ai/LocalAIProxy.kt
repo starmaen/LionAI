@@ -227,11 +227,6 @@ object LocalAIProxy {
     }
 
     /** المسار اليدوي: المزود الخلفي المختار وموديله المخزّن (أو الافتراضي). */
-    private fun manualRoute(prefs: SharedPreferences): Route {
-        val provider = backendProvider(prefs)
-        val stored = (prefs.getString("model_$provider", "") ?: "").trim()
-        return Route(provider, stored.ifBlank { LlmClient.defaultModel(provider) })
-    }
 
     private fun autoProviders(prefs: SharedPreferences): List<ProviderInfo> =
         PROVIDERS.filter {

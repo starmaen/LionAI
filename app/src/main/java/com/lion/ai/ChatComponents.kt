@@ -222,16 +222,6 @@ fun ContactsScreen(
 
 
 // استخراج كتل الكود من النص (Markdown style: ```lang ... ```)
-private fun extractCodeBlocks(text: String): List<Pair<String, String>> {
-    val blocks = mutableListOf<Pair<String, String>>()
-    val pattern = Regex("```([\\w]*)\\n([\\s\\S]*?)```")
-    pattern.findAll(text).forEach { match ->
-        val lang = match.groupValues[1].ifEmpty { "code" }
-        val code = match.groupValues[2].trim()
-        blocks.add(lang to code)
-    }
-    return blocks
-}
 
 // استخراج الروابط من النص
 private fun extractLinks(text: String): List<String> {
@@ -245,9 +235,6 @@ private fun extractLinks(text: String): List<String> {
 }
 
 // إزالة كتل الكود من النص للعرض العادي
-private fun removeCodeBlocks(text: String): String {
-    return Regex("```[\\w]*\\n[\\s\\S]*?```").replace(text, "")
-}
 
 @Composable
 private fun ActionIcon(icon: ImageVector, description: String, onClick: () -> Unit) {

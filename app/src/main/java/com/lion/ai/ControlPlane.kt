@@ -37,7 +37,6 @@ data class BuildManifest(
     fun requiredPaths(): List<String> = files.filter { it.required }.map { ManifestPaths.normalize(it.path) }
 }
 
-data class TestSignature(val path: String, val hmac: String)
 
 data class ProjectSnapshot(
     val files: Map<String, String>,

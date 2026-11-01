@@ -10,3 +10,12 @@
 local.properties
 *.apk
 *.aab
+
+# بقايا مساحة عمل Lion AI وملفات مؤقتة يجب ألا تُرفع أبداً
+*.patch
+/repos/
+/downloads/
+/FETCH_HEAD
+/main
+/new_file.txt
+.lion-*
