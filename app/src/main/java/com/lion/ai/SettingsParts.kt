@@ -294,10 +294,10 @@ fun ProviderCard(
 
                 // زر الاختبار تحت المفتاح - يتكيف تلقائياً بناءً على نوع المزود
                 var testButtonLabel by remember { mutableStateOf("") }
-                var testButtonOnClick by remember { mutableStateOf<Unit?>(() -> Unit) {}}
+                var testButtonOnClick by remember { mutableStateOf<() -> Unit>({}) }
 
                 when {
-                    info.custom && endpoints[id].isNotBlank() -> {
+                    info.custom && endpoints[id].orEmpty().isNotBlank() -> {
                         testButtonLabel = "🧪 اختبار الاتصال بالخادم"
                         testButtonOnClick = {
                             testing = true
@@ -460,7 +460,7 @@ Spacer(Modifier.height(8.dp))
                             Text("⚠️ $problem", color = Color(0xFFFFB300), fontSize = 11.sp)
                         }
                         when {
-                            endpoints[id].isNotBlank() -> {
+                            endpoints[id].orEmpty().isNotBlank() -> {
                                 testButtonLabel = "🧪 اختبار الاتصال بالخادم"
                                 testButtonOnClick = {
                                     testing = true

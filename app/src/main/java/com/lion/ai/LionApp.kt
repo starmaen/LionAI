@@ -432,8 +432,12 @@ fun LionApp() {
      * الوضع التلقائي: العقل المركزي يرتّب المسارات المتاحة.
      * الوضع اليدوي: مزود المستخدم أولاً ودون تبديل تلقائي، إلا إذا فعّل «مساعدة العقل المركزي».
      */
-    fun planFor(kind: TaskKind, mode: AnswerMode? = null): List<Route> =
-        RoutePolicy.appPlan(prefs, kind, mode ?: AnswerMode.read(prefs))
+    fun planFor(
+        kind: TaskKind,
+        mode: AnswerMode? = null,
+        chatMode: ChatMode = ChatMode.GENERAL
+    ): List<Route> =
+        RoutePolicy.appPlan(prefs, kind, mode ?: AnswerMode.read(prefs), chatMode = chatMode)
 
     /** طول الرد المختار من الإعدادات، يُضاف إلى تعليمات النظام. */
     fun answerLengthSuffix(): String = when (prefs.getString("answer_length", "normal")) {
@@ -864,7 +868,9 @@ fun LionApp() {
         val careful = central && (SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL)
         val mission = CentralBrain.policy(kind, chatMode, central)
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
-        val plan = planFor(kind, mode)
+        // العقل المركزي يختار المزود وهو عارف بوضع المحادثة (عام/تعلّم/برمجة)
+        // وبنوع المهمة، فيراعي الكفاءة والاتصال معاً.
+        val plan = planFor(kind, mode, chatMode)
         val auto = !manualMode
         val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
         val toolText = if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext
@@ -989,10 +995,12 @@ fun LionApp() {
                 val started = System.currentTimeMillis()
                 // الخادم المحلي قد يجرّب بديلاً داخلياً عند فشل المزود؛ نمنحه مهلة المهمة
                 // كاملة حتى لا ينتهي وقت العميل قبل أن يصل البديل.
-                val routeBudget = if (route.provider == RoutePolicy.LOCAL_PROXY ||
-                    (manualMode && route.provider == chosenProvider)
-                ) {
+                val routeBudget = if (manualMode && route.provider == chosenProvider) {
                     SmartRouter.timeoutMs(kind)
+                } else if (route.provider == RoutePolicy.LOCAL_PROXY) {
+                    // الخادم المحلي يملك سلسلة بدائل داخلية: نمنحه مهلة المهمة
+                    // كاملة مع هامش إضافي حتى لا ينقطع قبل أن يصل بديله.
+                    SmartRouter.timeoutMs(kind) + 30_000L
                 } else {
                     LlmClient.attemptTimeoutMs(kind).toLong()
                 }
@@ -1020,6 +1028,7 @@ fun LionApp() {
                                 chatMode = chatMode,
                                 forceExecution = kind == TaskKind.DEV || session.hasWork(),
                                 providerLabel = SmartRouter.label(route, kind),
+                                via = route.via,
                                 onProgress = { status -> toolStatus[chatId] = status }
                             )
                         }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList(), complete = false) }
@@ -1044,7 +1053,8 @@ fun LionApp() {
                                 image = image,
                                 systemPrompt = systemPrompt,
                                 readTimeoutMs = attemptCap,
-                                chatModeHint = chatMode
+                                chatModeHint = chatMode,
+                                via = route.via
                             )
                         }.getOrNull()
                     }
@@ -1064,7 +1074,8 @@ fun LionApp() {
                         image = image,
                         systemPrompt = systemPrompt,
                         readTimeoutMs = attemptCap,
-                        chatModeHint = chatMode
+                        chatModeHint = chatMode,
+                        via = route.via
                     )
                 }
                 val error = LlmClient.isErrorReply(r)
@@ -1174,7 +1185,8 @@ fun LionApp() {
                                 25_000L,
                                 (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
                             ).toInt(),
-                            chatModeHint = chatMode
+                            chatModeHint = chatMode,
+                            via = judge.via
                         )
                     }
                     val verdict = CentralBrain.parseVerdict(checkReply)
@@ -1209,7 +1221,8 @@ fun LionApp() {
                                     30_000L,
                                     (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
                                 ).toInt(),
-                                chatModeHint = chatMode
+                                chatModeHint = chatMode,
+                                via = answeredBy.via
                             )
                         }
                         val fixedOk = !LlmClient.isErrorReply(fixed) &&
@@ -1260,7 +1273,8 @@ fun LionApp() {
                                     30_000L,
                                     (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
                                 ).toInt(),
-                                chatModeHint = chatMode
+                                chatModeHint = chatMode,
+                                via = secondRoute.via
                             )
                         }
                         val secondError = LlmClient.isErrorReply(secondReply)
@@ -1297,7 +1311,8 @@ fun LionApp() {
                                         30_000L,
                                         (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L)
                                     ).toInt(),
-                                    chatModeHint = chatMode
+                                    chatModeHint = chatMode,
+                                    via = usedRoute.via
                                 )
                             }
                             consensusPercent = percent
@@ -1826,12 +1841,24 @@ fun LionApp() {
                     .apply()
                 selectedProvider = id
                 autoRoute = false
-                if (hub == HubCategory.EXTERNAL) {
-                    prefs.edit().putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO).apply()
-                    setProviderEnabled(prefs, WebGateway.ENABLED_ID, true)
-                    gatewayMode = WebGateway.MODE_AUTO
-                    gatewayEnabled = true
-                    WebGateway.load(prefs)
+                when (hub) {
+                    HubCategory.EXTERNAL -> {
+                        // اختيار مزود من نافذة الخادم الخارجي يفعّل قناته مع ترك
+                        // بقية القنوات على حالها (يمكن تشغيلها كلها معاً).
+                        prefs.edit().putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO).apply()
+                        setProviderEnabled(prefs, WebGateway.ENABLED_ID, true)
+                        RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, true)
+                        gatewayMode = WebGateway.MODE_AUTO
+                        gatewayEnabled = true
+                        WebGateway.load(prefs)
+                    }
+                    HubCategory.LOCAL -> {
+                        RoutePolicy.setChannelEnabled(prefs, Channel.LOCAL, true)
+                    }
+                    HubCategory.INDEPENDENT -> {
+                        RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, true)
+                    }
+                    else -> Unit
                 }
                 hubCategory = null
                 syncActiveTab()
@@ -1855,6 +1882,11 @@ fun LionApp() {
             onOpenSettings = {
                 hubCategory = null
                 showSettings = true
+            },
+            onChanged = {
+                // أي تغيير في القنوات أو الخوادم ينعكس فوراً على الشريط السفلي.
+                gatewayEnabled = providerEnabled(prefs, WebGateway.ENABLED_ID)
+                gatewayMode = WebGateway.load(prefs).mode
             }
         )
     }
@@ -2047,18 +2079,16 @@ fun LionApp() {
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text("Lion AI", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    ChatModeBadge(currentMode) { showModePicker = true }
-                                    Spacer(Modifier.width(5.dp))
-                                    Text(
-                                        chatMetas.firstOrNull { it.id == currentChat }?.title
-                                            ?: ChatRepository.DEFAULT_TITLE,
-                                        color = Color(0xFF9A9A9A),
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                                // لا زر أوضاع في الأعلى: انتقاء الوضع كله من أيقونة
+                                // المحادثة في الشريط السفلي (💬 عام/برمجة/تعلّم).
+                                Text(
+                                    chatMetas.firstOrNull { it.id == currentChat }?.title
+                                        ?: ChatRepository.DEFAULT_TITLE,
+                                    color = Color(0xFF9A9A9A),
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     },
@@ -2131,7 +2161,8 @@ fun LionApp() {
                 )
 
                 // المزود العامل: آخر مزود أجاب فعلياً في هذه المحادثة (أو المختار يدوياً).
-                val lastAnswered = LastRoute.get(prefs, currentChat)?.provider
+                val lastRoute = LastRoute.get(prefs, currentChat)
+                val lastAnswered = lastRoute?.provider
                 val workingProvider = if (!autoRoute) {
                     selectedProvider
                 } else {
@@ -2147,7 +2178,15 @@ fun LionApp() {
                 val workingModel = (prefs.getString("model_$workingBackend", "") ?: "")
                     .ifBlank { providerInfo(workingBackend).defaultModel }
                 WebGateway.load(prefs)
-                val workingKind = hubKindOf(workingProvider, prefs)
+                // القناة الفعلية التي أجابت آخر مرة (مباشر/خادم خارجي/خادم محلي).
+                val workingVia = if (!autoRoute) {
+                    RoutePolicy.channels(prefs, workingProvider).firstOrNull().orEmpty()
+                } else {
+                    lastRoute?.via.orEmpty()
+                }
+                val workingKind = hubKindOf(workingProvider, prefs, workingVia)
+                val workingChannels = RoutePolicy.channels(prefs, workingProvider)
+                    .joinToString("+") { Channel.icon(it) }
                 LionComposer(
                     attachment = attachment,
                     imageAttachment = imageAttachment,
@@ -2160,6 +2199,7 @@ fun LionApp() {
                     loading = loadingChats[currentChat] == true,
                     autoRoute = autoRoute,
                     canSend = input.isNotBlank() || attachment != null || imageAttachment != null,
+                    channelSummary = workingChannels,
                     onEditImage = { img ->
                         editorImage = img
                         showEditor = true
@@ -2172,7 +2212,7 @@ fun LionApp() {
                     onAttachFile = { fileLauncher.launch("*/*") },
                     onVoice = { startVoice() },
                     onChooseModel = { showModelSheet = true },
-                    onSelectMode = { chooseMode(it) },
+                    onOpenMode = { showModePicker = true },
                     onToggleAuto = {
                         autoRoute = !autoRoute
                         prefs.edit().putBoolean("auto_route", autoRoute).apply()

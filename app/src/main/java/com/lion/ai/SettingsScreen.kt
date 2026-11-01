@@ -393,14 +393,30 @@ fun SettingsScreen(
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(8.dp))
+                        var localChannel by remember {
+                            mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.LOCAL))
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "تفعيل الخادم المحلي في التوجيه",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                modifier = Modifier.weight(1f)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "استخدام الخادم المحلي كمسار تنفيذ",
+                                    color = Color.White,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    "يُجرَّب مع المسار المباشر أو بعده — يعمل وحده أو مع أي مسار آخر",
+                                    color = Color(0xFF9A9A9A),
+                                    fontSize = 10.sp
+                                )
+                            }
+                            Switch(
+                                checked = localChannel,
+                                onCheckedChange = {
+                                    localChannel = it
+                                    RoutePolicy.setChannelEnabled(prefs, Channel.LOCAL, it)
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                             )
-                            ProviderToggle(prefs = prefs, id = RoutePolicy.LOCAL_PROXY)
                         }
                         Spacer(Modifier.height(8.dp))
                         var backend by remember { mutableStateOf(LocalAIProxy.backendProvider(prefs)) }
@@ -654,6 +670,32 @@ fun SettingsScreen(
                                         )
                                     }
                                 }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            var gatewayChannel by remember {
+                                mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.GATEWAY))
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "استخدام الخادم الخارجي كمسار تنفيذ",
+                                        color = Color.White,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        "يعمل منفرداً أو مع المباشر والمحلي — لا يلغي أياً منها",
+                                        color = Color(0xFF9A9A9A),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                Switch(
+                                    checked = gatewayChannel,
+                                    onCheckedChange = {
+                                        gatewayChannel = it
+                                        RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, it)
+                                    },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                                )
                             }
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(

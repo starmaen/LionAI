@@ -228,12 +228,21 @@ object LlmClient {
         systemPrompt: String = LLM_SYSTEM_PROMPT,
         readTimeoutMs: Int = 0,
         chatModeHint: ChatMode? = null,
-        forceDirect: Boolean = false
+        forceDirect: Boolean = false,
+        via: String = Channel.AUTO
     ): String {
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
         val gateway = WebGateway.current()
-        val viaGateway = !forceDirect && WebGateway.shouldRoute(provider)
+        // قناة التنفيذ: مباشر/خادم خارجي/خادم محلي. DIRECT يمنع الخادم، و GATEWAY
+        // يفرضه دون رجوع داخلي (الرجوع يكون بمحاولة تالية من الخطة).
+        val wantDirect = forceDirect || via == Channel.DIRECT
+        val gatewayOnly = via == Channel.GATEWAY
+        val viaGateway = !wantDirect && WebGateway.shouldRoute(provider)
+        if (gatewayOnly && !viaGateway) {
+            return "⚠️ قناة «الخادم الخارجي» غير متاحة الآن لهذا المزود: " +
+                "تحتاج رابط خادم ومفتاح RELAY_TOKEN ومزوداً تدعمه البوابة."
+        }
         if (provider == "cfai" && !viaGateway) {
             return "⚠️ Workers AI مجاني لكنه يعمل عبر خادم الويب فقط.\n" +
                 "الإعدادات ← الخادم المحلي ← 🌐 مزودات خادم الويب ← «خادم أولاً» مع الرابط و RELAY_TOKEN."
@@ -264,7 +273,7 @@ object LlmClient {
                     recordSuccess(provider, "$gwModel · خادم")
                     return@withReadTimeout reply
                 }
-                if (gateway.mode == WebGateway.MODE_ONLY) {
+                if (gateway.mode == WebGateway.MODE_ONLY || gatewayOnly) {
                     val why = attempt.exceptionOrNull()?.message ?: reply ?: "لا رد من الخادم"
                     lastErrors[provider] = "gateway: " + why.take(200)
                     return@withReadTimeout "⚠️ تعذّر الخادم الخارجي ($provider): ${why.take(160)}\n" +
@@ -441,13 +450,14 @@ object LlmClient {
         systemPrompt: String = LLM_SYSTEM_PROMPT,
         tools: JSONArray = JSONArray(),
         readTimeoutMs: Int = 0,
-        chatModeHint: ChatMode? = null
+        chatModeHint: ChatMode? = null,
+        via: String = Channel.AUTO
     ): ToolReply {
         if ((provider != "custom" && provider != "local_proxy") || tools.length() == 0) {
             return ToolReply(
                 ask(
                     message, apiKey, provider, history, modelOverride, accountId, null,
-                    systemPrompt, readTimeoutMs, chatModeHint
+                    systemPrompt, readTimeoutMs, chatModeHint, false, via
                 ),
                 emptyList()
             )

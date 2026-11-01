@@ -29,6 +29,66 @@ object RoutePolicy {
     fun modelFor(prefs: SharedPreferences, provider: String): String =
         (prefs.getString("model_$provider", "") ?: "").trim()
 
+    // ===== قنوات التنفيذ (مباشر / خادم خارجي / خادم محلي) =====
+    //
+    // الفكرة: اختيار المزود شيء، والطريق إليه شيء آخر. يمكن تشغيل المزود
+    // مباشرة، أو عبر الخادم المحلي، أو عبر الخادم الخارجي، أو عبر أي تركيبة
+    // منها — يجرّبها التطبيق بالترتيب حتى يرد أحدها، فلا ينقطع الرد بتعطّل
+    // طريق واحد.
+
+    private const val KEY_CHANNEL = "channel_"
+
+    /** هل قناة التنفيذ مفعّلة؟ (مباشر افتراضياً، والخارجي إن كان مضبوطاً، والمحلي بطلب المستخدم). */
+    fun channelEnabled(prefs: SharedPreferences, via: String): Boolean {
+        val key = KEY_CHANNEL + via
+        return when (via) {
+            Channel.DIRECT -> prefs.getBoolean(key, true)
+            Channel.GATEWAY -> if (prefs.contains(key)) {
+                prefs.getBoolean(key, false)
+            } else {
+                // لم يضبطها المستخدم بعد: تعمل تلقائياً إن كان الخادم مضبوطاً ومفعّلاً.
+                val config = WebGateway.load(prefs)
+                config.enabled && config.mode != WebGateway.MODE_OFF && config.configured && config.token.isNotBlank()
+            }
+            Channel.LOCAL -> prefs.getBoolean(key, false)
+            else -> true
+        }
+    }
+
+    fun setChannelEnabled(prefs: SharedPreferences, via: String, enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CHANNEL + via, enabled).apply()
+    }
+
+    /** القنوات المفعّلة فعلاً: السليمة أولاً، ثم التي تعطّلت مؤقتاً كشبكة أمان أخيرة. */
+    fun channels(prefs: SharedPreferences, provider: String): List<String> {
+        WebGateway.load(prefs)
+        val enabled = Channel.ORDER.filter { channelEnabled(prefs, it) }
+        val healthy = enabled.filter { SmartRouter.channelFailures(provider, it) < 2 }
+        return healthy + enabled.filterNot { it in healthy }
+    }
+
+    /**
+     * بدائل قناة الوصول لمزود واحد: نفس المزود عبر كل قناة مفعّلة.
+     * الخادم المحلي لا يتكرر (له بطاقة واحدة) ويظهر مرة واحدة كشبكة أمان.
+     */
+    fun channelVariants(
+        prefs: SharedPreferences,
+        route: Route,
+        allowLocal: Boolean = true
+    ): List<Route> {
+        if (route.provider == LOCAL_PROXY) return listOf(Route(LOCAL_PROXY, "", Channel.LOCAL))
+        if (route.provider == CUSTOM) return listOf(route.copy(via = Channel.DIRECT))
+        return channels(prefs, route.provider).mapNotNull { via ->
+            when (via) {
+                Channel.GATEWAY -> route.copy(via = Channel.GATEWAY)
+                    .takeIf { WebGateway.shouldRoute(route.provider) }
+                Channel.LOCAL -> Route(LOCAL_PROXY, "", Channel.LOCAL)
+                    .takeIf { allowLocal && LocalAIProxy.isRunning() }
+                else -> route.copy(via = Channel.DIRECT)
+            }
+        }
+    }
+
     /** المسار اليدوي كما تراه شاشة المحادثة: قد يكون الخادم المحلي نفسه. */
     fun appManualRoute(prefs: SharedPreferences): Route {
         val provider = selectedProvider(prefs)
@@ -82,47 +142,52 @@ object RoutePolicy {
         prefs: SharedPreferences,
         kind: TaskKind,
         mode: AnswerMode,
-        chatId: String = ActiveChat.id
+        chatId: String = ActiveChat.id,
+        chatMode: ChatMode = ChatMode.GENERAL
     ): List<Route> {
+        WebGateway.load(prefs)
         val chosen = appManualRoute(prefs)
         if (isManual(prefs)) {
             ProviderStick.clear(prefs, chatId)
-            // اليدوي لا يبدّل المزود أبداً إلا إذا فعّل المستخدم «مساعدة العقل المركزي».
+            // اليدوي: مزودك المختار أولاً عبر القنوات التي فعّلتها (مباشر/خارجي/محلي).
+            // لا يبدّل العقل المركزي مزودك إلا إذا فعّلت «مساعدة العقل المركزي».
             val assist = assistEnabled(prefs)
+            // إن أغلق المستخدم كل القنوات نبقي المباشر مفعّلاً حتى لا تتعطل المحادثة.
+            val chain = channelVariants(prefs, chosen).ifEmpty { listOf(chosen.copy(via = Channel.DIRECT)) }
             val rescue = if (assist) {
                 CentralBrain.rescueRoutes(prefs, kind, listOf(chosen), image = false)
+                    .map { it.copy(via = Channel.DIRECT) }
+                    .filterNot { route -> chain.any { it.provider == route.provider } }
             } else {
                 emptyList()
             }
-            return combine(
-                manual = true,
-                assist = assist,
-                chosen = chosen,
-                central = emptyList(),
-                rescue = rescue,
-                limit = 6
-            )
+            return (chain + rescue)
+                .distinctBy { it.provider + "|" + it.via }
+                .take(8)
         }
-        val direct = applySticky(
+        // التلقائي: العقل المركزي يختار المزود الأنسب، ثم يوسّعه عبر كل قناة مفعّلة
+        // قبل الانتقال إلى مزود آخر — فلا يُستبدل مزود قوي لمجرّد تعطّل طريق واحد إليه.
+        val ranked = applySticky(
             prefs, kind, chatId,
-            SmartRouter.plan(prefs, kind, mode).filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+            CentralBrain.rankRoutes(
+                prefs, kind,
+                SmartRouter.plan(prefs, kind, mode)
+                    .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM },
+                chatMode
+            )
         )
-        // التلقائي: الخادم المحلي هو المنفّذ، والعقل المركزي يختار أفضل مزود داخله.
-        // إن لم يكن الخادم جاهزاً نعود للتوجيه المباشر بلا أي تغيير في السلوك.
-        val server = if (LocalAIProxy.getUrl().isNotBlank() && providerEnabled(prefs, LOCAL_PROXY)) {
-            Route(LOCAL_PROXY, "")
-        } else {
-            null
+        val central = mutableListOf<Route>()
+        for (candidate in ranked.take(3)) {
+            central += channelVariants(prefs, candidate, allowLocal = false)
         }
-        val central = (if (server != null) listOf(server) else emptyList()) + direct
-        return combine(
-            manual = false,
-            assist = false,
-            chosen = direct.firstOrNull() ?: chosen,
-            central = central,
-            rescue = emptyList(),
-            limit = 6
-        )
+        // الخادم المحلي شبكة الأمان الأخيرة: يدير داخله سلسلة البدائل كاملة.
+        if (channelEnabled(prefs, Channel.LOCAL) && LocalAIProxy.isRunning()) {
+            central += Route(LOCAL_PROXY, "", Channel.LOCAL)
+        }
+        return central
+            .distinctBy { it.provider + "|" + it.via }
+            .take(8)
+            .ifEmpty { listOf(chosen.copy(via = Channel.DIRECT)) }
     }
 
     /**
@@ -156,6 +221,7 @@ object RoutePolicy {
         chatMode: ChatMode,
         chatId: String = ActiveChat.id
     ): List<Route> {
+        WebGateway.load(prefs)
         val manual = isManual(prefs)
         val assist = assistEnabled(prefs)
         val chosen = serverBackendRoute(prefs)
@@ -173,14 +239,24 @@ object RoutePolicy {
         } else {
             emptyList()
         }
-        return combine(
+        // داخل الخادم المحلي: القنوات المفعّلة تُطبَّق على المزود المختار أيضاً،
+        // باستثناء القناة المحلية نفسها حتى لا يعود الطلب إلى الخادم في حلقة.
+        val manualChain = if (manual) {
+            channelVariants(prefs, chosen, allowLocal = false)
+                .ifEmpty { listOf(chosen.copy(via = Channel.DIRECT)) }
+        } else {
+            emptyList()
+        }
+        return (combine(
             manual = manual,
             assist = if (manual) assist else true,
             chosen = chosen,
             central = if (manual) emptyList() else central,
             rescue = rescue,
             limit = 6
-        ).filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+        ) + manualChain)
+            .distinctBy { it.provider + "|" + it.via }
+            .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
     }
 
     /**
@@ -248,12 +324,16 @@ object LastRoute {
         val raw = prefs.getString(key(chatId), null) ?: return null
         val provider = raw.substringBefore('|').trim()
         if (provider.isBlank()) return null
-        return Route(provider, raw.substringAfter('|', "").trim())
+        // الصيغة: provider|model|via (القيم القديمة بلا via تُقرأ كقناة تلقائية).
+        val rest = raw.substringAfter('|', "")
+        val model = rest.substringBefore('|').trim()
+        val via = rest.substringAfter('|', "").trim()
+        return Route(provider, model, via)
     }
 
     fun set(prefs: SharedPreferences, chatId: String, route: Route) {
         if (chatId.isBlank() || route.provider.isBlank()) return
-        val value = route.provider + "|" + route.model
+        val value = route.provider + "|" + route.model + "|" + route.via
         if (prefs.getString(key(chatId), null) != value) prefs.edit().putString(key(chatId), value).apply()
     }
 

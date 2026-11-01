@@ -83,6 +83,50 @@ object CentralBrain {
         }
     }
 
+    /**
+     * ترتيب المزودات قبل التنفيذ: هذه هي سلطة العقل المركزي الكاملة في الوضع
+     * التلقائي. لا يغيّر اختيار المستخدم، بل يرتّب البدائل حسب:
+     * 1) الاتصال: مزود تعطّل مرتين يتأخر عن أي بديل سليم.
+     * 2) الكفاءة: النماذج الموثوقة تتقدّم في المهام الحساسة (معرفي/طويل/برمجة).
+     * 3) القدرة على الاستجابة: بديل أسرع بوضوح (مرتين أو أكثر) يتقدّم على الأبطأ.
+     */
+    fun rankRoutes(
+        prefs: SharedPreferences,
+        kind: TaskKind,
+        routes: List<Route>,
+        mode: ChatMode = ChatMode.GENERAL
+    ): List<Route> {
+        if (routes.size < 2) return routes
+        // 1) الاتصال أولاً: المعطّل لا يُستهلك منه وقت ولا محاولة قبل البديل السليم.
+        val healthy = routes.filter { SmartRouter.failureCount(it.provider) < 2 }
+        val failing = routes.filterNot { it in healthy }
+        val ordered = (healthy + failing).toMutableList()
+        // 2) الكفاءة قبل السرعة في المهام التي تهلوس فيها النماذج الضعيفة.
+        val needsReliable = mode == ChatMode.LEARN || kind == TaskKind.FACTUAL ||
+            kind == TaskKind.LONG_DOC || kind == TaskKind.CODE || kind == TaskKind.DEV
+        if (needsReliable) {
+            val reliable = ordered.filter { SmartRouter.isReliableModel(it.provider, it.model) }
+            val weak = ordered.filterNot { it in reliable }
+            ordered.clear()
+            ordered.addAll(reliable + weak)
+        }
+        // 3) القدرة على الاستجابة: الأسرع المقاس بفارق واضح يتقدّم (ترقية واحدة فقط
+        // حتى لا نقلّب الترتيب مع كل قياس جديد).
+        val head = ordered.firstOrNull() ?: return ordered
+        val headLatency = SmartRouter.latency(head.provider)
+        if (headLatency > 0) {
+            val faster = ordered.drop(1).firstOrNull {
+                val l = SmartRouter.latency(it.provider)
+                l > 0 && l * 2 < headLatency && headLatency - l > 4_000
+            }
+            if (faster != null) {
+                ordered.remove(faster)
+                ordered.add(0, faster)
+            }
+        }
+        return ordered
+    }
+
     /** هل نبحث في الويب؟ العام/المعرفي في الوضع المركزي يحصل على مصادر دائماً. */
     fun shouldSearch(
         prefs: SharedPreferences,
