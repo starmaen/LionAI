@@ -29,20 +29,22 @@ jobs:
       run: |
         TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d '[:space:]')
         ACCOUNT=$(printf '%s' "$RAW_ACCOUNT" | tr -d '[:space:]')
+        FP="prefix=${TOKEN:0:4} token_len=${#TOKEN} account_len=${#ACCOUNT}"
+        echo "credential fingerprint: $FP"
         if [ -z "$TOKEN" ] || [ -z "$ACCOUNT" ]; then
-          echo "::error::أضف CLOUDFLARE_API_TOKEN و CLOUDFLARE_ACCOUNT_ID في GitHub → Settings → Secrets and variables → Actions"
+          echo "::error::$FP — أضف CLOUDFLARE_API_TOKEN و CLOUDFLARE_ACCOUNT_ID في GitHub → Settings → Secrets and variables → Actions"
           exit 1
         fi
         if [[ "$TOKEN" == cfk_* ]]; then
-          echo "::error::القيمة المدخلة هي Global API Key (cfk_) وليست API Token. أنشئ User API Token من https://dash.cloudflare.com/profile/api-tokens بقالب Edit Cloudflare Workers"
+          echo "::error::$FP — القيمة المدخلة هي Global API Key (cfk_) وليست API Token. أنشئ User API Token من https://dash.cloudflare.com/profile/api-tokens بقالب Edit Cloudflare Workers"
           exit 1
         fi
         if [[ "$TOKEN" == AQ.* || "$TOKEN" == AIza* ]]; then
-          echo "::error::هذه القيمة مفتاح Google/Gemini وليست توكن Cloudflare. ضع مفتاح Gemini في Cloudflare باسم GEMINI_API_KEY، وضع توكن Cloudflare (يبدأ بـ cfut_) هنا"
+          echo "::error::$FP — هذه القيمة مفتاح Google/Gemini وليست توكن Cloudflare. ضع مفتاح Gemini في Cloudflare باسم GEMINI_API_KEY، وضع توكن Cloudflare (يبدأ بـ cfut_) هنا"
           exit 1
         fi
         if [[ ! "$TOKEN" =~ ^cfut_ && ! "$TOKEN" =~ ^cfat_ && ! "$TOKEN" =~ ^[A-Za-z0-9_-]{40}$ ]]; then
-          echo "::error::صيغة CLOUDFLARE_API_TOKEN غير صحيحة (بادئتها ${TOKEN:0:5}). أنشئ User API Token من https://dash.cloudflare.com/profile/api-tokens بقالب Edit Cloudflare Workers"
+          echo "::error::$FP — صيغة CLOUDFLARE_API_TOKEN غير صحيحة. أنشئ User API Token من https://dash.cloudflare.com/profile/api-tokens بقالب Edit Cloudflare Workers"
           exit 1
         fi
         echo "::add-mask::$TOKEN"
@@ -61,8 +63,8 @@ jobs:
     - name: Show deploy error
       if: failure()
       env:
-        CLOUDFLARE_API_TOKEN: ${{ steps.cf.outputs.token }}
-        CLOUDFLARE_ACCOUNT_ID: ${{ steps.cf.outputs.account }}
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       run: |
         emit() { echo "::error::$1"; }
         emit "prefix=${CLOUDFLARE_API_TOKEN:0:5} token_len=${#CLOUDFLARE_API_TOKEN} account_len=${#CLOUDFLARE_ACCOUNT_ID}"
