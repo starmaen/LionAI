@@ -95,34 +95,6 @@ object RoutePolicy {
         return Route(provider, modelFor(prefs, provider))
     }
 
-    /** اسم المزود الفعلي المعروض في شاشة المحادثة. */
-    fun effectiveName(prefs: SharedPreferences): String {
-        val provider = selectedProvider(prefs)
-        val actual = if (provider == LOCAL_PROXY) LocalAIProxy.backendProvider(prefs) else provider
-        return shortName(actual)
-    }
-
-    /** وصف قصير تحت صندوق الكتابة: محلي / مجاني / مدفوع. */
-    fun effectiveNote(prefs: SharedPreferences): String {
-        val provider = selectedProvider(prefs)
-        if (provider == LOCAL_PROXY) return "محلي"
-        val info = providerInfo(provider)
-        return if (info.keyless || info.free) "مجاني" else "مدفوع"
-    }
-
-    /** المزود الفعلي خلف الخادم المحلي، أو المزود المختار مباشرة. */
-    fun effectiveProvider(prefs: SharedPreferences): String {
-        val provider = selectedProvider(prefs)
-        return if (provider == LOCAL_PROXY) LocalAIProxy.backendProvider(prefs) else provider
-    }
-
-    /** اسم يوضح المزود الفعلي في الواجهة، مع إبقاء صفة الخادم المحلي. */
-    fun effectiveLabel(prefs: SharedPreferences): String {
-        val provider = selectedProvider(prefs)
-        if (provider != LOCAL_PROXY) return shortName(provider)
-        return shortName(LocalAIProxy.backendProvider(prefs)) + " · محلي"
-    }
-
     fun shortName(provider: String): String =
         if (provider == "openai") "ChatGPT" else providerInfo(provider).shortName
 

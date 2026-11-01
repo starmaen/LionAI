@@ -426,8 +426,6 @@ fun LionApp() {
 
     fun accountId(): String = prefs.getString("cf_account_id", "") ?: ""
 
-    fun manualRoute(): Route = RoutePolicy.appManualRoute(prefs)
-
     /**
      * الوضع التلقائي: العقل المركزي يرتّب المسارات المتاحة.
      * الوضع اليدوي: مزود المستخدم أولاً ودون تبديل تلقائي، إلا إذا فعّل «مساعدة العقل المركزي».

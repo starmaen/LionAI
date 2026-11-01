@@ -208,10 +208,6 @@ object ContextStore {
     fun defaultMode(prefs: SharedPreferences): ChatMode =
         ChatMode.fromId(prefs.getString(DEFAULT, ChatMode.GENERAL.id))
 
-    fun setDefault(prefs: SharedPreferences, mode: ChatMode) {
-        prefs.edit().putString(DEFAULT, mode.id).apply()
-    }
-
     fun remove(prefs: SharedPreferences, chatId: String) {
         prefs.edit().remove(PREFIX + chatId).apply()
     }

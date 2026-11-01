@@ -1,6 +1,6 @@
 # HANDOFF — حالة العمل وتقرير الفحص
 
-آخر تحديث: 2026-10-30 · راجع `git log --oneline -5` لمعرفة أحدث commit.
+آخر تحديث: 2026-11-01 · راجع `git log --oneline -5` لمعرفة أحدث commit.
 
 ## ملخص سريع
 LionAI أصبح: أوضاع محادثة معزولة (GENERAL / CODE / LEARN) + Control Plane (Manifest + بوابات جودة + توقيع HMAC) + مزود مخصص OpenAI-Compatible (LiteLLM/Ollama/Gateway) + طبقة أدوات موسّعة (SHELL/QUALITY/CONTROL/MEMORY/MCP).
@@ -78,3 +78,28 @@ Base URL (إن وُجد):
 - لا تُستخدم `const val` مع `trimIndent()` (فشل ترجمة سابق).
 - بعد أي تعديل: commit + `git push origin main`، ثم تحقق من Actions:
   `curl -s "https://api.github.com/repos/starmaen/LionAI/actions/runs?branch=main&per_page=1"`
+
+
+## جولة 2026-11-01 (1): إصلاح الواجهة والتوجيه
+- **المستودع كان لا يترجم**: 26 خطأً في `InputHub.kt` و`SettingsParts.kt`. أُصلحت، وبعدها
+  BUILD SUCCESSFUL + 127 اختبار وحدة. (آخر بناءين على `main` قبلها كانا فاشلين.)
+- حُذف زر الأوضاع من الشريط العلوي، ودُمجت الأوضاع الثلاثة في كبسولة `💬` أسفل صندوق الكتابة.
+- النوافذ السفلية صارت ديناميكية (سقف 85% من الشاشة + تمرير داخلي) بدل القصّ من الأسفل.
+- قنوات تنفيذ مستقلة: `Channel { DIRECT, GATEWAY, LOCAL }` + `Route.via`
+  (`RoutePolicy.channelEnabled/channelVariants`, `LlmClient.ask(..., via=)`).
+- `CentralBrain.rankRoutes()`: ترتيب المزودات حسب الاتصال ثم الكفاءة ثم زمن الاستجابة،
+  واعٍ بوضع المحادثة، مع قياس لكل (مزود + قناة).
+- زر الإرسال = زر الإيقاف (ويرسل المداخلة إن وُجد نص).
+- `LocalAIProxy.backendProvider` صار يتبع المزود المختار؛ وتوفر البوابة يتبع قناة الخادم الخارجي.
+
+## جولة 2026-11-01 (2): تنظيف المستودع
+- الفروع: `main` فقط (فرع الإصلاح حُذف تلقائياً بعد الدمج). وسم واحد `v1.6.1` + إصدار APK.
+- فحص أسرار على 777 كائناً في التاريخ بـ10 أنماط: **لا شيء**.
+- كود ميت محذوف: `LionInputBar`، `InputAction`، `RoutePolicy.effective*`(4)،
+  `LionApp.manualRoute`، `ArenaActivity.getNavBarHeight`، `ContextStore.setDefault`.
+- `.gitignore`: صار يغطي `build/` على أي مستوى (كان `/build` فقط فظهر `app/build/` كغير متتبَّع)
+  + `worker/.dev.vars` و`gateway/__pycache__` و`.venv` و`.idea/` وأخرى.
+- README: قسم «بنية المستودع» + توثيق قنوات التنفيذ وأيقونة الوضع وزر الإيقاف.
+- **مؤجَّل بقرار المستخدم**: تصفية التاريخ من 238 ملفاً عالقاً (~1.3MB: مشروع Accounting-Star،
+  وحدات ماجيسك، ملفات zip، `hf-space/`) تحتاج force push؛ وحذف `gateway/` و`make-keystore.yml`
+  و`HANDOFF.md`؛ وإغلاق Issue #1.

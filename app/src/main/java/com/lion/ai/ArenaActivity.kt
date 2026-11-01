@@ -29,17 +29,6 @@ class ArenaActivity : Activity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val FILE_CHOOSER_RESULT_CODE = 1001
 
-    private fun getNavBarHeight(): Int {
-        var result = 0
-        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-        if (resourceId > 0) {
-            result = resources.getDimensionPixelSize(resourceId)
-        }
-        return if (result > 0) result else TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 48f, resources.displayMetrics
-        ).toInt()
-    }
-
     private fun getStatusBarHeight(): Int {
         var result = 0
         val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
@@ -55,7 +44,6 @@ class ArenaActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val navBarHeight = getNavBarHeight()
         val statusBarHeight = getStatusBarHeight()
 
         val rootLayout = FrameLayout(this).apply {

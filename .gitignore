@@ -1,17 +1,26 @@
+# ====== Gradle / Android ======
 *.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
-/build
-/captures
+.gradle/
+local.properties
+# أي مجلد بناء على أي مستوى: app/build و gateway/build و worker/build …
+build/
+.kotlin/
+captures/
 .externalNativeBuild
 .cxx
-local.properties
+
+# ====== IDE / نظام ======
+.idea/
+.DS_Store
+*.log
+*.tmp
+*.hprof
+
+# ====== مخرجات البناء ======
 *.apk
 *.aab
 
-# بقايا مساحة عمل Lion AI وملفات مؤقتة يجب ألا تُرفع أبداً
+# ====== بقايا مساحة عمل قديمة لا يجب أن تُرفع ======
 *.patch
 /repos/
 /downloads/
@@ -19,3 +28,19 @@ local.properties
 /main
 /new_file.txt
 .lion-*
+
+# ====== Worker (Cloudflare) ======
+worker/.wrangler/
+worker/node_modules/
+worker/.dev.vars
+
+# ====== Gateway (Python) ======
+gateway/__pycache__/
+gateway/*.pyc
+gateway/providers.json
+gateway/.env
+.venv/
+venv/
+
+# ملاحظة: keystore/lionai-release.jks متعمَّد رفعه — بدونه يتغيّر توقيع
+# التحديثات ويُجبر المستخدم على حذف التطبيق القديم. لا تضفه هنا أبداً.
