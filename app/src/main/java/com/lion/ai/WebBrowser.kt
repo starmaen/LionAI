@@ -6,8 +6,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
-import android.os.Message
+import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -50,22 +51,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 
 /**
- * المتصفح المدمج في التطبيق لدردشات الويب (Arena وGemini وDeepSeek وChatGPT وغيرها).
+ * المتصفح المدمج لدردشات الويب (Gemini وQwen وDeepSeek وCopilot وArena وغيرها).
  *
- * سبب المشكلة السابقة: الـ WebView كان يملأ الشاشة بالكامل دون أي حساب للحواف،
- * فصار صندوق الكتابة داخل الصفحة مخفياً تحت شريط التنقل ولوحة المفاتيح من الأسفل،
- * وجزء من أعلى الصفحة مخفياً تحت شريط الحالة. الحل هنا:
- *   1. الشاشة كلها داخل `systemBars ∪ displayCutout` فلا يمرّ أي محتوى تحت System UI.
- *   2. مساحة الصفحة وحدها تأخذ `imePadding()` فتتقلّص تلقائياً عند ظهور لوحة المفاتيح
- *      ويبقى صندوق الكتابة ظاهراً فوقها.
- *   3. لم نعد نصفّر `padding-bottom` في صفحة الويب بسكربت (كان يهدم هوامش الأمان).
+ * أسباب الصفحات الفارغة أو المقتطعة في النسخة السابقة وإصلاحها:
+ *  1. `useWideViewPort=false` كان يتجاهل وسم viewport فتُرسم المواقع المتجاوبة بعرض خاطئ ومقتطعة:
+ *     فعّلناه مع overview ليعمل التصميم المتجاوب كما في كروم.
+ *  2. `setSupportMultipleWindows(true)` مع إعادة استعمال نفس الـ WebView كنافذة جديدة كان يستبدل الصفحة
+ *     الحالية بنافذة فارغة عند أي `window.open` (تسجيل الدخول وغيره): الآن تُفتح الروابط في نفس العرض.
+ *  3. ترويسة `X-Requested-With` كانت تفضح التطبيق فتحجب Google وغيرها الدخول داخل WebView: تُحذف هنا.
+ *  4. أزرار التنقل وتبديل الجوال/سطح المكتب أُزيلت؛ بقي إغلاق وتحديث فقط، والرجوع يتم بزر النظام.
  */
-
-private const val DESKTOP_UA =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
 private val WEB_BG = Color(0xFF121212)
 private val WEB_BAR = Color(0xFF171717)
@@ -105,17 +104,18 @@ internal fun describeWebError(code: Int): String = when (code) {
 }
 
 /**
- * المتحكّم في الـ WebView: يحفظ الحالة التي تعرضها الواجهة ويعرض أوامر التنقل.
- * يُنشأ مرة واحدة في النشاط ويبقى محتفظاً بالصفحة عند تغيّر الاتجاه.
+ * المتحكّم في الـ WebView: يحفظ الحالة التي تعرضها الواجهة. يُنشأ مرة واحدة في النشاط
+ * ويبقى محتفظاً بالصفحة عند تغيّر الاتجاه.
  */
 internal class LionWebController(
     private val activity: ComponentActivity,
     val startUrl: String
 ) {
 
-    private var baseUserAgent: String = WebSettings.getDefaultUserAgent(activity)
+    private val baseUserAgent: String = WebSettings.getDefaultUserAgent(activity)
     private var restoreBundle: Bundle? = null
     private var view: WebView? = null
+    private var rendererGone = false
 
     /** يُضبط من النشاط لتشغيل منتقي الملفات. */
     var launchFileChooser: ((Intent) -> Unit)? = null
@@ -127,12 +127,6 @@ internal class LionWebController(
         private set
     var pageUrl by mutableStateOf(startUrl)
         private set
-    var canGoBack by mutableStateOf(false)
-        private set
-    var canGoForward by mutableStateOf(false)
-        private set
-    var desktopMode by mutableStateOf(false)
-        private set
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
@@ -143,8 +137,14 @@ internal class LionWebController(
     }
 
     @SuppressLint("SetJavaScriptEnabled")
+    @Suppress("DEPRECATION")
     fun attach(webView: WebView) {
         view = webView
+        rendererGone = false
+        webView.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
@@ -155,20 +155,24 @@ internal class LionWebController(
             domStorageEnabled = true
             databaseEnabled = true
             loadsImagesAutomatically = true
-            allowFileAccess = true
+            allowFileAccess = false
             allowContentAccess = true
             javaScriptCanOpenWindowsAutomatically = true
-            // بعض الدردشات تحمّل أجزاءً عبر http؛ نبقي السلوك المتساهل كما كان.
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            // نافذة واحدة: window.open يفتح داخل نفس العرض بدل أن يستبدله بنافذة فارغة.
+            setSupportMultipleWindows(false)
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             cacheMode = WebSettings.LOAD_DEFAULT
+            // يحترم وسم viewport فيعمل التصميم المتجاوب للمواقع كما في المتصفح العادي.
+            useWideViewPort = true
+            loadWithOverviewMode = true
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
-            setSupportMultipleWindows(true)
-            allowUniversalAccessFromFileURLs = true
             mediaPlaybackRequiresUserGesture = false
+            textZoom = 100
+            userAgentString = mobileUserAgent(baseUserAgent)
         }
-        applyMode(webView)
+        hideRequestedWithHeader(webView.settings)
         webView.webViewClient = lionClient
         webView.webChromeClient = lionChrome
 
@@ -177,12 +181,22 @@ internal class LionWebController(
 
         val bundle = restoreBundle
         restoreBundle = null
-        if (bundle != null) {
-            webView.restoreState(bundle)
-            sync()
+        if (bundle != null && webView.restoreState(bundle) != null) {
+            pageUrl = webView.url ?: startUrl
         } else {
             errorMessage = null
             webView.loadUrl(startUrl)
+        }
+    }
+
+    /** يحذف ترويسة X-Requested-With التي تكشف التطبيق للمواقع (تحجب Google الدخول بسببها). */
+    private fun hideRequestedWithHeader(settings: WebSettings) {
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
+            }
+        } catch (_: Throwable) {
+            // إصدار WebView قديم: نكمل بدون هذه الميزة.
         }
     }
 
@@ -191,11 +205,11 @@ internal class LionWebController(
     }
 
     fun saveState(outState: Bundle) {
-        view?.saveState(outState)
+        runCatching { view?.saveState(outState) }
     }
 
     fun destroy() {
-        view?.destroy()
+        runCatching { view?.destroy() }
         view = null
     }
 
@@ -204,35 +218,23 @@ internal class LionWebController(
         val v = view ?: return false
         return if (v.canGoBack()) {
             v.goBack()
-            sync()
             true
         } else {
             false
         }
     }
 
-    fun goForward() {
-        val v = view ?: return
-        if (v.canGoForward()) {
-            v.goForward()
-            sync()
-        }
-    }
-
     fun reload() {
         errorMessage = null
+        if (rendererGone) {
+            activity.recreate()
+            return
+        }
         view?.reload()
     }
 
     fun stopLoading() {
         view?.stopLoading()
-    }
-
-    fun toggleDesktopMode() {
-        desktopMode = !desktopMode
-        val v = view ?: return
-        applyMode(v)
-        v.reload()
     }
 
     fun openInBrowser() {
@@ -242,24 +244,6 @@ internal class LionWebController(
     fun onFileChooserResult(uris: Array<Uri>?) {
         filePathCallback?.onReceiveValue(uris)
         filePathCallback = null
-    }
-
-    private fun applyMode(webView: WebView) {
-        webView.settings.apply {
-            // وضع سطح المكتب يوسّع العرض ثم يصغّره ليناسب شاشة الهاتف؛
-            // وضع الجوال يترك الموقع يقرر تصميمه المتجاوب بنفسه.
-            useWideViewPort = desktopMode
-            loadWithOverviewMode = desktopMode
-            userAgentString = if (desktopMode) DESKTOP_UA else mobileUserAgent(baseUserAgent)
-            textZoom = 100
-        }
-    }
-
-    private fun sync() {
-        val v = view ?: return
-        canGoBack = v.canGoBack()
-        canGoForward = v.canGoForward()
-        pageUrl = v.url ?: pageUrl
     }
 
     /** يفتح الروابط غير القابلة للعرض داخل التطبيق (mailto/tel/intent/market/…). */
@@ -296,7 +280,7 @@ internal class LionWebController(
         override fun onPageFinished(view: WebView, url: String) {
             CookieManager.getInstance().flush()
             injectCompatibilityFixes(view)
-            sync()
+            pageUrl = view.url ?: url
         }
 
         override fun onReceivedError(
@@ -307,32 +291,23 @@ internal class LionWebController(
             if (!request.isForMainFrame) return
             errorMessage = describeWebError(error.errorCode)
         }
+
+        // انهيار عملية العرض (نقص ذاكرة) كان يقتل التطبيق كله؛ الآن نعرض رسالة ونعيد التشغيل بنقرة.
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            rendererGone = true
+            errorMessage = "توقفت الصفحة بسبب نقص الذاكرة. اضغط إعادة المحاولة."
+            return true
+        }
     }
 
     private val lionChrome = object : WebChromeClient() {
 
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             progress = newProgress
-            sync()
         }
 
         override fun onReceivedTitle(view: WebView, title: String?) {
             pageTitle = title.orEmpty()
-            sync()
-        }
-
-        // الروابط التي تطلب نافذة جديدة (`target="_blank"`) تُفتح في العرض نفسه
-        // بدل أن تُتجاهل بصمت كما كان يحدث سابقاً.
-        override fun onCreateWindow(
-            view: WebView,
-            isDialog: Boolean,
-            isUserGesture: Boolean,
-            resultMsg: Message?
-        ): Boolean {
-            val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
-            transport.webView = view
-            resultMsg.sendToTarget()
-            return true
         }
 
         override fun onShowFileChooser(
@@ -357,10 +332,7 @@ internal class LionWebController(
         }
     }
 
-    /**
-     * إخفاء أثر الـ WebView عن المواقع التي ترفضه. لا نلمس أي حشو أو هوامش داخل
-     * الصفحة: ضبط الحواف يتم من جانب الواجهة (Compose) لا من جانب الصفحة.
-     */
+    /** إخفاء أثر الأتمتة عن المواقع التي ترفض الـ WebView. لا نلمس أي حشو أو هوامش داخل الصفحة. */
     private fun injectCompatibilityFixes(webView: WebView) {
         val js = """
             (function() {
@@ -415,57 +387,47 @@ internal fun LionWebScreen(
                 )
             }
             controller.errorMessage?.let { message ->
-                WebErrorPanel(message = message, onRetry = { controller.reload() })
+                WebErrorPanel(
+                    message = message,
+                    onRetry = { controller.reload() },
+                    onOpenBrowser = { controller.openInBrowser() }
+                )
             }
         }
     }
 }
 
+/** شريط بسيط: إغلاق، عنوان الصفحة، تحديث. لا أسهم تنقل ولا تبديل جوال/سطح مكتب. */
 @Composable
 private fun LionWebBar(
     controller: LionWebController,
     onClose: () -> Unit
 ) {
     Surface(color = WEB_BAR) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                WebBarButton("✕", "إغلاق", onClick = onClose)
-                WebBarButton("⟵", "السابق", enabled = controller.canGoBack) { controller.navigateBack() }
-                WebBarButton("⟶", "التالي", enabled = controller.canGoForward) { controller.goForward() }
-                if (controller.isLoading) {
-                    WebBarButton("■", "إيقاف التحميل") { controller.stopLoading() }
-                } else {
-                    WebBarButton("⟳", "تحديث") { controller.reload() }
-                }
-                WebBarButton(
-                    glyph = if (controller.desktopMode) "📱" else "🖥",
-                    description = if (controller.desktopMode) {
-                        "الوضع: سطح المكتب — اضغط للتبديل إلى الجوال"
-                    } else {
-                        "الوضع: جوال — اضغط للتبديل إلى سطح المكتب"
-                    }
-                ) { controller.toggleDesktopMode() }
-                WebBarButton("↗", "فتح في المتصفح") { controller.openInBrowser() }
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            WebBarButton("✕", onClick = onClose)
             val title = controller.pageTitle.ifBlank { hostOf(controller.pageUrl) }
-            if (title.isNotBlank()) {
-                Text(
-                    text = title,
-                    color = WEB_MUTED,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 4.dp)
-                )
+            Text(
+                text = title,
+                color = WEB_MUTED,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
+            if (controller.isLoading) {
+                WebBarButton("■") { controller.stopLoading() }
+            } else {
+                WebBarButton("⟳") { controller.reload() }
             }
         }
     }
@@ -474,21 +436,18 @@ private fun LionWebBar(
 @Composable
 private fun WebBarButton(
     glyph: String,
-    description: String,
-    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
-            .size(38.dp)
-            .padding(2.dp)
-            .clickable(enabled = enabled) { onClick() },
+            .size(40.dp)
+            .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = glyph,
-            fontSize = 17.sp,
-            color = if (enabled) WEB_ACCENT else Color(0xFF4A4A4A),
+            fontSize = 18.sp,
+            color = WEB_ACCENT,
             textAlign = TextAlign.Center
         )
     }
@@ -497,9 +456,15 @@ private fun WebBarButton(
 @Composable
 private fun WebErrorPanel(
     message: String,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onOpenBrowser: () -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(WEB_BG),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
             modifier = Modifier
                 .padding(24.dp)
@@ -521,6 +486,14 @@ private fun WebErrorPanel(
                 fontSize = 14.sp,
                 modifier = Modifier
                     .clickable { onRetry() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+            Text(
+                text = "فتح في المتصفح",
+                color = WEB_MUTED,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .clickable { onOpenBrowser() }
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             )
         }
