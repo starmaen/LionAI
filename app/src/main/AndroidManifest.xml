@@ -62,7 +62,9 @@
         <activity
             android:name=".ArenaActivity"
             android:exported="false"
-            android:theme="@style/Theme.LionAI" />
+            android:theme="@style/Theme.LionAI"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|density|fontScale|uiMode" />
 
         <service
             android:name=".LionNotificationListener"
