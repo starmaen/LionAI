@@ -52,7 +52,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -496,16 +495,48 @@ internal fun LionComposer(
                         )
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
+                        // حقل النص وحده في الأعلى، باتجاه RTL صحيح حتى يعمل المؤشر
+                        // والمسح والإكمال من آخر النص كما في أي حقل عربي طبيعي.
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 42.dp)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (input.isEmpty()) {
+                                    Text(
+                                        "اكتب رسالتك...",
+                                        color = Color(0xFF6E6E6E),
+                                        fontSize = 14.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                BasicTextField(
+                                    value = input,
+                                    onValueChange = onInputChange,
+                                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                                    cursorBrush = SolidColor(Gold),
+                                    maxLines = 5,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                        Spacer(Modifier.size(2.dp))
+                        // الإرسال والميكروفون في الصف السفلي بمحاذاة اسم المزود.
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 46.dp),
+                                .padding(start = 4.dp, end = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             FilledIconButton(
                                 onClick = { if (loading) onStop() else onSend() },
                                 enabled = loading || canSend,
-                                modifier = Modifier.size(42.dp),
+                                modifier = Modifier.size(40.dp),
                                 shape = CircleShape,
                                 colors = IconButtonDefaults.filledIconButtonColors(
                                     containerColor = if (loading) Color(0xFF3A1F1F) else Gold,
@@ -520,8 +551,8 @@ internal fun LionComposer(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                            Spacer(Modifier.width(2.dp))
-                            IconButton(onClick = onVoice, modifier = Modifier.size(36.dp)) {
+                            Spacer(Modifier.width(4.dp))
+                            IconButton(onClick = onVoice, modifier = Modifier.size(34.dp)) {
                                 Icon(
                                     Icons.Filled.Mic,
                                     "مكرفون المساعد",
@@ -529,45 +560,7 @@ internal fun LionComposer(
                                     modifier = Modifier.size(19.dp)
                                 )
                             }
-                            Spacer(Modifier.width(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                if (input.isEmpty()) {
-                                    Text(
-                                        "اكتب رسالتك...",
-                                        color = Color(0xFF6E6E6E),
-                                        fontSize = 14.sp,
-                                        textAlign = TextAlign.End,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                                BasicTextField(
-                                    value = input,
-                                    onValueChange = onInputChange,
-                                    textStyle = TextStyle(
-                                        color = Color.White,
-                                        fontSize = 15.sp,
-                                        textAlign = TextAlign.End
-                                    ),
-                                    cursorBrush = SolidColor(Gold),
-                                    maxLines = 5,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 6.dp, end = 4.dp, bottom = 2.dp),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                            Spacer(Modifier.weight(1f))
                             Surface(
                                 color = Color(0xFF1E1E1E),
                                 shape = RoundedCornerShape(50),
