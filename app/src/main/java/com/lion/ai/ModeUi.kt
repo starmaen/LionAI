@@ -1,10 +1,13 @@
 package com.lion.ai
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,41 +55,71 @@ fun ModePickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1A1A1A),
-        title = { Text("🎛️ وضع المحادثة", color = Color(0xFFFFB800)) },
+        containerColor = Color(0xFF101010),
+        shape = RoundedCornerShape(24.dp),
+        tonalElevation = 0.dp,
+        title = {
+            Text(
+                "وضع المحادثة",
+                color = Color(0xFFFFB800),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column {
                 Text(
                     "كل وضع له سياق وتعليمات وأدوات معزولة. تغيير وضع محادثة غير فارغة ينشئ محادثة جديدة حتى لا يتلوث السياق.",
-                    color = Color(0xFFB0B0B0),
-                    fontSize = 11.sp
+                    color = Color(0xFFB8B8B8),
+                    fontSize = 11.sp,
+                    lineHeight = 17.sp
                 )
-                Spacer(Modifier.padding(4.dp))
+                Spacer(Modifier.height(8.dp))
                 ChatMode.entries.forEach { mode ->
+                    val selected = mode == current
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (selected) Color(0xFFFFB800).copy(alpha = 0.12f)
+                                else Color(0xFF1B1B1B)
+                            )
+                            .border(
+                                1.dp,
+                                if (selected) Color(0xFFFFB800).copy(alpha = 0.60f)
+                                else Color(0xFF2A2A2A),
+                                RoundedCornerShape(14.dp)
+                            )
                             .clickable { onSelect(mode) }
-                            .padding(vertical = 10.dp, horizontal = 2.dp),
+                            .padding(vertical = 10.dp, horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(mode.icon, fontSize = 20.sp)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                mode.label + if (mode == current) "  • الحالي" else "",
-                                color = if (mode == current) Color(mode.color) else Color.White,
+                                mode.label + if (selected) "  • الحالي" else "",
+                                color = if (selected) Color(0xFFFFB800) else Color.White,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                            Text(mode.hint, color = Color(0xFF9A9A9A), fontSize = 10.sp)
+                            Text(
+                                mode.hint,
+                                color = Color(0xFF9A9A9A),
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp
+                            )
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("إغلاق", color = Color.White) }
+            TextButton(onClick = onDismiss) {
+                Text("إغلاق", color = Color(0xFFFFB800), fontWeight = FontWeight.Bold)
+            }
         }
     )
 }

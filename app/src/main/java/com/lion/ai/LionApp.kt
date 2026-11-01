@@ -224,7 +224,6 @@ fun LionApp() {
     val mediaSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var hubCategory by remember { mutableStateOf<HubCategory?>(null) }
     val hubSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var thinking by remember { mutableStateOf(prefs.getBoolean("thinking_mode", false)) }
     var gatewayMode by remember { mutableStateOf(WebGateway.load(prefs).mode) }
     var gatewayEnabled by remember { mutableStateOf(providerEnabled(prefs, WebGateway.ENABLED_ID)) }
     val chatJobs = remember { hashMapOf<String, Job>() }
@@ -878,10 +877,6 @@ fun LionApp() {
             SmartRouter.isStrict(kind) -> LLM_FACT_PROMPT
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
-        } + if (prefs.getBoolean("thinking_mode", false)) {
-            "\n\nفكّر خطوة بخطوة أولاً، ثم قدّم الإجابة النهائية بوضوح."
-        } else {
-            ""
         }
         val toolGroups = if (image == null && kind != TaskKind.FAST && modeProfile.allowTools) {
             modeProfile.groups
@@ -1869,23 +1864,26 @@ fun LionApp() {
         if (count > 0) listState.animateScrollToItem(count - 1)
     }
 
+    fun chooseMode(selected: ChatMode) {
+        if (selected == currentMode) return
+        if (messages.isEmpty()) {
+            ChatRepository.setMode(prefs, currentChat, selected)
+            currentMode = selected
+            refreshChats()
+        } else {
+            // منع تلوث السياق: وضع جديد = محادثة جديدة معزولة.
+            startNewChat(selected)
+            refreshChats()
+        }
+    }
+
     if (showModePicker) {
         ModePickerDialog(
             current = currentMode,
             onDismiss = { showModePicker = false },
             onSelect = { selected ->
                 showModePicker = false
-                if (selected != currentMode) {
-                    if (messages.isEmpty()) {
-                        ChatRepository.setMode(prefs, currentChat, selected)
-                        currentMode = selected
-                        refreshChats()
-                    } else {
-                        // منع تلوث السياق: وضع جديد = محادثة جديدة معزولة.
-                        startNewChat(selected)
-                        refreshChats()
-                    }
-                }
+                chooseMode(selected)
             }
         )
     }
@@ -2158,10 +2156,9 @@ fun LionApp() {
                     providerLabel = RoutePolicy.shortName(workingBackend),
                     providerModel = workingModel,
                     providerKind = workingKind,
-                    modeLabel = currentMode.icon + " " + currentMode.short,
+                    mode = currentMode,
                     loading = loadingChats[currentChat] == true,
                     autoRoute = autoRoute,
-                    thinking = thinking,
                     canSend = input.isNotBlank() || attachment != null || imageAttachment != null,
                     onEditImage = { img ->
                         editorImage = img
@@ -2175,15 +2172,11 @@ fun LionApp() {
                     onAttachFile = { fileLauncher.launch("*/*") },
                     onVoice = { startVoice() },
                     onChooseModel = { showModelSheet = true },
-                    onOpenMode = { showModePicker = true },
+                    onSelectMode = { chooseMode(it) },
                     onToggleAuto = {
                         autoRoute = !autoRoute
                         prefs.edit().putBoolean("auto_route", autoRoute).apply()
                         syncActiveTab()
-                    },
-                    onToggleThinking = {
-                        thinking = !thinking
-                        prefs.edit().putBoolean("thinking_mode", thinking).apply()
                     },
                     onOpenCategory = { hubCategory = it },
                     onStop = { stopChat() },

@@ -1,6 +1,7 @@
 package com.lion.ai
 
 import android.content.SharedPreferences
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -117,14 +119,12 @@ fun HubPill(
 /** شريط الأوضاع والمجموعات أسفل صندوق الكتابة. */
 @Composable
 fun HubChipsRow(
-    modeLabel: String,
+    mode: ChatMode,
     autoRoute: Boolean,
-    thinking: Boolean,
     currentKind: HubCategory?,
     loading: Boolean,
-    onOpenMode: () -> Unit,
+    onSelectMode: (ChatMode) -> Unit,
     onToggleAuto: () -> Unit,
-    onToggleThinking: () -> Unit,
     onOpenCategory: (HubCategory) -> Unit,
     onFollowUp: () -> Unit,
     onOpenSettings: () -> Unit
@@ -136,9 +136,25 @@ fun HubChipsRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        HubPill(modeLabel, selected = false, onClick = onOpenMode)
-        HubPill(if (thinking) "💡 التفكير" else "💡 تفكير", selected = thinking, onClick = onToggleThinking)
-        HubPill(if (autoRoute) "🧠 تلقائي" else "✋ يدوي", selected = autoRoute, onClick = onToggleAuto)
+        // الأوضاع الثلاثة فقط (عام/برمجة/تعلّم) بدل خلطها مع أزرار أخرى.
+        ChatMode.entries.forEach { item ->
+            HubPill(
+                "${item.icon} ${item.short}",
+                selected = item == mode,
+                accent = Color(item.color)
+            ) { onSelectMode(item) }
+        }
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height(18.dp)
+                .background(Color(0xFF333333))
+        )
+        HubPill(
+            if (autoRoute) "🧠 مزود تلقائي" else "✋ مزود يدوي",
+            selected = autoRoute,
+            onClick = onToggleAuto
+        )
         if (loading) {
             HubPill("⚡ تعقيب/طارئ", selected = true, accent = Color(0xFF4C8DFF), onClick = onFollowUp)
         }
@@ -391,10 +407,9 @@ internal fun LionComposer(
     providerLabel: String,
     providerModel: String,
     providerKind: HubCategory?,
-    modeLabel: String,
+    mode: ChatMode,
     loading: Boolean,
     autoRoute: Boolean,
-    thinking: Boolean,
     canSend: Boolean,
     onEditImage: (ImageAttachment) -> Unit,
     onClearAttachment: () -> Unit,
@@ -402,9 +417,8 @@ internal fun LionComposer(
     onAttachFile: () -> Unit,
     onVoice: () -> Unit,
     onChooseModel: () -> Unit,
-    onOpenMode: () -> Unit,
+    onSelectMode: (ChatMode) -> Unit,
     onToggleAuto: () -> Unit,
-    onToggleThinking: () -> Unit,
     onOpenCategory: (HubCategory) -> Unit,
     onStop: () -> Unit,
     onFollowUp: () -> Unit,
@@ -619,14 +633,12 @@ internal fun LionComposer(
 
             Spacer(Modifier.size(6.dp))
             HubChipsRow(
-                modeLabel = modeLabel,
+                mode = mode,
                 autoRoute = autoRoute,
-                thinking = thinking,
                 currentKind = providerKind,
                 loading = loading,
-                onOpenMode = onOpenMode,
+                onSelectMode = onSelectMode,
                 onToggleAuto = onToggleAuto,
-                onToggleThinking = onToggleThinking,
                 onOpenCategory = onOpenCategory,
                 onFollowUp = onFollowUp,
                 onOpenSettings = onOpenSettings
