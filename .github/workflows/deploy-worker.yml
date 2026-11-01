@@ -33,12 +33,18 @@ jobs:
           echo "::error::أضف CLOUDFLARE_API_TOKEN و CLOUDFLARE_ACCOUNT_ID في GitHub → Settings → Secrets and variables → Actions"
           exit 1
         fi
-        case "$TOKEN" in
-          cfk_*)
-            echo "::error::القيمة المدخلة هي Global API Key (cfk_) وليست API Token. أنشئ User API Token من https://dash.cloudflare.com/profile/api-tokens بقالب Edit Cloudflare Workers"
-            exit 1
-            ;;
-        esac
+        if [[ "$TOKEN" == cfk_* ]]; then
+          echo "::error::القيمة المدخلة هي Global API Key (cfk_) وليست API Token. أنشئ User API Token من https://dash.cloudflare.com/profile/api-tokens بقالب Edit Cloudflare Workers"
+          exit 1
+        fi
+        if [[ "$TOKEN" == AQ.* || "$TOKEN" == AIza* ]]; then
+          echo "::error::هذه القيمة مفتاح Google/Gemini وليست توكن Cloudflare. ضع مفتاح Gemini في Cloudflare باسم GEMINI_API_KEY، وضع توكن Cloudflare (يبدأ بـ cfut_) هنا"
+          exit 1
+        fi
+        if [[ ! "$TOKEN" =~ ^cfut_ && ! "$TOKEN" =~ ^cfat_ && ! "$TOKEN" =~ ^[A-Za-z0-9_-]{40}$ ]]; then
+          echo "::error::صيغة CLOUDFLARE_API_TOKEN غير صحيحة (بادئتها ${TOKEN:0:5}). أنشئ User API Token من https://dash.cloudflare.com/profile/api-tokens بقالب Edit Cloudflare Workers"
+          exit 1
+        fi
         echo "::add-mask::$TOKEN"
         echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
         echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
