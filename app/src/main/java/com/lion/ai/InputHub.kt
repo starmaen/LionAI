@@ -1,5 +1,6 @@
 package com.lion.ai
 
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -46,11 +49,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -58,27 +64,31 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** مجموعات المزودات التي تظهر كأزرار تحت صندوق الكتابة. */
 enum class HubCategory(val icon: String, val label: String, val hint: String) {
     INDEPENDENT("🔑", "مستقل", "مزودات API مباشرة بمفاتيحها"),
-    LOCAL("🖥️", "داخلي", "الخادم المحلي داخل التطبيق"),
+    LOCAL("🖥️", "محلي", "الخادم المحلي داخل التطبيق"),
     EXTERNAL("☁️", "خارجي", "بوابة الخادم الخارجي (Cloudflare/Worker)"),
     WEB("🌐", "ويب", "دردشات الويب المجانية بدون مفتاح"),
     MEDIA("🎨", "ميديا", "توليد الصور والصوت والفيديو")
 }
 
 private val Gold = Color(0xFFFFB800)
-private val Ink = Color(0xFF141414)
 private val Card = Color(0xFF1E1E1E)
 private val Muted = Color(0xFF9A9A9A)
+private val Line = Color(0xFF2A2A2A)
 
 /** نوع المزود الفعلي المستخدم الآن، لعرض أيقونة صغيرة بجانب اسمه. */
-fun hubKindOf(provider: String, prefs: SharedPreferences): HubCategory {
-    if (provider == RoutePolicy.LOCAL_PROXY) return HubCategory.LOCAL
+fun hubKindOf(provider: String, prefs: SharedPreferences, via: String = Channel.AUTO): HubCategory {
+    if (provider == RoutePolicy.LOCAL_PROXY || via == Channel.LOCAL) return HubCategory.LOCAL
     val info = providerInfo(provider)
     if (info.group == ProviderGroup.WEB) return HubCategory.WEB
     if (info.group == ProviderGroup.MEDIA) return HubCategory.MEDIA
+    if (via == Channel.GATEWAY) return HubCategory.EXTERNAL
     return if (WebGateway.supports(provider) && WebGateway.shouldRoute(provider)) {
         HubCategory.EXTERNAL
     } else {
@@ -123,10 +133,10 @@ fun HubChipsRow(
     autoRoute: Boolean,
     currentKind: HubCategory?,
     loading: Boolean,
-    onSelectMode: (ChatMode) -> Unit,
+    channelSummary: String = "",
+    onOpenMode: () -> Unit,
     onToggleAuto: () -> Unit,
     onOpenCategory: (HubCategory) -> Unit,
-    onFollowUp: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Row(
@@ -136,38 +146,13 @@ fun HubChipsRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // أيقونة واحدة للوضع تظهر قائمة منسدلة عند اللمس
-        var modeMenuOpen by remember { mutableStateOf(false) }
+        // أيقونة محادثة واحدة: تفتح الأوضاع الثلاثة (عام / برمجة / تعلّم) للانتقاء.
         HubPill(
-            modifier = Modifier.size(44.dp),
-            selected = false,
-            onClick = { modeMenuOpen = !modeMenuOpen }
-        ) {
-            Icon(
-                if (modeMenuOpen) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
-                tint = Color(0xFFFFB800),
-                contentDescription = "اختيار وضع المحادثة"
-            )
-        }
-        DropdownMenu(
-            expanded = modeMenuOpen,
-            onDismissRequest = { modeMenuOpen = false },
-            modifier = Modifier
-                .align(Alignment.CenterVertically)
-                .offset { offset ->
-                    offset.copy(y = 56.dp)
-                }
-        ) {
-            DropdownMenuItem(onClick = { onSelectMode(mode.copy(id = "general")); modeMenuOpen = false }) {
-                Text("💬 عام", color = if (mode.id == "general") Color(0xFFFFB800) else Color.White, fontSize = 12.sp)
-            }
-            DropdownMenuItem(onClick = { onSelectMode(mode.copy(id = "code")); modeMenuOpen = false }) {
-                Text("🛠️ برمجة", color = if (mode.id == "code") Color(0xFFFFB800) else Color.White, fontSize = 12.sp)
-            }
-            DropdownMenuItem(onClick = { onSelectMode(mode.copy(id = "learn")); modeMenuOpen = false }) {
-                Text("🎓 تعلم", color = if (mode.id == "learn") Color(0xFFFFB800) else Color.White, fontSize = 12.sp)
-            }
-        }
+            text = "💬 ${mode.short} ▾",
+            selected = true,
+            accent = Color(mode.color),
+            onClick = onOpenMode
+        )
         Box(
             modifier = Modifier
                 .width(1.dp)
@@ -175,13 +160,11 @@ fun HubChipsRow(
                 .background(Color(0xFF333333))
         )
         HubPill(
-            if (autoRoute) "🧠 مزود تلقائي" else "✋ مزود يدوي",
+            (if (autoRoute) "🧠 تلقائي" else "✋ يدوي") +
+                (if (channelSummary.isNotBlank()) " · $channelSummary" else ""),
             selected = autoRoute,
             onClick = onToggleAuto
         )
-        if (loading) {
-            HubPill("⚡ تعقيب/طارئ", selected = true, accent = Color(0xFF4C8DFF), onClick = onFollowUp)
-        }
         HubCategory.entries.forEach { category ->
             HubPill(
                 "${category.icon} ${category.label}",
@@ -190,6 +173,145 @@ fun HubChipsRow(
             )
         }
         HubPill("⚙️", selected = false, onClick = onOpenSettings)
+    }
+}
+
+/** بطاقة عامة بعنوان ووصف، تُستخدم لتقسيم محتوى النافذة. */
+@Composable
+private fun HubCard(
+    title: String,
+    subtitle: String? = null,
+    content: @Composable () -> Unit
+) {
+    Surface(
+        color = Card,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .border(1.dp, Line, RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    subtitle,
+                    color = Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            content()
+        }
+    }
+}
+
+/** صف مفتاح تبديل داخل النافذة (قناة تنفيذ أو خيار عام). */
+@Composable
+private fun ToggleRow(
+    icon: String,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(icon, fontSize = 15.sp)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = Muted, fontSize = 9.5.sp, lineHeight = 12.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = Gold)
+        )
+    }
+}
+
+/**
+ * قنوات التنفيذ الثلاث. مستقلة تماماً عن اختيار المزود: يمكن تشغيل المزود
+ * مباشرة، أو عبر الخادم المحلي، أو عبر الخادم الخارجي، أو عبر أي تركيبة منها.
+ */
+@Composable
+private fun ChannelCard(
+    prefs: SharedPreferences,
+    provider: String,
+    onChanged: () -> Unit
+) {
+    var direct by remember { mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.DIRECT)) }
+    var gateway by remember { mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.GATEWAY)) }
+    var local by remember { mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.LOCAL)) }
+    val gatewayConfig = remember { WebGateway.load(prefs) }
+    HubCard(
+        title = "🧭 مسار التنفيذ (قنوات مستقلة)",
+        subtitle = "فعّل ما تشاء: يجرّب التطبيق القنوات بالترتيب حتى يرد أحدها، " +
+            "فلا ينقطع الرد بتعطّل طريق واحد. اختيار المزود يبقى كما هو في كل الحالات."
+    ) {
+        ToggleRow(
+            icon = Channel.icon(Channel.DIRECT),
+            title = "مباشر",
+            subtitle = "المزود بمفتاحه وعنوانه الأصلي",
+            checked = direct
+        ) {
+            direct = it
+            RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, it)
+            onChanged()
+        }
+        ToggleRow(
+            icon = Channel.icon(Channel.GATEWAY),
+            title = "الخادم الخارجي",
+            subtitle = if (gatewayConfig.configured && gatewayConfig.token.isNotBlank()) {
+                "بوابة الويب — ${WebGateway.modeLabel(gatewayConfig.mode)}"
+            } else {
+                "بوابة الويب — تحتاج رابطاً ومفتاحاً من الإعدادات"
+            },
+            checked = gateway
+        ) {
+            gateway = it
+            RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, it)
+            onChanged()
+        }
+        ToggleRow(
+            icon = Channel.icon(Channel.LOCAL),
+            title = "الخادم المحلي",
+            subtitle = if (LocalAIProxy.isRunning()) {
+                "يعمل الآن على ${LocalAIProxy.getBaseUrl()}"
+            } else {
+                "خادم 127.0.0.1 داخل التطبيق (متوقف حالياً)"
+            },
+            checked = local
+        ) {
+            local = it
+            RoutePolicy.setChannelEnabled(prefs, Channel.LOCAL, it)
+            onChanged()
+        }
+        val active = RoutePolicy.channels(prefs, provider)
+        Text(
+            if (active.isEmpty()) {
+                "⚠️ كل القنوات مغلقة — سيُستخدم المباشر تلقائياً حتى لا تتعطل المحادثة."
+            } else {
+                "الترتيب الحالي: " + active.joinToString(" ← ") { Channel.label(it) }
+            },
+            color = if (active.isEmpty()) Color(0xFFFFB300) else Gold,
+            fontSize = 10.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        if (provider.isNotBlank() && provider != RoutePolicy.LOCAL_PROXY && provider != RoutePolicy.CUSTOM) {
+            Text(
+                "مزودك الحالي: ${RoutePolicy.shortName(provider)}",
+                color = Muted,
+                fontSize = 9.5.sp
+            )
+        }
     }
 }
 
@@ -207,147 +329,279 @@ fun ProviderHubSheet(
     onOpenWeb: (String) -> Unit,
     onGatewayEnabled: (Boolean) -> Unit,
     onGatewayMode: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onChanged: () -> Unit = {}
 ) {
     val independent = PROVIDERS.filter {
         it.group == ProviderGroup.API && it.id != RoutePolicy.LOCAL_PROXY && !it.custom
     }
-    val local = PROVIDERS.filter { it.id == RoutePolicy.LOCAL_PROXY || it.id == RoutePolicy.CUSTOM }
+    val backends = PROVIDERS.filter {
+        it.group == ProviderGroup.API && it.id != RoutePolicy.LOCAL_PROXY && it.id != RoutePolicy.CUSTOM
+    }
     val web = PROVIDERS.filter { it.group == ProviderGroup.WEB }
     val media = PROVIDERS.filter { it.group == ProviderGroup.MEDIA }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    // سقف ديناميكي: النافذة لا تتجاوز 85% من الشاشة أبداً، وما زاد عن ذلك يُمرَّر
+    // داخلياً. هذا يمنع «قصّ» الخيارات من الأسفل على الشاشات الصغيرة.
+    val maxSheetHeight = (configuration.screenHeightDp * 0.85).dp
+    var report by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var localRunning by remember { mutableStateOf(LocalAIProxy.isRunning()) }
+
+    fun runCheck(waiting: String, block: () -> String) {
+        if (busy) return
+        busy = true
+        report = waiting
+        scope.launch(Dispatchers.IO) {
+            val result = runCatching { block() }.getOrElse { "❌ ${it.message ?: it.javaClass.simpleName}" }
+            withContext(Dispatchers.Main) {
+                report = result
+                localRunning = LocalAIProxy.isRunning()
+                busy = false
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = Color(0xFF161616)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp)
-                .padding(bottom = 18.dp)
-        ) {
-            Text(
-                "${category.icon} ${category.label}",
-                color = Gold,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(category.hint, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
-            Spacer(Modifier.size(10.dp))
-
-            when (category) {
-                HubCategory.EXTERNAL -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("تفعيل الخادم الخارجي", color = Color.White, fontSize = 14.sp)
-                            Text(
-                                if (gatewayEnabled) "الطلبات تمرّ عبر البوابة" else "البوابة متوقفة",
-                                color = Muted,
-                                fontSize = 10.sp
+        Column(modifier = Modifier.fillMaxWidth().heightIn(max = maxSheetHeight)) {
+            // رأس ثابت: يبقى ظاهراً مهما طال المحتوى.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+            ) {
+                Text(
+                    "${category.icon} ${category.label}",
+                    color = Gold,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(category.hint, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(color = Color(0xFF2A2A2A))
+            }
+            // المحتوى ديناميكي: يتمرّر داخلياً بدل أن يُقصّ من الأسفل.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 14.dp)
+                    .navigationBarsPadding()
+                    .padding(bottom = 18.dp, top = 8.dp)
+            ) {
+                when (category) {
+                    HubCategory.EXTERNAL -> {
+                        ChannelCard(prefs, selectedProvider) { onChanged() }
+                        HubCard(
+                            title = "☁️ الخادم الخارجي",
+                            subtitle = if (gatewayEnabled) "الطلبات تمرّ عبر البوابة" else "البوابة متوقفة"
+                        ) {
+                            ToggleRow(
+                                icon = "☁️",
+                                title = "تفعيل الخادم الخارجي",
+                                subtitle = if (gatewayEnabled) "الطلبات تمرّ عبر البوابة" else "البوابة متوقفة",
+                                checked = gatewayEnabled,
+                                onCheckedChange = onGatewayEnabled
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                HubPill("🔌 مباشر", gatewayMode == WebGateway.MODE_OFF) {
+                                    onGatewayMode(WebGateway.MODE_OFF)
+                                }
+                                HubPill("🌐 خادم أولاً", gatewayMode == WebGateway.MODE_AUTO) {
+                                    onGatewayMode(WebGateway.MODE_AUTO)
+                                }
+                                HubPill("☁️ خادم فقط", gatewayMode == WebGateway.MODE_ONLY) {
+                                    onGatewayMode(WebGateway.MODE_ONLY)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    enabled = !busy,
+                                    onClick = { runCheck("⏳ أفحص الخادم الخارجي…") { WebGateway.test(prefs) } }
+                                ) { Text("🧪 اختبار الخادم", color = Gold, fontSize = 12.sp) }
+                                TextButton(onClick = onOpenSettings) {
+                                    Text("⚙️ إعدادات البوابة والرابط", color = Gold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        if (report.isNotBlank()) ReportText(report)
+                        Text(
+                            "المزودات التي تعمل عبر البوابة:",
+                            color = Color(0xFFB0B0B0),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        WebGateway.providers.forEach { provider ->
+                            ProviderRow(
+                                icon = "☁️",
+                                label = provider.label,
+                                subtitle = provider.defaultModel,
+                                enabled = providerEnabled(prefs, provider.id),
+                                selected = selectedProvider == provider.id,
+                                onToggle = { setProviderEnabled(prefs, provider.id, it) },
+                                onSelect = { onSelectProvider(provider.id) }
                             )
                         }
-                        Switch(
-                            checked = gatewayEnabled,
-                            onCheckedChange = onGatewayEnabled,
-                            colors = SwitchDefaults.colors(checkedThumbColor = Gold)
-                        )
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        HubPill("🔌 مباشر", gatewayMode == WebGateway.MODE_OFF) {
-                            onGatewayMode(WebGateway.MODE_OFF)
-                        }
-                        HubPill("🌐 خادم أولاً", gatewayMode == WebGateway.MODE_AUTO) {
-                            onGatewayMode(WebGateway.MODE_AUTO)
-                        }
-                        HubPill("☁️ خادم فقط", gatewayMode == WebGateway.MODE_ONLY) {
-                            onGatewayMode(WebGateway.MODE_ONLY)
-                        }
-                    }
-                    Spacer(Modifier.size(8.dp))
-                    Text(
-                        "المزودات التي تعمل عبر البوابة:",
-                        color = Color(0xFFB0B0B0),
-                        fontSize = 11.sp
-                    )
-                    Spacer(Modifier.size(6.dp))
-                    WebGateway.providers.forEach { provider ->
-                        ProviderRow(
-                            icon = "☁️",
-                            label = provider.label,
-                            subtitle = provider.defaultModel,
-                            enabled = providerEnabled(prefs, provider.id),
-                            selected = selectedProvider == provider.id,
-                            onToggle = { setProviderEnabled(prefs, provider.id, it) },
-                            onSelect = { onSelectProvider(provider.id) }
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(onClick = onOpenSettings) {
-                            Text("⚙️ إعدادات البوابة والرابط", color = Gold, fontSize = 12.sp)
-                        }
-                    }
-                }
 
-                HubCategory.LOCAL -> {
-                    local.forEach { info ->
-                        ProviderRow(
-                            icon = "🖥️",
-                            label = info.label,
-                            subtitle = info.tagline,
-                            enabled = providerEnabled(prefs, info.id),
-                            selected = selectedProvider == info.id,
-                            onToggle = { setProviderEnabled(prefs, info.id, it) },
-                            onSelect = { onSelectProvider(info.id) }
+                    HubCategory.LOCAL -> {
+                        ChannelCard(prefs, selectedProvider) { onChanged() }
+                        HubCard(
+                            title = "🖥️ الخادم المحلي",
+                            subtitle = if (localRunning) {
+                                "يعمل على ${LocalAIProxy.getUrl()}"
+                            } else {
+                                "متوقف — شغّله ليكون مساراً احتياطياً داخل جهازك"
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                TextButton(
+                                    enabled = !busy,
+                                    onClick = {
+                                        val port = LocalAIProxy.start(context, prefs)
+                                        localRunning = LocalAIProxy.isRunning()
+                                        report = if (port > 0) {
+                                            "✅ الخادم يعمل على ${LocalAIProxy.getUrl()}"
+                                        } else {
+                                            "❌ تعذّر تشغيل الخادم المحلي على هذا الجهاز."
+                                        }
+                                    }
+                                ) { Text("▶️ تشغيل", color = Gold, fontSize = 12.sp) }
+                                TextButton(
+                                    enabled = !busy && localRunning,
+                                    onClick = {
+                                        LocalAIProxy.stop()
+                                        localRunning = false
+                                        report = "⏹ أوقف الخادم المحلي."
+                                    }
+                                ) { Text("⏹ إيقاف", color = Gold, fontSize = 12.sp) }
+                                TextButton(
+                                    enabled = !busy,
+                                    onClick = { runCheck("⏳ أفحص الخادم المحلي…") { LocalAIProxy.healthCheck() + "\n\n" + LocalAIProxy.selfTest(prefs) } }
+                                ) { Text("🧪 فحص", color = Gold, fontSize = 12.sp) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(
+                                    enabled = !busy,
+                                    onClick = { runCheck("⏳ أفحص المزودات عبر الخادم المحلي…") { LocalAIProxy.providerCheck(prefs) } }
+                                ) { Text("🔍 فحص المزودات", color = Gold, fontSize = 12.sp) }
+                                TextButton(onClick = onOpenSettings) {
+                                    Text("⚙️ إعدادات الخادم", color = Gold, fontSize = 12.sp)
+                                }
+                            }
+                            Text(
+                                "الخادم المحلي يستقبل طلبات OpenAI-Compatible على 127.0.0.1 ويوجّهها " +
+                                    "لمزودك النشط مع سلسلة بدائل داخلية، فيبقى الرد متصلاً حتى لو تعطّل " +
+                                    "المسار المباشر من التطبيق.",
+                                color = Muted,
+                                fontSize = 9.5.sp,
+                                lineHeight = 13.sp,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
+                        if (report.isNotBlank()) ReportText(report)
+                        Text(
+                            "المزود الخلفي الذي ينفّذ الطلب داخل الخادم:",
+                            color = Color(0xFFB0B0B0),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 8.dp)
                         )
+                        Spacer(Modifier.height(6.dp))
+                        val backend = LocalAIProxy.backendProvider(prefs)
+                        backends.forEach { info ->
+                            ProviderRow(
+                                icon = if (info.free) "🟢" else "🔵",
+                                label = info.label,
+                                subtitle = info.shortName + " · " + info.defaultModel,
+                                enabled = providerEnabled(prefs, info.id),
+                                selected = backend == info.id,
+                                onToggle = { setProviderEnabled(prefs, info.id, it) },
+                                onSelect = {
+                                    // تعيين الخلفي: يثبّت المزود داخل الخادم المحلي
+                                    // ويجعله مزودك النشط معاً بلا تناقض.
+                                    prefs.edit()
+                                        .putString("provider", info.id)
+                                        .putString("local_proxy_backend", info.id)
+                                        .apply()
+                                    onSelectProvider(info.id)
+                                },
+                                selectLabel = "تعيين"
+                            )
+                        }
                     }
-                    Text(
-                        "الخادم المحلي يعمل تلقائياً على 127.0.0.1 ويوجّه الطلبات للمزود النشط.",
-                        color = Muted,
-                        fontSize = 10.sp,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
 
-                HubCategory.INDEPENDENT -> {
-                    independent.forEach { info ->
-                        ProviderRow(
-                            icon = if (info.free) "🟢" else "🔵",
-                            label = info.label,
-                            subtitle = info.shortName + " · " + info.defaultModel,
-                            enabled = providerEnabled(prefs, info.id),
-                            selected = selectedProvider == info.id,
-                            onToggle = { setProviderEnabled(prefs, info.id, it) },
-                            onSelect = { onSelectProvider(info.id) }
-                        )
+                    HubCategory.INDEPENDENT -> {
+                        ChannelCard(prefs, selectedProvider) { onChanged() }
+                        independent.forEach { info ->
+                            ProviderRow(
+                                icon = if (info.free) "🟢" else "🔵",
+                                label = info.label,
+                                subtitle = info.shortName + " · " + info.defaultModel,
+                                enabled = providerEnabled(prefs, info.id),
+                                selected = selectedProvider == info.id,
+                                onToggle = { setProviderEnabled(prefs, info.id, it) },
+                                onSelect = { onSelectProvider(info.id) }
+                            )
+                        }
                     }
-                }
 
-                HubCategory.WEB, HubCategory.MEDIA -> {
-                    val items = if (category == HubCategory.WEB) web else media
-                    items.forEach { info ->
-                        ProviderRow(
-                            icon = if (category == HubCategory.WEB) "🌐" else "🎨",
-                            label = info.label,
-                            subtitle = info.tagline,
-                            enabled = providerEnabled(prefs, info.id),
-                            selected = selectedProvider == info.id,
-                            onToggle = { setProviderEnabled(prefs, info.id, it) },
-                            onSelect = { info.webviewUrl?.let(onOpenWeb) },
-                            selectLabel = "فتح"
-                        )
+                    HubCategory.WEB, HubCategory.MEDIA -> {
+                        val items = if (category == HubCategory.WEB) web else media
+                        items.forEach { info ->
+                            ProviderRow(
+                                icon = if (category == HubCategory.WEB) "🌐" else "🎨",
+                                label = info.label,
+                                subtitle = info.tagline,
+                                enabled = providerEnabled(prefs, info.id),
+                                selected = selectedProvider == info.id,
+                                onToggle = { setProviderEnabled(prefs, info.id, it) },
+                                onSelect = { info.webviewUrl?.let(onOpenWeb) },
+                                selectLabel = "فتح"
+                            )
+                        }
                     }
                 }
+                Spacer(Modifier.height(10.dp))
             }
         }
+    }
+}
+
+/** نص نتيجة الفحص داخل النافذة. */
+@Composable
+private fun ReportText(text: String) {
+    Surface(
+        color = Color(0xFF101010),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .border(1.dp, Line, RoundedCornerShape(12.dp))
+    ) {
+        Text(
+            text,
+            color = Color(0xFFD8D8D8),
+            fontSize = 10.5.sp,
+            lineHeight = 14.sp,
+            modifier = Modifier.padding(10.dp)
+        )
     }
 }
 
@@ -421,6 +675,9 @@ private fun ProviderRow(
 /**
  * صندوق الكتابة الجديد: حقل واسع، زر إرسال/إيقاف مربع، اسم المزود العامل
  * مع أيقونة مصدره، وصف الأزرار الناعمة للمجموعات أسفله.
+ *
+ * زر الإرسال نفسه هو زر الإيقاف: أثناء التوليد يوقف الرد الحالي، وإن كان في
+ * صندوق الكتابة نص أرسله مداخلةً بعد الإيقاف (اعتراض/معلومة/مناقشة/تصحيح).
  */
 @Composable
 internal fun LionComposer(
@@ -435,13 +692,14 @@ internal fun LionComposer(
     loading: Boolean,
     autoRoute: Boolean,
     canSend: Boolean,
+    channelSummary: String = "",
     onEditImage: (ImageAttachment) -> Unit,
     onClearAttachment: () -> Unit,
     onQuickPrompt: (String) -> Unit,
     onAttachFile: () -> Unit,
     onVoice: () -> Unit,
     onChooseModel: () -> Unit,
-    onSelectMode: (ChatMode) -> Unit,
+    onOpenMode: () -> Unit,
     onToggleAuto: () -> Unit,
     onOpenCategory: (HubCategory) -> Unit,
     onStop: () -> Unit,
@@ -451,6 +709,7 @@ internal fun LionComposer(
 ) {
     val file = attachment
     val image = imageAttachment
+    val hasDraft = input.isNotBlank() || file != null || image != null
 
     Surface(
         color = Color(0xFF101010),
@@ -571,21 +830,43 @@ internal fun LionComposer(
                                 .padding(start = 4.dp, end = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // الزر نفسه: إرسال في السكون، وإيقاف أثناء التوليد،
+                            // وإيقاف + إرسال المداخلة إن كتب المستخدم شيئاً أثناء الرد.
+                            val sending = loading && hasDraft
                             FilledIconButton(
-                                onClick = { if (loading) onStop() else onSend() },
+                                onClick = {
+                                    when {
+                                        loading && hasDraft -> onFollowUp()
+                                        loading -> onStop()
+                                        else -> onSend()
+                                    }
+                                },
                                 enabled = loading || canSend,
                                 modifier = Modifier.size(40.dp),
                                 shape = CircleShape,
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = if (loading) Color(0xFF3A1F1F) else Gold,
-                                    contentColor = if (loading) Color(0xFFFF7A7A) else Color(0xFF0D0D0D),
+                                    containerColor = when {
+                                        sending -> Color(0xFF4C8DFF)
+                                        loading -> Color(0xFF3A1F1F)
+                                        else -> Gold
+                                    },
+                                    contentColor = when {
+                                        sending -> Color.White
+                                        loading -> Color(0xFFFF7A7A)
+                                        else -> Color(0xFF0D0D0D)
+                                    },
                                     disabledContainerColor = Color(0xFF2A2A2A),
                                     disabledContentColor = Color(0xFF6E6E6E)
                                 )
                             ) {
                                 Icon(
-                                    if (loading) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
-                                    if (loading) "إيقاف" else "إرسال",
+                                    if (loading && !hasDraft) Icons.Filled.Stop
+                                    else Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = when {
+                                        sending -> "إيقاف الرد الحالي وإرسال مداخلتي"
+                                        loading -> "إيقاف"
+                                        else -> "إرسال"
+                                    },
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -655,16 +936,31 @@ internal fun LionComposer(
                 }
             }
 
+            if (loading) {
+                Text(
+                    if (hasDraft) {
+                        "⚡ اضغط ↗ لإيقاف الرد الحالي وإرسال مداخلتك (اعتراض · معلومة · تصحيح)"
+                    } else {
+                        "⏹ اضغط لإيقاف الرد الحالي، أو اكتب مداخلتك ثم اضغط ↗"
+                    },
+                    color = Color(0xFF4C8DFF),
+                    fontSize = 9.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+
             Spacer(Modifier.size(6.dp))
             HubChipsRow(
                 mode = mode,
                 autoRoute = autoRoute,
                 currentKind = providerKind,
                 loading = loading,
-                onSelectMode = onSelectMode,
+                channelSummary = channelSummary,
+                onOpenMode = onOpenMode,
                 onToggleAuto = onToggleAuto,
                 onOpenCategory = onOpenCategory,
-                onFollowUp = onFollowUp,
                 onOpenSettings = onOpenSettings
             )
         }

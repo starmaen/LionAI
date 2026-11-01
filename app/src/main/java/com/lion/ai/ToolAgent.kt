@@ -98,7 +98,8 @@ object ToolAgent {
         providerLabel: String = "",
         onProgress: ((String) -> Unit)? = null,
         chatMode: ChatMode = ChatMode.CODE,
-        forceExecution: Boolean = true
+        forceExecution: Boolean = true,
+        via: String = Channel.AUTO
     ): Result {
         val label = providerLabel.ifBlank { providerInfo(provider).shortName }
         session?.start(prompt, label)
@@ -222,7 +223,8 @@ object ToolAgent {
                     systemPrompt = system,
                     tools = nativeTools,
                     readTimeoutMs = readTimeout,
-                    chatModeHint = chatMode
+                    chatModeHint = chatMode,
+                    via = via
                 )
             } else null
             val nativeCalls = toolTurn?.calls.orEmpty()
@@ -236,7 +238,8 @@ object ToolAgent {
                 image = null,
                 systemPrompt = system,
                 readTimeoutMs = readTimeout,
-                chatModeHint = chatMode
+                chatModeHint = chatMode,
+                via = via
             )
             if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
                 session?.providerFailed(label, reply)

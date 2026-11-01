@@ -17,7 +17,48 @@ enum class TaskKind(val label: String) {
     LONG_DOC("ملف طويل")
 }
 
-data class Route(val provider: String, val model: String)
+/**
+ * قناة التنفيذ: الطريق الذي يسلكه الطلب حتى يصل إلى المزود.
+ *
+ * القنوات الثلاث مستقلة ويمكن تشغيلها منفردة أو مجتمعة بأي تركيبة:
+ * - [DIRECT]  : المزود مباشرة بمفتاحه وعنوانه (المسار الافتراضي).
+ * - [GATEWAY] : عبر الخادم الخارجي (Web Gateway / Cloudflare Worker).
+ * - [LOCAL]   : عبر الخادم المحلي داخل التطبيق (127.0.0.1) والذي يختار بدوره
+ *               أفضل مزود خلفه ويملك سلسلة بدائل خاصة به.
+ *
+ * عند تفعيل أكثر من قناة يجرّبها التطبيق بالترتيب حتى يرد أحدها، فلا ينقطع
+ * الرد بسبب تعطّل طريق واحد.
+ */
+object Channel {
+    /** يترك القرار للعميل (الإعداد الحالي للخادم الخارجي). */
+    const val AUTO = ""
+    const val DIRECT = "direct"
+    const val GATEWAY = "gateway"
+    const val LOCAL = "local"
+
+    /** الترتيب الافتراضي للمحاولة: الأسرع أولاً، والخادم المحلي شبكة الأمان الأخيرة. */
+    val ORDER = listOf(DIRECT, GATEWAY, LOCAL)
+
+    fun label(via: String): String = when (via) {
+        DIRECT -> "مباشر"
+        GATEWAY -> "خادم خارجي"
+        LOCAL -> "خادم محلي"
+        else -> "تلقائي"
+    }
+
+    fun icon(via: String): String = when (via) {
+        DIRECT -> "🔌"
+        GATEWAY -> "☁️"
+        LOCAL -> "🖥️"
+        else -> "🧭"
+    }
+}
+
+/**
+ * مسار تنفيذ واحد: المزود + الموديل + قناة الوصول.
+ * [via] افتراضياً فارغ (تلقائي) حتى تبقى كل الاستدعاءات القديمة كما هي.
+ */
+data class Route(val provider: String, val model: String, val via: String = Channel.AUTO)
 
 /** وضع جودة الإجابة: يتحكم في قبول المزودات الضعيفة وفي عدد المحاولات. */
 enum class AnswerMode(val id: String, val label: String, val hint: String) {
@@ -61,6 +102,12 @@ object SmartRouter {
     private val failures = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val latencyMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    /** نفس القياس ولكن لكل (مزود + قناة) حتى يختار العقل المركزي أسرع طريق فعلي. */
+    private val channelFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val channelLatency = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun channelKey(provider: String, via: String) = "$provider|$via"
+
     fun record(route: Route, success: Boolean, elapsedMs: Long) {
         val key = route.provider
         if (success) {
@@ -70,10 +117,28 @@ object SmartRouter {
         } else {
             failures[key] = (failures[key] ?: 0) + 1
         }
+        // قياس القناة: المزود قد يعمل مباشرة ويفشل عبر الخادم (أو العكس)،
+        // فيُحفظ كل طريق على حدة لتبقى المقارنة عادلة.
+        if (route.via.isNotBlank()) {
+            val channelKey = channelKey(route.provider, route.via)
+            if (success) {
+                channelFailures.remove(channelKey)
+                val old = channelLatency[channelKey]
+                channelLatency[channelKey] = if (old == null) elapsedMs else (old * 3 + elapsedMs) / 4
+            } else {
+                channelFailures[channelKey] = (channelFailures[channelKey] ?: 0) + 1
+            }
+        }
     }
 
     fun latency(provider: String): Long = latencyMs[provider] ?: 0L
     fun failureCount(provider: String): Int = failures[provider] ?: 0
+
+    fun channelLatency(provider: String, via: String): Long =
+        if (via.isBlank()) 0L else channelLatency[channelKey(provider, via)] ?: 0L
+
+    fun channelFailures(provider: String, via: String): Int =
+        if (via.isBlank()) 0 else channelFailures[channelKey(provider, via)] ?: 0
 
     private val CODE_WORDS = Regex(
         "(كود|برمج|سكربت|دال[ةه]|دوال|خطا برمجي|compile|exception|stack ?trace|\\bbug\\b|debug|function|" +
@@ -333,8 +398,9 @@ object SmartRouter {
         if (provider == "custom") {
             return (prefs.getString("endpoint_custom", "") ?: "").trim().isNotEmpty()
         }
-        // مزود يخدمه خادم الويب (مفتاحه على الخادم) يُحسب متاحاً للعقل المركزي حتى بلا مفتاح محلي.
-        if (WebGateway.routedAvailable(provider)) return true
+        // مزود يخدمه خادم الويب (مفتاحه على الخادم) يُحسب متاحاً للعقل المركزي حتى بلا مفتاح محلي،
+        // شرط أن تكون قناة «الخادم الخارجي» مفعّلة فعلاً (وإلا فلا فائدة من ترشيحه).
+        if (WebGateway.routedAvailable(provider)) return RoutePolicy.channelEnabled(prefs, Channel.GATEWAY)
         val key = (prefs.getString("api_key_$provider", "") ?: "").trim()
         if (provider == "cloudflare" && (prefs.getString("cf_account_id", "") ?: "").isBlank()) return false
         return info.keyless || key.isNotEmpty()

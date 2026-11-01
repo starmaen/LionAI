@@ -94,8 +94,13 @@ object LocalAIProxy {
     fun backendProvider(prefs: SharedPreferences): String {
         val active = (prefs.getString("provider", "gemini") ?: "gemini").trim()
         val stored = (prefs.getString("local_proxy_backend", "") ?: "").trim()
-        val candidate = stored.ifBlank {
-            if (active == "local_proxy" || active == "custom") "gemini" else active
+        // مزودك المختار هو الخلفي الفعلي للخادم ما دام مزوداً حقيقياً؛
+        // ولا نلجأ للمحفوظ إلا إذا كان اختيارك هو الخادم نفسه (local_proxy/custom)
+        // حتى لا يبقى الخادم موجّهاً إلى مزود قديم بعد تغيير اختيارك.
+        val candidate = if (active == "local_proxy" || active == "custom") {
+            stored.ifBlank { "gemini" }
+        } else {
+            active
         }
         if (candidate == "local_proxy" || candidate == "custom" || candidate.isBlank()) return "gemini"
         if (candidate in NON_CHAT_BACKENDS) return "gemini"
@@ -406,7 +411,8 @@ object LocalAIProxy {
                     accountId = accountId,
                     systemPrompt = systemPrompt,
                     readTimeoutMs = cap,
-                    chatModeHint = chatMode
+                    chatModeHint = chatMode,
+                    via = route.via
                 )
                 val ok = !LlmClient.isErrorReply(candidate)
                 SmartRouter.record(route, ok, System.currentTimeMillis() - started)
