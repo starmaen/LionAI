@@ -73,7 +73,7 @@ fun hubKindOf(provider: String, prefs: SharedPreferences): HubCategory {
     val info = providerInfo(provider)
     if (info.group == ProviderGroup.WEB) return HubCategory.WEB
     if (info.group == ProviderGroup.MEDIA) return HubCategory.MEDIA
-    return if (WebGateway.supported(provider) && WebGateway.shouldRoute(provider)) {
+    return if (WebGateway.supports(provider) && WebGateway.shouldRoute(provider)) {
         HubCategory.EXTERNAL
     } else {
         HubCategory.INDEPENDENT

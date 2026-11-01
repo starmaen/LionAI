@@ -1378,16 +1378,6 @@ fun LionApp() {
         toolStatus[id] = ""
     }
 
-    /** تعقيب/سؤال طارئ: يوقف الرد الجاري ثم يرسل المدخل الجديد كرسالة متابعة. */
-    fun sendFollowUp() {
-        if (input.isBlank() && attachment == null && imageAttachment == null) {
-            stopChat()
-            return
-        }
-        stopChat()
-        sendMessage()
-    }
-
     fun sendMessage() {
         if (loadingChats[currentChat] == true) return
         val text = input.trim()
@@ -1537,6 +1527,16 @@ fun LionApp() {
         }
 
         runChat(chatId, prompt, history, image, ytUrl, ytmUrl, anghamiUrl, browserUrl, kind)
+    }
+
+    /** تعقيب/سؤال طارئ: يوقف الرد الجاري ثم يرسل المدخل الجديد كرسالة متابعة. */
+    fun sendFollowUp() {
+        if (input.isBlank() && attachment == null && imageAttachment == null) {
+            stopChat()
+            return
+        }
+        stopChat()
+        sendMessage()
     }
 
     /** زر «إعادة» في الفقاعة: يجرّب أقوى المزودات ويستبدل الرد القديم في مكانه. */
