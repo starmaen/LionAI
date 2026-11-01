@@ -215,7 +215,25 @@ const PROVIDERS = {
   pollinations: ["", "https://text.pollinations.ai/openai",
     ["openai", "mistral"], "Pollinations (keyless)"],
   llm7: ["", "https://api.llm7.io/v1",
-    ["default", "fast"], "LLM7 (keyless)"]
+    ["default", "fast"], "LLM7 (keyless)"],
+  deepseek: ["DEEPSEEK_API_KEY", "https://api.deepseek.com",
+    ["deepseek-flash", "deepseek-chat", "deepseek-reasoner"], "DeepSeek (API)"],
+  openai: ["OPENAI_API_KEY", "https://api.openai.com/v1",
+    ["gpt-6-luna", "gpt-4o-mini", "gpt-4.1-mini"], "OpenAI (API)"],
+  claude: ["ANTHROPIC_API_KEY", "https://api.anthropic.com/v1",
+    ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"], "Anthropic Claude (API)"],
+  kilo: ["", "https://ai-gateway.kilo.ai/api/v1",
+    ["kilo-auto/free", "kilo-auto/balanced", "nvidia/nemotron-3-ultra-550b-a55b:free"], "Kilo Gateway (free)"],
+  zai: ["ZAI_API_KEY", "https://api.z.ai/api/paas/v4",
+    ["glm-4.7-flash", "glm-4.6v-flash"], "Z AI (Zhipu)"],
+  ollama: ["OLLAMA_API_KEY", "https://ollama.com/v1",
+    ["gpt-oss:120b", "gpt-oss:20b", "deepseek-v4-flash"], "Ollama Cloud"],
+  ovh: ["", "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+    ["gpt-oss-120b", "Qwen3.5-397B-A17B", "Meta-Llama-3_3-70B-Instruct"], "OVHcloud AI Endpoints (free)"],
+  perplexity: ["PERPLEXITY_API_KEY", "https://api.perplexity.ai",
+    ["sonar"], "Perplexity (API)"],
+  grok: ["GROK_API_KEY", "https://api.x.ai/v1",
+    ["grok-2-latest"], "Grok (API)"]
 };
 
 const PROVIDER_HEADERS = {};
@@ -445,6 +463,59 @@ async function handleCfAi(payload, model, env) {
   }, 200, CORS);
 }
 
+async function handleAnthropic(payload, model, env) {
+  const key = trim(env.ANTHROPIC_API_KEY);
+  if (!key) return errorResponse(400, "ANTHROPIC_API_KEY is not configured on this gateway", "invalid_request_error", CORS);
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  let system = "";
+  const conv = [];
+  for (const m of messages) {
+    if (!m || typeof m !== "object") continue;
+    if (m.role === "system") {
+      const text = typeof m.content === "string" ? m.content : "";
+      if (text) system += (system ? "\n" : "") + text;
+      continue;
+    }
+    conv.push({ role: m.role === "assistant" ? "assistant" : "user", content: m.content == null ? "" : m.content });
+  }
+  const body = { model: model, max_tokens: payload.max_tokens || payload.max_completion_tokens || 1024, messages: conv };
+  if (system) body.system = system;
+  if (payload.temperature != null) body.temperature = payload.temperature;
+  if (payload.top_p != null) body.top_p = payload.top_p;
+  if (payload.stop != null) body.stop_sequences = Array.isArray(payload.stop) ? payload.stop : [payload.stop];
+  let resp, text;
+  try {
+    resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify(body)
+    });
+    text = await resp.text();
+  } catch (e) {
+    return errorResponse(502, "Upstream claude failed: " + (e && e.message ? e.message : e), "upstream_error", CORS);
+  }
+  let data;
+  try { data = JSON.parse(text); } catch (e) { data = {}; }
+  if (resp.status < 200 || resp.status >= 300) {
+    const msg = (data && data.error && data.error.message) || text.slice(0, 500) || "claude error";
+    return errorResponse(resp.status, msg, "upstream_error", CORS);
+  }
+  const content = (data.content || []).filter((b) => b && b.type === "text").map((b) => b.text || "").join("");
+  const usage = data.usage || {};
+  return jsonResponse({
+    id: "chatcmpl-claude-" + Date.now(),
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: model,
+    choices: [{ index: 0, message: { role: "assistant", content: content }, finish_reason: data.stop_reason || "stop" }],
+    usage: {
+      prompt_tokens: usage.input_tokens || 0,
+      completion_tokens: usage.output_tokens || 0,
+      total_tokens: (usage.input_tokens || 0) + (usage.output_tokens || 0)
+    }
+  }, 200, CORS);
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Api-Key",
@@ -521,11 +592,24 @@ async function handleChat(request, env) {
   const conf = configured(env);
   const resolved = resolveModel(payload.model, conf, env);
   if (!resolved) {
+    const requested = trim(payload.model);
+    const slash = requested.indexOf("/");
+    if (slash > 0) {
+      const wantPid = requested.slice(0, slash);
+      if (Object.prototype.hasOwnProperty.call(PROVIDERS, wantPid) &&
+          !Object.prototype.hasOwnProperty.call(conf, wantPid)) {
+        const envKey = PROVIDERS[wantPid][0];
+        return errorResponse(400,
+          "Provider " + wantPid + " is not configured on this gateway" + (envKey ? " (missing " + envKey + ")" : ""),
+          "invalid_request_error", CORS);
+      }
+    }
     const avail = Object.keys(conf).map((p) => p + "/" + conf[p][2][0]).join(", ") || "none";
     return errorResponse(400, "Unknown model. Use provider/model. Available: " + avail, "invalid_request_error", CORS);
   }
 
   const { pid, model, spec } = resolved;
+  if (pid === "claude") return await handleAnthropic(payload, model, env);
   if (pid === "cfai") return await handleCfAi(payload, model, env);
   const key = spec[0] ? trim(env[spec[0]]) : "";
   const base = providerBase(pid, spec, env);

@@ -48,7 +48,16 @@ object WebGateway {
         GatewayProvider("pollinations", "Pollinations", "openai"),
         GatewayProvider("llm7", "LLM7", "default"),
         GatewayProvider("sambanova", "SambaNova", "Meta-Llama-3.3-70B-Instruct"),
-        GatewayProvider("unorouter", "UnoRouter", "deepseek-v4-pro:free")
+        GatewayProvider("unorouter", "UnoRouter", "deepseek-v4-pro:free"),
+        GatewayProvider("deepseek", "DeepSeek", "deepseek-flash"),
+        GatewayProvider("openai", "OpenAI", "gpt-6-luna"),
+        GatewayProvider("claude", "Claude", "claude-sonnet-5-5"),
+        GatewayProvider("kilo", "Kilo", "kilo-auto/free"),
+        GatewayProvider("zai", "Z AI", "glm-4.7-flash"),
+        GatewayProvider("ollama", "Ollama", "gpt-oss:120b"),
+        GatewayProvider("ovh", "OVH", "gpt-oss-120b"),
+        GatewayProvider("perplexity", "Perplexity", "sonar"),
+        GatewayProvider("grok", "Grok", "grok-2-latest")
     )
 
     val supported: Set<String> = providers.mapTo(linkedSetOf()) { it.id }

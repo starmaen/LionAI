@@ -59,3 +59,25 @@ npx wrangler secret put GROQ_API_KEY
 ```
 
 ثم أضف `MYPLATFORM_KEY` كـ Secret. سيظهر المزود في `/v1/models` بصيغة `myplatform/model-a`.
+
+## مفاتيح المزودات على Cloudflare
+
+أضفها من: Workers & Pages → `lionai-gateway` → Settings → Variables and Secrets.
+مع `keep_vars = true` تبقى محفوظة بعد كل نشر تلقائي من GitHub.
+
+| المزود | اسم السر | ملاحظة |
+| --- | --- | --- |
+| Gemini | `GEMINI_API_KEY` | مجاني |
+| DeepSeek | `DEEPSEEK_API_KEY` | مدفوع رخيص |
+| OpenAI | `OPENAI_API_KEY` | مدفوع |
+| Anthropic Claude | `ANTHROPIC_API_KEY` | مدفوع (يُترجم تلقائياً لصيغة OpenAI) |
+| Groq | `GROQ_API_KEY` | مجاني |
+| UnoRouter | `UNOROUTER_API_KEY` | مجاني |
+| Hugging Face | `HF_TOKEN` | مجاني |
+| Z AI | `ZAI_API_KEY` | مجاني محدود |
+| Ollama Cloud | `OLLAMA_API_KEY` | مدفوع |
+| Perplexity | `PERPLEXITY_API_KEY` | مدفوع |
+| Grok | `GROK_API_KEY` | مدفوع |
+
+مزودات بلا مفتاح تعمل تلقائياً: `cfai` (Workers AI)، `kilo`، `ovh`، `pollinations`، `llm7`.
+
