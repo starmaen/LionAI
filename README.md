@@ -72,7 +72,6 @@
 |---|---|
 | `app/` | تطبيق أندرويد (Kotlin + Jetpack Compose) — كل الكود في `app/src/main/java/com/lion/ai/` |
 | `worker/` | بوابة الويب الخارجية على Cloudflare Workers (`src/index.js`) — يُنشر تلقائياً عبر `.github/workflows/deploy-worker.yml` |
-| `gateway/` | نسخة بديلة من البوابة نفسها بلغة Python (Docker/Render) لمن لا يريد Cloudflare — لا يربطها أي Workflow بالتطبيق |
 | `docs/` | `PLAYBOOK.md` (منهجية التطوير والربط) و`CONNECTIONS.md` و`PLATFORM_STUDY_AR.md` |
 | `keystore/` | مفتاح التوقيع الثابت — **متعمّد رفعه** حتى تُثبَّت التحديثات فوق القديمة دون حذف |
 | `.github/workflows/` | `build.yml` (بناء + اختبارات عند الدفع إلى `main`)، `release.yml` (إصدار APK عند وسم `v*`)، `deploy-worker.yml` (نشر البوابة)، `make-keystore.yml` (توليد المفتاح — لمرة واحدة) |

@@ -39,8 +39,13 @@ npx wrangler secret put GROQ_API_KEY
 
 ## المزودات
 
-نفس قائمة `gateway/README.md` (27 مزوداً) بما فيها بلا مفتاح: `pollinations` و`llm7`.
+**38 مزوداً** مدعوماً في `src/index.js`، منها مزودات تعمل **بلا مفتاح**:
+`cfai` (Workers AI) و`kilo` و`ovh` و`pollinations` و`llm7`.
 صيغة الموديل: `<provider>/<model>`.
+
+> كانت هناك نسخة Python من هذه البوابة في مجلد `gateway/` وحُذفت في 2026-11-01 لأنها
+> نسخة مكرَّرة أقل شمولاً (28 مزوداً) ولا يربطها أي Workflow. إن احتجت تشغيلاً على
+> Render/Docker بدل Cloudflare، فالنسخة موجودة في سجلّ Git قبل هذا الحذف.
 
 ## إضافة مزود بلا تعديل الكود
 

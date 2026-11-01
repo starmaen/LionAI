@@ -98,8 +98,16 @@ Base URL (إن وُجد):
 - كود ميت محذوف: `LionInputBar`، `InputAction`، `RoutePolicy.effective*`(4)،
   `LionApp.manualRoute`، `ArenaActivity.getNavBarHeight`، `ContextStore.setDefault`.
 - `.gitignore`: صار يغطي `build/` على أي مستوى (كان `/build` فقط فظهر `app/build/` كغير متتبَّع)
-  + `worker/.dev.vars` و`gateway/__pycache__` و`.venv` و`.idea/` وأخرى.
+  + `worker/.dev.vars` و`.venv` و`.idea/` وأخرى.
 - README: قسم «بنية المستودع» + توثيق قنوات التنفيذ وأيقونة الوضع وزر الإيقاف.
+- **حُذف `gateway/`**: نسخة Python مكرَّرة من بوابة الويب نفسها. الفحص أثبت أن
+  `worker/` (Cloudflare) هو الأشمل: 38 مزوداً مقابل 28، و**لا مزود وحيد** في `gateway/`
+  غير موجود في `worker/`، و`gateway/` لا يربطه أي Workflow ولا أي كود في التطبيق
+  (الإشارة الوحيدة كانت سطراً في `worker/README.md` صُحِّح). النسخة تبقى في سجلّ Git.
+- التحقق بعد الحذف: `:app:compileDebugKotlin` + `:app:testDebugUnitTest` ناجحان،
+  127 اختباراً و0 فشل.
+
 - **مؤجَّل بقرار المستخدم**: تصفية التاريخ من 238 ملفاً عالقاً (~1.3MB: مشروع Accounting-Star،
-  وحدات ماجيسك، ملفات zip، `hf-space/`) تحتاج force push؛ وحذف `gateway/` و`make-keystore.yml`
-  و`HANDOFF.md`؛ وإغلاق Issue #1.
+  وحدات ماجيسك، ملفات zip، `hf-space/`) تحتاج force push؛ وحذف `make-keystore.yml`
+  (عملية نُفِّذت لمرة واحدة وتحمل كلمة سر الشهادة بداخلها)؛ وإغلاق Issue #1
+  (قالب فارغ بلا تفاصيل).

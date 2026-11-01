@@ -2,7 +2,7 @@
 *.iml
 .gradle/
 local.properties
-# أي مجلد بناء على أي مستوى: app/build و gateway/build و worker/build …
+# أي مجلد بناء على أي مستوى: app/build و worker/build …
 build/
 .kotlin/
 captures/
@@ -34,11 +34,9 @@ worker/.wrangler/
 worker/node_modules/
 worker/.dev.vars
 
-# ====== Gateway (Python) ======
-gateway/__pycache__/
-gateway/*.pyc
-gateway/providers.json
-gateway/.env
+# ====== بيئات Python (لم تعد هناك خدمة Python في هذا المستودع) ======
+__pycache__/
+*.pyc
 .venv/
 venv/
 
