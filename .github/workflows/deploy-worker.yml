@@ -46,13 +46,11 @@ jobs:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       run: |
-        tail -n 25 /tmp/deploy.log 2>/dev/null | while IFS= read -r line; do
-          [ -n "$line" ] && echo "::error::$line"
-        done
-        echo "::error::token_len=${#CLOUDFLARE_API_TOKEN} account_len=${#CLOUDFLARE_ACCOUNT_ID}"
+        emit() { echo "::error::$1"; }
+        emit "token_len=${#CLOUDFLARE_API_TOKEN} account_len=${#CLOUDFLARE_ACCOUNT_ID}"
         V=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify)
-        echo "::error::verify=$(echo "$V" | tr -d '\n' | cut -c1-400)"
+        emit "verify=$(echo "$V" | tr -d '\n' | cut -c1-350)"
         A=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID")
-        echo "::error::account=$(echo "$A" | tr -d '\n' | cut -c1-400)"
+        emit "account=$(echo "$A" | tr -d '\n' | cut -c1-350)"
         W=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/services/lionai-gateway")
-        echo "::error::worker=$(echo "$W" | tr -d '\n' | cut -c1-400)"
+        emit "worker=$(echo "$W" | tr -d '\n' | cut -c1-350)"
