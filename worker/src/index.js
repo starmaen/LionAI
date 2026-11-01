@@ -237,6 +237,7 @@ const PROVIDERS = {
 };
 
 const PROVIDER_HEADERS = {};
+const GATEWAY_VERSION = "1.1.0";
 const MODELS_TTL = 600;
 let modelsCache = {};
 
@@ -329,6 +330,7 @@ function statusPayload(env) {
   return {
     name: "LionAI Free Gateway",
     status: "ok",
+    version: GATEWAY_VERSION,
     runtime: "cloudflare-worker",
     auth_required: !!trim(env.RELAY_TOKEN),
     default_model: trim(env.RELAY_DEFAULT_MODEL) || null,
@@ -546,6 +548,7 @@ export default {
       return jsonResponse({
         name: "LionAI Free Gateway",
         status: "ok",
+        version: GATEWAY_VERSION,
         runtime: "cloudflare-worker",
         auth_required: !!trim(env.RELAY_TOKEN),
         providers: Object.keys(configured(env)).sort(),
@@ -557,7 +560,7 @@ export default {
       const conf = configured(env);
       const labels = {};
       for (const pid of Object.keys(conf).sort()) labels[pid] = conf[pid][3];
-      return jsonResponse({ status: "ok", auth_required: !!trim(env.RELAY_TOKEN), providers: labels }, 200, CORS);
+      return jsonResponse({ status: "ok", version: GATEWAY_VERSION, auth_required: !!trim(env.RELAY_TOKEN), providers: labels }, 200, CORS);
     }
 
     if (request.method === "GET" && path === "/v1/models") {
