@@ -32,9 +32,20 @@ jobs:
         fi
 
     - name: Deploy Worker
-      uses: cloudflare/wrangler-action@v3
-      with:
-        apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        workingDirectory: worker
-        command: deploy
+      working-directory: worker
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      run: |
+        set -o pipefail
+        npx --yes wrangler@3 deploy 2>&1 | tee /tmp/deploy.log
+
+    - name: Show deploy error
+      if: failure()
+      run: |
+        echo "::group::wrangler whoami"
+        (cd worker && CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" npx --yes wrangler@3 whoami 2>&1 || true) | tee -a /tmp/deploy.log
+        echo "::endgroup::"
+        tail -n 40 /tmp/deploy.log | while IFS= read -r line; do
+          [ -n "$line" ] && echo "::error::$line"
+        done
