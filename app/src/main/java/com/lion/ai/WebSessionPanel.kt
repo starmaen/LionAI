@@ -1,7 +1,6 @@
 package com.lion.ai
 
 import android.view.View
-import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -51,8 +50,7 @@ fun WebSessionPanel(content: @Composable () -> Unit) {
                 }
             },
             update = { frame ->
-                frame.descendantFocusability = if (showSession) ViewGroup.FOCUS_AFTER_DESCENDANTS
-                    else ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                // Focus leases are owned by the engine; recomposition must not revoke editor focus.
                 frame.importantForAccessibility = if (showSession) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                     else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                 host?.setInteractive(showSession)

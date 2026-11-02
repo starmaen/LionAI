@@ -30,6 +30,8 @@
   }
 
   function text(n) { return n ? (n.innerText || n.textContent || '').trim() : ''; }
+  function inputText(n) { return String(n && 'value' in n ? n.value : text(n)).replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim(); }
+  function expectedText() { return prompt.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim(); }
   try {
     if (action === 'diagnose') {
       function describe(n) {
@@ -42,13 +44,19 @@
       }
       return result('diagnostic', {
         host: location.hostname,
+        visibility: document.visibilityState,
+        documentFocused: document.hasFocus(),
         inputs: nodes('textarea, [contenteditable="true"]').filter(visible).slice(0, 8).map(describe),
         buttons: nodes('button, [role="button"]').filter(visible).slice(-40).map(describe),
         responses: nodes('[data-message-role], [data-message-author-role], [data-role="assistant"], [class*="assistant"], [class*="markdown"], model-response').filter(visible).slice(-20).map(describe)
       });
     }
     const input = find(C.input);
-    if (action === 'probe') return result(input ? 'ready' : 'needs_input');
+    if (action === 'probe') {
+      if (!input) return result('needs_input');
+      if (input.disabled || input.readOnly || input.getAttribute('aria-disabled') === 'true') return result('input_disabled');
+      return result('ready');
+    }
     let state = window.__lionSessionRequest;
     if (action === 'prepare') {
       if (!input) return result('needs_input');
@@ -58,14 +66,14 @@
       state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, sawStop: false,
         last: '', changed: Date.now(), clicks: 0};
       window.__lionSessionRequest = state;
-      input.focus();
+      input.focus({preventScroll: true});
       if (input.isContentEditable) {
         // execCommand updates the editor's internal selection and emits an input event.
         const selection = window.getSelection();
         const range = document.createRange();
         range.selectNodeContents(input);
         selection.removeAllRanges(); selection.addRange(range);
-        if (!document.execCommand('insertText', false, prompt)) {
+        if (typeof document.execCommand !== 'function' || !document.execCommand('insertText', false, prompt)) {
           input.textContent = prompt;
           input.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: prompt}));
         }
@@ -75,6 +83,10 @@
         setter.call(input, prompt);
         input.dispatchEvent(new Event('input', {bubbles: true}));
         input.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      if (inputText(input) !== expectedText()) {
+        delete window.__lionSessionRequest;
+        return result('input_rejected', {focused: document.activeElement === input, editable: input.isContentEditable === true});
       }
       return result('prepared');
     }
@@ -86,9 +98,9 @@
     }
     if (action === 'submit') {
       if (state.sent) return result('sent');
+      if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
       const button = find(C.send);
       if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return result('needs_send');
-      if (!input || (input.value || text(input)).trim() !== prompt.trim()) return result('draft_changed');
       state.sent = true; state.clicks++;
       button.click(); // Exactly one click per token; never retry after uncertain delivery.
       return result('sent');

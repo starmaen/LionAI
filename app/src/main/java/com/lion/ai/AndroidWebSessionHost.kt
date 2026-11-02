@@ -4,6 +4,10 @@ import android.annotation.SuppressLint
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
@@ -31,15 +35,46 @@ internal class AndroidWebSessionHost(
     private var destroyed = false
     private var interactive = false
 
-    /** Hidden sessions may execute DOM operations but must not steal touch, focus or accessibility. */
+    private var inputLease: WebView? = null
+    private var previousFocus: View? = null
+
+    /** Allow programmatic editor focus without creating an IME connection behind chat. */
+    private class SessionWebView(activity: ComponentActivity) : WebView(activity) {
+        var manualInput = false
+        override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? =
+            if (manualInput) super.onCreateInputConnection(outAttrs) else null
+    }
+
     fun setInteractive(value: Boolean) {
         interactive = value
+        container.descendantFocusability = if (value || inputLease != null)
+            ViewGroup.FOCUS_AFTER_DESCENDANTS else ViewGroup.FOCUS_BLOCK_DESCENDANTS
         pool.values.forEach { view ->
-            view.isFocusable = value
-            view.isFocusableInTouchMode = value
+            (view as? SessionWebView)?.manualInput = value
+            val focusAllowed = value || view === inputLease
+            view.isFocusable = focusAllowed
+            view.isFocusableInTouchMode = focusAllowed
             view.isClickable = value
-            if (!value && view.hasFocus()) view.clearFocus()
+            if (!focusAllowed && view.hasFocus()) view.clearFocus()
         }
+    }
+
+    private fun acquireEditorFocus(view: WebView) {
+        if (interactive || inputLease === view) return
+        previousFocus = activity.currentFocus
+        inputLease = view
+        setInteractive(false)
+        view.requestFocus()
+    }
+
+    private fun releaseEditorFocus() {
+        val leased = inputLease ?: return
+        val restore = previousFocus
+        val wasFocused = leased.hasFocus()
+        inputLease = null
+        previousFocus = null
+        setInteractive(interactive)
+        if (!interactive && wasFocused && restore?.isAttachedToWindow == true) restore.requestFocus()
     }
     private data class Pending(
         val request: WebSessionTransport.Request,
@@ -63,7 +98,7 @@ internal class AndroidWebSessionHost(
             entry.value.destroy()
             chatIds.remove(entry.key)
         }
-        val view = WebView(activity)
+        val view = SessionWebView(activity).apply { manualInput = interactive }
         view.isFocusable = interactive
         view.isFocusableInTouchMode = interactive
         view.isClickable = interactive
@@ -130,7 +165,11 @@ internal class AndroidWebSessionHost(
                 .replace("__LION_PROMPT__", JSONObject.quote(""))
             view.evaluateJavascript(js) { raw ->
                 val text = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
-                prefs.edit().putString("web_session_dom_$provider", text ?: "تعذّر فحص بنية الصفحة").apply()
+                val diagnostic = runCatching { JSONObject(text ?: "{}") }.getOrElse { JSONObject() }
+                diagnostic.put("android", JSONObject().put("width", view.width).put("height", view.height)
+                    .put("shown", view.isShown).put("windowFocus", view.hasWindowFocus())
+                    .put("focusable", view.isFocusable).put("manual", interactive))
+                prefs.edit().putString("web_session_dom_$provider", diagnostic.toString()).apply()
                 display(false, "${providerInfo(provider).shortName} • تقرير البنية جاهز للنسخ من إعدادات Lion Chat")
             }
         }
@@ -170,6 +209,7 @@ internal class AndroidWebSessionHost(
     private fun finish(p: Pending, reply: WebSessionTransport.Reply) {
         if (pending !== p) return
         pending = null
+        releaseEditorFocus()
         status(p, if (reply.success) "✅ استُقبل رد جديد من صفحة الموقع" else reply.text)
         if (reply.success) {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", true).apply()
@@ -206,6 +246,7 @@ internal class AndroidWebSessionHost(
             .replace("__LION_TOKEN__", JSONObject.quote(p.request.token))
             .replace("__LION_ACTION__", JSONObject.quote(p.stage))
             .replace("__LION_PROMPT__", JSONObject.quote(p.request.prompt))
+        if (p.stage == "prepare" || p.stage == "submit") acquireEditorFocus(p.view)
         // Mark possible delivery before evaluating: a navigation can lose the callback after click.
         if (p.stage == "submit") p.submitted = true
         p.view.evaluateJavascript(js) { raw ->
@@ -219,11 +260,15 @@ internal class AndroidWebSessionHost(
                 p.lastStatus = state
                 when (state) {
                     "ready" -> p.stage = "prepare"
-                    "prepared" -> p.stage = "submit"
+                    "prepared" -> {
+                        p.stage = "submit"
+                        status(p, "وصل النص إلى حقل الموقع؛ جارٍ الإرسال")
+                    }
                     "needs_send" -> p.submitted = false
                     "sent" -> {
                         p.submitted = true
                         p.stage = "poll"
+                        releaseEditorFocus()
                         status(p, "أُرسلت الرسالة إلى الصفحة؛ بانتظار جواب جديد")
                     }
                     "complete" -> {
@@ -232,7 +277,18 @@ internal class AndroidWebSessionHost(
                         else fail(p, "عاد جواب فارغ.")
                         return@evaluateJavascript
                     }
+                    "input_rejected" -> {
+                        p.submitted = false
+                        fail(p, "لم يقبل محرر الموقع النص. افتح الجلسة ثم تشخيص الصفحة وأرسل التقرير؛ لم تُرسل الرسالة.")
+                        return@evaluateJavascript
+                    }
+                    "input_disabled" -> {
+                        p.submitted = false
+                        fail(p, "حقل الموقع معطّل أو للقراءة فقط. أكمل تسجيل الدخول أو انتظر انتهاء الطلب السابق.")
+                        return@evaluateJavascript
+                    }
                     "draft", "draft_changed" -> {
+                        p.submitted = false
                         fail(p, "يوجد نص في حقل الموقع. لم أستبدله. امسحه أو أرسله يدويًا ثم أعد المحاولة.")
                         return@evaluateJavascript
                     }

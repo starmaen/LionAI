@@ -102,3 +102,32 @@ test('diagnostics collect structure without messages, input values, cookies or l
   assert.ok(!raw.includes('private input'));assert.ok(!raw.includes('private answer'));
   assert.ok(!raw.includes('session-cookie'));assert.equal(p.clicks(),0);
 }));
+test('contenteditable editor is focused before editing and checked before submit',()=>withPage(p=>{
+  const old=p.w.document.querySelector('#input');const editor=p.w.document.createElement('div');
+  editor.id='input';editor.setAttribute('contenteditable','true');editor.tabIndex=0;
+  Object.defineProperty(editor,'isContentEditable',{get:()=>true});old.replaceWith(editor);
+  let edits=0;
+  p.w.document.execCommand=(name,unused,value)=>{
+    assert.equal(name,'insertText');assert.equal(p.w.document.activeElement,editor);
+    editor.textContent=value;edits++;return true;
+  };
+  assert.equal(p.run('prepare','Arabic مرحبا\nsecond line').status,'prepared');
+  assert.equal(editor.textContent,'Arabic مرحبا\nsecond line');
+  assert.equal(p.run('submit','Arabic مرحبا\nsecond line').status,'sent');
+  assert.equal(edits,1);assert.equal(p.clicks(),1);
+}));
+test('editor claiming success but rejecting text is not considered prepared',()=>withPage(p=>{
+  const old=p.w.document.querySelector('#input');const editor=p.w.document.createElement('div');
+  editor.id='input';editor.tabIndex=0;Object.defineProperty(editor,'isContentEditable',{get:()=>true});old.replaceWith(editor);
+  p.w.document.execCommand=()=>true;
+  assert.equal(p.run('prepare').status,'input_rejected');assert.equal(p.clicks(),0);
+}));
+test('framework clearing inserted text is caught even if send button becomes disabled',()=>withPage(p=>{
+  p.run('prepare');p.w.document.querySelector('#input').value='';p.w.document.querySelector('#send').disabled=true;
+  assert.equal(p.run('submit').status,'input_rejected');assert.equal(p.clicks(),0);
+}));
+test('disabled and readonly textareas never pass readiness checks',()=>withPage(p=>{
+  const input=p.w.document.querySelector('#input');input.disabled=true;
+  assert.equal(p.run('probe').status,'input_disabled');input.disabled=false;input.readOnly=true;
+  assert.equal(p.run('probe').status,'input_disabled');assert.equal(p.clicks(),0);
+}));
