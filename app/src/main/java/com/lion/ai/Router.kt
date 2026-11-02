@@ -381,7 +381,6 @@ object SmartRouter {
     /** هل المزود + الموديل معاً جديران بالأسئلة التي تحتاج دقة؟ */
     fun isReliableModel(provider: String, model: String): Boolean {
         if (!isTrustedFactual(provider)) return false
-        if (WebChatRuntime.handles(provider)) return WebChatRuntime.available(prefs, provider)
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
         val id = model.ifBlank { info.defaultModel }.lowercase(Locale.ROOT)
         return WEAK_MODEL_HINTS.none { id == it || id.contains(it) }
