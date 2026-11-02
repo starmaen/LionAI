@@ -94,9 +94,8 @@ internal class AndroidWebSessionHost(
         var stage: String = "probe",
         var submitted: Boolean = false,
         var lastStatus: String = "loading",
-        /** Last streamed answer text and when it last changed: safety net when the completion signal is missing. */
-        var lastText: String = "",
-        var lastTextAt: Long = 0L
+        /** Track observed streaming text for an explicit incomplete-response error at timeout. */
+        var lastText: String = ""
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -311,11 +310,9 @@ internal class AndroidWebSessionHost(
             return
         }
         if (System.currentTimeMillis() >= p.deadline) {
-            // A new answer actually streamed but the completion signal (stop/copy button)
-            // never matched our selectors: deliver the last stable text instead of losing it.
-            if (p.stage == "poll" && p.submitted && p.lastText.isNotBlank() &&
-                System.currentTimeMillis() - p.lastTextAt >= 3_000) {
-                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
+            // A deadline cannot prove completion. The site may still be generating.
+            if (p.stage == "poll" && p.submitted && p.lastText.isNotBlank()) {
+                fail(p, "وصل جزء من جواب الموقع، لكن لم يُؤكد اكتماله قبل المهلة. لم أعِد الإرسال؛ راجع الجلسة.")
                 return
             }
             val message = when (p.lastStatus) {
@@ -404,7 +401,6 @@ internal class AndroidWebSessionHost(
                         val streamed = result.optString("text")
                         if (streamed.isNotBlank() && streamed != p.lastText) {
                             p.lastText = streamed
-                            p.lastTextAt = System.currentTimeMillis()
                         }
                     }
                     "complete" -> {

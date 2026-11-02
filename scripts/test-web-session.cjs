@@ -167,3 +167,30 @@ test('origin mismatch reports only origin and not private query or path',()=>wit
   assert.equal(r.actualOrigin,'https://accounts.example.com');assert.ok(r.expectedHosts.includes('claude.ai'));
   const raw=JSON.stringify(r);assert.ok(!raw.includes('secret'));assert.ok(!raw.includes('/login'));
 },'https://accounts.example.com/login?token=secret'));
+
+test('new assistant reply acknowledges delivery even if site retains composer text',()=>withPage(p=>{
+  p.w.document.querySelector('#send').onclick=()=>{};
+  p.run('prepare');p.run('submit');
+  assert.equal(p.run('poll').status,'awaiting_ack');
+  p.answer('new reply',true);
+  assert.equal(p.run('poll').status,'streaming');
+  assert.equal(p.w.document.querySelector('#input').value,'hello');
+  p.advance(3100);
+  assert.equal(p.run('poll').status,'complete');
+}));
+test('cleared or missing editor alone never confirms delivery',()=>withPage(p=>{
+  p.run('prepare');p.run('submit');
+  assert.equal(p.w.document.querySelector('#input').value,'');
+  assert.equal(p.run('poll').status,'awaiting_ack');
+  p.w.document.querySelector('#input').remove();
+  assert.equal(p.run('poll').status,'awaiting_ack');
+  p.advance(31000);
+  assert.equal(p.run('poll').status,'send_unconfirmed');
+  assert.equal(p.clicks(),1);
+}));
+test('a twelve second stream pause without completion evidence is never completed',()=>withPage(p=>{
+  p.run('prepare');p.run('submit');p.answer('partial text');
+  assert.equal(p.run('poll').status,'streaming');
+  p.advance(12001);assert.equal(p.run('poll').status,'streaming');
+  p.advance(120000);assert.equal(p.run('poll').status,'streaming');
+}));

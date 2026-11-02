@@ -158,10 +158,9 @@
       const stopping = !!find(C.stop);
       if (stopping) state.sawStop = true;
       if (!state.sent) {
-        // Delivery proof: a visible stop control, a brand-new assistant message, or a
-        // cleared editor. A new message alone proves delivery even when the site
-        // keeps its draft text in the editor after sending.
-        if (stopping || (isNew && value) || !input || !inputText(input)) {
+        // A new assistant turn can acknowledge delivery even if the site keeps the draft.
+        // An empty/missing editor alone is NOT acknowledgement (a re-render can clear it).
+        if ((isNew && value) || (stopping && (!input || !inputText(input)))) {
           state.sent = true;
         } else {
           return result(Date.now() - state.clickedAt > 30000 ? 'send_unconfirmed' : 'awaiting_ack');
@@ -175,10 +174,8 @@
       const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
         nodes(C.answer, parent).length <= 1;
       const stable = Date.now() - state.changed >= 3000;
-      // Sites whose stop/copy controls never match our selectors: a full answer that
-      // stopped changing for 12s with no stop button visible is complete enough.
-      const quietDone = Date.now() - state.changed >= 12000;
-      const completed = !stopping && stable && (state.sawStop || completeInside || completeNearby || quietDone);
+      // A stalled stream is not a completed answer, even after a long quiet interval.
+      const completed = !stopping && stable && (state.sawStop || completeInside || completeNearby);
       return result(completed ? 'complete' : 'streaming', {text: value, observedStop: state.sawStop});
     }
     return result('unknown_action');
