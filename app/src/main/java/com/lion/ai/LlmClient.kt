@@ -218,8 +218,10 @@ object LlmClient {
     fun defaultModel(provider: String): String = providerInfo(provider).defaultModel
 
     /** ترويسات اختيارية تُخبر الخادم المحلي بوضع المحادثة الحالي. */
-    private fun proxyHeaders(mode: ChatMode?): Map<String, String> =
-        if (mode == null) emptyMap() else mapOf("X-Lion-Chat-Mode" to mode.id)
+    private fun proxyHeaders(mode: ChatMode?, chatId: String): Map<String, String> = buildMap {
+        mode?.let { put("X-Lion-Chat-Mode", it.id) }
+        if (chatId.matches(Regex("[A-Za-z0-9_-]{1,100}"))) put("X-Lion-Chat-Id", chatId)
+    }
 
     fun ask(
         message: String,
@@ -233,7 +235,8 @@ object LlmClient {
         readTimeoutMs: Int = 0,
         chatModeHint: ChatMode? = null,
         forceDirect: Boolean = false,
-        via: String = Channel.AUTO
+        via: String = Channel.AUTO,
+        chatId: String = ""
     ): String {
         if (WebChatRuntime.handles(provider)) {
             val prefs = WebChatRuntime.prefs() ?: return "⚠️ افتح إعدادات جلسات الويب أولاً."
@@ -378,7 +381,7 @@ object LlmClient {
                     } else {
                         callOpenAiCompatible(
                             baseUrl, apiKey, model, turns, message,
-                            extraHeaders = proxyHeaders(chatModeHint),
+                            extraHeaders = proxyHeaders(chatModeHint, chatId),
                             maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                         )
                     }
@@ -487,13 +490,14 @@ object LlmClient {
         tools: JSONArray = JSONArray(),
         readTimeoutMs: Int = 0,
         chatModeHint: ChatMode? = null,
-        via: String = Channel.AUTO
+        via: String = Channel.AUTO,
+        chatId: String = ""
     ): ToolReply {
         if ((provider != "custom" && provider != "local_proxy") || tools.length() == 0) {
             return ToolReply(
                 ask(
                     message, apiKey, provider, history, modelOverride, accountId, null,
-                    systemPrompt, readTimeoutMs, chatModeHint, false, via
+                    systemPrompt, readTimeoutMs, chatModeHint, false, via, chatId
                 ),
                 emptyList()
             )
@@ -510,7 +514,7 @@ object LlmClient {
             try {
                 callOpenAiTools(
                     normalizeCustomUrl(raw), key, model, turns, message, systemPrompt, tools,
-                    extraHeaders = if (provider == "local_proxy") proxyHeaders(chatModeHint) else emptyMap()
+                    extraHeaders = if (provider == "local_proxy") proxyHeaders(chatModeHint, chatId) else emptyMap()
                 )
             } catch (e: Exception) {
                 ToolReply("⚠️ تعذر استدعاء أدوات الخادم: ${e.message ?: e.javaClass.simpleName}", emptyList())

@@ -134,10 +134,13 @@ object LocalAIProxy {
 
             var contentLength = 0
             var chatModeHeader = ""
+            var chatIdHeader = ""
             headers.substringAfter("\r\n", "").lineSequence().forEach { line ->
                 val lower = line.lowercase()
                 if (lower.startsWith("content-length:")) {
                     contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                } else if (lower.startsWith("x-lion-chat-id:")) {
+                    chatIdHeader = line.substringAfter(":").trim().takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,100}")) }.orEmpty()
                 } else if (lower.startsWith("x-lion-chat-mode:")) {
                     chatModeHeader = line.substringAfter(":").trim()
                 }
@@ -154,7 +157,7 @@ object LocalAIProxy {
 
             val response: String = when {
                 method == "POST" && path.startsWith("/v1/chat/completions") ->
-                    processChatCompletion(body, prefs, chatModeHeader)
+                    processChatCompletion(body, prefs, chatModeHeader, chatIdHeader)
                 method == "GET" && path.startsWith("/v1/models") -> {
                     val provider = backendProvider(prefs)
                     val model = (prefs.getString("model_$provider", "") ?: "").trim()
@@ -348,7 +351,8 @@ object LocalAIProxy {
     private fun processChatCompletion(
         body: String,
         prefs: SharedPreferences,
-        chatModeHeader: String = ""
+        chatModeHeader: String = "",
+        chatId: String = ""
     ): String {
         return try {
             val json = org.json.JSONObject(body)
@@ -384,7 +388,11 @@ object LocalAIProxy {
 
             // نفس سياسة التطبيق: يدوي يبقى يدوياً، والتلقائي يستخدم العقل المركزي،
             // والمساعدة تضيف بديلاً عند فشل المزود المختار.
-            val routes = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode)
+            val planned = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode, chatId)
+            val pinned = ProviderStick.get(prefs, chatId)
+            // Once the backend has answered, do not let a later tool step silently change it.
+            // A transport failure pauses the task; an explicit settings change releases the pin.
+            val routes = if (pinned != null) planned.filter { it.provider == pinned }.take(1) else planned
             val manual = RoutePolicy.isManual(prefs)
             // اليدوي: المزود المختار يأخذ مهلة المهمة كاملة، وبعدها وقت إضافي للبدائل.
             val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(taskKind) + (if (manual) 60_000L else 0L)
@@ -421,7 +429,7 @@ object LocalAIProxy {
                     reply = candidate
                     used = route
                     LlmClient.recordSuccess(route.provider, route.model)
-                    if (!manual && taskKind != TaskKind.FAST) ProviderStick.set(prefs, ActiveChat.id, route.provider)
+                    if (!manual) ProviderStick.set(prefs, chatId, route.provider, route.model)
                     break
                 }
                 lastError = candidate

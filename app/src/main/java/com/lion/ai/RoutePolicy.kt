@@ -173,16 +173,22 @@ object RoutePolicy {
      */
     fun applySticky(prefs: SharedPreferences, kind: TaskKind, chatId: String, routes: List<Route>): List<Route> {
         if (chatId.isBlank() || isManual(prefs)) return routes
-        if (kind == TaskKind.FAST || kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) return routes
+        if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) return routes
         val stick = ProviderStick.get(prefs, chatId) ?: return routes
         if (stick == LOCAL_PROXY || stick == CUSTOM) return routes
-        if (!SmartRouter.available(prefs, stick) || SmartRouter.failureCount(stick) >= 2) return routes
+        WebGateway.load(prefs)
+        // Global failures in another chat must not evict this conversation's working provider.
+        if (!SmartRouter.available(prefs, stick)) return routes
         val existing = routes.firstOrNull { it.provider == stick }
-        val route = existing ?: Route(
+        val savedModel = prefs.getString("route_stick_model_$chatId", "").orEmpty()
+        val route = (existing ?: Route(
             stick,
             SmartRouter.candidates(kind).firstOrNull { it.provider == stick }?.model
                 ?.takeIf { it.isNotBlank() } ?: modelFor(prefs, stick)
-        )
+        )).let { candidate ->
+            val configured = modelFor(prefs, stick)
+            candidate.copy(model = configured.ifBlank { savedModel.ifBlank { candidate.model } })
+        }
         return listOf(route) + routes.filter { it.provider != stick }
     }
 
@@ -279,10 +285,11 @@ object ProviderStick {
         return if (provider.isNotBlank() && sig == signature(prefs)) provider else null
     }
 
-    fun set(prefs: SharedPreferences, chatId: String, provider: String) {
+    fun set(prefs: SharedPreferences, chatId: String, provider: String, model: String = "") {
         if (chatId.isBlank() || provider.isBlank()) return
         if (provider == RoutePolicy.LOCAL_PROXY || provider == RoutePolicy.CUSTOM) return
         if (RoutePolicy.isManual(prefs)) return
+        if (model.isNotBlank()) prefs.edit().putString("route_stick_model_$chatId", model).apply()
         val value = provider + "|" + signature(prefs)
         if (prefs.getString(key(chatId), null) != value) prefs.edit().putString(key(chatId), value).apply()
     }

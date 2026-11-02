@@ -75,7 +75,8 @@ class ToolContext(
     val provider: String = "",
     val model: String = "",
     val apiKey: String = "",
-    val accountId: String = ""
+    val accountId: String = "",
+    val writeAuthorized: Boolean = false
 )
 
 /** سجل الأدوات + بروتوكول استدعاء موحّد يعمل مع جميع مزودات API. */
@@ -734,8 +735,15 @@ object AiTools {
         "github_bootstrap_project", "github_create_repo", "github_create_branch"
     )
 
+    fun isMutation(call: ToolCall): Boolean = byName[call.name]?.write == true ||
+        call.name in setOf("web_download", "db_query", "file_present") ||
+        (call.name == "web_api" && call.args.optString("method", "GET").uppercase() !in setOf("GET", "HEAD", "OPTIONS"))
+
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
+        if (isMutation(call) && (!ctx.allowWrite || !ctx.writeAuthorized)) {
+            return ToolResult(call.name, "⛔ لم تُنفذ العملية: يلزم طلب تعديل/تنفيذ صريح من المستخدم، إضافة إلى السماح بالكتابة في الإعدادات.", false)
+        }
         if (def.write && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
         }

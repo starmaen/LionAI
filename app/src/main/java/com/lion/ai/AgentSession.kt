@@ -20,9 +20,11 @@ data class AgentStep(
  * بدل البدء من الصفر. تحفظ الجلسة الخطوات الناجحة، الملفات التي تغيّرت، المزودات
  * التي جُرّبت، وأي سؤال معلّق ينتظر رد المستخدم.
  *
- * لا تحفظ أسراراً ولا محتوى ملفات كاملاً، بل ملخصات قصيرة فقط.
+ * تحفظ ملخصاً وسجل أدوات للاستئناف داخل تفضيلات التطبيق المشفرة؛ قد يتضمن محتوى ملفات.
  */
 class AgentSession(val chatId: String) {
+    var continuity = TaskContinuity()
+        private set
     private val steps = mutableListOf<AgentStep>()
     private val files = LinkedHashSet<String>()
     private val providers = mutableListOf<String>()
@@ -53,10 +55,18 @@ class AgentSession(val chatId: String) {
         private set
 
     @Synchronized
+    fun beginTurn(userRequest: String) {
+        continuity.begin(userRequest, !completed, pendingQuestion != null)
+        if (!continuity.resume) lastTask = userRequest.take(600)
+        completed = false
+    }
+
+    @Synchronized
     fun hasWork(): Boolean = pendingQuestion != null || steps.any { it.tool != "user" }
 
     @Synchronized
     fun reset() {
+        continuity = TaskContinuity()
         steps.clear()
         files.clear()
         providers.clear()
@@ -122,6 +132,7 @@ class AgentSession(val chatId: String) {
             )
         }
         return JSONObject()
+            .put("continuity", continuity.json())
             .put("chat_id", chatId)
             .put("mode", mode)
             .put("task", lastTask)
@@ -138,6 +149,7 @@ class AgentSession(val chatId: String) {
     @Synchronized
     fun importJson(obj: JSONObject) {
         reset()
+        obj.optJSONObject("continuity")?.let { continuity.restore(it) }
         mode = obj.optString("mode", ChatMode.GENERAL.id)
         lastTask = obj.optString("task", "")
         lastProvider = obj.optString("provider", "")

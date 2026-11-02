@@ -870,6 +870,10 @@ fun LionApp() {
         replaceIndex: Int? = null,
         forcePrecise: Boolean = false
     ) {
+        if (loadingChats[chatId] == true) return
+        val previousSession = AgentSessions.of(prefs, chatId)
+        val resumingTask = WriteIntent.isContinuation(prompt) && !previousSession.completed && previousSession.hasWork()
+        val kind = if (resumingTask) TaskKind.DEV else kind
         val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
         val chatMode = ChatRepository.modeOf(prefs, chatId)
         // نفس مصدر الحقيقة الذي يستخدمه الخادم المحلي والإعدادات.
@@ -885,10 +889,11 @@ fun LionApp() {
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
         // العقل المركزي يختار المزود وهو عارف بوضع المحادثة (عام/تعلّم/برمجة)
         // وبنوع المهمة، فيراعي الكفاءة والاتصال معاً.
-        val plan = planFor(kind, mode, chatMode)
+        val plan = RoutePolicy.appPlan(prefs, kind, mode, chatId, chatMode)
         val auto = !manualMode
         val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
-        val toolText = if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext
+        val toolText = (if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext) +
+            if (resumingTask) "\n" + previousSession.lastTask else ""
         val modeProfile = ContextProfiles.of(chatMode, prefs, toolText)
         val basePrompt = when {
             chatMode == ChatMode.CODE -> LLM_DEV_PROMPT
@@ -908,6 +913,8 @@ fun LionApp() {
         toolStatus[chatId] = ""
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
+        session.beginTurn(prompt)
+        CheckpointStore.save(prefs, session)
         var agentComplete = true
         var agentAsked = false
         scope.launch {
@@ -969,7 +976,8 @@ fun LionApp() {
                 ""
             }
             val sessionBlock = session.contextBlock()
-            val systemPrompt = basePrompt + modeProfile.promptSuffix + projectBlock + sessionBlock +
+            val systemPrompt = basePrompt + modeProfile.promptSuffix + projectBlock +
+                (if (toolGroups.isEmpty()) sessionBlock else "") +
                 answerLengthSuffix() +
                 (if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "") + githubNote + toolsNote
             val baseLlmPrompt = if (sources.isEmpty()) {
@@ -1000,7 +1008,8 @@ fun LionApp() {
             var sawFalseClaim = false
             val failed = mutableListOf<String>()
             // اليدوي: مزودك المختار يأخذ مهلة المهمة كاملة، ثم وقت إضافي للبدائل (لا تبديل صامت بسبب بطء المزود).
-            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(kind) + (if (manualMode) 60_000L else 0L)
+            val executionBudget = if (toolGroups.isNotEmpty()) 900_000L else SmartRouter.timeoutMs(kind)
+            val deadline = System.currentTimeMillis() + executionBudget + (if (manualMode) 60_000L else 0L)
             val chosenProvider = plan.firstOrNull()?.provider
             val stickProvider = if (manualMode) null else ProviderStick.get(prefs, chatId)
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
@@ -1049,40 +1058,15 @@ fun LionApp() {
                                 forceExecution = kind == TaskKind.DEV || session.hasWork(),
                                 providerLabel = SmartRouter.label(route, kind),
                                 via = route.via,
+                                userRequest = prompt,
                                 onProgress = { status -> toolStatus[chatId] = status }
                             )
-                        }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList(), complete = false) }
+                        }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList(), complete = false, responded = session.continuity.responded) }
                     }
                 } else {
                     null
                 }
-                // إن فشل مسار الأدوات (خطأ مزود) نجرّب رداً عادياً بنفس المزود حتى لا تتوقف المحادثة.
-                val failedAgent = agentResult
-                if (!WebChatRuntime.handles(route.provider) && failedAgent != null && !failedAgent.complete && failedAgent.tools.isEmpty() &&
-                    LlmClient.isErrorReply(failedAgent.answer)
-                ) {
-                    val plain = withContext(Dispatchers.IO) {
-                        runCatching {
-                            LlmClient.ask(
-                                message = llmPrompt,
-                                apiKey = keyOf(route.provider),
-                                provider = route.provider,
-                                history = requestHistory,
-                                modelOverride = route.model,
-                                accountId = accountId(),
-                                image = image,
-                                systemPrompt = systemPrompt,
-                                readTimeoutMs = attemptCap,
-                                chatModeHint = chatMode,
-                                via = route.via
-                            )
-                        }.getOrNull()
-                    }
-                    if (plain != null && !LlmClient.isErrorReply(plain)) {
-                        agentResult = ToolAgent.Result(plain, emptyList())
-                        toolStatus[chatId] = "↩️ تم تجاهل الأدوات مؤقتاً (فشل مسار الأدوات)"
-                    }
-                }
+                // No tool-less retry: it would discard execution state and can invent completion.
                 val r = agentResult?.answer ?: withContext(Dispatchers.IO) {
                     LlmClient.ask(
                         message = llmPrompt,
@@ -1095,10 +1079,13 @@ fun LionApp() {
                         systemPrompt = systemPrompt,
                         readTimeoutMs = attemptCap,
                         chatModeHint = chatMode,
-                        via = route.via
+                        via = route.via,
+                        chatId = chatId
                     )
                 }
-                val error = LlmClient.isErrorReply(r)
+                // Local pauses/budgets are not evidence that a responsive provider failed.
+                val keepAgent = agentResult?.responded == true
+                val error = LlmClient.isErrorReply(r) && !keepAgent
                 if (agentResult != null) {
                     agentComplete = agentResult.complete
                     agentAsked = agentAsked || session.pendingQuestion != null
@@ -1108,9 +1095,12 @@ fun LionApp() {
                 // ادّعاء تنفيذ تعديل/رفع/PR دون استدعاء أي أداة = هلوسة خطيرة تُرفض دائماً حتى في الوضع اليدوي.
                 val falseClaim = !error && kind == TaskKind.DEV && noTools &&
                     AnswerGuard.claimsCompletedAction(r)
-                if (falseClaim) sawFalseClaim = true
-                val low = !error && noTools &&
-                    (falseClaim || (central && route.provider != stickProvider && AnswerGuard.isLowQuality(r, kind, prompt)))
+                if (falseClaim) {
+                    sawFalseClaim = true
+                    // Reject an unsupported claim without silently replacing a responsive provider.
+                    break
+                }
+                val low = !error && noTools && falseClaim
                 SmartRouter.record(route, !error && !low, System.currentTimeMillis() - started)
                 if (!error && !low) {
                     reply = r
@@ -1118,7 +1108,7 @@ fun LionApp() {
                     toolNames = agentResult?.tools.orEmpty()
                     LlmClient.recordSuccess(route.provider, route.model)
                     LastRoute.set(prefs, chatId, route)
-                    if (!manualMode && kind != TaskKind.FAST) ProviderStick.set(prefs, chatId, route.provider)
+                    if (!manualMode) ProviderStick.set(prefs, chatId, route.provider, route.model)
                     break
                 }
                 if (!error && !falseClaim && fallback == null) fallback = route to r
@@ -1180,7 +1170,8 @@ fun LionApp() {
             }
             // العقل المركزي يدقّق الإجابات غير الموثوقة أو المعرفية غير المدعومة بمصادر.
             val answeredBy = used
-            if (answeredBy != null && image == null && !prompt.contains("محتوى الملف (") &&
+            if (prefs.getBoolean("central_cross_provider_review", false) && toolGroups.isEmpty() &&
+                answeredBy != null && image == null && !prompt.contains("محتوى الملف (") &&
                 System.currentTimeMillis() < deadline - 6_000
             ) {
                 val judge = CentralBrain.judgeRoute(prefs, kind, answeredBy, routesToTry)
