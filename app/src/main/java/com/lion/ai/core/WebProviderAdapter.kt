@@ -6,7 +6,7 @@ data class WebProvider(val id: String, val displayName: String, val url: String,
 
 class WebProviderAdapter {
     val webProviders = listOf(
-        WebProvider("arena", "Arena", "https://arena.ai/text/direct", "🏟️"),
+        WebProvider("arena", "Arena", "https://arena.ai/text/direct", "🏟"),
         WebProvider("claude-web", "Claude Web", "https://claude.ai", "🧠"),
         WebProvider("deepseek-chat", "DeepSeek Chat", "https://chat.deepseek.com", "🐋"),
         WebProvider("chatgpt-web", "ChatGPT Web", "https://chat.openai.com", "🤖"),
@@ -17,12 +17,12 @@ class WebProviderAdapter {
         WebProvider("poe-web", "Poe", "https://poe.com", "🎭"),
         WebProvider("huggingface-web", "HuggingFace", "https://huggingface.co/chat", "🤗")
     )
-    
+
     fun toRoutes(prefs: WebProvidersPrefs): List<Route> {
-        return prefs.getEnabled(webProviders).map { web ->
+        return prefs.getEnabled(webProviders).map { web: WebProvider ->
             Route(provider = "lion-chat-${web.id}", model = "lion-chat-${web.id}", via = Channel.AUTO)
         }
     }
-    
+
     fun getLionChatName(): String = "🦁 Lion Chat"
 }

@@ -30,8 +30,15 @@ fun WebSettingsScreen() {
     var testResult by remember { mutableStateOf("") }
     
     val providerStates = remember {
-        mutableStateMapOf<String, Boolean>().apply {
-            adapter.webProviders.forEach { put(it.id, prefs.isProviderEnabled(it.id)) }
+        val map = mutableStateMapOf<String, Boolean>()
+        adapter.webProviders.forEach { provider: WebProvider ->
+            map[provider.id] = prefs.isProviderEnabled(provider.id)
+        }
+        map
+    }
+    // old code removed: mutableStateMapOf
+            adapter.webProviders.forEach { provider: WebProvider ->
+            map[provider.id] = prefs.isProviderEnabled(provider.id) // prefs.isProviderEnabled(it.id)) }
         }
     }
     
