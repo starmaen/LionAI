@@ -153,3 +153,17 @@ test('diagnostics redact conversation titles stored in aria-label',()=>withPage(
   const b=p.w.document.createElement('button');b.setAttribute('aria-label','PRIVATE MESSAGE, model Max');p.w.document.body.append(b);
   const raw=JSON.stringify(p.run('diagnose'));assert.ok(!raw.includes('PRIVATE MESSAGE'));assert.ok(raw.includes('ariaLabelOmitted'));
 }));
+test('contenteditable empty block serializes as one empty line without changing DOM',()=>withPage(p=>{
+  const old=p.w.document.querySelector('#input');const editor=p.w.document.createElement('div');
+  editor.id='input';editor.tabIndex=0;Object.defineProperty(editor,'isContentEditable',{get:()=>true});old.replaceWith(editor);
+  p.w.document.execCommand=()=>{editor.innerHTML='first<div>second</div><div><br></div><div>last</div>';return true;};
+  const prompt='first\nsecond\n\nlast';
+  assert.equal(p.run('prepare',prompt).status,'prepared');
+  assert.equal(editor.innerHTML,'first<div>second</div><div><br></div><div>last</div>');
+  assert.equal(p.run('submit',prompt).status,'clicked');
+}));
+test('origin mismatch reports only origin and not private query or path',()=>withPage(p=>{
+  const r=p.run('diagnose');assert.equal(r.status,'origin');
+  assert.equal(r.actualOrigin,'https://accounts.example.com');assert.ok(r.expectedHosts.includes('claude.ai'));
+  const raw=JSON.stringify(r);assert.ok(!raw.includes('secret'));assert.ok(!raw.includes('/login'));
+},'https://accounts.example.com/login?token=secret'));

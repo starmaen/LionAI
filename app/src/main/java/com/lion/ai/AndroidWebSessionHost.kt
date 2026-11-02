@@ -2,6 +2,11 @@ package com.lion.ai
 
 import android.annotation.SuppressLint
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.net.http.SslError
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -30,6 +35,8 @@ internal class AndroidWebSessionHost(
     private val main = Handler(Looper.getMainLooper())
     private val pool = linkedMapOf<String, WebView>()
     private val chatIds = mutableMapOf<String, String>()
+    private val loads = mutableMapOf<WebView, WebPageLoad>()
+    private var displayedProvider: String? = null
     private val script = activity.assets.open("web-session.js").bufferedReader().use { it.readText() }
     private var pending: Pending? = null
     private var destroyed = false
@@ -55,6 +62,7 @@ internal class AndroidWebSessionHost(
             view.isFocusable = focusAllowed
             view.isFocusableInTouchMode = focusAllowed
             view.isClickable = value
+            view.settings.javaScriptCanOpenWindowsAutomatically = value
             if (!focusAllowed && view.hasFocus()) view.clearFocus()
         }
     }
@@ -91,12 +99,14 @@ internal class AndroidWebSessionHost(
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun viewFor(adapter: WebSiteAdapter): WebView {
+        displayedProvider = adapter.id
         pool.remove(adapter.id)?.let { pool[adapter.id] = it; show(it); return it }
         while (pool.size >= 3) {
             val entry = pool.entries.first()
             pool.remove(entry.key)
             (entry.value.parent as? FrameLayout)?.removeView(entry.value)
             entry.value.destroy()
+            loads.remove(entry.value)
             chatIds.remove(entry.key)
         }
         val view = SessionWebView(activity).apply { manualInput = interactive }
@@ -107,6 +117,11 @@ internal class AndroidWebSessionHost(
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
+            @Suppress("DEPRECATION")
+            databaseEnabled = true
+            loadsImagesAutomatically = true
+            cacheMode = WebSettings.LOAD_DEFAULT
+            textZoom = 100
             allowFileAccess = false
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -118,8 +133,33 @@ internal class AndroidWebSessionHost(
         }
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
+        val load = WebPageLoad()
+        loads[view] = load
         view.webChromeClient = WebChromeClient()
         view.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
+                load.start(url)
+                reportLoad(adapter, "جارٍ تحميل ${load.origin}")
+            }
+            override fun onPageCommitVisible(v: WebView, url: String) {
+                load.commit(url, adapter.accepts(url))
+                reportCommitted(adapter, load)
+            }
+            override fun onPageFinished(v: WebView, url: String) {
+                load.commit(url, adapter.accepts(url))
+                CookieManager.getInstance().flush()
+                reportCommitted(adapter, load)
+            }
+            override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) pageFailed(adapter, v, "${describeWebError(error.errorCode)} (رمز ${error.errorCode})")
+            }
+            override fun onReceivedHttpError(v: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                if (request.isForMainFrame) pageFailed(adapter, v, "رفض تحميل الصفحة: HTTP ${response.statusCode}. افتح الجلسة للتحقق أو أعد تحميلها.")
+            }
+            override fun onReceivedSslError(v: WebView, handler: SslErrorHandler, error: SslError) {
+                handler.cancel() // Never bypass certificate validation.
+                pageFailed(adapter, v, "فشل التحقق من شهادة HTTPS؛ لم يُرسل نص المحادثة.")
+            }
             override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
                 // Login redirects remain interactive; execution checks the exact top-level origin again.
                 return request.url.scheme != "https"
@@ -127,6 +167,7 @@ internal class AndroidWebSessionHost(
             override fun onRenderProcessGone(v: WebView, detail: RenderProcessGoneDetail): Boolean {
                 pending?.takeIf { it.view === v }?.let { fail(it, "توقفت عملية المتصفح. افتح الجلسة مجدداً.") }
                 pool.remove(adapter.id)
+                loads.remove(v)
                 (v.parent as? FrameLayout)?.removeView(v)
                 v.destroy()
                 return true
@@ -134,14 +175,50 @@ internal class AndroidWebSessionHost(
         }
         pool[adapter.id] = view
         show(view)
+        load.start(adapter.url)
         view.loadUrl(adapter.url)
         chatIds[adapter.id] = ActiveChat.id
         return view
     }
     private fun show(view: WebView) {
+        if (view.parent === container) return
         container.removeAllViews()
         (view.parent as? FrameLayout)?.removeView(view)
         container.addView(view, FrameLayout.LayoutParams(-1, -1))
+    }
+    private fun reportLoad(adapter: WebSiteAdapter, text: String) {
+        prefs.edit().putString("web_session_load_${adapter.id}", text)
+            .putString("web_session_status_${adapter.id}", text).apply()
+        if (displayedProvider == adapter.id) display(false, text)
+    }
+    private fun reportCommitted(adapter: WebSiteAdapter, load: WebPageLoad) {
+        val message = when (load.phase) {
+            WebPageLoad.Phase.READY -> "حُمّلت صفحة ${providerInfo(adapter.id).shortName}؛ لم يُختبر الإرسال بعد"
+            WebPageLoad.Phase.REDIRECT -> "تحويل إلى ${load.origin}؛ أكمل الدخول من الجلسة ثم أعد المحاولة"
+            WebPageLoad.Phase.FAILED -> load.error
+            else -> return
+        }
+        reportLoad(adapter, message)
+    }
+    private fun pageFailed(adapter: WebSiteAdapter, view: WebView, message: String) {
+        loads[view]?.fail(message)
+        reportLoad(adapter, "⚠️ $message")
+        prefs.edit().putBoolean("web_session_verified_${adapter.id}", false).apply()
+        pending?.takeIf { it.view === view }?.let { fail(it, message) }
+    }
+    /** Reload only the page; never replay a message and never erase login cookies. */
+    fun reloadCurrent() {
+        if (pending != null) {
+            display(false, "ألغِ الطلب أو انتظر انتهاءه قبل إعادة تحميل الجلسة")
+            return
+        }
+        val id = displayedProvider ?: return
+        val adapter = WebSiteAdapters.get(id, prefs) ?: return
+        val existing = pool[id]
+        if (existing == null) { viewFor(adapter); return }
+        val url = existing.url?.takeIf { it.startsWith("https://") } ?: adapter.url
+        loads[existing]?.start(url)
+        existing.loadUrl(url)
     }
     override fun open(provider: String) {
         main.post {
@@ -156,10 +233,6 @@ internal class AndroidWebSessionHost(
             if (destroyed || pending != null) return@post
             val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
             val view = viewFor(adapter)
-            if (!adapter.accepts(view.url.orEmpty())) {
-                display(false, "انتظر تحميل الجلسة ثم اضغط التشخيص مجدداً")
-                return@post
-            }
             val js = script.replace("__LION_CONFIG__", adapter.json().toString())
                 .replace("__LION_TOKEN__", JSONObject.quote("diagnostic"))
                 .replace("__LION_ACTION__", JSONObject.quote("diagnose"))
@@ -167,6 +240,9 @@ internal class AndroidWebSessionHost(
             view.evaluateJavascript(js) { raw ->
                 val text = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
                 val diagnostic = runCatching { JSONObject(text ?: "{}") }.getOrElse { JSONObject() }
+                diagnostic.put("navigation", JSONObject().put("requestedOrigin", WebPageLoad.originOf(view.url.orEmpty()))
+                    .put("phase", loads[view]?.phase?.name ?: "UNKNOWN")
+                    .put("loadError", loads[view]?.error.orEmpty()))
                 diagnostic.put("android", JSONObject().put("width", view.width).put("height", view.height)
                     .put("shown", view.isShown).put("windowFocus", view.hasWindowFocus())
                     .put("focusable", view.isFocusable).put("manual", interactive))
@@ -187,8 +263,9 @@ internal class AndroidWebSessionHost(
                 return@post
             }
             val view = viewFor(adapter)
-            if (chatIds[adapter.id] != ActiveChat.id) {
+            if (chatIds[adapter.id] != ActiveChat.id || loads[view]?.phase == WebPageLoad.Phase.FAILED) {
                 // Re-enter the site's initial chat route for each LionAI conversation.
+                loads[view]?.start(adapter.url)
                 view.loadUrl(adapter.url)
                 chatIds[adapter.id] = ActiveChat.id
             }
@@ -241,9 +318,24 @@ internal class AndroidWebSessionHost(
             fail(p, message)
             return
         }
+        val load = loads[p.view]
+        when (load?.phase) {
+            WebPageLoad.Phase.FAILED -> { fail(p, load.error); return }
+            WebPageLoad.Phase.REDIRECT -> {
+                fail(p, "الصفحة الحالية ${load.origin} ليست صفحة الدردشة؛ أكمل تسجيل الدخول يدويًا من الجلسة.")
+                return
+            }
+            WebPageLoad.Phase.READY -> Unit
+            else -> {
+                p.lastStatus = "loading"
+                if (load?.loadExpired(System.currentTimeMillis()) == true) {
+                    fail(p, "لم يكتمل تحميل صفحة الموقع خلال 30 ثانية. افتح الجلسة واضغط تحديث؛ لم يُرسل النص.")
+                } else main.postDelayed({ tick(p) }, 700)
+                return
+            }
+        }
         if (!p.adapter.accepts(p.view.url.orEmpty())) {
-            p.lastStatus = "origin"
-            main.postDelayed({ tick(p) }, 700)
+            fail(p, "تغير عنوان الصفحة إلى ${WebPageLoad.originOf(p.view.url.orEmpty())}. لم أكتب الرسالة خارج الموقع المحدد.")
             return
         }
         val js = script.replace("__LION_CONFIG__", p.adapter.json().toString())
@@ -263,6 +355,12 @@ internal class AndroidWebSessionHost(
                 val state = result.optString("status")
                 p.lastStatus = state
                 when (state) {
+                    "origin" -> {
+                        val actual = result.optString("actualOrigin", "unknown")
+                        prefs.edit().putString("web_session_actual_origin_${p.adapter.id}", actual).apply()
+                        fail(p, "الوثيقة الحالية $actual لا تطابق موقع الدردشة. افتح الجلسة وأعد تحميلها؛ لم تُرسل الرسالة.")
+                        return@evaluateJavascript
+                    }
                     "ready" -> p.stage = "prepare"
                     "prepared" -> {
                         p.stage = "submit"
@@ -338,6 +436,7 @@ internal class AndroidWebSessionHost(
         container.removeAllViews()
         pool.values.forEach { it.stopLoading(); it.destroy() }
         pool.clear()
+        loads.clear()
         WebSessionTransport.detach(this)
     }
 }

@@ -7,7 +7,13 @@
   const action = __LION_ACTION__;
   const prompt = __LION_PROMPT__;
   function result(status, extra) { return JSON.stringify(Object.assign({status: status, token: token}, extra || {})); }
-  if (location.protocol !== 'https:' || !C.hosts.includes(location.hostname)) return result('origin');
+  const pageInfo = {
+    actualOrigin: location.href === 'about:blank' ? 'about:blank' :
+      (location.origin && location.origin !== 'null' ? location.origin : location.protocol),
+    host: location.hostname, protocol: location.protocol,
+    readyState: document.readyState, expectedHosts: C.hosts
+  };
+  if (location.protocol !== 'https:' || !C.hosts.includes(location.hostname)) return result('origin', pageInfo);
   function visible(n) { return !!n && n.getClientRects().length > 0 && getComputedStyle(n).visibility !== 'hidden'; }
   function nodes(selector, root) { return Array.from((root || document).querySelectorAll(selector)); }
   function find(selector) { return nodes(selector).find(visible); }
@@ -30,7 +36,27 @@
   }
 
   function text(n) { return n ? (n.innerText || n.textContent || '').trim() : ''; }
-  function inputText(n) { return String(n && 'value' in n ? n.value : text(n)).replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim(); }
+  // Chromium innerText inserts an extra visual newline for <div><br></div>.
+  // Read editor block structure; do not rewrite the user's text or collapse arbitrary whitespace.
+  function editableText(n) {
+    if (n.nodeType === 3) return n.nodeValue || '';
+    const block = x => x.nodeType === 1 && /^(DIV|P|LI|BLOCKQUOTE|PRE|H[1-6])$/.test(x.tagName);
+    if (n.nodeType === 1 && n.tagName === 'BR') {
+      return n.parentNode && block(n.parentNode) && n.parentNode.childNodes.length === 1 ? '' : '\n';
+    }
+    let value = '', previousBlock = false;
+    Array.from(n.childNodes || []).forEach((child, index) => {
+      const isBlock = block(child);
+      if (index > 0 && (isBlock || previousBlock)) value += '\n';
+      value += editableText(child);
+      previousBlock = isBlock;
+    });
+    return value;
+  }
+  function inputText(n) {
+    const value = n && 'value' in n ? n.value : n && n.isContentEditable ? editableText(n) : text(n);
+    return String(value).replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim();
+  }
   function expectedText() { return prompt.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim(); }
   try {
     if (action === 'diagnose') {
@@ -54,6 +80,8 @@
       }
       return result('diagnostic', {
         host: location.hostname,
+        actualOrigin: pageInfo.actualOrigin,
+        readyState: document.readyState,
         visibility: document.visibilityState,
         documentFocused: document.hasFocus(),
         inputs: nodes('textarea, [contenteditable="true"]').filter(visible).slice(0, 8).map(describe),

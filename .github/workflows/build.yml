@@ -32,6 +32,11 @@ jobs:
     - name: Test browser session DOM bridge
       run: npm --prefix scripts ci --ignore-scripts && npm --prefix scripts test
 
+    - name: Test real Chromium editor and reply round trips (local fixtures)
+      run: |
+        npm exec --prefix scripts -- playwright install --with-deps chromium
+        npm --prefix scripts run test:browser
+
     - name: Run unit tests
       run: |
         set -o pipefail

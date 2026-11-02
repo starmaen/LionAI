@@ -42,3 +42,6 @@ venv/
 
 # ملاحظة: keystore/lionai-release.jks متعمَّد رفعه — بدونه يتغيّر توقيع
 # التحديثات ويُجبر المستخدم على حذف التطبيق القديم. لا تضفه هنا أبداً.
+
+# JavaScript test dependencies
+scripts/node_modules/
