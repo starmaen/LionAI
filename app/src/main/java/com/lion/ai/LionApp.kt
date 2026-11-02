@@ -204,6 +204,22 @@ fun LionApp() {
     var selectedProvider by remember {
         mutableStateOf(prefs.getString("provider", "gemini") ?: "gemini")
     }
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                "provider", "auto_route" -> {
+                    selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+                    autoRoute = prefs.getBoolean("auto_route", true)
+                }
+                "web_session_event" -> {
+                    val id = prefs.getString("web_session_event_chat", "").orEmpty()
+                    if (loadingChats[id] == true) toolStatus[id] = prefs.getString("web_session_event", "").orEmpty()
+                }
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     var tabs by remember {
         mutableStateOf(
             TabsStore.load(prefs).map { tab ->
@@ -857,7 +873,8 @@ fun LionApp() {
         val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
         val chatMode = ChatRepository.modeOf(prefs, chatId)
         // نفس مصدر الحقيقة الذي يستخدمه الخادم المحلي والإعدادات.
-        val manualMode = RoutePolicy.isManual(prefs)
+        val selectedWeb = WebChatRuntime.handles(RoutePolicy.selectedProvider(prefs))
+        val manualMode = RoutePolicy.isManual(prefs) || selectedWeb
         // «المركزي» يدير الاختيار والتحقق في التلقائي فقط. في اليدوي لا يتدخل
         // طالما مزودك يرد؛ البديل يعمل فقط عند فشله (انظر rescueRoutes أدناه).
         val central = !manualMode
@@ -1038,7 +1055,7 @@ fun LionApp() {
                 }
                 // إن فشل مسار الأدوات (خطأ مزود) نجرّب رداً عادياً بنفس المزود حتى لا تتوقف المحادثة.
                 val failedAgent = agentResult
-                if (failedAgent != null && !failedAgent.complete && failedAgent.tools.isEmpty() &&
+                if (!WebChatRuntime.handles(route.provider) && failedAgent != null && !failedAgent.complete && failedAgent.tools.isEmpty() &&
                     LlmClient.isErrorReply(failedAgent.answer)
                 ) {
                     val plain = withContext(Dispatchers.IO) {

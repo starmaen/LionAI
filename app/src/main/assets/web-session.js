@@ -36,10 +36,20 @@
     if (action === 'diagnose') {
       function describe(n) {
         const entry = {tag: n.tagName.toLowerCase()};
-        ['id', 'class', 'role', 'data-testid', 'data-message-role', 'data-message-author-role', 'aria-label', 'type', 'contenteditable'].forEach(k => {
+        ['id', 'class', 'role', 'data-testid', 'data-message-role', 'data-message-author-role', 'type', 'contenteditable'].forEach(k => {
           const v = n.getAttribute(k);
           if (v) entry[k] = v.slice(0, 120);
         });
+        const label = n.getAttribute('aria-label') || '';
+        // Site conversation titles may include prompt text in aria-label: never copy arbitrary labels.
+        if (/^(send|send message|submit|stop|stop generating|stop generation|stop response|add files|copy|copy code|copy response|open sidebar)$/i.test(label)) entry['aria-label'] = label;
+        else if (label) entry.ariaLabelOmitted = true;
+        entry.disabled = !!n.disabled || n.getAttribute('aria-disabled') === 'true';
+        if ('value' in n) entry.valueLength = n.value.length;
+        entry.icons = Array.from(n.querySelectorAll('svg')).slice(0,3).map(svg => ({
+          class: (svg.getAttribute('class') || '').slice(0,120),
+          paths: Array.from(svg.querySelectorAll('path')).slice(0,3).map(path => (path.getAttribute('d') || '').slice(0,160))
+        }));
         return entry;
       }
       return result('diagnostic', {
@@ -48,11 +58,12 @@
         documentFocused: document.hasFocus(),
         inputs: nodes('textarea, [contenteditable="true"]').filter(visible).slice(0, 8).map(describe),
         buttons: nodes('button, [role="button"]').filter(visible).slice(-40).map(describe),
-        responses: nodes('[data-message-role], [data-message-author-role], [data-role="assistant"], [class*="assistant"], [class*="markdown"], model-response').filter(visible).slice(-20).map(describe)
+        responses: nodes('[data-message-role], [data-message-author-role], [data-role="assistant"], [class*="assistant"], [class*="markdown"], [class*="prose"], [class*="response"], model-response').filter(visible).slice(-20).map(describe)
       });
     }
     const input = find(C.input);
     if (action === 'probe') {
+      if (find(C.stop)) return result('site_busy');
       if (!input) return result('needs_input');
       if (input.disabled || input.readOnly || input.getAttribute('aria-disabled') === 'true') return result('input_disabled');
       return result('ready');
@@ -60,10 +71,11 @@
     let state = window.__lionSessionRequest;
     if (action === 'prepare') {
       if (!input) return result('needs_input');
-      if (state && state.token === token) return result(state.sent ? 'sent' : 'prepared');
+      if (state && state.token === token) return result(state.sent ? 'sent' : state.clicked ? 'clicked' : 'prepared');
+      if (find(C.stop)) return result('site_busy');
       if (text(input) || (input.value || '').trim()) return result('draft');
       const old = answers();
-      state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, sawStop: false,
+      state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, clicked: false, clickedAt: 0, sawStop: false,
         last: '', changed: Date.now(), clicks: 0};
       window.__lionSessionRequest = state;
       input.focus({preventScroll: true});
@@ -98,15 +110,17 @@
     }
     if (action === 'submit') {
       if (state.sent) return result('sent');
+      if (state.clicked) return result('clicked');
+      if (find(C.stop)) return result('site_busy');
       if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
       const button = find(C.send);
       if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return result('needs_send');
-      state.sent = true; state.clicks++;
-      button.click(); // Exactly one click per token; never retry after uncertain delivery.
-      return result('sent');
+      state.clicked = true; state.clickedAt = Date.now(); state.clicks++;
+      button.click(); // Click is not delivery acknowledgement. Never click this token twice.
+      return result('clicked');
     }
     if (action === 'poll') {
-      if (!state.sent) return result('not_sent');
+      if (!state.clicked) return result('not_sent');
       const list = answers();
       const last = list[list.length - 1];
       const value = answerText(last);
@@ -115,7 +129,15 @@
         (list.length > state.baseline.length || !state.baselineText.includes(value));
       const stopping = !!find(C.stop);
       if (stopping) state.sawStop = true;
-      if (!isNew || !value) return result('waiting', {generating: stopping});
+      if (!state.sent) {
+        // Wait for observable site acknowledgement; merely calling click() is not enough.
+        if ((!input || !inputText(input)) && (stopping || (isNew && value))) {
+          state.sent = true;
+        } else {
+          return result(Date.now() - state.clickedAt > 30000 ? 'send_unconfirmed' : 'awaiting_ack');
+        }
+      }
+      if (!isNew || !value) return result(stopping ? 'sent' : 'waiting', {generating: stopping});
       if (value !== state.last) { state.last = value; state.changed = Date.now(); }
       const completeInside = !!last.querySelector(C.complete);
       // Some sites put their copy controls in the parent assistant message container.

@@ -82,6 +82,7 @@ internal class AndroidWebSessionHost(
         val view: WebView,
         val done: (WebSessionTransport.Reply) -> Unit,
         val deadline: Long,
+        val chatId: String = ActiveChat.id,
         var stage: String = "probe",
         var submitted: Boolean = false,
         var lastStatus: String = "loading"
@@ -200,7 +201,9 @@ internal class AndroidWebSessionHost(
     }
     private fun status(p: Pending, text: String) {
         prefs.edit().putString("web_session_status_${p.adapter.id}", text)
-            .putLong("web_session_checked_${p.adapter.id}", System.currentTimeMillis()).apply()
+            .putLong("web_session_checked_${p.adapter.id}", System.currentTimeMillis())
+            .putString("web_session_event_chat", p.chatId)
+            .putString("web_session_event", "${providerInfo(p.adapter.id).shortName} • $text").apply()
     }
     private fun fail(p: Pending, message: String) {
         finish(p, WebSessionTransport.Reply("⚠️ $message" +
@@ -231,6 +234,7 @@ internal class AndroidWebSessionHost(
             val message = when (p.lastStatus) {
                 "needs_input", "origin", "loading" -> "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
+                "awaiting_ack", "clicked" -> "نُقر الإرسال لكن الموقع لم يؤكد استقبال الرسالة. لم أعِد الإرسال."
                 "streaming", "waiting" -> "لم يتم تأكيد اكتمال جواب جديد. افحص محدد الجواب وأزرار الإيقاف/النسخ."
                 else -> "انتهت مهلة الموقع (${p.lastStatus})."
             }
@@ -265,6 +269,22 @@ internal class AndroidWebSessionHost(
                         status(p, "وصل النص إلى حقل الموقع؛ جارٍ الإرسال")
                     }
                     "needs_send" -> p.submitted = false
+                    "clicked" -> {
+                        p.submitted = true
+                        p.stage = "poll"
+                        releaseEditorFocus()
+                        status(p, "نُقر زر الإرسال؛ ننتظر تأكيد الموقع، لا إعادة إرسال")
+                    }
+                    "awaiting_ack" -> status(p, "لم يؤكد الموقع استقبال الرسالة بعد")
+                    "send_unconfirmed" -> {
+                        fail(p, "تمت محاولة النقر لكن الموقع لم يؤكد الإرسال خلال 30 ثانية. لم أعِد المحاولة ولم أستخدم API.")
+                        return@evaluateJavascript
+                    }
+                    "site_busy" -> {
+                        p.submitted = false
+                        fail(p, "الموقع يولّد ردًا لطلب سابق. أوقفه أو انتظر انتهاؤه داخل الجلسة قبل إرسال طلب جديد.")
+                        return@evaluateJavascript
+                    }
                     "sent" -> {
                         p.submitted = true
                         p.stage = "poll"

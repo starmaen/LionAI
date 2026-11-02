@@ -165,6 +165,7 @@ object CentralBrain {
 
     /** أفضل مدقق متاح: مزود آخر موثوق، وإلا أي مزود آخر متاح. */
     fun judgeRoute(prefs: SharedPreferences, kind: TaskKind, answer: Route, planned: List<Route>): Route? {
+        if (WebChatRuntime.handles(answer.provider)) return null
         val others = planned.filter { it.provider != answer.provider }
         others.firstOrNull { SmartRouter.isReliableModel(it.provider, it.model) }?.let { return it }
         others.firstOrNull()?.let { return it }
@@ -185,6 +186,7 @@ object CentralBrain {
         image: Boolean,
         limit: Int = 5
     ): List<Route> {
+        if (planned.firstOrNull()?.let { WebChatRuntime.handles(it.provider) } == true) return emptyList()
         val plannedProviders = planned.map { it.provider }.toSet()
         val preferred = SmartRouter.candidates(kind).associateBy { it.provider }
         return PROVIDERS

@@ -70,6 +70,8 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
             }
             Text("جلسات المواقع نفسها • دون API أو Cloudflare", color = orange, fontSize = 12.sp)
             if (expanded) {
+                Text("المختار للشات: ${providerInfo(prefs.getString("provider", "gemini") ?: "gemini").shortName}", color = orange, fontSize = 13.sp)
+                Text("التفعيل يتيح الموقع فقط؛ اضغط «اختيار للشات» لتوجيه الرسائل إليه. اختيار موقع يمنع الرجوع إلى مزود API.", color = Color.LightGray, fontSize = 12.sp)
                 Text("يكتب التطبيق في صفحة الموقع ويقرأ جوابه الجديد. سجّل الدخول من «الجلسة». المحددات مبدئية وقابلة للتعديل؛ فتح الصفحة لا يعني نجاح الربط. العلامة الخضراء لا تظهر إلا بعد استلام جواب مكتمل.", color = Color.LightGray, fontSize = 12.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("إتاحة المواقع المختبَرة للعقل المركزي", color = Color.White, modifier = Modifier.weight(1f))
@@ -107,7 +109,7 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                     Text(prefs.getString("web_session_status_${info.id}", "⚪ لم يُختبر الاتصال بالصفحة بعد").orEmpty(),
                         color = Color.LightGray, fontSize = 12.sp)
                     Row {
-                        TextButton(enabled = !busy && WebChatRuntime.available(prefs, info.id), onClick = { activate(info.id) }) { Text("للشات") }
+                        TextButton(enabled = !busy && WebChatRuntime.available(prefs, info.id), onClick = { activate(info.id) }) { Text("اختيار للشات") }
                         TextButton(enabled = !busy && WebChatRuntime.available(prefs, info.id), onClick = { test(listOf(info.id)) }) { Text("فحص") }
                         TextButton(enabled = !busy, onClick = { WebSessionTransport.open(info.id) }) { Text("الجلسة") }
                     }

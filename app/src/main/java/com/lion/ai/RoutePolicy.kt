@@ -121,6 +121,8 @@ object RoutePolicy {
     ): List<Route> {
         WebGateway.load(prefs)
         val chosen = appManualRoute(prefs)
+        // An explicit website selection must never turn into an API answer, even in auto/assist mode.
+        if (WebChatRuntime.handles(chosen.provider)) return listOf(chosen.copy(via = Channel.WEB))
         if (isManual(prefs)) {
             ProviderStick.clear(prefs, chatId)
             // اليدوي: مزودك المختار أولاً عبر القنوات التي فعّلتها (مباشر/خارجي/محلي).
@@ -199,6 +201,7 @@ object RoutePolicy {
         val manual = isManual(prefs)
         val assist = assistEnabled(prefs)
         val chosen = serverBackendRoute(prefs)
+        if (WebChatRuntime.handles(chosen.provider)) return listOf(chosen.copy(via = Channel.WEB))
         if (manual) ProviderStick.clear(prefs, chatId)
         val central = applySticky(
             prefs, kind, chatId,

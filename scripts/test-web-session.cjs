@@ -31,14 +31,14 @@ test('prepares text, emits one click, and never repeats a sent token',()=>withPa
   assert.equal(p.run('prepare').status,'prepared');
   assert.equal(p.w.document.querySelector('#input').value,'hello');
   assert.equal(p.run('prepare').status,'prepared');
-  assert.equal(p.run('submit').status,'sent');
-  assert.equal(p.run('submit').status,'sent');
+  assert.equal(p.run('submit').status,'clicked');
+  assert.equal(p.run('submit').status,'clicked');
   assert.equal(p.clicks(),1);
 }));
 test('requires a new assistant response and stable completion evidence',()=>withPage(p=>{
   p.answer('old reply',true);
   p.run('prepare');p.run('submit');p.advance(5000);
-  assert.equal(p.run('poll').status,'waiting');
+  assert.equal(p.run('poll').status,'awaiting_ack');
   const n=p.answer('new reply',true);
   assert.equal(p.run('poll').status,'streaming');
   p.advance(3100);
@@ -113,7 +113,7 @@ test('contenteditable editor is focused before editing and checked before submit
   };
   assert.equal(p.run('prepare','Arabic مرحبا\nsecond line').status,'prepared');
   assert.equal(editor.textContent,'Arabic مرحبا\nsecond line');
-  assert.equal(p.run('submit','Arabic مرحبا\nsecond line').status,'sent');
+  assert.equal(p.run('submit','Arabic مرحبا\nsecond line').status,'clicked');
   assert.equal(edits,1);assert.equal(p.clicks(),1);
 }));
 test('editor claiming success but rejecting text is not considered prepared',()=>withPage(p=>{
@@ -130,4 +130,26 @@ test('disabled and readonly textareas never pass readiness checks',()=>withPage(
   const input=p.w.document.querySelector('#input');input.disabled=true;
   assert.equal(p.run('probe').status,'input_disabled');input.disabled=false;input.readOnly=true;
   assert.equal(p.run('probe').status,'input_disabled');assert.equal(p.clicks(),0);
+}));
+test('click alone is not acknowledgement and never triggers another click',()=>withPage(p=>{
+  p.w.document.querySelector('#send').onclick=()=>{};
+  p.run('prepare');assert.equal(p.run('submit').status,'clicked');
+  assert.equal(p.run('poll').status,'awaiting_ack');
+  assert.equal(p.run('submit').status,'clicked');
+  p.advance(31000);assert.equal(p.run('poll').status,'send_unconfirmed');
+}));
+test('busy site is rejected before overwriting the composer',()=>withPage(p=>{
+  const b=p.w.document.createElement('button');b.className='stop';p.w.document.body.append(b);
+  assert.equal(p.run('probe').status,'site_busy');assert.equal(p.run('prepare').status,'site_busy');
+  assert.equal(p.w.document.querySelector('#input').value,'');assert.equal(p.clicks(),0);
+}));
+test('delivery is acknowledged when the site clears input and starts generating',()=>withPage(p=>{
+  p.run('prepare');p.run('submit');
+  assert.equal(p.run('poll').status,'awaiting_ack');
+  const b=p.w.document.createElement('button');b.className='stop';p.w.document.body.append(b);
+  assert.equal(p.run('poll').status,'sent');assert.equal(p.clicks(),1);
+}));
+test('diagnostics redact conversation titles stored in aria-label',()=>withPage(p=>{
+  const b=p.w.document.createElement('button');b.setAttribute('aria-label','PRIVATE MESSAGE, model Max');p.w.document.body.append(b);
+  const raw=JSON.stringify(p.run('diagnose'));assert.ok(!raw.includes('PRIVATE MESSAGE'));assert.ok(raw.includes('ariaLabelOmitted'));
 }));

@@ -23,7 +23,7 @@ data class WebSiteAdapter(
 object WebSiteAdapters {
     private const val INPUT = "textarea, [contenteditable='true'][role='textbox'], [contenteditable='true'].ProseMirror"
     private const val SEND = "button[data-testid='send-button'], button[aria-label='Send'], button[aria-label='Send message'], button[aria-label='Submit'], button[type='submit']"
-    private const val STOP = "button[data-testid='stop-button'], button[aria-label='Stop'], button[aria-label='Stop generating'], button[aria-label='Stop response']"
+    private const val STOP = "button[data-testid='stop-button'], button[aria-label='Stop'], button[aria-label='Stop generating'], button[aria-label='Stop response'], button[aria-label='Stop generation']"
     private const val COMPLETE = "button[aria-label*='Copy'], button[data-testid*='copy'], button[title*='Copy'], [data-state='complete']"
 
     // Kept explicit: no extracting document.body or treating arbitrary page text as an answer.
