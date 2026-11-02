@@ -145,7 +145,7 @@ fun SettingsScreen(
     var provider by remember {
         mutableStateOf(
             (prefs.getString("provider", "gemini") ?: "gemini").let {
-                if (providerInfo(it).group == ProviderGroup.API) it else "gemini"
+                if (providerInfo(it).supportsAppChat) it else "gemini"
             }
         )
     }
@@ -312,6 +312,11 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(16.dp))
+
+            LionChatSettingsCard(prefs = prefs, onActivate = { id ->
+                provider = id
+                autoRouteSetting = false
+            })
 
             SettingsSection(
                 title = "🔑 المزودات الأساسية (API)",
@@ -1167,15 +1172,6 @@ fun SettingsScreen(
                         }
                     }
                 }
-            }
-
-            // Lion Chat Orange
-            SettingsSection(
-                title = "🦁 ليون شات - العقل البرتقالي",
-                subtitle = "مزود برتقالي مميز - مربوط بالعقل المركزي + أدوات المطور + تبويبات الويب",
-                badge = "برتقالي"
-            ) {
-                LionChatSettingsCard(prefs = prefs)
             }
 
             listOf(ProviderGroup.WEB, ProviderGroup.MEDIA).forEach { group ->

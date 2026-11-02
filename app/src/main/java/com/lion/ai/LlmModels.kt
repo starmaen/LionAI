@@ -2,6 +2,12 @@ package com.lion.ai
 
 /** يجلب قائمة الموديلات الحالية من المزود. */
 internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: String): List<String> {
+        if (WebChatRuntime.handles(provider)) {
+            val prefs = WebChatRuntime.prefs() ?: return emptyList()
+            return if (provider == WebChatRuntime.HUB) WebChatRuntime.members(prefs)
+                .map { WebChatRuntime.model(prefs, it.id) }.distinct()
+            else listOf(WebChatRuntime.model(prefs, provider)).filter { it.isNotBlank() }
+        }
         val apiKey = rawKey.filterNot { it.isWhitespace() }
         val bearer = mapOf("Authorization" to "Bearer $apiKey")
         val ids: List<String> = when (provider) {

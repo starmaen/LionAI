@@ -1,8 +1,6 @@
 package com.lion.ai
 
 import android.content.SharedPreferences
-import com.lion.ai.core.WebProviderAdapter
-import com.lion.ai.core.WebProvidersPrefs
 import org.json.JSONObject
 
 /**
@@ -190,7 +188,7 @@ object CentralBrain {
         val plannedProviders = planned.map { it.provider }.toSet()
         val preferred = SmartRouter.candidates(kind).associateBy { it.provider }
         return PROVIDERS
-            .filter { it.group == ProviderGroup.API }
+            .filter { it.group == ProviderGroup.API || (it.group == ProviderGroup.WEB && prefs.getBoolean(WebChatRuntime.CENTRAL, true)) }
             .filter { SmartRouter.available(prefs, it.id) && it.id !in plannedProviders }
             .map { info ->
                 val model = preferred[info.id]?.model?.takeIf { it.isNotBlank() }

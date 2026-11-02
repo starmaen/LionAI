@@ -84,7 +84,7 @@ Column(
             )
         }
     }
-    PROVIDERS.filter { it.group == ProviderGroup.API && enabled(it.id) }.forEach { info ->
+    PROVIDERS.filter { it.supportsAppChat && enabled(it.id) }.forEach { info ->
         val configured = modelFor(info)
         Row(
             modifier = Modifier
@@ -101,7 +101,7 @@ Column(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     info.label + (if (info.webviewUrl != null) "  🌐" else if (info.free) "  🟢" else "  🔵"),
-                    color = Color.White,
+                    color = if (WebChatRuntime.handles(info.id)) Color(0xFFFF6D00) else Color.White,
                     fontSize = 14.sp
                 )
                 Text(

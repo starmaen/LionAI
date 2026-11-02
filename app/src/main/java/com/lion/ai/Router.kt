@@ -381,6 +381,7 @@ object SmartRouter {
     /** هل المزود + الموديل معاً جديران بالأسئلة التي تحتاج دقة؟ */
     fun isReliableModel(provider: String, model: String): Boolean {
         if (!isTrustedFactual(provider)) return false
+        if (WebChatRuntime.handles(provider)) return WebChatRuntime.available(prefs, provider)
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
         val id = model.ifBlank { info.defaultModel }.lowercase(Locale.ROOT)
         return WEAK_MODEL_HINTS.none { id == it || id.contains(it) }
@@ -394,6 +395,7 @@ object SmartRouter {
 
     fun available(prefs: SharedPreferences, provider: String): Boolean {
         if (!providerEnabled(prefs, provider)) return false
+        if (WebChatRuntime.handles(provider)) return WebChatRuntime.available(prefs, provider)
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
         if (provider == "custom") {
             return (prefs.getString("endpoint_custom", "") ?: "").trim().isNotEmpty()
@@ -428,7 +430,8 @@ object SmartRouter {
     ): List<Route> {
         // موديل المزود الذي اخترته/حدّثته من قائمة النماذج يتقدّم على الموديل الافتراضي المكتوب في القوائم
         // (إلا في الصور حيث يلزم موديل يدعم الرؤية).
-        val availableRoutes = candidates(kind).filter { available(prefs, it.provider) }.map {
+        val webRoutes = if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) emptyList() else WebChatRuntime.routes(prefs)
+        val availableRoutes = (webRoutes + candidates(kind)).filter { available(prefs, it.provider) }.map {
             if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) it else withUserModel(prefs, it)
         }
         val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
@@ -499,6 +502,7 @@ object SmartRouter {
     private val explored = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private fun withUserModel(prefs: SharedPreferences, route: Route): Route {
+        if (WebChatRuntime.isWeb(route.provider)) return route.copy(model = WebChatRuntime.model(prefs, route.provider))
         val saved = (prefs.getString("model_${route.provider}", "") ?: "").trim()
         return if (saved.isNotBlank()) route.copy(model = saved) else route
     }

@@ -70,6 +70,7 @@ import kotlinx.coroutines.withContext
 
 /** مجموعات المزودات التي تظهر كأزرار تحت صندوق الكتابة. */
 enum class HubCategory(val icon: String, val label: String, val hint: String) {
+    LION("🦁", "Lion Chat", "ربط مزودي الويب بخلفيات الخادم داخل الشات"),
     INDEPENDENT("🔑", "مستقل", "مزودات API مباشرة بمفاتيحها"),
     LOCAL("🖥️", "محلي", "الخادم المحلي داخل التطبيق"),
     EXTERNAL("☁️", "خارجي", "بوابة الخادم الخارجي (Cloudflare/Worker)"),
@@ -86,7 +87,7 @@ private val Line = Color(0xFF2A2A2A)
 fun hubKindOf(provider: String, prefs: SharedPreferences, via: String = Channel.AUTO): HubCategory {
     if (provider == RoutePolicy.LOCAL_PROXY || via == Channel.LOCAL) return HubCategory.LOCAL
     val info = providerInfo(provider)
-    if (info.group == ProviderGroup.WEB) return HubCategory.WEB
+    if (WebChatRuntime.handles(provider)) return HubCategory.LION
     if (info.group == ProviderGroup.MEDIA) return HubCategory.MEDIA
     if (via == Channel.GATEWAY) return HubCategory.EXTERNAL
     return if (WebGateway.supports(provider) && WebGateway.shouldRoute(provider)) {
@@ -169,6 +170,7 @@ fun HubChipsRow(
             HubPill(
                 "${category.icon} ${category.label}",
                 selected = currentKind == category,
+                accent = if (category == HubCategory.LION) Color(0xFFFF6D00) else Gold,
                 onClick = { onOpenCategory(category) }
             )
         }
@@ -336,7 +338,8 @@ fun ProviderHubSheet(
         it.group == ProviderGroup.API && it.id != RoutePolicy.LOCAL_PROXY && !it.custom
     }
     val backends = PROVIDERS.filter {
-        it.group == ProviderGroup.API && it.id != RoutePolicy.LOCAL_PROXY && it.id != RoutePolicy.CUSTOM
+        it.supportsAppChat && it.id != RoutePolicy.LOCAL_PROXY && it.id != RoutePolicy.CUSTOM &&
+            (!WebChatRuntime.handles(it.id) || WebChatRuntime.available(prefs, it.id))
     }
     val web = PROVIDERS.filter { it.group == ProviderGroup.WEB }
     val media = PROVIDERS.filter { it.group == ProviderGroup.MEDIA }
@@ -397,6 +400,12 @@ fun ProviderHubSheet(
                     .padding(bottom = 18.dp, top = 8.dp)
             ) {
                 when (category) {
+                    HubCategory.LION -> {
+                        LionChatSettingsCard(prefs, onActivate = { id ->
+                            onSelectProvider(id)
+                            onChanged()
+                        })
+                    }
                     HubCategory.EXTERNAL -> {
                         ChannelCard(prefs, selectedProvider) { onChanged() }
                         HubCard(
@@ -563,6 +572,12 @@ fun ProviderHubSheet(
                     }
 
                     HubCategory.WEB, HubCategory.MEDIA -> {
+                        if (category == HubCategory.WEB) {
+                            LionChatSettingsCard(prefs, onActivate = { id ->
+                                onSelectProvider(id)
+                                onChanged()
+                            })
+                        }
                         val items = if (category == HubCategory.WEB) web else media
                         items.forEach { info ->
                             ProviderRow(

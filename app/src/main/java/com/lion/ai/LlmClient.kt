@@ -68,6 +68,7 @@ object LlmClient {
     private fun currentReadTimeout(): Int = threadReadTimeout.get() ?: LLM_READ_TIMEOUT
 
     fun reloadOverrides(prefs: android.content.SharedPreferences) {
+        WebChatRuntime.load(prefs)
         val base = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
         val imported = runCatching {
             ImportedProviders.endpoints(prefs)
@@ -231,6 +232,50 @@ object LlmClient {
         forceDirect: Boolean = false,
         via: String = Channel.AUTO
     ): String {
+        if (WebChatRuntime.handles(provider)) {
+            val prefs = WebChatRuntime.prefs()
+                ?: return "⚠️ افتح إعدادات Lion Chat أولاً."
+            if (!providerEnabled(prefs, provider) || !WebChatRuntime.available(prefs, provider)) {
+                return "⚠️ فعّل Lion Chat والمزود واربطه بموديل فعلي من Cloudflare، ثم فعّل قناة الخادم الخارجي."
+            }
+            if (image != null) return "⚠️ هذا الربط نصي؛ اختر مزود رؤية لإرسال الصور."
+            val members = if (provider == WebChatRuntime.HUB) {
+                WebChatRuntime.members(prefs).filter { providerEnabled(prefs, it.id) }
+            } else listOf(providerInfo(provider))
+            val routes = members.map { Route(it.id, WebChatRuntime.model(prefs, it.id)) }
+            val ordered = if (prefs.getBoolean(WebChatRuntime.CENTRAL, true)) {
+                CentralBrain.rankRoutes(prefs, SmartRouter.classify(message, false, 0, null), routes, chatModeHint ?: ChatMode.GENERAL)
+            } else routes
+            val config = WebGateway.load(prefs)
+            val errors = mutableListOf<String>()
+            val deadline = System.currentTimeMillis() +
+                (if (readTimeoutMs > 0) readTimeoutMs else LLM_READ_TIMEOUT).toLong()
+            for (route in ordered) {
+                val remaining = (deadline - System.currentTimeMillis()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                if (remaining <= 0) break
+                if (Thread.currentThread().isInterrupted) return "⚠️ أُلغي الطلب."
+                val started = System.currentTimeMillis()
+                val reply = try {
+                    withReadTimeout(remaining) {
+                        callOpenAiCompatible(
+                            WebGateway.chatUrl(config.url), config.token, route.model, normalize(history), message,
+                            maxTokens = LLM_OPENAI_MAX_TOKENS, systemPrompt = systemPrompt
+                        )
+                    }
+                } catch (e: Exception) {
+                    "⚠️ تعذّر الرد من ${route.model}: ${e.message ?: e.javaClass.simpleName}"
+                }
+                val ok = reply.isNotBlank() && !isErrorReply(reply)
+                SmartRouter.record(route, ok, System.currentTimeMillis() - started)
+                if (ok) {
+                    recordSuccess(provider, route.model)
+                    return reply
+                }
+                lastErrors[route.provider] = reply.take(200)
+                errors += "${route.model}: ${reply.take(180)}"
+            }
+            return "⚠️ لم يستجب أي مزود ويب مفعّل.\n" + errors.joinToString("\n")
+        }
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
         val gateway = WebGateway.current()

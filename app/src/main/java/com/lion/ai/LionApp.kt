@@ -207,7 +207,7 @@ fun LionApp() {
     var tabs by remember {
         mutableStateOf(
             TabsStore.load(prefs).map { tab ->
-                if (providerInfo(tab.provider).group == ProviderGroup.API) tab
+                if (providerInfo(tab.provider).supportsAppChat) tab
                 else tab.copy(provider = "gemini", autoRoute = true)
             }
         )
@@ -235,7 +235,7 @@ fun LionApp() {
                 id = TabsStore.newId(),
                 name = "محادثة 1",
                 chatId = currentChat,
-                provider = if (providerInfo(selectedProvider).group == ProviderGroup.API) selectedProvider else "gemini",
+                provider = if (providerInfo(selectedProvider).supportsAppChat) selectedProvider else "gemini",
                 autoRoute = autoRoute
             )
         )
@@ -260,7 +260,7 @@ fun LionApp() {
 
     fun syncActiveTab() {
         val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
-        val provider = if (providerInfo(selectedProvider).group == ProviderGroup.API) selectedProvider else tab.provider
+        val provider = if (providerInfo(selectedProvider).supportsAppChat) selectedProvider else tab.provider
         val updated = tab.copy(provider = provider, autoRoute = autoRoute)
         tabs = tabs.map { if (it.id == updated.id) updated else it }
         TabsStore.save(prefs, tabs)
@@ -284,7 +284,7 @@ fun LionApp() {
         stashStateFor(activeTabId)
         activeTabId = tabId
         TabsStore.saveActive(prefs, tabId)
-        val provider = if (providerInfo(tab.provider).group == ProviderGroup.API) tab.provider else "gemini"
+        val provider = if (providerInfo(tab.provider).supportsAppChat) tab.provider else "gemini"
         selectedProvider = provider
         autoRoute = tab.autoRoute
         prefs.edit().putString("provider", provider).putBoolean("auto_route", tab.autoRoute).apply()
@@ -298,7 +298,7 @@ fun LionApp() {
     fun addTab() {
         if (tabs.size >= TabsStore.MAX_TABS) return
         val chatId = ChatRepository.newId()
-        val provider = if (providerInfo(selectedProvider).group == ProviderGroup.API) selectedProvider else "gemini"
+        val provider = if (providerInfo(selectedProvider).supportsAppChat) selectedProvider else "gemini"
         val tab = ChatTab(
             id = TabsStore.newId(),
             name = if (autoRoute) "🧠 تلقائي" else providerInfo(provider).shortName,
@@ -334,7 +334,7 @@ fun LionApp() {
             val target = tabs.getOrNull(index.coerceAtMost(tabs.size - 1)) ?: tabs.first()
             activeTabId = target.id
             TabsStore.saveActive(prefs, target.id)
-            val provider = if (providerInfo(target.provider).group == ProviderGroup.API) target.provider else "gemini"
+            val provider = if (providerInfo(target.provider).supportsAppChat) target.provider else "gemini"
             selectedProvider = provider
             autoRoute = target.autoRoute
             prefs.edit().putString("provider", provider).putBoolean("auto_route", target.autoRoute).apply()
@@ -372,7 +372,7 @@ fun LionApp() {
                 TabsStore.save(prefs, tabs)
             }
             // نزامن مزود العلامة مع شاشة المحادثة حتى لا تظهر واجهة مزود ويُنفَّذ طلب مزود آخر.
-            val provider = if (providerInfo(tab.provider).group == ProviderGroup.API) tab.provider else "gemini"
+            val provider = if (providerInfo(tab.provider).supportsAppChat) tab.provider else "gemini"
             selectedProvider = provider
             autoRoute = tab.autoRoute
             prefs.edit().putString("provider", provider).putBoolean("auto_route", tab.autoRoute).apply()
@@ -1756,8 +1756,9 @@ fun LionApp() {
             sheetState = modelSheetState,
             autoRoute = autoRoute,
             selectedProvider = selectedProvider,
-            enabled = { providerEnabled(prefs, it) },
+            enabled = { providerEnabled(prefs, it) && (!WebChatRuntime.handles(it) || WebChatRuntime.available(prefs, it)) },
             modelFor = { info ->
+                if (WebChatRuntime.isWeb(info.id)) WebChatRuntime.model(prefs, info.id) else
                 if (info.id == RoutePolicy.LOCAL_PROXY) {
                     // نعرض المزود الخلفي الفعلي، لا اسم البروكسي أو موديله الافتراضي.
                     val backend = LocalAIProxy.backendProvider(prefs)

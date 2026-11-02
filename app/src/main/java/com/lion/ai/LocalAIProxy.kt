@@ -24,6 +24,7 @@ object LocalAIProxy {
 
     /** يبدأ الخادم وي regrese المنفذ المستخدم. إن كان يعمل déjà يعيد المنفذ الحالي. */
     fun start(context: Context, prefs: SharedPreferences): Int {
+        LlmClient.reloadOverrides(prefs)
         synchronized(this) {
             if (running) return port
             try {
@@ -235,7 +236,7 @@ object LocalAIProxy {
 
     private fun autoProviders(prefs: SharedPreferences): List<ProviderInfo> =
         PROVIDERS.filter {
-            it.group == ProviderGroup.API && it.id != "local_proxy" && it.id != "custom" &&
+            it.supportsAppChat && it.id != "local_proxy" && it.id != "custom" &&
                 SmartRouter.available(prefs, it.id)
         }
 

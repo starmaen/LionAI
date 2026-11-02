@@ -18,7 +18,7 @@ object RoutePolicy {
     fun selectedProvider(prefs: SharedPreferences): String {
         val raw = (prefs.getString("provider", "gemini") ?: "gemini").trim().ifBlank { "gemini" }
         val info = PROVIDERS.firstOrNull { it.id == raw }
-        return if (info != null && info.group == ProviderGroup.API) raw else "gemini"
+        return if (info != null && info.supportsAppChat) raw else "gemini"
     }
 
     fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean("auto_route", true)
@@ -27,7 +27,8 @@ object RoutePolicy {
         isManual(prefs) && prefs.getBoolean("manual_assist", false)
 
     fun modelFor(prefs: SharedPreferences, provider: String): String =
-        (prefs.getString("model_$provider", "") ?: "").trim()
+        if (WebChatRuntime.isWeb(provider)) WebChatRuntime.model(prefs, provider)
+        else (prefs.getString("model_$provider", "") ?: "").trim()
 
     // ===== قنوات التنفيذ (مباشر / خادم خارجي / خادم محلي) =====
     //
@@ -76,6 +77,7 @@ object RoutePolicy {
         route: Route,
         allowLocal: Boolean = true
     ): List<Route> {
+        if (WebChatRuntime.handles(route.provider)) return listOf(route.copy(via = Channel.GATEWAY))
         if (route.provider == LOCAL_PROXY) return listOf(Route(LOCAL_PROXY, "", Channel.LOCAL))
         if (route.provider == CUSTOM) return listOf(route.copy(via = Channel.DIRECT))
         return channels(prefs, route.provider).mapNotNull { via ->

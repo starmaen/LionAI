@@ -640,6 +640,7 @@ private fun ToolManagerTab(
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
         Text("🧠 مدير الأدوات", color = T_GOLD, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        LionChatSettingsCard(prefs)
         Text(
             "يستخدم النموذج بروتوكول Function Calling نصياً موحّداً يعمل مع جميع مزودات API، دون الحاجة لدعم خاص من كل مزود.",
             color = T_MUTED,

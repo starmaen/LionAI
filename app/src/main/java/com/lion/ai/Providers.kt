@@ -41,15 +41,15 @@ val PROVIDERS = listOf(
     ProviderInfo(
         id = "lion_chat",
         label = "🦁 Lion Chat",
-        tagline = "العقل البرتقالي - Arena + كل تبويبات الويب + أدوات المطور",
+        tagline = "ربط مزودي الويب بخلفيات الخادم المختارة + أدوات المطور",
         docsUrl = "https://arena.ai/text/direct",
-        defaultModel = "lion-brain-v1",
+        defaultModel = "",
         free = true,
         shortName = "Lion",
         keyless = true,
         custom = true,
         category = "lion",
-        models = listOf("lion-brain-v1", "arena-direct", "claude-web", "deepseek-web", "chatgpt-web", "gemini-web")
+        models = emptyList()
     ),
     // ===== مزودات API (مفتاح أو بدون مفتاح) =====
     ProviderInfo(
