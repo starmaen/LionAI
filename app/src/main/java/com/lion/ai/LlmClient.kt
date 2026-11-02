@@ -165,6 +165,7 @@ object LlmClient {
         model: String,
         accountId: String
     ): String? {
+        if (WebChatRuntime.handles(provider)) return null
         val reply = ask(userText, apiKey, provider, emptyList(), model, accountId, null, LLM_IMAGE_EDIT_PROMPT)
         if (isErrorReply(reply)) return null
         return stripThinking(reply)
@@ -186,6 +187,7 @@ object LlmClient {
         model: String,
         accountId: String
     ): String? {
+        if (WebChatRuntime.handles(provider)) return null
         val arabic = userText.any { it in '\u0600'..'\u06FF' }
         val langNote = if (arabic) "اكتب العنوان بالعربية.\n" else ""
         val prompt = "اكتب عنواناً لهذه المحادثة.\n" + langNote +
@@ -205,6 +207,7 @@ object LlmClient {
         accountId: String,
         nowMillis: Long
     ): String? {
+        if (WebChatRuntime.handles(provider)) return null
         val now = SimpleDateFormat("EEEE yyyy-MM-dd HH:mm", Locale.ENGLISH).format(Date(nowMillis)) +
             " (" + TimeZone.getDefault().id + ")"
         val reply = ask(userText, apiKey, provider, emptyList(), model, accountId, null, LLM_INTENT_PROMPT.replace("{NOW}", now))
@@ -233,48 +236,36 @@ object LlmClient {
         via: String = Channel.AUTO
     ): String {
         if (WebChatRuntime.handles(provider)) {
-            val prefs = WebChatRuntime.prefs()
-                ?: return "⚠️ افتح إعدادات Lion Chat أولاً."
-            if (!providerEnabled(prefs, provider) || !WebChatRuntime.available(prefs, provider)) {
-                return "⚠️ فعّل Lion Chat والمزود واربطه بموديل فعلي من Cloudflare، ثم فعّل قناة الخادم الخارجي."
-            }
-            if (image != null) return "⚠️ هذا الربط نصي؛ اختر مزود رؤية لإرسال الصور."
-            val members = if (provider == WebChatRuntime.HUB) {
-                WebChatRuntime.members(prefs).filter { providerEnabled(prefs, it.id) }
-            } else listOf(providerInfo(provider))
-            val routes = members.map { Route(it.id, WebChatRuntime.model(prefs, it.id)) }
+            val prefs = WebChatRuntime.prefs() ?: return "⚠️ افتح إعدادات جلسات الويب أولاً."
+            if (!WebChatRuntime.available(prefs, provider)) return "⚠️ فعّل جلسات الويب والموقع المطلوب من Lion Chat."
+            if (image != null) return "⚠️ إرسال الصور آلياً إلى الصفحات غير مدعوم؛ افتح الصفحة لرفع الصورة يدوياً."
+            val prompt = WebSessionTransport.prompt(systemPrompt, normalize(history), message)
+            if (prompt.length > 60_000) return "⚠️ سياق المحادثة أكبر من حد النقل الآمن للصفحة (60000 حرف). اختصره أو ابدأ محادثة جديدة."
+            val members = if (provider == WebChatRuntime.HUB) WebChatRuntime.members(prefs)
+                else listOf(providerInfo(provider))
+            val routes = members.map { Route(it.id, "web-session", Channel.WEB) }
             val ordered = if (prefs.getBoolean(WebChatRuntime.CENTRAL, true)) {
                 CentralBrain.rankRoutes(prefs, SmartRouter.classify(message, false, 0, null), routes, chatModeHint ?: ChatMode.GENERAL)
             } else routes
-            val config = WebGateway.load(prefs)
+            val deadline = System.currentTimeMillis() + (if (readTimeoutMs > 0) readTimeoutMs else 90_000)
             val errors = mutableListOf<String>()
-            val deadline = System.currentTimeMillis() +
-                (if (readTimeoutMs > 0) readTimeoutMs else LLM_READ_TIMEOUT).toLong()
             for (route in ordered) {
-                val remaining = (deadline - System.currentTimeMillis()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                if (remaining <= 0) break
-                if (Thread.currentThread().isInterrupted) return "⚠️ أُلغي الطلب."
+                val remaining = (deadline - System.currentTimeMillis()).coerceAtMost(180_000).toInt()
+                if (remaining <= 0 || Thread.currentThread().isInterrupted) break
                 val started = System.currentTimeMillis()
-                val reply = try {
-                    withReadTimeout(remaining) {
-                        callOpenAiCompatible(
-                            WebGateway.chatUrl(config.url), config.token, route.model, normalize(history), message,
-                            maxTokens = LLM_OPENAI_MAX_TOKENS, systemPrompt = systemPrompt
-                        )
-                    }
-                } catch (e: Exception) {
-                    "⚠️ تعذّر الرد من ${route.model}: ${e.message ?: e.javaClass.simpleName}"
+                val result = WebSessionTransport.exchange(route.provider, prompt, remaining)
+                SmartRouter.record(route, result.success, System.currentTimeMillis() - started)
+                prefs.edit().putBoolean("web_session_verified_${route.provider}", result.success).apply()
+                if (result.success) {
+                    recordSuccess(provider, "web-session/${route.provider}")
+                    return result.text
                 }
-                val ok = reply.isNotBlank() && !isErrorReply(reply)
-                SmartRouter.record(route, ok, System.currentTimeMillis() - started)
-                if (ok) {
-                    recordSuccess(provider, route.model)
-                    return reply
-                }
-                lastErrors[route.provider] = reply.take(200)
-                errors += "${route.model}: ${reply.take(180)}"
+                lastErrors[route.provider] = result.text.take(200)
+                errors += "${providerInfo(route.provider).shortName}: ${result.text}"
+                // Never silently re-send to another site after uncertain delivery.
+                if (result.submitted) return result.text
             }
-            return "⚠️ لم يستجب أي مزود ويب مفعّل.\n" + errors.joinToString("\n")
+            return "⚠️ لم يصل جواب من جلسات الويب.\n" + errors.joinToString("\n")
         }
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }

@@ -70,7 +70,7 @@ import kotlinx.coroutines.withContext
 
 /** مجموعات المزودات التي تظهر كأزرار تحت صندوق الكتابة. */
 enum class HubCategory(val icon: String, val label: String, val hint: String) {
-    LION("🦁", "Lion Chat", "ربط مزودي الويب بخلفيات الخادم داخل الشات"),
+    LION("🦁", "Lion Chat", "جلسات مواقع الويب نفسها داخل الشات"),
     INDEPENDENT("🔑", "مستقل", "مزودات API مباشرة بمفاتيحها"),
     LOCAL("🖥️", "محلي", "الخادم المحلي داخل التطبيق"),
     EXTERNAL("☁️", "خارجي", "بوابة الخادم الخارجي (Cloudflare/Worker)"),

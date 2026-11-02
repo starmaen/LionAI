@@ -995,6 +995,8 @@ fun LionApp() {
                 // كاملة حتى لا ينتهي وقت العميل قبل أن يصل البديل.
                 val routeBudget = if (manualMode && route.provider == chosenProvider) {
                     SmartRouter.timeoutMs(kind)
+                } else if (WebChatRuntime.handles(route.provider)) {
+                    90_000L
                 } else if (route.provider == RoutePolicy.LOCAL_PROXY) {
                     // الخادم المحلي يملك سلسلة بدائل داخلية: نمنحه مهلة المهمة
                     // كاملة مع هامش إضافي حتى لا ينقطع قبل أن يصل بديله.

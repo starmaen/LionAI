@@ -1,51 +1,76 @@
 package com.lion.ai
 
-import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.MockResponse
-import java.util.concurrent.TimeUnit
-import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
-/** A real local HTTP server, not a mocked successful response inside the runtime. */
+/** Browser broker tests. DOM execution is covered separately by scripts/test-web-session.cjs. */
 class WebChatTransportTest {
-    @Test fun gatewayReceivesHistorySystemAndExactModelAndReturnsReply() {
-        val server = MockWebServer()
-        server.enqueue(MockResponse()
-            .setHeader("Content-Type", "application/json; charset=utf-8")
-            .setBody("""{"choices":[{"message":{"content":"وصل الرد"}}]}"""))
-        server.start()
-        try {
-            val prefs = FakePrefs()
-            prefs.edit().putBoolean("web_chat_enabled", true)
-                .putBoolean("web_chat_enabled_claude_web", true)
-                .putString("web_chat_model_claude_web", "custom_adapter/actual-model")
-                .putString(WebGateway.KEY_URL, server.url("/v1").toString())
-                .putString(WebGateway.KEY_TOKEN, "test-relay-token")
-                .putString(WebGateway.KEY_MODE, WebGateway.MODE_ONLY).apply()
-            LlmClient.reloadOverrides(prefs)
-            val reply = LlmClient.ask("سؤال جديد", "", "claude_web",
-                listOf(ChatTurn("user", "سؤال سابق"), ChatTurn("assistant", "رد سابق")),
-                systemPrompt = "تعليمات الأدوات والضوابط", readTimeoutMs = 5000)
-            assertEquals("وصل الرد", reply)
-            val recorded = requireNotNull(server.takeRequest(5, TimeUnit.SECONDS))
-            assertEquals("POST", recorded.method)
-            assertEquals("/v1/chat/completions", recorded.path)
-            val request = JSONObject(recorded.body.readUtf8())
-            assertEquals("Bearer test-relay-token", recorded.getHeader("Authorization"))
-            assertEquals("custom_adapter/actual-model", request.getString("model"))
-            val messages = request.getJSONArray("messages")
-            assertEquals("تعليمات الأدوات والضوابط", messages.getJSONObject(0).getString("content"))
-            assertEquals("سؤال سابق", messages.getJSONObject(1).getString("content"))
-            assertEquals("رد سابق", messages.getJSONObject(2).getString("content"))
-            assertEquals("سؤال جديد", messages.getJSONObject(3).getString("content"))
-            // Disabling the route must block sending even if its model remains configured.
-            prefs.edit().putBoolean("web_chat_enabled_claude_web", false).apply()
-            assertTrue(LlmClient.isErrorReply(LlmClient.ask("لا ترسل", "", "claude_web", emptyList())))
-            assertEquals(1, server.requestCount)
-        } finally {
-            server.shutdown()
-            LlmClient.reloadOverrides(FakePrefs())
+    private var attached: WebSessionTransport.Host? = null
+    private fun attach(h: WebSessionTransport.Host) { attached = h; WebSessionTransport.attach(h) }
+    @After fun cleanup() {
+        attached?.let { WebSessionTransport.detach(it) }
+        LlmClient.reloadOverrides(FakePrefs())
+    }
+    private open class Browser : WebSessionTransport.Host {
+        var requests = mutableListOf<WebSessionTransport.Request>()
+        override fun isUiThread() = false
+        override fun open(provider: String) = Unit
+        override fun cancel(token: String) = Unit
+        override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
+            requests.add(request)
+            done(WebSessionTransport.Reply("وصل الرد من الصفحة", true, true))
         }
+    }
+    @Test fun actualAskUsesBrowserNotGatewayAndPreservesContext() {
+        val browser = Browser(); attach(browser)
+        val prefs = FakePrefs()
+        prefs.edit().putBoolean(WebChatRuntime.ENABLED, true)
+            .putBoolean("web_chat_enabled_claude_web", true)
+            .putString(WebGateway.KEY_URL, "https://must-not-be-called.invalid")
+            .putString("web_chat_model_claude_web", "obsolete/api-model").apply()
+        LlmClient.reloadOverrides(prefs)
+        val reply = LlmClient.ask("سؤال جديد", "", "claude_web",
+            listOf(ChatTurn("user", "سؤال سابق"), ChatTurn("assistant", "رد سابق")),
+            systemPrompt = "تعليمات الأدوات والضوابط", readTimeoutMs = 2000)
+        assertEquals("وصل الرد من الصفحة", reply)
+        val request = browser.requests.single()
+        assertEquals("claude_web", request.provider)
+        assertTrue(request.prompt.contains("تعليمات الأدوات والضوابط"))
+        assertTrue(request.prompt.contains("سؤال سابق"))
+        assertTrue(request.prompt.contains("رد سابق"))
+        assertTrue(request.prompt.endsWith("سؤال جديد"))
+        prefs.edit().putBoolean("web_chat_enabled_claude_web", false).apply()
+        assertTrue(LlmClient.isErrorReply(LlmClient.ask("لا ترسل", "", "claude_web", emptyList())))
+        assertEquals(1, browser.requests.size)
+    }
+    @Test fun missingHostFailsRatherThanSilentlyCallingAnApi() {
+        assertFalse(WebSessionTransport.exchange("arena", "hello", 1000).success)
+    }
+    @Test fun neverWaitOnUiThread() {
+        attach(object : Browser() { override fun isUiThread() = true })
+        assertFalse(WebSessionTransport.exchange("arena", "hello", 1000).success)
+    }
+    @Test fun onlyOneRequestOwnsTheBrowserAndLateCallbacksCannotReplaceReply() {
+        val started = CountDownLatch(1)
+        var complete: ((WebSessionTransport.Reply) -> Unit)? = null
+        attach(object : Browser() {
+            override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
+                complete = done; started.countDown()
+            }
+        })
+        var result: WebSessionTransport.Reply? = null
+        val t = Thread { result = WebSessionTransport.exchange("arena", "one", 2000) }
+        t.start()
+        assertTrue(started.await(1, TimeUnit.SECONDS))
+        try {
+            assertFalse(WebSessionTransport.exchange("claude_web", "two", 1000).success)
+            complete!!(WebSessionTransport.Reply("first", true, true))
+            complete!!(WebSessionTransport.Reply("late", true, true))
+            t.join(2000)
+            assertEquals("first", result?.text)
+        } finally { t.interrupt(); t.join(2000) }
     }
 }

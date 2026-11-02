@@ -35,6 +35,7 @@ object Channel {
     const val DIRECT = "direct"
     const val GATEWAY = "gateway"
     const val LOCAL = "local"
+    const val WEB = "web_session"
 
     /** الترتيب الافتراضي للمحاولة: الأسرع أولاً، والخادم المحلي شبكة الأمان الأخيرة. */
     val ORDER = listOf(DIRECT, GATEWAY, LOCAL)
@@ -43,6 +44,7 @@ object Channel {
         DIRECT -> "مباشر"
         GATEWAY -> "خادم خارجي"
         LOCAL -> "خادم محلي"
+        WEB -> "جلسة الموقع"
         else -> "تلقائي"
     }
 
@@ -50,6 +52,7 @@ object Channel {
         DIRECT -> "🔌"
         GATEWAY -> "☁️"
         LOCAL -> "🖥️"
+        WEB -> "🦁"
         else -> "🧭"
     }
 }

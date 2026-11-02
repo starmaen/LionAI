@@ -188,7 +188,7 @@ object CentralBrain {
         val plannedProviders = planned.map { it.provider }.toSet()
         val preferred = SmartRouter.candidates(kind).associateBy { it.provider }
         return PROVIDERS
-            .filter { it.group == ProviderGroup.API || (it.group == ProviderGroup.WEB && prefs.getBoolean(WebChatRuntime.CENTRAL, true)) }
+            .filter { it.group == ProviderGroup.API || (it.group == ProviderGroup.WEB && prefs.getBoolean(WebChatRuntime.CENTRAL, true) && prefs.getBoolean("web_session_verified_${it.id}", false)) }
             .filter { SmartRouter.available(prefs, it.id) && it.id !in plannedProviders }
             .map { info ->
                 val model = preferred[info.id]?.model?.takeIf { it.isNotBlank() }

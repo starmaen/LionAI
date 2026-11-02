@@ -77,7 +77,7 @@ object RoutePolicy {
         route: Route,
         allowLocal: Boolean = true
     ): List<Route> {
-        if (WebChatRuntime.handles(route.provider)) return listOf(route.copy(via = Channel.GATEWAY))
+        if (WebChatRuntime.handles(route.provider)) return listOf(route.copy(via = Channel.WEB))
         if (route.provider == LOCAL_PROXY) return listOf(Route(LOCAL_PROXY, "", Channel.LOCAL))
         if (route.provider == CUSTOM) return listOf(route.copy(via = Channel.DIRECT))
         return channels(prefs, route.provider).mapNotNull { via ->

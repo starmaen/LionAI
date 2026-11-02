@@ -41,9 +41,9 @@ val PROVIDERS = listOf(
     ProviderInfo(
         id = "lion_chat",
         label = "🦁 Lion Chat",
-        tagline = "ربط مزودي الويب بخلفيات الخادم المختارة + أدوات المطور",
+        tagline = "جلسات المواقع نفسها داخل الشات — دون مزودي API",
         docsUrl = "https://arena.ai/text/direct",
-        defaultModel = "",
+        defaultModel = "web-session",
         free = true,
         shortName = "Lion",
         keyless = true,

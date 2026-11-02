@@ -5,70 +5,60 @@ import org.junit.Test
 
 class WebChatRuntimeTest {
     private fun ready() = FakePrefs().apply {
-        edit().putBoolean("web_chat_enabled", true)
-            .putBoolean("web_chat_enabled_claude_web", true)
-            .putString("web_chat_model_claude_web", "claude/actual-model")
-            .putString(WebGateway.KEY_URL, "https://example.invalid/v1")
-            .putString(WebGateway.KEY_TOKEN, "test-only")
-            .putString(WebGateway.KEY_MODE, WebGateway.MODE_ONLY)
-            .apply()
+        edit().putBoolean(WebChatRuntime.ENABLED, true)
+            .putBoolean("web_chat_enabled_claude_web", true).apply()
     }
-
-    @Test fun webPagesAreNotAutomaticallyChatBackends() {
-        val prefs = FakePrefs()
-        assertFalse(WebChatRuntime.available(prefs, "claude_web"))
-        assertFalse(WebChatRuntime.available(prefs, WebChatRuntime.HUB))
-        assertTrue(WebChatRuntime.members(prefs).isEmpty())
-    }
-
-    @Test fun configuredProvidersParticipateIndividuallyAndAsHub() {
+    @Test fun browserTransportDoesNotRequireGatewayOrApiKey() {
         val prefs = ready()
+        prefs.edit().putBoolean("enabled_web_gateway", false).putBoolean("channel_gateway", false).apply()
         assertTrue(WebChatRuntime.available(prefs, "claude_web"))
         assertTrue(WebChatRuntime.available(prefs, WebChatRuntime.HUB))
-        assertFalse(WebChatRuntime.available(prefs, "chatgpt_web"))
-        assertEquals(listOf("claude_web"), WebChatRuntime.routes(prefs).map { it.provider })
+        assertEquals("web-session", WebChatRuntime.model(prefs, "claude_web"))
     }
-
-    @Test fun allKillSwitchesAreRespected() {
-        for (key in listOf("web_chat_enabled", "web_chat_enabled_claude_web", "enabled_web_gateway", "enabled_claude_web", "channel_gateway")) {
+    @Test fun oldGatewayTogglesDoNotConsentToSendingHistoryToWebsites() {
+        val prefs = FakePrefs()
+        prefs.edit().putBoolean("web_chat_enabled", true)
+            .putBoolean("web_chat_enabled_claude_web", true)
+            .putString("web_chat_model_claude_web", "claude/model").apply()
+        assertFalse(WebChatRuntime.available(prefs, "claude_web"))
+    }
+    @Test fun disabledSitesAndMasterSwitchBlockRequests() {
+        for (key in listOf(WebChatRuntime.ENABLED, "web_chat_enabled_claude_web", "enabled_claude_web")) {
             val prefs = ready()
             prefs.edit().putBoolean(key, false).apply()
-            assertFalse(key, WebChatRuntime.available(prefs, "claude_web"))
+            assertFalse(WebChatRuntime.available(prefs, "claude_web"))
         }
     }
-
-    @Test fun centralOptOutDoesNotDisableManualSelection() {
+    @Test fun centralOnlyReceivesActuallyVerifiedSites() {
         val prefs = ready()
+        assertTrue(WebChatRuntime.routes(prefs).isEmpty())
+        prefs.edit().putBoolean("web_session_verified_claude_web", true).apply()
+        assertEquals(listOf("claude_web"), WebChatRuntime.routes(prefs).map { it.provider })
         prefs.edit().putBoolean(WebChatRuntime.CENTRAL, false).apply()
         assertTrue(WebChatRuntime.routes(prefs).isEmpty())
         assertTrue(WebChatRuntime.available(prefs, "claude_web"))
     }
-
-    @Test fun selectedWebIdentitySurvivesAndCannotLoopIntoLocalProxy() {
+    @Test fun browserIdentitySurvivesRoutingAndLocalProxyCannotRecurse() {
         val prefs = ready()
         prefs.edit().putString("provider", "claude_web").putBoolean("auto_route", false).apply()
         assertEquals("claude_web", RoutePolicy.selectedProvider(prefs))
         assertEquals("claude_web", LocalAIProxy.backendProvider(prefs))
-        assertEquals("claude/actual-model", RoutePolicy.modelFor(prefs, "claude_web"))
-        assertEquals(listOf(Route("claude_web", "claude/actual-model", Channel.GATEWAY)),
-            RoutePolicy.channelVariants(prefs, Route("claude_web", "claude/actual-model")))
+        assertEquals(listOf(Route("claude_web", "web-session", Channel.WEB)),
+            RoutePolicy.channelVariants(prefs, Route("claude_web", "web-session")))
     }
-
-    @Test fun modelIdsKeepFullNamespaceAndRejectMissingNames() {
-        assertTrue(WebChatRuntime.validModel("cfai/@cf/meta/llama-example"))
-        assertFalse(WebChatRuntime.validModel(""))
-        assertFalse(WebChatRuntime.validModel("claude"))
-        assertFalse(WebChatRuntime.validModel("https://claude.ai"))
-        assertFalse(WebChatRuntime.validModel("claude/"))
-        assertFalse(WebChatRuntime.validModel("/model"))
-        assertFalse(WebChatRuntime.validModel("provider/invalid model"))
-    }
-
-    @Test fun registryUsesTheSameIdsAsBrowserPages() {
-        assertEquals(PROVIDERS.filter { it.group == ProviderGroup.WEB }.map { it.id },
-            com.lion.ai.core.WebProviderAdapter.providers.map { it.id })
-        assertTrue(providerInfo("lion_chat").supportsAppChat)
-        assertTrue(providerInfo("claude_web").supportsAppChat)
-        assertFalse(PROVIDERS.first { it.group == ProviderGroup.MEDIA }.supportsAppChat)
+    @Test fun everyChatWebsiteHasItsOwnAdapterAndExactOriginAllowlist() {
+        val ids = PROVIDERS.filter { it.group == ProviderGroup.WEB }.map { it.id }.toSet()
+        assertEquals(ids, WebSiteAdapters.all().map { it.id }.toSet())
+        WebSiteAdapters.all().forEach {
+            assertTrue(it.accepts(it.url))
+            assertFalse(it.accepts("https://evil.example/"))
+            assertFalse(it.accepts(it.url.replace("https:", "http:")))
+            assertTrue(it.input.isNotBlank() && it.send.isNotBlank() && it.answer.isNotBlank())
+        }
+        val claude = requireNotNull(WebSiteAdapters.get("claude_web"))
+        assertFalse(claude.accepts("https://claude.ai.evil.example/"))
+        assertFalse(claude.accepts("https://claude.ai@evil.example/"))
+        assertFalse(claude.accepts("https://evil@claude.ai/"))
+        assertFalse(WebSiteAdapters.get("arena")!!.url.contains("submitPrompt"))
     }
 }

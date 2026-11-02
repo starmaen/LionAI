@@ -1,0 +1,119 @@
+/* Runs only by evaluateJavascript on an allowlisted HTTPS top-level page.
+ * No Java interface, cookie extraction, fetch, or local tool capability. */
+(function () {
+  'use strict';
+  const C = __LION_CONFIG__;
+  const token = __LION_TOKEN__;
+  const action = __LION_ACTION__;
+  const prompt = __LION_PROMPT__;
+  function result(status, extra) { return JSON.stringify(Object.assign({status: status, token: token}, extra || {})); }
+  if (location.protocol !== 'https:' || !C.hosts.includes(location.hostname)) return result('origin');
+  function visible(n) { return !!n && n.getClientRects().length > 0 && getComputedStyle(n).visibility !== 'hidden'; }
+  function nodes(selector, root) { return Array.from((root || document).querySelectorAll(selector)); }
+  function find(selector) { return nodes(selector).find(visible); }
+  function answers() { return nodes(C.answer).filter(visible); }
+  function answerText(n) {
+    if (!n) return '';
+    const clone = n.cloneNode(true);
+    clone.querySelectorAll('button, svg, script, style, [aria-hidden="true"]').forEach(x => x.remove());
+    clone.querySelectorAll('pre').forEach(pre => {
+      const code = pre.querySelector('code') || pre;
+      const language = (code.className || '').match(/language-([a-zA-Z0-9_+-]+)/);
+      pre.replaceWith(document.createTextNode('\n```' + (language ? language[1] : '') + '\n' +
+        code.textContent + '\n```\n'));
+    });
+    clone.querySelectorAll('p, div, li, h1, h2, h3, h4, br').forEach(x => {
+      if (x.tagName === 'BR') x.replaceWith(document.createTextNode('\n'));
+      else x.appendChild(document.createTextNode('\n'));
+    });
+    return (clone.textContent || '').trim();
+  }
+
+  function text(n) { return n ? (n.innerText || n.textContent || '').trim() : ''; }
+  try {
+    if (action === 'diagnose') {
+      function describe(n) {
+        const entry = {tag: n.tagName.toLowerCase()};
+        ['id', 'class', 'role', 'data-testid', 'data-message-role', 'data-message-author-role', 'aria-label', 'type', 'contenteditable'].forEach(k => {
+          const v = n.getAttribute(k);
+          if (v) entry[k] = v.slice(0, 120);
+        });
+        return entry;
+      }
+      return result('diagnostic', {
+        host: location.hostname,
+        inputs: nodes('textarea, [contenteditable="true"]').filter(visible).slice(0, 8).map(describe),
+        buttons: nodes('button, [role="button"]').filter(visible).slice(-40).map(describe),
+        responses: nodes('[data-message-role], [data-message-author-role], [data-role="assistant"], [class*="assistant"], [class*="markdown"], model-response').filter(visible).slice(-20).map(describe)
+      });
+    }
+    const input = find(C.input);
+    if (action === 'probe') return result(input ? 'ready' : 'needs_input');
+    let state = window.__lionSessionRequest;
+    if (action === 'prepare') {
+      if (!input) return result('needs_input');
+      if (state && state.token === token) return result(state.sent ? 'sent' : 'prepared');
+      if (text(input) || (input.value || '').trim()) return result('draft');
+      const old = answers();
+      state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, sawStop: false,
+        last: '', changed: Date.now(), clicks: 0};
+      window.__lionSessionRequest = state;
+      input.focus();
+      if (input.isContentEditable) {
+        // execCommand updates the editor's internal selection and emits an input event.
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(input);
+        selection.removeAllRanges(); selection.addRange(range);
+        if (!document.execCommand('insertText', false, prompt)) {
+          input.textContent = prompt;
+          input.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: prompt}));
+        }
+      } else {
+        const proto = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        setter.call(input, prompt);
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        input.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      return result('prepared');
+    }
+    if (!state || state.token !== token) return result('lost');
+    if (action === 'cancel') {
+      // No automatic clicks on cancellation: stop locally, don't risk another send.
+      delete window.__lionSessionRequest;
+      return result('cancelled');
+    }
+    if (action === 'submit') {
+      if (state.sent) return result('sent');
+      const button = find(C.send);
+      if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return result('needs_send');
+      if (!input || (input.value || text(input)).trim() !== prompt.trim()) return result('draft_changed');
+      state.sent = true; state.clicks++;
+      button.click(); // Exactly one click per token; never retry after uncertain delivery.
+      return result('sent');
+    }
+    if (action === 'poll') {
+      if (!state.sent) return result('not_sent');
+      const list = answers();
+      const last = list[list.length - 1];
+      const value = answerText(last);
+      // Accept only a new assistant turn; never recycle or edit an old answer.
+      const isNew = last && !state.baseline.includes(last) &&
+        (list.length > state.baseline.length || !state.baselineText.includes(value));
+      const stopping = !!find(C.stop);
+      if (stopping) state.sawStop = true;
+      if (!isNew || !value) return result('waiting', {generating: stopping});
+      if (value !== state.last) { state.last = value; state.changed = Date.now(); }
+      const completeInside = !!last.querySelector(C.complete);
+      // Some sites put their copy controls in the parent assistant message container.
+      const parent = last.parentElement;
+      const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
+        nodes(C.answer, parent).length <= 1;
+      const stable = Date.now() - state.changed >= 3000;
+      const completed = !stopping && stable && (state.sawStop || completeInside || completeNearby);
+      return result(completed ? 'complete' : 'streaming', {text: value, observedStop: state.sawStop});
+    }
+    return result('unknown_action');
+  } catch (e) { return result('selector_error', {error: String(e.message || e).slice(0, 160)}); }
+})();
