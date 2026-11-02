@@ -1,48 +1,78 @@
 package com.lion.ai
 
+import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 
-/** The same Activity as the chat owns the browser; closing a side-page no longer kills chat requests. */
+/** One chat surface. Browser stays attached BEHIND it at full viewport size.
+ * Only an explicit session-open action raises the browser above chat for login/manual use.
+ * Do not use GONE, a 1px viewport, or detach the WebView: those break site layout/polling.
+ */
 @Composable
-fun WebSessionPanel() {
+fun WebSessionPanel(content: @Composable () -> Unit) {
     val activity = LocalContext.current as ComponentActivity
+    val keyboard = LocalSoftwareKeyboardController.current
     val prefs = remember(activity) { SecurePrefs.get(activity) }
-    var expanded by remember { mutableStateOf(false) }
+    var showSession by remember { mutableStateOf(false) }
     var label by remember { mutableStateOf("") }
     var host by remember { mutableStateOf<AndroidWebSessionHost?>(null) }
+    fun closeSession() {
+        showSession = false
+        host?.setInteractive(false)
+        keyboard?.hide()
+    }
     DisposableEffect(activity) { onDispose { host?.destroy() } }
-    Surface(color = Color(0xFF20180F)) {
-        Column(Modifier.fillMaxWidth()) {
-            if (label.isNotBlank()) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                    Text(label, color = Color(0xFFFF8A30), fontSize = 11.sp, maxLines = 2, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "تصغير" else "الجلسة") }
-                    TextButton(onClick = { host?.cancelCurrent(); expanded = false }) { Text("إلغاء") }
+    BackHandler(enabled = showSession) { closeSession() }
+
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { context ->
+                FrameLayout(context).also { frame ->
+                    val engine = AndroidWebSessionHost(activity, frame, prefs) { explicitlyOpen, text ->
+                        // Status/stream/error events never open or resize the chat UI.
+                        if (explicitlyOpen) showSession = true
+                        label = text
+                    }
+                    host = engine
+                    WebSessionTransport.attach(engine)
+                }
+            },
+            update = { frame ->
+                frame.descendantFocusability = if (showSession) ViewGroup.FOCUS_AFTER_DESCENDANTS
+                    else ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                frame.importantForAccessibility = if (showSession) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                    else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                host?.setInteractive(showSession)
+            },
+            modifier = Modifier.fillMaxSize()
+                .padding(top = if (showSession) 56.dp else 0.dp)
+                .then(if (showSession) Modifier.windowInsetsPadding(WindowInsets.systemBars) else Modifier)
+                .zIndex(if (showSession) 1f else -1f)
+        )
+        // Opaque full-size Surface also prevents touches falling through to the hidden browser.
+        Surface(modifier = Modifier.fillMaxSize().zIndex(0f), color = Color(0xFF0D0D0D)) {
+            content()
+        }
+        if (showSession) {
+            Surface(modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).zIndex(2f), color = Color(0xFF20180F)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(label, color = Color(0xFFFF8A30), fontSize = 12.sp, maxLines = 2, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { closeSession() }) { Text("العودة للشات") }
                 }
             }
-            AndroidView(
-                factory = { context ->
-                    FrameLayout(context).also { frame ->
-                        val engine = AndroidWebSessionHost(activity, frame, prefs) { visible, text ->
-                            expanded = visible
-                            label = text
-                        }
-                        host = engine
-                        WebSessionTransport.attach(engine)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().height(if (expanded) 360.dp else 1.dp)
-            )
         }
     }
 }

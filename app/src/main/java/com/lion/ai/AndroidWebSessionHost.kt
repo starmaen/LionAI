@@ -29,6 +29,18 @@ internal class AndroidWebSessionHost(
     private val script = activity.assets.open("web-session.js").bufferedReader().use { it.readText() }
     private var pending: Pending? = null
     private var destroyed = false
+    private var interactive = false
+
+    /** Hidden sessions may execute DOM operations but must not steal touch, focus or accessibility. */
+    fun setInteractive(value: Boolean) {
+        interactive = value
+        pool.values.forEach { view ->
+            view.isFocusable = value
+            view.isFocusableInTouchMode = value
+            view.isClickable = value
+            if (!value && view.hasFocus()) view.clearFocus()
+        }
+    }
     private data class Pending(
         val request: WebSessionTransport.Request,
         val adapter: WebSiteAdapter,
@@ -52,6 +64,10 @@ internal class AndroidWebSessionHost(
             chatIds.remove(entry.key)
         }
         val view = WebView(activity)
+        view.isFocusable = interactive
+        view.isFocusableInTouchMode = interactive
+        view.isClickable = interactive
+        view.setOnTouchListener { _, _ -> !interactive }
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -105,7 +121,7 @@ internal class AndroidWebSessionHost(
             val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
             val view = viewFor(adapter)
             if (!adapter.accepts(view.url.orEmpty())) {
-                display(true, "انتظر تحميل الجلسة ثم اضغط التشخيص مجدداً")
+                display(false, "انتظر تحميل الجلسة ثم اضغط التشخيص مجدداً")
                 return@post
             }
             val js = script.replace("__LION_CONFIG__", adapter.json().toString())
@@ -115,7 +131,7 @@ internal class AndroidWebSessionHost(
             view.evaluateJavascript(js) { raw ->
                 val text = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
                 prefs.edit().putString("web_session_dom_$provider", text ?: "تعذّر فحص بنية الصفحة").apply()
-                display(true, "${providerInfo(provider).shortName} • تقرير البنية جاهز للنسخ من إعدادات Lion Chat")
+                display(false, "${providerInfo(provider).shortName} • تقرير البنية جاهز للنسخ من إعدادات Lion Chat")
             }
         }
     }
@@ -139,7 +155,7 @@ internal class AndroidWebSessionHost(
             val p = Pending(request, adapter, view, done, System.currentTimeMillis() + request.timeoutMs)
             pending = p
             status(p, "جارٍ تجهيز جلسة الموقع؛ لا حاجة لمفتاح API")
-            display(true, "${providerInfo(request.provider).shortName} • اتصال بصفحة الويب")
+            display(false, "${providerInfo(request.provider).shortName} • اتصال بصفحة الويب")
             tick(p)
         }
     }
@@ -160,7 +176,7 @@ internal class AndroidWebSessionHost(
             display(false, "${providerInfo(p.adapter.id).shortName} • وصل الرد من الصفحة")
         } else {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", false).apply()
-            display(true, reply.text)
+            display(false, reply.text)
         }
         CookieManager.getInstance().flush()
         p.done(reply)
