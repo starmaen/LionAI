@@ -1,29 +1,19 @@
 package com.lion.ai.core
-
-import android.content.Context
-
-data class WebProvider(
-    val id: String,
-    val name: String,
-    val url: String,
-    val icon: String = "🌐"
-)
-
+import android.content.SharedPreferences
+import com.lion.ai.PROVIDERS
+import com.lion.ai.ProviderGroup
+import com.lion.ai.Route
+data class WebProvider(val id: String, val displayName: String, val url: String, val icon: String = "🌐")
 object WebProviderAdapter {
-    val providers = listOf(
-        WebProvider("arena", "Arena AI", "https://arena.ai/text/direct", "🏟️"),
-        WebProvider("claude_web", "Claude Web", "https://claude.ai", "🧠"),
-        WebProvider("deepseek", "DeepSeek", "https://chat.deepseek.com", "🔮"),
-        WebProvider("chatgpt_web", "ChatGPT Web", "https://chat.openai.com", "💬"),
-        WebProvider("gemini_web", "Gemini Web", "https://gemini.google.com", "✨"),
-        WebProvider("perplexity", "Perplexity", "https://www.perplexity.ai", "🔍"),
-        WebProvider("poe", "Poe", "https://poe.com", "🤖"),
-        WebProvider("you", "You.com", "https://you.com", "🟢")
-    )
-
-    fun getEnabledProviders(context: Context): List<WebProvider> {
-        return providers.filter { WebProvidersPrefs.isProviderEnabled(context, it.id) }
+    fun allWebProviders(): List<WebProvider> {
+        return PROVIDERS.filter { it.group == ProviderGroup.WEB }.map {
+            WebProvider(it.id, it.label, it.webviewUrl ?: "", "🌐")
+        }
     }
-
-    fun isAnyEnabled(context: Context): Boolean = WebProvidersPrefs.isWebEnabled(context)
+    fun toLionRoutes(prefs: SharedPreferences): List<Route> {
+        if (!WebProvidersPrefs.isLionEnabled(prefs)) return emptyList()
+        val tabs = WebProvidersPrefs.getEnabledTabs(prefs, allWebProviders().map { it.id })
+        if (tabs.isEmpty()) return emptyList()
+        return listOf(Route("lion_chat", "lion-brain-v1"))
+    }
 }
