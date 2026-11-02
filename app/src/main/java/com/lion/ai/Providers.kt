@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 
 /** تصنيف المزودات: API، دردشات ويب، وأدوات صور/صوت/فيديو. */
 enum class ProviderGroup(val title: String, val icon: String) {
+    LION("Lion Chat - العقل البرتقالي", "🦁"),
     API("مزودات API (مفتاح أو بدون مفتاح)", "🔑"),
     WEB("دردشات الويب المجانية", "🌐"),
     MEDIA("الصور والصوت والفيديو", "🎨")
@@ -29,6 +30,7 @@ data class ProviderInfo(
     /** التصنيف مشتق: بلا webviewUrl = API، ومع category غير chat = وسائط، وإلا ويب. */
     val group: ProviderGroup
         get() = when {
+            id == "lion_chat" || category == "lion" -> ProviderGroup.LION
             category != "chat" -> ProviderGroup.MEDIA
             webviewUrl != null -> ProviderGroup.WEB
             else -> ProviderGroup.API
@@ -36,6 +38,19 @@ data class ProviderInfo(
 }
 
 val PROVIDERS = listOf(
+    ProviderInfo(
+        id = "lion_chat",
+        label = "🦁 Lion Chat",
+        tagline = "العقل البرتقالي - Arena + كل تبويبات الويب + أدوات المطور",
+        docsUrl = "https://arena.ai/text/direct",
+        defaultModel = "lion-brain-v1",
+        free = true,
+        shortName = "Lion",
+        keyless = true,
+        custom = true,
+        category = "lion",
+        models = listOf("lion-brain-v1", "arena-direct", "claude-web", "deepseek-web", "chatgpt-web", "gemini-web")
+    ),
     // ===== مزودات API (مفتاح أو بدون مفتاح) =====
     ProviderInfo(
         id = "local_proxy",

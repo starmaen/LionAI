@@ -1169,6 +1169,15 @@ fun SettingsScreen(
                 }
             }
 
+            // Lion Chat Orange
+            SettingsSection(
+                title = "🦁 ليون شات - العقل البرتقالي",
+                subtitle = "مزود برتقالي مميز - مربوط بالعقل المركزي + أدوات المطور + تبويبات الويب",
+                badge = "برتقالي"
+            ) {
+                LionChatSettingsCard(prefs = prefs)
+            }
+
             listOf(ProviderGroup.WEB, ProviderGroup.MEDIA).forEach { group ->
                 val groupProviders = PROVIDERS.filter { it.group == group }
                 if (groupProviders.isNotEmpty()) {
