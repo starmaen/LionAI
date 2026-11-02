@@ -587,8 +587,17 @@ fun ProviderHubSheet(
                                 enabled = providerEnabled(prefs, info.id),
                                 selected = selectedProvider == info.id,
                                 onToggle = { setProviderEnabled(prefs, info.id, it) },
-                                onSelect = { info.webviewUrl?.let(onOpenWeb) },
-                                selectLabel = "فتح"
+                                onSelect = if (category == HubCategory.WEB) {
+                                    { onSelectProvider(info.id) }
+                                } else {
+                                    { info.webviewUrl?.let(onOpenWeb) }
+                                },
+                                onOpen = if (category == HubCategory.WEB) {
+                                    { info.webviewUrl?.let(onOpenWeb) }
+                                } else {
+                                    null
+                                },
+                                selectLabel = if (category == HubCategory.WEB) "اختيار" else "فتح"
                             )
                         }
                     }
@@ -629,6 +638,7 @@ private fun ProviderRow(
     selected: Boolean,
     onToggle: (Boolean) -> Unit,
     onSelect: () -> Unit,
+    onOpen: (() -> Unit)? = null,
     selectLabel: String = "اختيار"
 ) {
     var on by remember(enabled) { mutableStateOf(enabled) }
@@ -676,6 +686,11 @@ private fun ProviderRow(
                 colors = SwitchDefaults.colors(checkedThumbColor = Gold)
             )
             Spacer(Modifier.width(4.dp))
+            if (onOpen != null) {
+                TextButton(onClick = onOpen) {
+                    Text("فتح ↗", color = Color(0xFF64B5F6), fontSize = 11.sp)
+                }
+            }
             TextButton(onClick = onSelect) {
                 Text(
                     if (selected) "نشط" else selectLabel,

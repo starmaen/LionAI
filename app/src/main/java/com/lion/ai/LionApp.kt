@@ -1792,7 +1792,20 @@ fun LionApp() {
                 syncActiveTab()
             },
             onChooseProvider = { info ->
-                if (info.webviewUrl != null) {
+                if (WebChatRuntime.handles(info.id)) {
+                    // مزودات ويب حقيقية: الاختيار يجعلها هي المزود، لا يفتح صفحتها.
+                    prefs.edit()
+                        .putString("provider", info.id)
+                        .putBoolean("auto_route", false)
+                        .putBoolean(WebChatRuntime.ENABLED, true)
+                        .putBoolean("web_chat_enabled_${info.id}", true)
+                        .apply()
+                    LlmClient.reloadOverrides(prefs)
+                    selectedProvider = info.id
+                    autoRoute = false
+                    showModelSheet = false
+                    syncActiveTab()
+                } else if (info.group == ProviderGroup.MEDIA && info.webviewUrl != null) {
                     showModelSheet = false
                     context.startActivity(
                         Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
@@ -1851,6 +1864,15 @@ fun LionApp() {
                     .putString("provider", id)
                     .putBoolean("auto_route", false)
                     .apply()
+                // اختيار مزود ويب صريحاً يعني تفعيل جلسته للشات مباشرة،
+                // وإلا فسيرفضه المسار بانتظار تفعيل يدوي من بطاقة Lion Chat.
+                if (WebChatRuntime.handles(id)) {
+                    prefs.edit()
+                        .putBoolean(WebChatRuntime.ENABLED, true)
+                        .putBoolean("web_chat_enabled_$id", true)
+                        .apply()
+                    LlmClient.reloadOverrides(prefs)
+                }
                 selectedProvider = id
                 autoRoute = false
                 when (hub) {
