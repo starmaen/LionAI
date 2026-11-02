@@ -158,8 +158,10 @@
       const stopping = !!find(C.stop);
       if (stopping) state.sawStop = true;
       if (!state.sent) {
-        // Wait for observable site acknowledgement; merely calling click() is not enough.
-        if ((!input || !inputText(input)) && (stopping || (isNew && value))) {
+        // Delivery proof: a visible stop control, a brand-new assistant message, or a
+        // cleared editor. A new message alone proves delivery even when the site
+        // keeps its draft text in the editor after sending.
+        if (stopping || (isNew && value) || !input || !inputText(input)) {
           state.sent = true;
         } else {
           return result(Date.now() - state.clickedAt > 30000 ? 'send_unconfirmed' : 'awaiting_ack');
@@ -173,7 +175,10 @@
       const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
         nodes(C.answer, parent).length <= 1;
       const stable = Date.now() - state.changed >= 3000;
-      const completed = !stopping && stable && (state.sawStop || completeInside || completeNearby);
+      // Sites whose stop/copy controls never match our selectors: a full answer that
+      // stopped changing for 12s with no stop button visible is complete enough.
+      const quietDone = Date.now() - state.changed >= 12000;
+      const completed = !stopping && stable && (state.sawStop || completeInside || completeNearby || quietDone);
       return result(completed ? 'complete' : 'streaming', {text: value, observedStop: state.sawStop});
     }
     return result('unknown_action');

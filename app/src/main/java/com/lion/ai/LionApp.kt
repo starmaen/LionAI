@@ -1025,7 +1025,10 @@ fun LionApp() {
                     (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L),
                     routeBudget
                 ).toInt()
-                var agentResult = if (toolGroups.isNotEmpty()) {
+                // Web sessions are real chat pages: no app tools, no tool protocol.
+                // Never run the tool agent on them; otherwise the site receives the full
+                // tool spec plus extra "you used no tool" messages and the binding breaks.
+                var agentResult = if (toolGroups.isNotEmpty() && !WebChatRuntime.handles(route.provider)) {
                     withContext(Dispatchers.IO) {
                         runCatching {
                             ToolAgent.run(

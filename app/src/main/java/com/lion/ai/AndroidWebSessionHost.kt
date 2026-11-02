@@ -93,7 +93,10 @@ internal class AndroidWebSessionHost(
         val chatId: String = ActiveChat.id,
         var stage: String = "probe",
         var submitted: Boolean = false,
-        var lastStatus: String = "loading"
+        var lastStatus: String = "loading",
+        /** Last streamed answer text and when it last changed: safety net when the completion signal is missing. */
+        var lastText: String = "",
+        var lastTextAt: Long = 0L
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -308,6 +311,13 @@ internal class AndroidWebSessionHost(
             return
         }
         if (System.currentTimeMillis() >= p.deadline) {
+            // A new answer actually streamed but the completion signal (stop/copy button)
+            // never matched our selectors: deliver the last stable text instead of losing it.
+            if (p.stage == "poll" && p.submitted && p.lastText.isNotBlank() &&
+                System.currentTimeMillis() - p.lastTextAt >= 3_000) {
+                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
+                return
+            }
             val message = when (p.lastStatus) {
                 "needs_input", "origin", "loading" -> "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
@@ -388,6 +398,14 @@ internal class AndroidWebSessionHost(
                         p.stage = "poll"
                         releaseEditorFocus()
                         status(p, "أُرسلت الرسالة إلى الصفحة؛ بانتظار جواب جديد")
+                    }
+                    "streaming" -> {
+                        // Keep the latest streamed text; some sites never show a completion signal.
+                        val streamed = result.optString("text")
+                        if (streamed.isNotBlank() && streamed != p.lastText) {
+                            p.lastText = streamed
+                            p.lastTextAt = System.currentTimeMillis()
+                        }
                     }
                     "complete" -> {
                         val text = result.optString("text").trim()
