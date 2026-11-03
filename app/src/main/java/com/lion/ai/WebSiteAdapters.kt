@@ -22,15 +22,15 @@ data class WebSiteAdapter(
 
 object WebSiteAdapters {
     private const val INPUT = "textarea, [contenteditable='true'][role='textbox'], [contenteditable='true'].ProseMirror"
-    private const val SEND = "button[data-testid='send-button'], button[aria-label='Send'], button[aria-label='Send message'], button[aria-label='Submit'], button[type='submit']"
-    private const val STOP = "button[data-testid='stop-button'], button[aria-label='Stop'], button[aria-label='Stop generating'], button[aria-label='Stop response'], button[aria-label='Stop generation']"
-    private const val COMPLETE = "button[aria-label*='Copy'], button[data-testid*='copy'], button[title*='Copy'], [data-state='complete']"
+    private const val SEND = "button[data-testid='send-button'], button.send-button, button[aria-label='Send'], button[aria-label='Send message'], button[aria-label='Send Message'], button[aria-label*='Send'], button[aria-label*='إرسال'], button[type='submit']"
+    private const val STOP = "button[data-testid='stop-button'], button.stop-button, button[aria-label='Stop'], button[aria-label='Stop generating'], button[aria-label='Stop response'], button[aria-label='Stop generation'], button[aria-label*='Stop'], button[aria-label*='إيقاف']"
+    private const val COMPLETE = "button[aria-label*='Copy'], button[aria-label*='نسخ'], button[data-testid*='copy'], button[data-test-id*='copy'], button[title*='Copy'], button[title*='نسخ'], [data-state='complete']"
 
     // Kept explicit: no extracting document.body or treating arbitrary page text as an answer.
     private val answerSelectors = mapOf(
         "arena" to "[data-message-role='assistant'], [data-role='assistant'], [data-testid='assistant-message']",
         "duckduckgo_web" to "[data-role='assistant'], [data-testid='assistant-message'], [class*='assistantMessage']",
-        "gemini_web" to "model-response message-content, model-response .markdown",
+        "gemini_web" to "model-response message-content, model-response .markdown, message-content .markdown",
         "copilot_web" to "[data-content='ai-message'], [data-testid='assistant-message']",
         "github_copilot_web" to "[data-role='assistant'], [data-testid='copilot-chat-message-assistant']",
         "claude_web" to "[data-is-streaming] .font-claude-response, .font-claude-response",
@@ -65,12 +65,12 @@ object WebSiteAdapters {
             when (info.id) {
                 "chatgpt_web" -> "#prompt-textarea"
                 "claude_web" -> "[contenteditable='true'][role='textbox'], .ProseMirror[contenteditable='true']"
-                "gemini_web" -> "rich-textarea [contenteditable='true']"
+                "gemini_web" -> "rich-textarea [contenteditable='true'], rich-textarea .ql-editor, .ql-editor[contenteditable='true'], [contenteditable='true'][role='textbox']"
                 else -> INPUT
             },
             when (info.id) {
                 "claude_web" -> "button[aria-label='Send message'], button[aria-label='Send Message']"
-                "gemini_web" -> "button.send-button, button[aria-label='Send message']"
+                "gemini_web" -> "button.send-button, button[aria-label='Send message'], button[aria-label*='إرسال']"
                 else -> SEND
             }, answerSelectors.getValue(info.id),
             if (info.id == "gemini_web") "button.stop-button, $STOP" else STOP, COMPLETE)

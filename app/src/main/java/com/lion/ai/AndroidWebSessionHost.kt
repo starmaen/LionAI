@@ -382,7 +382,7 @@ internal class AndroidWebSessionHost(
                     }
                     "awaiting_ack" -> status(p, "لم يؤكد الموقع استقبال الرسالة بعد")
                     "send_unconfirmed" -> {
-                        fail(p, "تمت محاولة النقر لكن الموقع لم يؤكد الإرسال خلال 30 ثانية. لم أعِد المحاولة ولم أستخدم API.")
+                        fail(p, "تمت محاولة النقر لكن الموقع لم يؤكد الإرسال خلال 45 ثانية. لم أعِد المحاولة ولم أستخدم API.")
                         return@evaluateJavascript
                     }
                     "site_busy" -> {

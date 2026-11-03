@@ -1849,6 +1849,19 @@ fun LionApp() {
         )
     }
 
+    // تفعيل الخادم الخارجي لا معنى له ما دام المزود النشط صفحة ويب (المسار
+    // يحوّلها إلى جلسة صفحة ولا يمرّ بالبوابة). عند التفعيل نثبّت أول مزود
+    // API مفعّل حتى يعمل الخادم فعلاً بدل أن يبدو معطلاً.
+    fun pinGatewayProvider() {
+        val current = prefs.getString("provider", "gemini").orEmpty()
+        if (!WebChatRuntime.handles(current)) return
+        val fallback = WebGateway.providers.firstOrNull { providerEnabled(prefs, it.id) }?.id ?: "gemini"
+        prefs.edit().putString("provider", fallback).putBoolean("auto_route", false).apply()
+        selectedProvider = fallback
+        autoRoute = false
+        syncActiveTab()
+    }
+
     val hub = hubCategory
     if (hub != null) {
         ProviderHubSheet(
@@ -1907,11 +1920,13 @@ fun LionApp() {
                 setProviderEnabled(prefs, WebGateway.ENABLED_ID, value)
                 gatewayEnabled = value
                 WebGateway.load(prefs)
+                if (value) pinGatewayProvider()
             },
             onGatewayMode = { value ->
                 prefs.edit().putString(WebGateway.KEY_MODE, value).apply()
                 gatewayMode = value
                 WebGateway.load(prefs)
+                if (value != WebGateway.MODE_OFF) pinGatewayProvider()
             },
             onOpenSettings = {
                 hubCategory = null

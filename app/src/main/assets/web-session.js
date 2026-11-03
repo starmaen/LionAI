@@ -58,6 +58,18 @@
     return String(value).replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim();
   }
   function expectedText() { return prompt.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim(); }
+  function collapsed(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
+  // Delivery proof that does not depend on any site-specific assistant selector:
+  // after the editor clears, the posted user turn becomes visible in the page text.
+  function postedInPage() {
+    if (!inputText(input)) {
+      const wanted = collapsed(expectedText()).slice(0, 80);
+      if (wanted.length < 3) return false;
+      const body = collapsed(document.body ? document.body.innerText : '');
+      return body.indexOf(wanted) !== -1;
+    }
+    return false;
+  }
   try {
     if (action === 'diagnose') {
       function describe(n) {
@@ -158,12 +170,14 @@
       const stopping = !!find(C.stop);
       if (stopping) state.sawStop = true;
       if (!state.sent) {
-        // A new assistant turn can acknowledge delivery even if the site keeps the draft.
-        // An empty/missing editor alone is NOT acknowledgement (a re-render can clear it).
-        if ((isNew && value) || (stopping && (!input || !inputText(input)))) {
+        // A new assistant turn acknowledges delivery even if the site keeps the draft.
+        // A visible stop button means this click started generation (submit refused to
+        // click while the site was already busy). A cleared editor whose text now shows
+        // as a posted turn is delivery proof even when the assistant selector is stale.
+        if ((isNew && value) || stopping || postedInPage()) {
           state.sent = true;
         } else {
-          return result(Date.now() - state.clickedAt > 30000 ? 'send_unconfirmed' : 'awaiting_ack');
+          return result(Date.now() - state.clickedAt > 45000 ? 'send_unconfirmed' : 'awaiting_ack');
         }
       }
       if (!isNew || !value) return result(stopping ? 'sent' : 'waiting', {generating: stopping});
