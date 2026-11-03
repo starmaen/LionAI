@@ -64,7 +64,40 @@
     });
     return (bottom.length ? bottom[bottom.length - 1] : all[all.length - 1]);
   }
-  function answers() { return nodes(C.answer).filter(visible); }
+  function isUserTurn(n) {
+    let el = n;
+    for (let i = 0; i < 6 && el; i++, el = el.parentElement) {
+      const cls = ((el.getAttribute && el.getAttribute('class')) || '') + ' ' +
+        ((el.getAttribute && el.getAttribute('data-message-role')) || '') + ' ' +
+        ((el.getAttribute && el.getAttribute('data-message-author-role')) || '');
+      if (/\bjustify-end\b|\bitems-end\b/.test(cls)) return true;
+      if (/(^|[\s_-])user([\s_-]|$)/i.test(cls) && !/assistant/i.test(cls)) return true;
+    }
+    return false;
+  }
+  function listReversed(nodes) {
+    if (!nodes.length) return false;
+    let el = nodes[0].parentElement;
+    for (let i = 0; i < 8 && el; i++, el = el.parentElement) {
+      try {
+        const view = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+        const d = (view.getComputedStyle(el).flexDirection || '').toLowerCase();
+        if (d.indexOf('reverse') !== -1) return true;
+      } catch (e) {}
+    }
+    return false;
+  }
+  function newestUnseen(list, baselineText) {
+    const unseen = [];
+    for (let i = 0; i < list.length; i++) {
+      const t = answerText(list[i]);
+      if (t && baselineText.indexOf(t) === -1) unseen.push(list[i]);
+    }
+    if (!unseen.length) return {node: null, value: ''};
+    const node = listReversed(list) ? unseen[0] : unseen[unseen.length - 1];
+    return {node: node, value: answerText(node)};
+  }
+  function answers() { return nodes(C.answer).filter(function (n) { return visible(n) && !isUserTurn(n); }); }
   function answerText(n) {
     if (!n) return '';
     const clone = n.cloneNode(true);
@@ -246,7 +279,13 @@
     const sfx = commonSuffix(before.slice(p), now.slice(p));
     const inserted = now.slice(p, now.length - sfx);
     const m = lastTailMatch(inserted);
-    return {shown: !!m, answer: m ? inserted.slice(m.end).trim() : ''};
+    if (!m) return {shown: false, answer: ''};
+    const after = inserted.slice(m.end).trim();
+    const prior = inserted.slice(0, m.start).trim();
+    // Newest-first lists (Arena flex-col-reverse) put the reply BEFORE the user turn.
+    let answer = after.length >= prior.length ? after : prior;
+    if (collapsed(answer) === collapsed(expectedText())) answer = '';
+    return {shown: true, answer: answer};
   }
   function genericStop() {
     return nodes('button, [role="button"]').some(function (b) {
@@ -364,18 +403,16 @@
     if (action === 'poll') {
       if (!state.clicked) return result('not_sent');
       const list = answers();
-      const last = list[list.length - 1];
-      const texts = list.map(answerText);
-      // Remounted old bubbles are new DOM nodes with old text — not a new answer.
-      const unseen = texts.filter(function (t) { return t && state.baselineText.indexOf(t) === -1; });
-      let value = unseen.length ? unseen[unseen.length - 1] : '';
+      const pick = newestUnseen(list, state.baselineText);
+      const last = pick.node;
+      let value = pick.value;
       let isNew = !!value;
       const fb = fallbackState(state, input);
       let viaFallback = false;
       const explicitStop = !!find(C.stop);
       if (explicitStop) state.sawStop = true;
       const stopping = explicitStop || (state.sent && genericStop());
-      const info = 'a=' + list.length + ' unseen=' + unseen.length + ' shown=' + (fb.shown ? 1 : 0) +
+      const info = 'a=' + list.length + ' new=' + (isNew ? 1 : 0) + ' shown=' + (fb.shown ? 1 : 0) +
         ' stop=' + (stopping ? 1 : 0) + ' len=' + (value || '').length;
       if (!state.sent) {
         // Delivery proof: a genuinely new assistant text, a stop control this click
@@ -399,11 +436,11 @@
       const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
         nodes(C.answer, parent).length <= 1;
       const age = Date.now() - state.changed;
-      // Copy/stop can complete after 2.5s. Sites without those controls still
-      // complete only after a NEW answer (not leftover page text) stays still 5s.
+      // Return to the app as soon as a NEW answer stops growing. Copy/stop is
+      // enough after 0.7s; otherwise 2s of stillness. Never wait 5s+ on a finished reply.
       const completed = !stopping && value.length > 0 && (
-        (age >= 2500 && (state.sawStop || completeInside || completeNearby)) ||
-        age >= 5000
+        (age >= 700 && (state.sawStop || completeInside || completeNearby)) ||
+        age >= 2000
       );
       return result(completed ? 'complete' : 'streaming',
         {text: value, observedStop: state.sawStop, viaFallback: viaFallback, diag: info});

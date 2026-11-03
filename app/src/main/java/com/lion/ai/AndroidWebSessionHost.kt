@@ -340,6 +340,14 @@ internal class AndroidWebSessionHost(
             return
         }
         if (System.currentTimeMillis() >= p.deadline) {
+            // Send already happened and a new answer was captured — return it rather
+            // than dropping a reply that is sitting on the page.
+            if (p.submitted && p.lastText.isNotBlank() &&
+                p.lastStatus in setOf("streaming", "waiting", "sent", "complete")
+            ) {
+                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
+                return
+            }
             val message = when (p.lastStatus) {
                 "needs_input", "origin", "loading" -> "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
@@ -450,10 +458,13 @@ internal class AndroidWebSessionHost(
                     }
                     "streaming" -> {
                         val streamed = result.optString("text")
-                        if (streamed.isNotBlank() && streamed != p.lastText) {
-                            p.lastText = streamed
-                            p.lastTextAt = System.currentTimeMillis()
-                            status(p, "يصل الرد من الصفحة… لم يُعتمد بعد")
+                        if (streamed.isNotBlank()) {
+                            if (streamed != p.lastText) {
+                                p.lastText = streamed
+                                p.lastTextAt = System.currentTimeMillis()
+                            }
+                            // Live-return: the in-app chat shows this while the page finishes.
+                            status(p, streamed.take(3500))
                         }
                     }
                     "complete" -> {
@@ -487,7 +498,12 @@ internal class AndroidWebSessionHost(
                     }
                 }
             }
-            main.postDelayed({ tick(p) }, 700)
+            val delayMs = when (p.stage) {
+                "poll" -> 220L
+                "prepare", "locate", "enter", "submit" -> 280L
+                else -> 450L
+            }
+            main.postDelayed({ tick(p) }, delayMs)
         }
     }
     override fun cancel(token: String) {

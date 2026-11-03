@@ -225,10 +225,45 @@ test('fallback: reads the text the page added after our message when selectors m
   box.innerHTML = '<div class="u">' + FALLBACK_PROMPT + '</div><div class="x">The capital is Damascus.</div>';
   const first = p.run('poll', FALLBACK_PROMPT);
   assert.equal(first.status, 'streaming'); assert.equal(first.text, 'The capital is Damascus.');
-  p.advance(4000); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
-  p.advance(4000); const done = p.run('poll', FALLBACK_PROMPT);
+  p.advance(1200); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
+  p.advance(1200); const done = p.run('poll', FALLBACK_PROMPT);
   assert.equal(done.status, 'complete'); assert.equal(done.text, 'The capital is Damascus.');
   assert.equal(done.viaFallback, true);
+}));
+test('fallback reads a reply placed before the user turn (newest-first DOM)',()=>withPage(p=>{
+  p.config.answer = '.no-such-selector';
+  p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
+  p.w.document.querySelector('#messages').innerHTML =
+    '<div class="x">The capital is Damascus.</div><div class="u">' + FALLBACK_PROMPT + '</div>';
+  const first = p.run('poll', FALLBACK_PROMPT);
+  assert.equal(first.status, 'streaming');
+  assert.equal(first.text, 'The capital is Damascus.');
+  p.advance(2100);
+  const done = p.run('poll', FALLBACK_PROMPT);
+  assert.equal(done.status, 'complete');
+  assert.equal(done.text, 'The capital is Damascus.');
+}));
+test('flex-col-reverse list returns the newest reply not the oldest',()=>withPage(p=>{
+  const box = p.w.document.querySelector('#messages');
+  const orig = p.w.getComputedStyle.bind(p.w);
+  p.w.getComputedStyle = function(el) {
+    if (el === box) return {flexDirection: 'column-reverse'};
+    try { return orig(el); } catch (e) { return {flexDirection: 'column'}; }
+  };
+  const old = p.answer('old reply', true);
+  box.insertBefore(old, box.firstChild);
+  p.run('prepare'); p.run('submit');
+  const fresh = p.w.document.createElement('article');
+  fresh.className = 'assistant'; fresh.textContent = 'brand new reply';
+  const copy = p.w.document.createElement('button'); copy.className = 'copy'; fresh.append(copy);
+  box.insertBefore(fresh, box.firstChild);
+  const first = p.run('poll');
+  assert.equal(first.status, 'streaming');
+  assert.equal(first.text, 'brand new reply');
+  p.advance(800);
+  const done = p.run('poll');
+  assert.equal(done.status, 'complete');
+  assert.equal(done.text, 'brand new reply');
 }));
 test('composer fallback finds textarea when site input selector misses',()=>withPage(p=>{
   p.config.input = '#no-such-input';

@@ -42,8 +42,8 @@ object WebSiteAdapters {
         "arena" to Spec(
             url = "https://arena.ai/text/direct",
             hosts = setOf("arena.ai"),
-            input = "[data-testid*='prompt'], [data-testid*='composer']",
-            answer = "[class*='markdown']"
+            input = "textarea[name='message'], [data-testid*='prompt'], [data-testid*='composer']",
+            answer = ".prose, [class*='prose'], article .markdown, [class*='markdown']"
         ),
         "duckduckgo_web" to Spec(
             url = "https://duck.ai",
