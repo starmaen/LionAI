@@ -382,7 +382,14 @@ object SmartRouter {
     )
 
     /** هل المزود + الموديل معاً جديران بالأسئلة التي تحتاج دقة؟ */
+    /** جلسات ويب لنماذج رائدة معروفة: تُحسب موثوقة في المهام عالية الدقة (لا Arena لأن نموذجها متغيّر). */
+    private val TRUSTED_WEB = setOf(
+        "chatgpt_web", "claude_web", "gemini_web", "deepseek_web", "copilot_web",
+        "perplexity_web", "grok_web", "aistudio_web", "qwen_web", "kimi_web"
+    )
+
     fun isReliableModel(provider: String, model: String): Boolean {
+        if (WebChatRuntime.isWeb(provider)) return provider in TRUSTED_WEB
         if (!isTrustedFactual(provider)) return false
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
         val id = model.ifBlank { info.defaultModel }.lowercase(Locale.ROOT)
@@ -432,14 +439,22 @@ object SmartRouter {
     ): List<Route> {
         // موديل المزود الذي اخترته/حدّثته من قائمة النماذج يتقدّم على الموديل الافتراضي المكتوب في القوائم
         // (إلا في الصور حيث يلزم موديل يدعم الرؤية).
-        val webRoutes = if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) emptyList() else WebChatRuntime.routes(prefs)
-        val availableRoutes = (webRoutes + candidates(kind)).filter { available(prefs, it.provider) }.map {
-            if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) it else withUserModel(prefs, it)
-        }
-        val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
         // المسار السريع يبقى سريعاً دائماً: لا نرفعه إلى نماذج ثقيلة مهما كان وضع الجودة.
         val fastOnly = kind == TaskKind.FAST || mode == AnswerMode.FAST
         val strict = !fastOnly && (isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL))
+        // جلسات الويب (نماذج رائدة مجاناً لكنها أبطأ): للمهام عالية الدقة والتطوير تتقدّم على API،
+        // وفي بقية المهام تأتي بعدها كبديل. لا تُستعمل للتحية السريعة ولا للصور.
+        val webRoutes = if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT || fastOnly) {
+            emptyList()
+        } else {
+            WebChatRuntime.routes(prefs)
+        }
+        val webFirst = strict || kind == TaskKind.DEV
+        val merged = if (webFirst) webRoutes + candidates(kind) else candidates(kind) + webRoutes
+        val availableRoutes = merged.filter { available(prefs, it.provider) }.map {
+            if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) it else withUserModel(prefs, it)
+        }
+        val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
         val preferReliable = !fastOnly && (
             (kind == TaskKind.GENERAL && mode != AnswerMode.FAST) ||
                 mode == AnswerMode.PRECISE || kind == TaskKind.DEV

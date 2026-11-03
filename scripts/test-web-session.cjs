@@ -194,3 +194,27 @@ test('a twelve second stream pause without completion evidence is never complete
   p.advance(12001);assert.equal(p.run('poll').status,'streaming');
   p.advance(120000);assert.equal(p.run('poll').status,'streaming');
 }));
+
+const FALLBACK_PROMPT = 'please answer this question about the capital';
+test('fallback: reads the text the page added after our message when selectors miss',()=>withPage(p=>{
+  p.config.answer = '.no-such-selector';
+  p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
+  p.w.document.querySelector('#send').onclick = () => {};
+  const box = p.w.document.querySelector('#messages');
+  box.innerHTML = '<div class="u">' + FALLBACK_PROMPT + '</div><div class="x">The capital is Damascus.</div>';
+  const first = p.run('poll', FALLBACK_PROMPT);
+  assert.equal(first.status, 'streaming'); assert.equal(first.text, 'The capital is Damascus.');
+  p.advance(4000); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
+  p.advance(4000); const done = p.run('poll', FALLBACK_PROMPT);
+  assert.equal(done.status, 'complete'); assert.equal(done.text, 'The capital is Damascus.');
+  assert.equal(done.viaFallback, true);
+}));
+test('fallback never completes while a generic stop button is visible',()=>withPage(p=>{
+  p.config.answer = '.no-such-selector';
+  p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
+  p.w.document.querySelector('#messages').innerHTML = '<div>' + FALLBACK_PROMPT + '</div><div>partial answer</div>';
+  assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
+  const b = p.w.document.createElement('button'); b.setAttribute('aria-label', 'Stop generating'); b.textContent = 'Stop';
+  p.w.document.body.append(b);
+  p.advance(30000); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
+}));

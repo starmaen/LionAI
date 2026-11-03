@@ -74,6 +74,64 @@
     }
     return false;
   }
+  // ===== التقاط احتياطي عام عند عدم مطابقة محددات الموقع =====
+  // نص الصفحة بدون حقل الكتابة نفسه (حتى لا يُحسب نص المسودة داخل المحرر كأنه رسالة ظاهرة).
+  function pageText(skip) {
+    const root = document.querySelector('main') || document.body;
+    const out = [];
+    (function walk(n) {
+      if (!n || n === skip) return;
+      if (n.nodeType === 3) { out.push(n.nodeValue); return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName;
+      if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|SVG)$/i.test(tag)) return;
+      if (n.hidden || n.getAttribute('aria-hidden') === 'true') return;
+      const block = /^(DIV|P|LI|UL|OL|SECTION|ARTICLE|MAIN|HEADER|FOOTER|H[1-6]|PRE|BLOCKQUOTE|TABLE|TR|BR|BUTTON)$/i.test(tag);
+      if (block) out.push('\n');
+      for (let c = n.firstChild; c; c = c.nextSibling) walk(c);
+      if (block) out.push('\n');
+    })(root);
+    return out.join('').replace(/\u00a0/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{2,}/g, '\n');
+  }
+  function commonPrefix(a, b) {
+    const n = Math.min(a.length, b.length); let i = 0;
+    while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+    return i;
+  }
+  function commonSuffix(a, b) {
+    const n = Math.min(a.length, b.length); let i = 0;
+    while (i < n && a.charCodeAt(a.length - 1 - i) === b.charCodeAt(b.length - 1 - i)) i++;
+    return i;
+  }
+  function escapeRe(w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function lastTailMatch(value) {
+    const words = prompt.replace(/\u00a0/g, ' ').split(/\s+/).filter(Boolean).slice(-12);
+    if (!words.length) return null;
+    const re = new RegExp(words.map(escapeRe).join('\\s+'), 'g');
+    let m = null, last = null;
+    while ((m = re.exec(value)) !== null) {
+      last = {start: m.index, end: m.index + m[0].length};
+      if (m.index === re.lastIndex) re.lastIndex++;
+    }
+    return last;
+  }
+  // ما أُضيف إلى الصفحة بعد الإرسال = ما بين ما قبله وما بعده (واجهة الصفحة الثابتة تُستبعد تلقائياً).
+  function fallbackState(st, skip) {
+    const now = pageText(skip);
+    const before = st.before || '';
+    const p = commonPrefix(before, now);
+    const sfx = commonSuffix(before.slice(p), now.slice(p));
+    const inserted = now.slice(p, now.length - sfx);
+    const m = lastTailMatch(inserted);
+    return {shown: !!m, answer: m ? inserted.slice(m.end).trim() : ''};
+  }
+  function genericStop() {
+    return nodes('button, [role="button"]').some(function (b) {
+      if (!visible(b)) return false;
+      const label = (b.getAttribute('aria-label') || b.title || b.innerText || '').trim();
+      return /^(stop|stop generating|stop response|stop generation|cancel generating|إيقاف|توقف|إيقاف التوليد)\b/i.test(label);
+    });
+  }
   try {
     if (action === 'diagnose') {
       function describe(n) {
@@ -120,7 +178,7 @@
       if (text(input) || (input.value || '').trim()) return result('draft');
       const old = answers();
       state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, clicked: false, clickedAt: 0, sawStop: false,
-        last: '', changed: Date.now(), clicks: 0};
+        last: '', changed: Date.now(), clicks: 0, before: pageText(input)};
       window.__lionSessionRequest = state;
       input.focus({preventScroll: true});
       if (input.isContentEditable) {
@@ -167,34 +225,45 @@
       if (!state.clicked) return result('not_sent');
       const list = answers();
       const last = list[list.length - 1];
-      const value = answerText(last);
+      let value = answerText(last);
       // Accept only a new assistant turn; never recycle or edit an old answer.
-      const isNew = last && !state.baseline.includes(last) &&
+      let isNew = last && !state.baseline.includes(last) &&
         (list.length > state.baseline.length || !state.baselineText.includes(value));
-      const stopping = !!find(C.stop);
-      if (stopping) state.sawStop = true;
+      // Fallback: the site's selectors found no new turn, but our message appeared on the page.
+      // We then read what the page added after it (fixed page chrome is excluded by diffing).
+      const fb = fallbackState(state, input);
+      let viaFallback = false;
+      if ((!isNew || !value) && fb.shown && fb.answer) { value = fb.answer; isNew = true; viaFallback = true; }
+      const explicitStop = !!find(C.stop);
+      if (explicitStop) state.sawStop = true;
+      const stopping = explicitStop || (state.sent && genericStop());
+      const info = 'a=' + list.length + ' fb=' + (viaFallback ? 1 : 0) + ' shown=' + (fb.shown ? 1 : 0) +
+        ' stop=' + (stopping ? 1 : 0) + ' len=' + (value || '').length;
       if (!state.sent) {
         // A new assistant turn acknowledges delivery even if the site keeps the draft.
         // A visible stop button means this click started generation (submit refused to
         // click while the site was already busy). A cleared editor whose text now shows
-        // as a posted turn is delivery proof even when the assistant selector is stale.
-        if ((isNew && value) || stopping || postedInPage(input)) {
+        // as a posted turn, or our message appearing outside the composer, is delivery proof.
+        if ((isNew && value) || explicitStop || postedInPage(input) || fb.shown) {
           state.sent = true;
         } else {
-          return result(Date.now() - state.clickedAt > 45000 ? 'send_unconfirmed' : 'awaiting_ack');
+          return result(Date.now() - state.clickedAt > 45000 ? 'send_unconfirmed' : 'awaiting_ack', {diag: info});
         }
       }
-      if (!isNew || !value) return result(stopping ? 'sent' : 'waiting', {generating: stopping});
+      if (!isNew || !value) return result(stopping ? 'sent' : 'waiting', {generating: stopping, diag: info});
       if (value !== state.last) { state.last = value; state.changed = Date.now(); }
-      const completeInside = !!last.querySelector(C.complete);
+      const completeInside = !viaFallback && !!last && !!last.querySelector(C.complete);
       // Some sites put their copy controls in the parent assistant message container.
-      const parent = last.parentElement;
+      const parent = !viaFallback && last ? last.parentElement : null;
       const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
         nodes(C.answer, parent).length <= 1;
-      const stable = Date.now() - state.changed >= 3000;
-      // A stalled stream is not a completed answer, even after a long quiet interval.
-      const completed = !stopping && stable && (state.sawStop || completeInside || completeNearby);
-      return result(completed ? 'complete' : 'streaming', {text: value, observedStop: state.sawStop});
+      const age = Date.now() - state.changed;
+      // Selector path: a stalled stream is never a completed answer without completion evidence.
+      // Fallback path (no site selectors to trust): text unchanged for 7s with no generating indicator.
+      const completed = !stopping && ((age >= 3000 && (state.sawStop || completeInside || completeNearby)) ||
+        (viaFallback && age >= 7000));
+      return result(completed ? 'complete' : 'streaming',
+        {text: value, observedStop: state.sawStop, viaFallback: viaFallback, diag: info});
     }
     return result('unknown_action');
   } catch (e) { return result('selector_error', {error: String(e.message || e).slice(0, 160)}); }

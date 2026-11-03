@@ -95,7 +95,9 @@ internal class AndroidWebSessionHost(
         var submitted: Boolean = false,
         var lastStatus: String = "loading",
         /** Track observed streaming text for an explicit incomplete-response error at timeout. */
-        var lastText: String = ""
+        var lastText: String = "",
+        /** Compact page diagnostics from the injected script, appended to timeout errors. */
+        var lastDiag: String = ""
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -318,8 +320,10 @@ internal class AndroidWebSessionHost(
             val message = when (p.lastStatus) {
                 "needs_input", "origin", "loading" -> "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
-                "awaiting_ack", "clicked" -> "نُقر الإرسال لكن الموقع لم يؤكد استقبال الرسالة. لم أعِد الإرسال."
-                "streaming", "waiting" -> "لم يتم تأكيد اكتمال جواب جديد. افحص محدد الجواب وأزرار الإيقاف/النسخ."
+                "awaiting_ack", "clicked" -> "نُقر الإرسال لكن الموقع لم يؤكد استقبال الرسالة. لم أعِد الإرسال." +
+                    (if (p.lastDiag.isNotBlank()) " [" + p.lastDiag + "]" else "")
+                "streaming", "waiting" -> "لم يتم تأكيد اكتمال جواب جديد. افتح الجلسة وتأكد أن الموقع أجاب ولا يطلب تحققاً." +
+                    (if (p.lastDiag.isNotBlank()) " [" + p.lastDiag + "]" else "")
                 else -> "انتهت مهلة الموقع (${p.lastStatus})."
             }
             fail(p, message)
@@ -361,6 +365,7 @@ internal class AndroidWebSessionHost(
             } else {
                 val state = result.optString("status")
                 p.lastStatus = state
+                result.optString("diag").takeIf { it.isNotBlank() }?.let { p.lastDiag = it }
                 when (state) {
                     "origin" -> {
                         val actual = result.optString("actualOrigin", "unknown")
