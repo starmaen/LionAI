@@ -439,7 +439,22 @@ fun ProviderHubSheet(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButton(
                                     enabled = !busy,
-                                    onClick = { runCheck("⏳ أفحص الخادم الخارجي…") { WebGateway.test(prefs) } }
+                                    onClick = {
+                                        runCheck("⏳ أفحص الخادم الخارجي…") {
+                                            val health = WebGateway.test(prefs)
+                                            // فحص صحة الخادم لا يكفي: جرّب طلب محادثة فعلياً
+                                            // حتى يظهر سبب فشل البوابة الحقيقي (مفتاح/موديل/شبكة).
+                                            val probe = WebGateway.providers.firstOrNull {
+                                                providerEnabled(prefs, it.id)
+                                            }
+                                            if (probe == null) health else {
+                                                val model = (prefs.getString("model_${probe.id}", "") ?: "")
+                                                    .ifBlank { WebGateway.defaultModel(probe.id) }
+                                                health + "\n\n" +
+                                                    WebGateway.testProvider(prefs, probe.id, model)
+                                            }
+                                        }
+                                    }
                                 ) { Text("🧪 اختبار الخادم", color = Gold, fontSize = 12.sp) }
                                 TextButton(onClick = onOpenSettings) {
                                     Text("⚙️ إعدادات البوابة والرابط", color = Gold, fontSize = 12.sp)
