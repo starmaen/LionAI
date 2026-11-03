@@ -33,7 +33,7 @@ object WebSiteAdapters {
         "gemini_web" to "model-response message-content, model-response .markdown, message-content .markdown",
         "copilot_web" to "[data-content='ai-message'], [data-testid='assistant-message']",
         "github_copilot_web" to "[data-role='assistant'], [data-testid='copilot-chat-message-assistant']",
-        "claude_web" to "[data-is-streaming] .font-claude-response, .font-claude-response",
+        "claude_web" to "[data-is-streaming] .font-claude-response, .font-claude-response, [data-testid='assistant-message']",
         "deepseek_web" to "div.ds-markdown",
         "chatgpt_web" to "[data-message-author-role='assistant']",
         "mistral_web" to "[data-message-role='assistant'], [data-role='assistant']",
