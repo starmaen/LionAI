@@ -10,6 +10,15 @@ object WriteIntent {
         .replace('أ','ا').replace('إ','ا').replace('آ','ا').trim()
     fun isContinuation(s: String): Boolean = clean(s).trim(' ', '.', '!', '؟') in
         setOf("اكمل", "كمل", "تابع", "استكمل", "واصل", "continue", "resume", "اكمل من حيث توقفت")
+    fun isNewTask(s: String): Boolean {
+        val t = clean(s).replace('ة', 'ه').trim(' ', '.', '!', '؟', '?')
+        return t == "مهمه جديده" || t.startsWith("مهمه جديده ") ||
+            t == "موضوع جديد" || t.startsWith("موضوع جديد ") ||
+            t == "ابدا من جديد" || t.startsWith("ابدا من جديد ") ||
+            t == "start over" || t.startsWith("start over ") ||
+            t == "new task" || t.startsWith("new task ") ||
+            t == "new chat" || t.startsWith("new chat ")
+    }
     fun permits(s: String): Boolean {
         val t = clean(s)
         if (Regex("(لا|دون|بدون)\\s+(تعدل|تعديل|تغير|تغيير|تكتب|كتابة|تحذف|حذف)|do not|don't|read.only|فقط.*(افحص|اقرا)|(?:افحص|اقرا).*فقط").containsMatchIn(t)) return false

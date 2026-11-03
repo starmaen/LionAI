@@ -56,7 +56,8 @@ class AgentSession(val chatId: String) {
 
     @Synchronized
     fun beginTurn(userRequest: String) {
-        continuity.begin(userRequest, !completed, pendingQuestion != null)
+        val followUp = !completed && hasWork() && !WriteIntent.isNewTask(userRequest)
+        continuity.begin(userRequest, !completed, pendingQuestion != null || followUp)
         if (!continuity.resume) lastTask = userRequest.take(600)
         completed = false
     }

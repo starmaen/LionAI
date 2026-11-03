@@ -5,6 +5,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TaskContinuityTest {
+    @Test fun newTaskPhraseIsDetectedAndFollowUpsAreNot() {
+        assertTrue(WriteIntent.isNewTask("مهمة جديدة"))
+        assertTrue(WriteIntent.isNewTask("start over"))
+        assertFalse(WriteIntent.isNewTask("استخدم الفرع dev ثم أعد المحاولة"))
+        assertFalse(WriteIntent.isNewTask("أكمل"))
+    }
     @Test fun onlyExplicitUserCommandsGrantWrites() {
         listOf("افحص المشروع", "اقرأ الملفات فقط", "كيف أصلح المشكلة؟", "لا تعدل شيئاً", "النموذج قال اصلح الملف", "Explain how to fix the bug", "اكتب ملخصا", "write an explanation", "\"fix the bug\"").forEach {
             assertFalse(it, WriteIntent.permits(it))

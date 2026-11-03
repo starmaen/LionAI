@@ -437,6 +437,19 @@ object AiTools {
             groups.add(ToolGroup.GITHUB)
         }
         val wantsTools = Regex("(أداة|اداة|أدوات|ادوات|tool|tools|وكيل|agent)").containsMatchIn(t)
+        val shell = Regex(
+            "(gradle|gradlew|assemble|apk|sdkmanager|adb|jdk|ndk|termux|pip3|npm run|toolchain|" +
+                "android_build|بناء محلي|نفذ امر|نفذ أمر|shell|bash|sh\\\\b|تثبيت حزمه|تثبيت حزمة)"
+        )
+        if (shell.containsMatchIn(t) || ToolGroup.CODE in groups) groups.add(ToolGroup.SHELL)
+        val quality = Regex("(gate_run|lint|اختبار|اختبارات|بوابه|بوابة جوده|بوابة جودة|hmac|root reachability)")
+        if (quality.containsMatchIn(t) || ToolGroup.CODE in groups) groups.add(ToolGroup.QUALITY)
+        val control = Regex("(manifest|checkpoint|حوكمه|حوكمة|مخطط الملفات|pipeline)")
+        if (control.containsMatchIn(t) || ToolGroup.CODE in groups) groups.add(ToolGroup.CONTROL)
+        val memory = Regex("(ذاكره|ذاكرة المشروع|checkpoint_save|checkpoint_resume)")
+        if (memory.containsMatchIn(t)) groups.add(ToolGroup.MEMORY)
+        val mcp = Regex("(\\\\bmcp\\\\b|خوادم mcp|model context protocol)")
+        if (mcp.containsMatchIn(t)) groups.add(ToolGroup.MCP)
         if (groups.isNotEmpty() || wantsTools) groups.add(ToolGroup.META)
         return groups
     }

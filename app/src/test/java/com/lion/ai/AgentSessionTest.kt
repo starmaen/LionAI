@@ -50,6 +50,25 @@ class AgentSessionTest {
     }
 
     @Test
+    fun unfinishedWorkResumesWithoutMagicWord() {
+        val session = AgentSession("chat_follow")
+        session.beginTurn("أصلح البناء")
+        session.recordTool("file_tree", true, "شجرة")
+        session.beginTurn("استخدم الفرع dev ثم أعد المحاولة")
+        assertTrue(session.continuity.resume)
+        assertTrue(session.hasWork())
+    }
+
+    @Test
+    fun explicitNewTaskDoesNotResumeReceipts() {
+        val session = AgentSession("chat_newtask")
+        session.beginTurn("أصلح البناء")
+        session.recordTool("file_tree", true, "شجرة")
+        session.beginTurn("مهمة جديدة")
+        assertFalse(session.continuity.resume)
+    }
+
+    @Test
     fun clearRemovesSession() {
         val session = AgentSessions.of("chat_clear")
         session.start("افحص المشروع", "Groq")

@@ -872,7 +872,8 @@ fun LionApp() {
     ) {
         if (loadingChats[chatId] == true) return
         val previousSession = AgentSessions.of(prefs, chatId)
-        val resumingTask = WriteIntent.isContinuation(prompt) && !previousSession.completed && previousSession.hasWork()
+        val resumingTask = !previousSession.completed && previousSession.hasWork() &&
+            !WriteIntent.isNewTask(prompt)
         val kind = if (resumingTask) TaskKind.DEV else kind
         val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
         val chatMode = ChatRepository.modeOf(prefs, chatId)
@@ -999,7 +1000,6 @@ fun LionApp() {
             } else {
                 emptyList()
             }
-            val routesToTry = (plan + rescueRoutes).distinctBy { it.provider }
             var reply = ""
             var used: Route? = null
             var fallback: Pair<Route, String>? = null
@@ -1011,24 +1011,29 @@ fun LionApp() {
             val executionBudget = if (toolGroups.isNotEmpty()) 900_000L else SmartRouter.timeoutMs(kind)
             val deadline = System.currentTimeMillis() + executionBudget + (if (manualMode) 60_000L else 0L)
             val chosenProvider = plan.firstOrNull()?.provider
-            val stickProvider = if (manualMode) null else ProviderStick.get(prefs, chatId)
+            val stickProvider = if (manualMode) null else {
+                ProviderStick.get(prefs, chatId) ?: LastRoute.get(prefs, chatId)?.provider
+            }
+            val routesToTry = run {
+                val merged = (plan + rescueRoutes).distinctBy { it.provider }
+                if (stickProvider.isNullOrBlank()) merged
+                else listOfNotNull(merged.firstOrNull { it.provider == stickProvider }) +
+                    merged.filter { it.provider != stickProvider }
+            }
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
             val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
             for (route in routesToTry) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
-                // الخادم المحلي قد يجرّب بديلاً داخلياً عند فشل المزود؛ نمنحه مهلة المهمة
-                // كاملة حتى لا ينتهي وقت العميل قبل أن يصل البديل.
-                val routeBudget = if (manualMode && route.provider == chosenProvider) {
-                    SmartRouter.timeoutMs(kind)
-                } else if (WebChatRuntime.handles(route.provider)) {
-                    90_000L
-                } else if (route.provider == RoutePolicy.LOCAL_PROXY) {
-                    // الخادم المحلي يملك سلسلة بدائل داخلية: نمنحه مهلة المهمة
-                    // كاملة مع هامش إضافي حتى لا ينقطع قبل أن يصل بديله.
-                    SmartRouter.timeoutMs(kind) + 30_000L
-                } else {
-                    LlmClient.attemptTimeoutMs(kind).toLong()
+                val pinned = route.provider == chosenProvider || route.provider == stickProvider
+                // المزود العامل/المختار يأخذ مهلة المهمة كاملة. لا يُستبدل لأنه بطيء.
+                val routeBudget = when {
+                    toolGroups.isNotEmpty() && pinned -> executionBudget
+                    toolGroups.isNotEmpty() -> 180_000L
+                    pinned -> SmartRouter.timeoutMs(kind)
+                    WebChatRuntime.handles(route.provider) -> 90_000L
+                    route.provider == RoutePolicy.LOCAL_PROXY -> SmartRouter.timeoutMs(kind) + 30_000L
+                    else -> LlmClient.attemptTimeoutMs(kind).toLong()
                 }
                 val attemptCap = minOf(
                     (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L),

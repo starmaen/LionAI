@@ -22,7 +22,15 @@ object ToolAgent {
         val usedTools: Boolean get() = tools.isNotEmpty()
     }
 
-    private const val MAX_STEPS = 32
+    private const val MAX_STEPS_CODE = 96
+    private const val MAX_STEPS_TOOLS = 64
+    private const val MAX_CYCLES = 3
+
+    /** سقف دورة الأدوات: لا يُوقف العمل بعد 6 خطوات ولا يُطلب «أكمل». */
+    internal fun stepBudget(chatMode: ChatMode, hasTools: Boolean): Int = when {
+        chatMode == ChatMode.CODE || hasTools -> MAX_STEPS_CODE
+        else -> MAX_STEPS_TOOLS
+    }
 
     private val ASK = Regex("\\[\\[ASK\\]\\](.*?)\\[\\[/ASK\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val ASK_ALT = Regex("\\[\\[QUESTION\\]\\](.*?)\\[\\[/QUESTION\\]\\]", RegexOption.DOT_MATCHES_ALL)
@@ -62,11 +70,20 @@ object ToolAgent {
         - إن لم تنتهِ المهمة فقل ذلك صراحةً وحدّد ما تبقى، ولا تُوحِ بأنها اكتملت.
         - إن كنت تعمل داخل «جلسة عمل مستمرة» فأنت تكمل مهمة بدأها مزود آخر؛ لا تكرر الخطوات الناجحة، وافحص الحالة الحالية أولاً.
 
+        منهجية العمل (وكيل هندسي علمي — لا تتوقف في منتصف الطريق):
+        1) راقب: اقرأ الحالة الحالية بأداة قبل أي تعديل (file_tree/file_read/github_*).
+        2) افترض أصغر تغيير كافٍ، ونفّذه، ثم تحقق بأداة (قراءة/فرق/تحليل/بناء).
+        3) لا تتوقف لتطلب من المستخدم أن يكتب «أكمل». أكمل الدورة التالية فوراً حتى تكتمل المهمة أو تحتاج قراراً منه.
+        4) اسأل المستخدم فقط عند نقص معلومة لا تُستنتج، أو موافقة على عملية خطرة (حذف/دفع إلى main/إرسال/تثبيت)، أو اختيار بين بديلين بعد أن أنهيت ما يمكن تنفيذه. الصيغة:
+          [[ASK]]ما أنجزته: …
+        الخيارات أو ما أحتاجه منك: …
+        ماذا تريد الآن؟[[/ASK]]
+        5) بعد كل وحدة منجزة لخّص بالعربية ما تم، ثم تابع أو اسأل. لا تُعلن الاكتمال قبل تحقق فعلي.
+
         التفاعل مع المستخدم (مهم):
-        - إذا احتجت معلومة ناقصة أو تأكيداً قبل تنفيذ خطوة خطرة (حذف/دفع إلى main/إرسال رسالة/إنشاء)، اسأل سؤالاً واحداً محدداً بهذه الصيغة ثم توقف:
-          [[ASK]]سؤالك المختصر هنا[[/ASK]]
-        - عندما يجيبك المستخدم ستُستأنف المهمة تلقائياً بنفس السياق والأدوات. لا تخترع إجابة عن سؤالك.
-        - إن كانت المهمة واضحة فلا تسأل، ابدأ بالفحص والتنفيذ فوراً.
+        - إذا احتجت معلومة ناقصة أو تأكيداً قبل تنفيذ خطوة خطرة، اسأل سؤالاً واحداً محدداً بـ [[ASK]]…[[/ASK]] ثم توقف.
+        - عندما يجيبك المستخدم تُستأنف المهمة تلقائياً بنفس السياق والأدوات. لا تخترع إجابة عن سؤالك.
+        - إن كانت المهمة واضحة فلا تسأل، ابدأ بالفحص والتنفيذ فوراً. لا تقل «اكتب أكمل».
 
         سير العمل البرمجي الكامل:
         1) افحص أولاً: file_tree/file_read للملفات المحلية، وgithub_repo_overview/github_clone/github_list_tree/github_read_file للمستودع (استخدم المستودع الافتراضي إن لم يذكر المستخدم رابطاً)، وgithub_search_code للبحث داخل الكود. لا تطلب إرفاق ملفات يمكن قراءتها بالأدوات.
@@ -171,7 +188,7 @@ object ToolAgent {
         var lastGateText = ""
         val deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
 
-        val maxSteps = if (chatMode == ChatMode.CODE) MAX_STEPS else 6
+        val maxSteps = stepBudget(chatMode, groups.isNotEmpty() || forceExecution)
         // سجل العمل الحي: يظهر في الواجهة (✅ منجز / ❌ فشل / خطوة جارية) ويُلخَّص في تقرير نهائي ثابت لا يعتمد على النموذج.
         val workLog = mutableListOf<String>()
         val readFiles = LinkedHashSet<String>()
@@ -190,7 +207,7 @@ object ToolAgent {
                 sb.append("• الحالة: ✅ اكتملت المهمة\n")
             } else {
                 sb.append("• الحالة: ⏸ لم تكتمل").append(if (why.isNotBlank()) " — $why" else "").append('\n')
-                sb.append("• للمتابعة: اكتب «أكمل» وسأتابع من نفس النقطة دون إعادة ما تم.\n")
+                sb.append("• للمتابعة: أرسل قرارك أو أي رد — سأتابع من نفس النقطة. لا حاجة لكتابة أكمل.\n")
             }
             sb.append("• الأدوات: ").append(okCount + failCount).append(" (✅ ").append(okCount)
             if (failCount > 0) sb.append(" · ❌ ").append(failCount)
@@ -216,6 +233,8 @@ object ToolAgent {
             session?.let { CheckpointStore.save(prefs, it) }
             return Result(if (used.isEmpty()) text else text + statusReport(complete, why) + cards, used, complete, memory.responded)
         }
+        var cycle = 0
+        while (cycle < MAX_CYCLES) {
         for (step in 0 until maxSteps) {
             currentCoroutineContext().ensureActive()
             if (System.currentTimeMillis() > deadline) {
@@ -465,12 +484,20 @@ object ToolAgent {
             session?.let { CheckpointStore.save(prefs, it) }
         }
 
-        session?.recordNote("وصل الوكيل للحد الأقصى من الخطوات دون إنهاء")
+        cycle++
+        if (cycle >= MAX_CYCLES || System.currentTimeMillis() + 45_000L > deadline) break
+        current = "سجل مضغوط لمتابعة المهمة تلقائياً:\n" +
+            statusReport(false, "متابعة تلقائية") + "\n" + current.take(2500) +
+            "\n\nتابع من آخر نقطة. لا تكرر الخطوات الناجحة ولا تطلب أكمل."
+        session?.recordNote("ضغط السياق لمتابعة المهمة")
+        }
+
+        session?.recordNote("توقف مؤقت بعد عمل طويل")
         return finish(
-            "⚠️ وصلت إلى الحد الأقصى ($maxSteps خطوات) قبل إنهاء المهمة.\n" +
+            "⏸ توقفت مؤقتاً بعد عمل طويل حتى لا تُفقد النتائج.\n" +
                 "آخر نتيجة أدوات:\n\n" + current.take(3000) +
-                "\n\nيمكنك أن تطلب مني المتابعة أو تحديد خطوة أصغر.",
-            false, "بلغت حد الخطوات ($maxSteps)"
+                "\n\nأرسل أي رد أو قرار وسأواصل من هنا تلقائياً.",
+            false, "توقف مؤقت بعد عمل طويل"
         )
     }
 

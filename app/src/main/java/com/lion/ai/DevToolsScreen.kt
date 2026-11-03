@@ -903,7 +903,13 @@ private fun ToolManagerTab(
             "🧰 أدوات: JSON/Base64/Hash/Regex" to ToolGroup.UTIL,
             "🔌 الموصلات: Drive/Gmail/Calendar/Notion/Slack" to ToolGroup.CONNECTORS,
             "🔥 Firebase: Firestore/Storage عبر REST" to ToolGroup.FIREBASE,
-            "🛡️ الأمان: فحص الأسرار + بوابات الجودة" to ToolGroup.QUALITY
+            "🛡️ الأمان: فحص الأسرار + بوابات الجودة" to ToolGroup.QUALITY,
+            "⚡ التنفيذ والبناء: Gradle/JDK/أوامر محلية" to ToolGroup.SHELL,
+            "🛡️ الحوكمة والمخطط: Manifest وبوابات" to ToolGroup.CONTROL,
+            "🧠 الذاكرة ونقاط الاستئناف" to ToolGroup.MEMORY,
+            "🔗 خوادم MCP" to ToolGroup.MCP,
+            "💬 الاتصالات: واتساب/تلغرام/إشعارات" to ToolGroup.COMMS,
+            "🧭 إدارة الأدوات" to ToolGroup.META
         ).forEach { (label, _) ->
             Text("• $label", color = Color.White, fontSize = 12.sp)
         }

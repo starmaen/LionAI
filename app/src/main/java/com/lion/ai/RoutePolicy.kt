@@ -124,7 +124,8 @@ object RoutePolicy {
         // An explicit website selection must never turn into an API answer, even in auto/assist mode.
         if (WebChatRuntime.handles(chosen.provider)) return listOf(chosen.copy(via = Channel.WEB))
         if (isManual(prefs)) {
-            ProviderStick.clear(prefs, chatId)
+            // Keep LastRoute so a later return to auto stays on the working provider.
+            // Do not let central ranking replace the user's pick.
             // اليدوي: مزودك المختار أولاً عبر القنوات التي فعّلتها (مباشر/خارجي/محلي).
             // لا يبدّل العقل المركزي مزودك إلا إذا فعّلت «مساعدة العقل المركزي».
             val assist = assistEnabled(prefs)
@@ -174,10 +175,12 @@ object RoutePolicy {
     fun applySticky(prefs: SharedPreferences, kind: TaskKind, chatId: String, routes: List<Route>): List<Route> {
         if (chatId.isBlank() || isManual(prefs)) return routes
         if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) return routes
-        val stick = ProviderStick.get(prefs, chatId) ?: return routes
+        val stick = ProviderStick.get(prefs, chatId)
+            ?: LastRoute.get(prefs, chatId)?.provider
+            ?: return routes
         if (stick == LOCAL_PROXY || stick == CUSTOM) return routes
         WebGateway.load(prefs)
-        // Global failures in another chat must not evict this conversation's working provider.
+        // Skip only when the provider is disabled or has no key — not because another chat saw a blip.
         if (!SmartRouter.available(prefs, stick)) return routes
         val existing = routes.firstOrNull { it.provider == stick }
         val savedModel = prefs.getString("route_stick_model_$chatId", "").orEmpty()
