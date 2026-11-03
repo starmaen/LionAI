@@ -397,10 +397,13 @@
       const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
         nodes(C.answer, parent).length <= 1;
       const age = Date.now() - state.changed;
-      // Selector path: a stalled stream is never a completed answer without completion evidence.
-      // Fallback path (no site selectors to trust): text unchanged for 7s with no generating indicator.
-      const completed = !stopping && ((age >= 3000 && (state.sawStop || completeInside || completeNearby)) ||
-        (viaFallback && age >= 7000));
+      // Copy/stop evidence can complete after 2.5s. Sites without those controls
+      // (Arena and others) still complete once the text has stayed still 5s.
+      const completed = !stopping && value.length > 0 && (
+        (age >= 2500 && (state.sawStop || completeInside || completeNearby)) ||
+        (viaFallback && age >= 5000) ||
+        age >= 5000
+      );
       return result(completed ? 'complete' : 'streaming',
         {text: value, observedStop: state.sawStop, viaFallback: viaFallback, diag: info});
     }

@@ -45,16 +45,17 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
         LlmClient.reloadOverrides(prefs)
         onActivate(id)
     }
-    fun test(ids: List<String>) {
+    fun testOne(id: String) {
+        testJob?.cancel()
+        prefs.edit().putBoolean("web_chat_enabled_$id", true).apply()
         testJob = scope.launch {
             busy = true
-            report = "فحص جلسات المواقع برسائل فعلية — موقع واحد في كل مرة."
+            val name = providerInfo(id).shortName
+            report = "فحص $name فقط — لن تُفحص مواقع أخرى."
             try {
-                for (id in ids) {
-                    ensureActive()
-                    val line = runInterruptible(Dispatchers.IO) { WebChatRuntime.test(prefs, id) }
-                    report += "\n$line"
-                }
+                ensureActive()
+                val line = runInterruptible(Dispatchers.IO) { WebChatRuntime.test(prefs, id) }
+                report = line
             } finally { busy = false }
         }
     }
@@ -91,17 +92,15 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                         edit.apply()
                     }) { Text("تعطيل الكل") }
                 }
-                Row {
-                    TextButton(enabled = enabled && !busy && WebChatRuntime.members(prefs).isNotEmpty(),
-                        onClick = { test(WebChatRuntime.members(prefs).map { it.id }) }) { Text("فحص جماعي", color = orange) }
-                    if (busy) TextButton(onClick = { testJob?.cancel() }) { Text("إيقاف الفحص") }
-                }
-                TextButton(enabled = WebChatRuntime.available(prefs, WebChatRuntime.HUB) && !busy,
-                    onClick = { activate(WebChatRuntime.HUB) }) { Text("استخدام المجموعة في الشات", color = orange) }
+                if (busy) TextButton(onClick = { testJob?.cancel(); busy = false }) { Text("إيقاف الفحص") }
                 providers.forEach { info ->
                     HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(info.shortName, color = orange, modifier = Modifier.weight(1f))
+                        Text(
+                            info.shortName,
+                            color = orange,
+                            modifier = Modifier.weight(1f).clickable(enabled = enabled && !busy) { testOne(info.id) }
+                        )
                         Switch(prefs.getBoolean("web_chat_enabled_${info.id}", false), {
                             prefs.edit().putBoolean("web_chat_enabled_${info.id}", it).apply()
                         }, enabled = !busy, colors = SwitchDefaults.colors(checkedThumbColor = orange))
@@ -110,7 +109,7 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                         color = Color.LightGray, fontSize = 12.sp)
                     Row {
                         TextButton(enabled = !busy && WebChatRuntime.available(prefs, info.id), onClick = { activate(info.id) }) { Text("اختيار للشات") }
-                        TextButton(enabled = !busy && WebChatRuntime.available(prefs, info.id), onClick = { test(listOf(info.id)) }) { Text("فحص") }
+                        TextButton(enabled = enabled && !busy, onClick = { testOne(info.id) }) { Text("فحص") }
                         TextButton(enabled = !busy, onClick = { WebSessionTransport.open(info.id) }) { Text("الجلسة") }
                     }
                     Row {

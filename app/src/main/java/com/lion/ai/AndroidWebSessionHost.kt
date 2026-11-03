@@ -103,7 +103,8 @@ internal class AndroidWebSessionHost(
         /** Compact page diagnostics from the injected script, appended to timeout errors. */
         var lastDiag: String = "",
         var tapped: Boolean = false,
-        var enterTried: Boolean = false
+        var enterTried: Boolean = false,
+        var lastTextAt: Long = 0L
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -339,9 +340,9 @@ internal class AndroidWebSessionHost(
             return
         }
         if (System.currentTimeMillis() >= p.deadline) {
-            // A deadline cannot prove completion. The site may still be generating.
-            if (p.stage == "poll" && p.submitted && p.lastText.isNotBlank()) {
-                fail(p, "وصل جزء من جواب الموقع، لكن لم يُؤكد اكتماله قبل المهلة. لم أعِد الإرسال؛ راجع الجلسة.")
+            // The site already answered in the page; return what we captured instead of dropping it.
+            if (p.submitted && p.lastText.isNotBlank()) {
+                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
                 return
             }
             val message = when (p.lastStatus) {
@@ -455,10 +456,17 @@ internal class AndroidWebSessionHost(
                         status(p, "أُرسلت الرسالة إلى الصفحة؛ بانتظار جواب جديد")
                     }
                     "streaming" -> {
-                        // Keep the latest streamed text; some sites never show a completion signal.
                         val streamed = result.optString("text")
-                        if (streamed.isNotBlank() && streamed != p.lastText) {
-                            p.lastText = streamed
+                        if (streamed.isNotBlank()) {
+                            if (streamed != p.lastText) {
+                                p.lastText = streamed
+                                p.lastTextAt = System.currentTimeMillis()
+                            } else if (p.lastTextAt > 0L &&
+                                System.currentTimeMillis() - p.lastTextAt >= 6_000L
+                            ) {
+                                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
+                                return@evaluateJavascript
+                            }
                         }
                     }
                     "complete" -> {

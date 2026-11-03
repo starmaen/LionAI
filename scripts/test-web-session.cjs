@@ -45,9 +45,12 @@ test('requires a new assistant response and stable completion evidence',()=>with
   assert.equal(p.run('poll').status,'complete');
   assert.equal(p.run('poll').text,'new reply');
 }));
-test('stable text alone is not considered completed',()=>withPage(p=>{
-  p.run('prepare');p.run('submit');p.answer('partial');p.run('poll');p.advance(60000);
-  assert.equal(p.run('poll').status,'streaming');
+test('stable text without generating becomes a completed answer',()=>withPage(p=>{
+  p.run('prepare');p.run('submit');p.answer('partial');p.run('poll');
+  p.advance(5100);
+  const done = p.run('poll');
+  assert.equal(done.status,'complete');
+  assert.equal(done.text,'partial');
 }));
 test('observes generating indicator and waits until it stops',()=>withPage(p=>{
   p.run('prepare');p.run('submit');p.answer('result');
@@ -188,11 +191,13 @@ test('cleared or missing editor alone never confirms delivery',()=>withPage(p=>{
   assert.equal(p.run('poll').status,'send_unconfirmed');
   assert.equal(p.clicks(),1);
 }));
-test('a twelve second stream pause without completion evidence is never completed',()=>withPage(p=>{
+test('a five second stream pause without a stop button completes the captured answer',()=>withPage(p=>{
   p.run('prepare');p.run('submit');p.answer('partial text');
   assert.equal(p.run('poll').status,'streaming');
-  p.advance(12001);assert.equal(p.run('poll').status,'streaming');
-  p.advance(120000);assert.equal(p.run('poll').status,'streaming');
+  p.advance(5100);
+  const done = p.run('poll');
+  assert.equal(done.status,'complete');
+  assert.equal(done.text,'partial text');
 }));
 
 const FALLBACK_PROMPT = 'please answer this question about the capital';
