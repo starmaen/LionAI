@@ -136,7 +136,7 @@ test('click alone is not acknowledgement and never triggers another click',()=>w
   p.run('prepare');assert.equal(p.run('submit').status,'clicked');
   assert.equal(p.run('poll').status,'awaiting_ack');
   assert.equal(p.run('submit').status,'clicked');
-  p.advance(31000);assert.equal(p.run('poll').status,'send_unconfirmed');
+  p.advance(46000);assert.equal(p.run('poll').status,'send_unconfirmed');
 }));
 test('busy site is rejected before overwriting the composer',()=>withPage(p=>{
   const b=p.w.document.createElement('button');b.className='stop';p.w.document.body.append(b);
@@ -184,7 +184,7 @@ test('cleared or missing editor alone never confirms delivery',()=>withPage(p=>{
   assert.equal(p.run('poll').status,'awaiting_ack');
   p.w.document.querySelector('#input').remove();
   assert.equal(p.run('poll').status,'awaiting_ack');
-  p.advance(31000);
+  p.advance(46000);
   assert.equal(p.run('poll').status,'send_unconfirmed');
   assert.equal(p.clicks(),1);
 }));
