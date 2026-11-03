@@ -61,11 +61,15 @@
   function collapsed(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
   // Delivery proof that does not depend on any site-specific assistant selector:
   // after the editor clears, the posted user turn becomes visible in the page text.
-  function postedInPage() {
-    if (!inputText(input)) {
+  function postedInPage(editor) {
+    // Editor missing or cleared: only a posted turn visible in page text proves delivery.
+    if (!editor || !inputText(editor)) {
       const wanted = collapsed(expectedText()).slice(0, 80);
       if (wanted.length < 3) return false;
-      const body = collapsed(document.body ? document.body.innerText : '');
+      let bodyText = '';
+      try { if (document.body) bodyText = document.body.innerText; }
+      catch (e) { return false; }
+      const body = collapsed(bodyText);
       return body.indexOf(wanted) !== -1;
     }
     return false;
@@ -174,7 +178,7 @@
         // A visible stop button means this click started generation (submit refused to
         // click while the site was already busy). A cleared editor whose text now shows
         // as a posted turn is delivery proof even when the assistant selector is stale.
-        if ((isNew && value) || stopping || postedInPage()) {
+        if ((isNew && value) || stopping || postedInPage(input)) {
           state.sent = true;
         } else {
           return result(Date.now() - state.clickedAt > 45000 ? 'send_unconfirmed' : 'awaiting_ack');
