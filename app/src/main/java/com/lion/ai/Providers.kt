@@ -532,7 +532,7 @@ val PROVIDERS = listOf(
         modelHint = "دردشة مجانية بدون تسجيل دخول أو مفتاح، تتيح التبديل بين عدة نماذج داخل الصفحة.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://duckduckgo.com/aichat"
+        webviewUrl = "https://duck.ai"
     ),
     ProviderInfo(
         id = "gemini_web",

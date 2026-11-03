@@ -209,6 +209,50 @@ test('fallback: reads the text the page added after our message when selectors m
   assert.equal(done.status, 'complete'); assert.equal(done.text, 'The capital is Damascus.');
   assert.equal(done.viaFallback, true);
 }));
+test('composer fallback finds textarea when site input selector misses',()=>withPage(p=>{
+  p.config.input = '#no-such-input';
+  assert.equal(p.run('probe').status, 'ready');
+  assert.equal(p.run('prepare').status, 'prepared');
+  assert.equal(p.w.document.querySelector('#input').value, 'hello');
+}));
+test('login page is not treated as a chat composer',()=>withPage(p=>{
+  const pw = p.w.document.createElement('input'); pw.type = 'password'; p.w.document.body.append(pw);
+  assert.equal(p.run('probe').status, 'needs_input');
+  assert.equal(p.clicks(), 0);
+  assert.equal(p.w.document.querySelector('#input').value, '');
+}));
+test('locate returns send coordinates without clicking',()=>withPage(p=>{
+  p.w.HTMLElement.prototype.getBoundingClientRect = function() {
+    return {x: 12, y: 40, width: 48, height: 32, top: 40, left: 12, bottom: 72, right: 60};
+  };
+  p.run('prepare');
+  const r = p.run('locate');
+  assert.equal(r.status, 'located');
+  assert.equal(p.clicks(), 0);
+  assert.ok(r.x > 0 && r.y > 0 && r.w > 0 && r.h > 0);
+  assert.equal(p.run('locate').status, 'located');
+  assert.equal(p.clicks(), 0);
+}));
+test('enter delivers without a matching send button',()=>withPage(p=>{
+  p.run('prepare');
+  p.w.document.querySelector('#send').remove();
+  assert.equal(p.run('submit').status, 'needs_send');
+  assert.equal(p.run('enter').status, 'entered');
+  assert.equal(p.clicks(), 0);
+  assert.equal(p.run('poll').status, 'awaiting_ack');
+  p.answer('ok', true);
+  assert.equal(p.run('poll').status, 'streaming');
+}));
+test('locate then poll still requires acknowledgement',()=>withPage(p=>{
+  p.w.HTMLElement.prototype.getBoundingClientRect = function() {
+    return {x: 8, y: 8, width: 20, height: 20, top: 8, left: 8, bottom: 28, right: 28};
+  };
+  p.run('prepare'); p.run('locate');
+  assert.equal(p.run('poll').status, 'awaiting_ack');
+  p.advance(46000);
+  assert.equal(p.run('poll').status, 'send_unconfirmed');
+  assert.equal(p.clicks(), 0);
+}));
 test('fallback never completes while a generic stop button is visible',()=>withPage(p=>{
   p.config.answer = '.no-such-selector';
   p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);

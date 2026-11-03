@@ -612,13 +612,8 @@ fun SettingsScreen(
                         var gwModelsBusy by remember { mutableStateOf(false) }
                         var gwSelectedModel by remember { mutableStateOf("") }
                         fun saveGateway() {
-                            val normalized = WebGateway.normalizeBase(gwUrl)
-                            if (normalized.isNotBlank() && normalized != gwUrl.trim()) gwUrl = normalized
-                            prefs.edit()
-                                .putString(WebGateway.KEY_MODE, gwMode)
-                                .putString(WebGateway.KEY_URL, normalized)
-                                .putString(WebGateway.KEY_TOKEN, gwToken.filterNot { it.isWhitespace() })
-                                .apply()
+                            val saved = WebGateway.save(prefs, gwUrl, gwToken, gwMode)
+                            if (saved.url.isNotBlank() && saved.url != gwUrl.trim()) gwUrl = saved.url
                             LlmClient.reloadOverrides(prefs)
                         }
                         SettingsSection(
@@ -709,8 +704,19 @@ fun SettingsScreen(
                                 label = { Text("رابط الخادم (Base URL)", fontSize = 11.sp) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("https://name.workers.dev/v1", fontSize = 10.sp) },
+                                placeholder = { Text(WebGateway.DEFAULT_URL, fontSize = 10.sp) },
                                 textStyle = TextStyle(fontSize = 12.sp, color = Color(0xFFE0E0E0))
+                            )
+                            if (gwUrl.isBlank()) {
+                                TextButton(onClick = {
+                                    gwUrl = WebGateway.DEFAULT_URL
+                                    saveGateway()
+                                }) { Text("ملء رابط الخادم المعروف", color = Color(0xFFFFB800), fontSize = 11.sp) }
+                            }
+                            Text(
+                                "فحص /health يعيد 200 بدون مفتاح. المحادثة و«النماذج» تحتاج RELAY_TOKEN مطابقاً لسر Cloudflare.",
+                                color = Color(0xFF9A9A9A),
+                                fontSize = 10.sp
                             )
                             Spacer(Modifier.height(6.dp))
                             OutlinedTextField(
@@ -737,7 +743,9 @@ fun SettingsScreen(
                                         gwReport = "⏳ أفحص الخادم…"
                                         saveGateway()
                                         settingsScope.launch {
-                                            gwReport = withContext(Dispatchers.IO) { WebGateway.test(prefs) }
+                                            gwReport = withContext(Dispatchers.IO) {
+                                                WebGateway.test(prefs, gwUrl, gwToken)
+                                            }
                                             gwBusy = false
                                         }
                                     }
@@ -781,7 +789,9 @@ fun SettingsScreen(
                                                 }
                                             }
                                             gwReport = if (models.isEmpty()) {
-                                                "⚠️ لا موديلات — تحقق من الرابط و RELAY_TOKEN."
+                                                WebGateway.lastModelsError.ifBlank {
+                                                    "⚠️ لا موديلات — تحقق من الرابط و RELAY_TOKEN."
+                                                }
                                             } else {
                                                 "✅ ${models.size} موديلاً متاحاً من الخادم."
                                             }

@@ -297,7 +297,10 @@ function authOk(request, env) {
   const token = trim(env.RELAY_TOKEN);
   if (!token) return true;
   const h = request.headers.get("Authorization") || "";
-  let got = h.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() : trim(request.headers.get("X-Api-Key"));
+  let got = "";
+  if (/^bearer\s+/i.test(h)) got = h.replace(/^bearer\s+/i, "").trim();
+  else if (/^token\s+/i.test(h)) got = h.replace(/^token\s+/i, "").trim();
+  else got = trim(request.headers.get("X-Api-Key") || request.headers.get("X-Relay-Token") || "");
   return got === token;
 }
 
@@ -520,8 +523,9 @@ async function handleAnthropic(payload, model, env) {
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Api-Key",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Api-Key, X-Relay-Token, User-Agent",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Expose-Headers": "Content-Type"
 };
 
 export default {
@@ -556,16 +560,31 @@ export default {
       }, 200, CORS);
     }
 
-    if (request.method === "GET" && path === "/health") {
+    if (request.method === "GET" && (path === "/health" || path === "/v1/health")) {
       const conf = configured(env);
       const labels = {};
       for (const pid of Object.keys(conf).sort()) labels[pid] = conf[pid][3];
       return jsonResponse({ status: "ok", version: GATEWAY_VERSION, auth_required: !!trim(env.RELAY_TOKEN), providers: labels }, 200, CORS);
     }
 
+    if (request.method === "GET" && path === "/v1") {
+      return jsonResponse({
+        status: "ok",
+        object: "api",
+        version: GATEWAY_VERSION,
+        auth_required: !!trim(env.RELAY_TOKEN),
+        endpoints: ["/health", "/v1/models", "/v1/chat/completions"],
+        usage: "POST /v1/chat/completions with Authorization: Bearer RELAY_TOKEN and model=provider/model"
+      }, 200, CORS);
+    }
+
     if (request.method === "GET" && path === "/v1/models") {
-      if (!authOk(request, env)) return errorResponse(401, "Invalid relay token", "authentication_error", CORS);
+      if (!authOk(request, env)) return errorResponse(401, "Invalid or missing RELAY_TOKEN. Set the same value in the app (Web server key) and in Cloudflare Worker secrets.", "authentication_error", CORS);
       return jsonResponse({ object: "list", data: await allModels(env) }, 200, CORS);
+    }
+
+    if (request.method === "GET" && path === "/v1/chat/completions") {
+      return errorResponse(405, "Use POST /v1/chat/completions with JSON body {model, messages}", "invalid_request_error", CORS);
     }
 
     if (request.method === "POST" && path === "/v1/chat/completions") {
@@ -577,7 +596,7 @@ export default {
 };
 
 async function handleChat(request, env) {
-  if (!authOk(request, env)) return errorResponse(401, "Invalid relay token", "authentication_error", CORS);
+  if (!authOk(request, env)) return errorResponse(401, "Invalid or missing RELAY_TOKEN. Set the same value in the app (Web server key) and in Cloudflare Worker secrets.", "authentication_error", CORS);
 
   const len = Number(request.headers.get("Content-Length") || "0");
   if (len > 8 * 1024 * 1024) return errorResponse(400, "Invalid body size", "invalid_request_error", CORS);

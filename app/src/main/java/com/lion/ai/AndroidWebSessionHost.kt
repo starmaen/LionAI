@@ -9,6 +9,8 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceResponse
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -22,6 +24,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONTokener
 import org.json.JSONObject
 
@@ -61,7 +65,7 @@ internal class AndroidWebSessionHost(
             val focusAllowed = value || view === inputLease
             view.isFocusable = focusAllowed
             view.isFocusableInTouchMode = focusAllowed
-            view.isClickable = value
+            view.isClickable = focusAllowed
             view.settings.javaScriptCanOpenWindowsAutomatically = value
             if (!focusAllowed && view.hasFocus()) view.clearFocus()
         }
@@ -97,9 +101,27 @@ internal class AndroidWebSessionHost(
         /** Track observed streaming text for an explicit incomplete-response error at timeout. */
         var lastText: String = "",
         /** Compact page diagnostics from the injected script, appended to timeout errors. */
-        var lastDiag: String = ""
+        var lastDiag: String = "",
+        var tapped: Boolean = false,
+        var enterTried: Boolean = false
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+
+    /** Dispatch a real touch so the page receives a trusted click (JS .click() is often ignored). */
+    private fun tapCss(view: WebView, cssX: Double, cssY: Double) {
+        if (cssX <= 0.0 || cssY <= 0.0 || view.width <= 0 || view.height <= 0) return
+        val scale = view.scale.toDouble().takeIf { it > 0.0 } ?: 1.0
+        val x = (cssX * scale).toFloat().coerceIn(1f, (view.width - 1).toFloat())
+        val y = (cssY * scale).toFloat().coerceIn(1f, (view.height - 1).toFloat())
+        view.requestFocus()
+        val downTime = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+        val up = MotionEvent.obtain(downTime, downTime + 40L, MotionEvent.ACTION_UP, x, y, 0)
+        view.dispatchTouchEvent(down)
+        view.dispatchTouchEvent(up)
+        down.recycle()
+        up.recycle()
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun viewFor(adapter: WebSiteAdapter): WebView {
@@ -117,7 +139,7 @@ internal class AndroidWebSessionHost(
         view.isFocusable = interactive
         view.isFocusableInTouchMode = interactive
         view.isClickable = interactive
-        view.setOnTouchListener { _, _ -> !interactive }
+        view.setOnTouchListener { v, _ -> !(interactive || v === inputLease) }
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -135,6 +157,11 @@ internal class AndroidWebSessionHost(
             javaScriptCanOpenWindowsAutomatically = false
             userAgentString = mobileUserAgent(WebSettings.getDefaultUserAgent(activity))
         }
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                WebSettingsCompat.setRequestedWithHeaderOriginAllowList(view.settings, emptySet())
+            }
+        } catch (_: Throwable) { }
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
         val load = WebPageLoad()
@@ -353,9 +380,11 @@ internal class AndroidWebSessionHost(
             .replace("__LION_TOKEN__", JSONObject.quote(p.request.token))
             .replace("__LION_ACTION__", JSONObject.quote(p.stage))
             .replace("__LION_PROMPT__", JSONObject.quote(p.request.prompt))
-        if (p.stage == "prepare" || p.stage == "submit") acquireEditorFocus(p.view)
+        if (p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
+            acquireEditorFocus(p.view)
+        }
         // Mark possible delivery before evaluating: a navigation can lose the callback after click.
-        if (p.stage == "submit") p.submitted = true
+        if (p.stage == "submit" || p.stage == "locate" || p.stage == "enter") p.submitted = true
         p.view.evaluateJavascript(js) { raw ->
             if (pending !== p || destroyed) return@evaluateJavascript
             val decoded = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
@@ -375,10 +404,34 @@ internal class AndroidWebSessionHost(
                     }
                     "ready" -> p.stage = "prepare"
                     "prepared" -> {
-                        p.stage = "submit"
+                        p.stage = "locate"
                         status(p, "وصل النص إلى حقل الموقع؛ جارٍ الإرسال")
                     }
-                    "needs_send" -> p.submitted = false
+                    "located" -> {
+                        p.submitted = true
+                        if (!p.tapped) {
+                            p.tapped = true
+                            tapCss(p.view, result.optDouble("x"), result.optDouble("y"))
+                        }
+                        p.stage = "poll"
+                        releaseEditorFocus()
+                        status(p, "نُقر زر الإرسال من التطبيق؛ ننتظر تأكيد الموقع")
+                    }
+                    "entered" -> {
+                        p.submitted = true
+                        p.enterTried = true
+                        p.stage = "poll"
+                        releaseEditorFocus()
+                        status(p, "أُرسل Enter إلى حقل الموقع؛ ننتظر تأكيد الاستقبال")
+                    }
+                    "needs_send" -> {
+                        p.submitted = false
+                        when {
+                            p.stage == "locate" && !p.enterTried -> p.stage = "enter"
+                            p.stage == "enter" && !p.tapped -> p.stage = "submit"
+                            else -> Unit
+                        }
+                    }
                     "clicked" -> {
                         p.submitted = true
                         p.stage = "poll"

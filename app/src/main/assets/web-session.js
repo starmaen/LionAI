@@ -14,9 +14,56 @@
     readyState: document.readyState, expectedHosts: C.hosts
   };
   if (location.protocol !== 'https:' || !C.hosts.includes(location.hostname)) return result('origin', pageInfo);
-  function visible(n) { return !!n && n.getClientRects().length > 0 && getComputedStyle(n).visibility !== 'hidden'; }
-  function nodes(selector, root) { return Array.from((root || document).querySelectorAll(selector)); }
+  function visible(n) {
+    if (!n) return false;
+    try {
+      if (n.getClientRects && n.getClientRects().length === 0) return false;
+      const st = n.ownerDocument && n.ownerDocument.defaultView
+        ? n.ownerDocument.defaultView.getComputedStyle(n) : getComputedStyle(n);
+      return st.visibility !== 'hidden' && st.display !== 'none' && st.opacity !== '0';
+    } catch (e) { return !!n; }
+  }
+  function walkRoots(fn, root) {
+    const start = root || document;
+    fn(start);
+    try {
+      const all = start.querySelectorAll ? start.querySelectorAll('*') : [];
+      for (let i = 0; i < all.length; i++) {
+        if (all[i].shadowRoot) walkRoots(fn, all[i].shadowRoot);
+      }
+    } catch (e) {}
+    if (!root) {
+      try {
+        Array.from(document.querySelectorAll('iframe')).forEach(function (f) {
+          try { if (f.contentDocument) walkRoots(fn, f.contentDocument); } catch (e) {}
+        });
+      } catch (e) {}
+    }
+  }
+  function nodes(selector, root) {
+    const out = [];
+    let invalid = null;
+    walkRoots(function (r) {
+      try { r.querySelectorAll(selector).forEach(function (n) { out.push(n); }); }
+      catch (e) { if (!invalid) invalid = e; }
+    }, root);
+    if (invalid) throw invalid;
+    return out;
+  }
   function find(selector) { return nodes(selector).find(visible); }
+  function findInput() {
+    const explicit = find(C.input);
+    if (explicit && !isDisabled(explicit) && !explicit.readOnly) return explicit;
+    const all = nodes("textarea, [contenteditable='true'][role='textbox'], [contenteditable='true']").filter(function (n) {
+      return visible(n) && !isDisabled(n) && !n.readOnly;
+    });
+    if (!all.length) return explicit || null;
+    const vh = (window.innerHeight || 800);
+    const bottom = all.filter(function (n) {
+      try { return n.getBoundingClientRect().top > vh * 0.35; } catch (e) { return true; }
+    });
+    return (bottom.length ? bottom[bottom.length - 1] : all[all.length - 1]);
+  }
   function answers() { return nodes(C.answer).filter(visible); }
   function answerText(n) {
     if (!n) return '';
@@ -59,6 +106,85 @@
   }
   function expectedText() { return prompt.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim(); }
   function collapsed(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
+  function isDisabled(n) {
+    return !n || n.disabled || n.getAttribute('aria-disabled') === 'true' || n.getAttribute('aria-busy') === 'true';
+  }
+  function labelOf(n) {
+    return ((n.getAttribute('aria-label') || n.title || n.getAttribute('data-testid') ||
+      n.getAttribute('data-test-id') || n.innerText || '') + '').trim();
+  }
+  function rectOf(n) {
+    try {
+      const r = n.getBoundingClientRect();
+      return {x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height};
+    } catch (e) { return {x: 0, y: 0, w: 0, h: 0}; }
+  }
+  function findSend() {
+    const explicit = find(C.send);
+    if (explicit && !isDisabled(explicit)) return explicit;
+    const exact = /^(send|send message|submit|إرسال|ارسل|envoyer|senden)$/i;
+    const partial = /(send|submit|إرسال|paper-airplane|arrow-up)/i;
+    const stopish = /(stop|إيقاف|cancel generating)/i;
+    const buttons = nodes('button, [role="button"], [data-testid*="send"], [data-test-id*="send"]');
+    const labeled = buttons.find(function (b) {
+      if (!visible(b) || isDisabled(b)) return false;
+      const lab = labelOf(b);
+      return exact.test(lab) && !stopish.test(lab);
+    });
+    if (labeled) return labeled;
+    const input = findInput();
+    if (input) {
+      const form = input.closest && input.closest('form');
+      if (form) {
+        const sub = Array.from(form.querySelectorAll('button[type="submit"], button:not([type]), [role="button"]'))
+          .find(function (b) { return visible(b) && !isDisabled(b) && !stopish.test(labelOf(b)); });
+        if (sub) return sub;
+      }
+      let root = input.parentElement;
+      for (let i = 0; i < 8 && root; i++, root = root.parentElement) {
+        const cands = nodes('button, [role="button"]', root).filter(function (b) {
+          return visible(b) && !isDisabled(b) && !stopish.test(labelOf(b));
+        });
+        const sendish = cands.find(function (b) { return partial.test(labelOf(b)); });
+        if (sendish) return sendish;
+        if (cands.length === 1) return cands[0];
+      }
+    }
+    return (explicit && !isDisabled(explicit)) ? explicit : null;
+  }
+  function pressEnter(el) {
+    if (!el) return false;
+    try { el.focus({preventScroll: true}); } catch (e) { try { el.focus(); } catch (e2) {} }
+    const opts = {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true};
+    try { el.dispatchEvent(new KeyboardEvent('keydown', opts)); } catch (e) {}
+    try { el.dispatchEvent(new KeyboardEvent('keypress', opts)); } catch (e) {}
+    try { el.dispatchEvent(new KeyboardEvent('keyup', opts)); } catch (e) {}
+    return true;
+  }
+  function writeInput(input, value) {
+    input.focus({preventScroll: true});
+    if (input.isContentEditable) {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(input);
+      selection.removeAllRanges(); selection.addRange(range);
+      if (typeof document.execCommand !== 'function' || !document.execCommand('insertText', false, value)) {
+        input.textContent = value;
+        input.dispatchEvent(new InputEvent('input', {bubbles: true, composed: true, inputType: 'insertText', data: value}));
+      }
+      return;
+    }
+    const proto = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    try { if (input._valueTracker) input._valueTracker.setValue(''); } catch (e) {}
+    setter.call(input, value);
+    try {
+      input.dispatchEvent(new InputEvent('input', {bubbles: true, cancelable: true, composed: true, inputType: 'insertText', data: value}));
+    } catch (e) {
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+    input.dispatchEvent(new Event('change', {bubbles: true}));
+  }
   // Delivery proof that does not depend on any site-specific assistant selector:
   // after the editor clears, the posted user turn becomes visible in the page text.
   function postedInPage(editor) {
@@ -89,6 +215,7 @@
       const block = /^(DIV|P|LI|UL|OL|SECTION|ARTICLE|MAIN|HEADER|FOOTER|H[1-6]|PRE|BLOCKQUOTE|TABLE|TR|BR|BUTTON)$/i.test(tag);
       if (block) out.push('\n');
       for (let c = n.firstChild; c; c = c.nextSibling) walk(c);
+      if (n.shadowRoot) walk(n.shadowRoot);
       if (block) out.push('\n');
     })(root);
     return out.join('').replace(/\u00a0/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{2,}/g, '\n');
@@ -163,46 +290,37 @@
         responses: nodes('[data-message-role], [data-message-author-role], [data-role="assistant"], [class*="assistant"], [class*="markdown"], [class*="prose"], [class*="response"], model-response').filter(visible).slice(-20).map(describe)
       });
     }
-    const input = find(C.input);
+    function looksLikeLogin() {
+      const title = (document.title || '').toLowerCase();
+      if (/sign in|log in|login|تسجيل الدخول|connexion|anmelden/.test(title)) return true;
+      if (location.pathname && /\/(login|signin|sign-in|log-in|auth|accounts)\b/i.test(location.pathname)) return true;
+      return !!find('input[type="password"]');
+    }
+    const input = findInput();
     if (action === 'probe') {
       if (find(C.stop)) return result('site_busy');
+      if (looksLikeLogin()) return result('needs_input');
       if (!input) return result('needs_input');
       if (input.disabled || input.readOnly || input.getAttribute('aria-disabled') === 'true') return result('input_disabled');
       return result('ready');
     }
     let state = window.__lionSessionRequest;
     if (action === 'prepare') {
+      if (looksLikeLogin()) return result('needs_input');
       if (!input) return result('needs_input');
       if (state && state.token === token) return result(state.sent ? 'sent' : state.clicked ? 'clicked' : 'prepared');
       if (find(C.stop)) return result('site_busy');
       if (text(input) || (input.value || '').trim()) return result('draft');
       const old = answers();
       state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, clicked: false, clickedAt: 0, sawStop: false,
-        last: '', changed: Date.now(), clicks: 0, before: pageText(input)};
+        last: '', changed: Date.now(), clicks: 0, before: pageText(input), tapped: false};
       window.__lionSessionRequest = state;
-      input.focus({preventScroll: true});
-      if (input.isContentEditable) {
-        // execCommand updates the editor's internal selection and emits an input event.
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(input);
-        selection.removeAllRanges(); selection.addRange(range);
-        if (typeof document.execCommand !== 'function' || !document.execCommand('insertText', false, prompt)) {
-          input.textContent = prompt;
-          input.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: prompt}));
-        }
-      } else {
-        const proto = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-        setter.call(input, prompt);
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-      }
+      writeInput(input, prompt);
       if (inputText(input) !== expectedText()) {
         delete window.__lionSessionRequest;
         return result('input_rejected', {focused: document.activeElement === input, editable: input.isContentEditable === true});
       }
-      return result('prepared');
+      return result('prepared', rectOf(input));
     }
     if (!state || state.token !== token) return result('lost');
     if (action === 'cancel') {
@@ -210,9 +328,30 @@
       delete window.__lionSessionRequest;
       return result('cancelled');
     }
+    if (action === 'locate') {
+      if (state.sent) return result('sent');
+      if (state.clicked) return result('located', state.tap || {});
+      if (find(C.stop)) return result('site_busy');
+      if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
+      const button = findSend();
+      if (!button) return result('needs_send');
+      const tap = rectOf(button);
+      if (!(tap.w > 0 && tap.h > 0)) return result('needs_send');
+      state.clicked = true; state.clickedAt = Date.now(); state.clicks++; state.tap = tap; state.tapped = true;
+      return result('located', tap);
+    }
+    if (action === 'enter') {
+      if (state.sent) return result('sent');
+      if (state.clicked && !state.fromEnter) return result(state.tapped ? 'located' : 'clicked');
+      if (find(C.stop)) return result('site_busy');
+      if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
+      state.clicked = true; state.clickedAt = Date.now(); state.clicks++; state.fromEnter = true;
+      pressEnter(input);
+      return result('entered');
+    }
     if (action === 'submit') {
       if (state.sent) return result('sent');
-      if (state.clicked) return result('clicked');
+      if (state.clicked) return result(state.tapped ? 'located' : (state.fromEnter ? 'entered' : 'clicked'));
       if (find(C.stop)) return result('site_busy');
       if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
       const button = find(C.send);

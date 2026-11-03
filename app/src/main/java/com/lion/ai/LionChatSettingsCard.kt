@@ -124,7 +124,8 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                     Row {
                         TextButton(enabled = !busy, onClick = { configure = info.id }) { Text("محددات المطور") }
                         TextButton(onClick = {
-                            context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl))
+                            val sessionUrl = WebSiteAdapters.get(info.id, prefs)?.url ?: info.webviewUrl
+                            context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", sessionUrl))
                         }) { Text("الصفحة الجانبية") }
                     }
                 }

@@ -304,6 +304,7 @@ object LlmClient {
                 val attempt = runCatching {
                     callOpenAiCompatible(
                         WebGateway.chatUrl(gateway.url), gateway.token, gwModel, turns, message,
+                        extraHeaders = mapOf("X-Api-Key" to gateway.token),
                         maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                     )
                 }
