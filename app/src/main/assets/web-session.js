@@ -192,11 +192,7 @@
     if (!editor || !inputText(editor)) {
       const wanted = collapsed(expectedText()).slice(0, 80);
       if (wanted.length < 3) return false;
-      let bodyText = '';
-      try { if (document.body) bodyText = document.body.innerText; }
-      catch (e) { return false; }
-      const body = collapsed(bodyText);
-      return body.indexOf(wanted) !== -1;
+      return collapsed(pageText(editor)).indexOf(wanted) !== -1;
     }
     return false;
   }
@@ -310,15 +306,20 @@
       if (!input) return result('needs_input');
       if (state && state.token === token) return result(state.sent ? 'sent' : state.clicked ? 'clicked' : 'prepared');
       if (find(C.stop)) return result('site_busy');
-      if (text(input) || (input.value || '').trim()) return result('draft');
+      // App Send owns the composer: leftover test drafts and previous unsent
+      // prompts must be replaced, otherwise the message never leaves the app.
+      const wanted = expectedText();
+      const current = inputText(input);
       const old = answers();
       state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, clicked: false, clickedAt: 0, sawStop: false,
         last: '', changed: Date.now(), clicks: 0, before: pageText(input), tapped: false};
       window.__lionSessionRequest = state;
-      writeInput(input, prompt);
-      if (inputText(input) !== expectedText()) {
-        delete window.__lionSessionRequest;
-        return result('input_rejected', {focused: document.activeElement === input, editable: input.isContentEditable === true});
+      if (current !== wanted) {
+        writeInput(input, prompt);
+        if (inputText(input) !== wanted) {
+          delete window.__lionSessionRequest;
+          return result('input_rejected', {focused: document.activeElement === input, editable: input.isContentEditable === true});
+        }
       }
       return result('prepared', rectOf(input));
     }
@@ -364,44 +365,44 @@
       if (!state.clicked) return result('not_sent');
       const list = answers();
       const last = list[list.length - 1];
-      let value = answerText(last);
-      // Accept only a new assistant turn; never recycle or edit an old answer.
-      let isNew = last && !state.baseline.includes(last) &&
-        (list.length > state.baseline.length || !state.baselineText.includes(value));
-      // Fallback: the site's selectors found no new turn, but our message appeared on the page.
-      // We then read what the page added after it (fixed page chrome is excluded by diffing).
+      const texts = list.map(answerText);
+      // Remounted old bubbles are new DOM nodes with old text — not a new answer.
+      const unseen = texts.filter(function (t) { return t && state.baselineText.indexOf(t) === -1; });
+      let value = unseen.length ? unseen[unseen.length - 1] : '';
+      let isNew = !!value;
       const fb = fallbackState(state, input);
       let viaFallback = false;
-      if ((!isNew || !value) && fb.shown && fb.answer) { value = fb.answer; isNew = true; viaFallback = true; }
       const explicitStop = !!find(C.stop);
       if (explicitStop) state.sawStop = true;
       const stopping = explicitStop || (state.sent && genericStop());
-      const info = 'a=' + list.length + ' fb=' + (viaFallback ? 1 : 0) + ' shown=' + (fb.shown ? 1 : 0) +
+      const info = 'a=' + list.length + ' unseen=' + unseen.length + ' shown=' + (fb.shown ? 1 : 0) +
         ' stop=' + (stopping ? 1 : 0) + ' len=' + (value || '').length;
       if (!state.sent) {
-        // A new assistant turn acknowledges delivery even if the site keeps the draft.
-        // A visible stop button means this click started generation (submit refused to
-        // click while the site was already busy). A cleared editor whose text now shows
-        // as a posted turn, or our message appearing outside the composer, is delivery proof.
-        if ((isNew && value) || explicitStop || postedInPage(input) || fb.shown) {
+        // Delivery proof: a genuinely new assistant text, a stop control this click
+        // started, or our prompt posted in the page after the composer cleared.
+        // Leftover page chrome matching the prompt is not acknowledgement.
+        if ((isNew && value) || explicitStop || postedInPage(input)) {
           state.sent = true;
         } else {
           return result(Date.now() - state.clickedAt > 45000 ? 'send_unconfirmed' : 'awaiting_ack', {diag: info});
         }
       }
+      if ((!isNew || !value) && fb.shown && fb.answer && state.baselineText.indexOf(fb.answer) === -1) {
+        value = fb.answer;
+        isNew = true;
+        viaFallback = true;
+      }
       if (!isNew || !value) return result(stopping ? 'sent' : 'waiting', {generating: stopping, diag: info});
       if (value !== state.last) { state.last = value; state.changed = Date.now(); }
       const completeInside = !viaFallback && !!last && !!last.querySelector(C.complete);
-      // Some sites put their copy controls in the parent assistant message container.
       const parent = !viaFallback && last ? last.parentElement : null;
       const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
         nodes(C.answer, parent).length <= 1;
       const age = Date.now() - state.changed;
-      // Copy/stop evidence can complete after 2.5s. Sites without those controls
-      // (Arena and others) still complete once the text has stayed still 5s.
+      // Copy/stop can complete after 2.5s. Sites without those controls still
+      // complete only after a NEW answer (not leftover page text) stays still 5s.
       const completed = !stopping && value.length > 0 && (
         (age >= 2500 && (state.sawStop || completeInside || completeNearby)) ||
-        (viaFallback && age >= 5000) ||
         age >= 5000
       );
       return result(completed ? 'complete' : 'streaming',

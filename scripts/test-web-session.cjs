@@ -58,10 +58,17 @@ test('observes generating indicator and waits until it stops',()=>withPage(p=>{
   p.run('poll');p.advance(5000);assert.equal(p.run('poll').status,'streaming');
   stop.remove();assert.equal(p.run('poll').status,'complete');
 }));
-test('never overwrites a user draft',()=>withPage(p=>{
-  p.w.document.querySelector('#input').value='my draft';
-  assert.equal(p.run('prepare').status,'draft');assert.equal(p.clicks(),0);
-  assert.equal(p.w.document.querySelector('#input').value,'my draft');
+test('replaces a leftover composer draft so app Send can post',()=>withPage(p=>{
+  p.w.document.querySelector('#input').value='LionAI conversation context. leftover test';
+  assert.equal(p.run('prepare').status,'prepared');
+  assert.equal(p.w.document.querySelector('#input').value,'hello');
+  assert.equal(p.run('submit').status,'clicked');
+  assert.equal(p.clicks(),1);
+}));
+test('composer already holding the prompt is prepared without rewriting',()=>withPage(p=>{
+  p.w.document.querySelector('#input').value='hello';
+  assert.equal(p.run('prepare').status,'prepared');
+  assert.equal(p.w.document.querySelector('#input').value,'hello');
 }));
 test('detects changed drafts and disabled or missing send buttons',()=>withPage(p=>{
   p.run('prepare');const b=p.w.document.querySelector('#send');b.disabled=true;
@@ -86,9 +93,18 @@ test('JSON escaping preserves adversarial text without executing it',()=>withPag
   assert.equal(p.w.document.querySelector('#input').value,text);
   assert.equal(p.w.hacked,undefined);
 }));
-test('a real additional turn may repeat the same response text',()=>withPage(p=>{
-  p.answer('تم',true);p.run('prepare');p.run('submit');p.answer('تم',true);
+test('a real additional turn with new text completes',()=>withPage(p=>{
+  p.answer('تم',true);p.run('prepare');p.run('submit');p.answer('تم أيضاً',true);
   p.run('poll');p.advance(4000);assert.equal(p.run('poll').status,'complete');
+}));
+test('remounted old answers never count as a completed reply',()=>withPage(p=>{
+  const old=p.answer('old reply',true);
+  p.run('prepare');p.run('submit');
+  old.remove();
+  p.answer('old reply',true);
+  p.advance(5100);
+  assert.equal(p.run('poll').status,'awaiting_ack');
+  assert.equal(p.w.document.querySelector('#input').value,'');
 }));
 test('preserves code fences and removes copy button text from returned answer',()=>withPage(p=>{
   p.run('prepare');p.run('submit');const n=p.answer('',true);

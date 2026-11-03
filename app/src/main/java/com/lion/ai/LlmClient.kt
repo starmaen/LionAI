@@ -244,10 +244,12 @@ object LlmClient {
             if (image != null) return "⚠️ إرسال الصور آلياً إلى الصفحات غير مدعوم؛ افتح الصفحة لرفع الصورة يدوياً."
             val prompt = WebSessionTransport.prompt(systemPrompt, normalize(history), message)
             if (prompt.length > 60_000) return "⚠️ سياق المحادثة أكبر من حد النقل الآمن للصفحة (60000 حرف). اختصره أو ابدأ محادثة جديدة."
+            // A named site is only that site. The hub may rank verified members.
+            // Individual فحص and in-app Send to Arena/Claude/… must never fan out.
             val members = if (provider == WebChatRuntime.HUB) WebChatRuntime.members(prefs)
                 else listOf(providerInfo(provider))
             val routes = members.map { Route(it.id, "web-session", Channel.WEB) }
-            val ordered = if (prefs.getBoolean(WebChatRuntime.CENTRAL, true)) {
+            val ordered = if (provider == WebChatRuntime.HUB && prefs.getBoolean(WebChatRuntime.CENTRAL, true)) {
                 CentralBrain.rankRoutes(prefs, SmartRouter.classify(message, false, 0, null), routes, chatModeHint ?: ChatMode.GENERAL)
             } else routes
             val deadline = System.currentTimeMillis() + (if (readTimeoutMs > 0) readTimeoutMs else 90_000)
@@ -259,14 +261,17 @@ object LlmClient {
                 val result = WebSessionTransport.exchange(route.provider, prompt, remaining)
                 SmartRouter.record(route, result.success, System.currentTimeMillis() - started)
                 prefs.edit().putBoolean("web_session_verified_${route.provider}", result.success).apply()
-                if (result.success) {
+                if (result.success && result.text.isNotBlank() && !isErrorReply(result.text)) {
                     recordSuccess(provider, "web-session/${route.provider}")
                     return result.text
                 }
-                lastErrors[route.provider] = result.text.take(200)
-                errors += "${providerInfo(route.provider).shortName}: ${result.text}"
-                // Never silently re-send to another site after uncertain delivery.
-                if (result.submitted) return result.text
+                val failText = result.text.ifBlank { "لم يصل جواب من الصفحة" }.let {
+                    if (isErrorReply(it)) it else "⚠️ $it"
+                }
+                lastErrors[route.provider] = failText.take(200)
+                errors += "${providerInfo(route.provider).shortName}: $failText"
+                // Uncertain delivery: never retry another site and never treat leftover page text as the chat reply.
+                if (result.submitted) return failText
             }
             return "⚠️ لم يصل جواب من جلسات الويب.\n" + errors.joinToString("\n")
         }

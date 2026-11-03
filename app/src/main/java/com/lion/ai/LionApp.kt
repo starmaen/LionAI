@@ -1406,8 +1406,8 @@ fun LionApp() {
         val image = imageAttachment
         if (text.isEmpty() && file == null && image == null) return
 
-        // تحية أو «هل أنت هنا؟» لا تستحق انتظار مزود؛ نرد فوراً من دون شبكة.
-        if (file == null && image == null) {
+        // تحية فورية للمزودات API فقط. جلسات الويب يجب أن تصل للموقع حتى للرسائل القصيرة.
+        if (file == null && image == null && !WebChatRuntime.handles(selectedProvider)) {
             QuickReply.forText(text)?.let { quick ->
                 val reply = replyingTo
                 replyingTo = null

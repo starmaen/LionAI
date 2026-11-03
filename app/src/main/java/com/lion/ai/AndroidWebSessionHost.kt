@@ -340,11 +340,6 @@ internal class AndroidWebSessionHost(
             return
         }
         if (System.currentTimeMillis() >= p.deadline) {
-            // The site already answered in the page; return what we captured instead of dropping it.
-            if (p.submitted && p.lastText.isNotBlank()) {
-                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
-                return
-            }
             val message = when (p.lastStatus) {
                 "needs_input", "origin", "loading" -> "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
@@ -384,8 +379,6 @@ internal class AndroidWebSessionHost(
         if (p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
             acquireEditorFocus(p.view)
         }
-        // Mark possible delivery before evaluating: a navigation can lose the callback after click.
-        if (p.stage == "submit" || p.stage == "locate" || p.stage == "enter") p.submitted = true
         p.view.evaluateJavascript(js) { raw ->
             if (pending !== p || destroyed) return@evaluateJavascript
             val decoded = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
@@ -457,16 +450,10 @@ internal class AndroidWebSessionHost(
                     }
                     "streaming" -> {
                         val streamed = result.optString("text")
-                        if (streamed.isNotBlank()) {
-                            if (streamed != p.lastText) {
-                                p.lastText = streamed
-                                p.lastTextAt = System.currentTimeMillis()
-                            } else if (p.lastTextAt > 0L &&
-                                System.currentTimeMillis() - p.lastTextAt >= 6_000L
-                            ) {
-                                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
-                                return@evaluateJavascript
-                            }
+                        if (streamed.isNotBlank() && streamed != p.lastText) {
+                            p.lastText = streamed
+                            p.lastTextAt = System.currentTimeMillis()
+                            status(p, "يصل الرد من الصفحة… لم يُعتمد بعد")
                         }
                     }
                     "complete" -> {

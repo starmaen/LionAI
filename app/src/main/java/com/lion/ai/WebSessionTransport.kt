@@ -50,11 +50,9 @@ object WebSessionTransport {
         }
     }
 
-    /** Text transport carries the same instructions/history as API transport; no credentials are injected. */
-    fun prompt(system: String, history: List<ChatTurn>, message: String): String = buildString {
-        append("LionAI conversation context. Answer only the latest user message.\n")
-        append("SYSTEM INSTRUCTIONS:\n").append(system).append("\n\n")
-        history.forEach { append(if (it.role == "assistant") "ASSISTANT:\n" else "USER:\n").append(it.content).append("\n\n") }
-        append("LATEST USER MESSAGE:\n").append(message)
-    }
+    /**
+     * Web composers are already a live conversation. Dumping system+history into the
+     * input prevents Send and never returns a real site answer to the app.
+     */
+    fun prompt(system: String, history: List<ChatTurn>, message: String): String = message.trim()
 }
