@@ -75,6 +75,31 @@ val PROVIDERS = listOf(
         models = listOf("gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.8-flash", "gemini-3.1-flash-lite")
     ),
     ProviderInfo(
+        id = "apinex",
+        label = "APInex",
+        tagline = "OpenAI-compatible — نماذج Free/ ونماذج مدفوعة من كتالوج واحد",
+        docsUrl = "https://apinex.bond/models",
+        defaultModel = "free/minimax-m3.1-flash",
+        shortName = "APInex",
+        modelHint = "مفتاح sk-apx من لوحة APInex. زر «تحديث» يجلب كل النماذج، والمجاني يبدأ بـ free/ مثل free/kimi-k3 وfree/gpt-6-luna وfree/gemini-3.8-flash.",
+        models = listOf(
+            "free/minimax-m3.1-flash", "free/kimi-k3", "free/gpt-6-luna",
+            "free/glm-5.3-flash", "free/gemini-3.8-flash", "free/qwen-3.8-max",
+            "claude-sonnet-5.5", "gpt-6.1-sol"
+        )
+    ),
+    ProviderInfo(
+        id = "opencode-local",
+        label = "OpenCode Local (البيئة)",
+        tagline = "عميل OpenCode الرسمي داخل Alpine — كل المزودات المرتبطة به",
+        docsUrl = "https://opencode.ai/docs/server/",
+        defaultModel = "opencode/big-pickle",
+        keyless = true,
+        shortName = "OpenCode Local",
+        modelHint = "يشغّل opencode serve داخل البيئة ويستخدم إعدادات ومفاتيح العميل الرسمي. اربط المزودات أولاً عبر opencode auth login، ثم اضغط «تحديث» لعرض provider/model.",
+        models = listOf("opencode/big-pickle")
+    ),
+    ProviderInfo(
         id = "opencode",
         label = "OpenCode Zen",
         tagline = "مفتاح Zen من opencode.ai/auth — يتطلب رصيداً مدفوعاً",

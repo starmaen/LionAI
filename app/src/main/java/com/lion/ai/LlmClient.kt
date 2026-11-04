@@ -152,7 +152,7 @@ object LlmClient {
 
     /** هل الموديل الحالي يقرأ الصور؟ (OpenRouter يعتمد على الموديل، وخطأ المزود يُعرض إن لم يدعمها) */
     fun supportsVision(provider: String, model: String): Boolean = when (provider) {
-        "gemini", "openai", "claude", "deepseek", "openrouter", "opencode", "opencode-go", "opencode-console",
+        "gemini", "openai", "claude", "deepseek", "openrouter", "apinex", "opencode", "opencode-go", "opencode-console", "opencode-local",
         "mistral", "cloudflare", "zai", "ollama", "together", "nvidia", "ovh", "custom" -> true
         "groq" -> (model.ifBlank { providerInfo("groq").defaultModel }).contains("llama-4")
         else -> false
@@ -331,6 +331,11 @@ object LlmClient {
                 "gemini" -> callGemini(message, apiKey, model, turns, image, systemPrompt)
                 "opencode", "opencode-go", "opencode-console" -> callOpenCode(
                     provider, message, apiKey, model, turns, image, systemPrompt
+                )
+                "opencode-local" -> OpenCodeLocal.chat(message, model, turns, image, systemPrompt, chatId)
+                "apinex" -> callOpenAiCompatible(
+                    endpoint("apinex", "https://api.apinex.bond/v1/chat/completions"), apiKey, model, turns, message,
+                    maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
                 "groq" -> callOpenAiCompatible(
                     endpoint("groq", "https://api.groq.com/openai/v1/chat/completions"), apiKey, model, turns, message,

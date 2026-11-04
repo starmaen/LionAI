@@ -134,6 +134,49 @@ fun LocalEnvTab() {
         Spacer(Modifier.height(8.dp))
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = ENV_CARD)) {
             Column(Modifier.padding(12.dp)) {
+                Text("OpenCode Local — العميل الرسمي", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("يشغّل opencode serve داخل Alpine. مزود OpenCode Local في الشات يستخدم جلساته وأدواته ومفاتيحه، وليس Zen الخارجي.", color = ENV_MUTED, fontSize = 11.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(enabled = envReady && !busy && activeTool == null, onClick = {
+                        scope.launch {
+                            activeTool = "opencode"
+                            message = "⏳ تثبيت OpenCode الرسمي داخل /workspace/tools/node…"
+                            val result = withContext(Dispatchers.IO) {
+                                val node = LinuxEnv.installPackage(context, "node")
+                                if (!node.ok) node else LinuxEnv.run(context,
+                                    "npm install -g opencode-ai --prefix /workspace/tools/node && ln -sf /workspace/tools/node/bin/opencode /usr/local/bin/opencode && opencode --version", 300)
+                            }
+                            message = (if (result.ok) "✅ OpenCode جاهز\n" else "❌ فشل التثبيت\n") + result.output.takeLast(7000)
+                            activeTool = null
+                        }
+                    }) { Text(if (activeTool == "opencode") "جارٍ…" else "تثبيت/تحديث", color = ENV_GOLD, fontSize = 11.sp) }
+                    TextButton(enabled = envReady && !busy && activeTool == null, onClick = {
+                        scope.launch {
+                            activeTool = "opencode"
+                            message = "⏳ تشغيل الخادم واكتشاف المزودات…"
+                            val result = withContext(Dispatchers.IO) { runCatching {
+                                val url = OpenCodeLocal.start()
+                                val models = OpenCodeLocal.listModels()
+                                "✅ $url\n${models.size} نموذج مكتشف\n" + models.take(40).joinToString("\n")
+                            }.getOrElse { "❌ ${it.message}" } }
+                            message = result
+                            activeTool = null
+                        }
+                    }) { Text("تشغيل/فحص", color = ENV_GOLD, fontSize = 11.sp) }
+                    TextButton(enabled = !busy && activeTool == null, onClick = {
+                        OpenCodeLocal.stop(); message = "تم إيقاف خادم OpenCode الذي شغّله Lion AI."
+                    }) { Text("إيقاف", color = ENV_GOLD, fontSize = 11.sp) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("للربط نفّذ: opencode auth login", color = ENV_MUTED, fontSize = 11.sp, modifier = Modifier.weight(1f), fontFamily = FontFamily.Monospace)
+                    TextButton(onClick = { copyText(context, "opencode auth login") }) { Text("نسخ", color = ENV_GOLD, fontSize = 11.sp) }
+                }
+                Text("النماذج المجانية تخضع لسياسة OpenCode؛ لا يتجاوز هذا الجسر أي قيد استخدام.", color = ENV_MUTED, fontSize = 10.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = ENV_CARD)) {
+            Column(Modifier.padding(12.dp)) {
                 Text("📁 مساحة العمل", color = Color.White, fontWeight = FontWeight.Bold)
                 val r = report
                 if (r == null) {
