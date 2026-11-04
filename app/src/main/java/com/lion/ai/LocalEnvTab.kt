@@ -67,13 +67,46 @@ fun LocalEnvTab() {
             busy = false
         }
     }
-    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(LinuxEnv.installing) { if (!LinuxEnv.installing) refresh() }
+    val envReady = remember(LinuxEnv.installing, report) { LinuxEnv.ready(context) }
+    val runtimeOk = remember { LinuxEnv.runtimeAvailable(context) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("🖥️ البيئة المحلية", color = ENV_GOLD, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Button(enabled = !busy, onClick = { refresh() }, colors = ButtonDefaults.buttonColors(containerColor = ENV_CARD)) {
                 Text(if (busy) "…" else "🔄 فحص", color = ENV_GOLD)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = ENV_CARD)) {
+            Column(Modifier.padding(12.dp)) {
+                Text("🐧 بيئة Linux (Alpine + proot)", color = Color.White, fontWeight = FontWeight.Bold)
+                when {
+                    !runtimeOk -> Text(
+                        "⚠️ مكوّن proot غير مضمّن في هذا البناء. ابنِ التطبيق عبر الـ workflow المحدّث.",
+                        color = Color(0xFFE94560), fontSize = 12.sp
+                    )
+                    LinuxEnv.installing -> Text(LinuxEnv.progress, color = ENV_GOLD, fontSize = 12.sp)
+                    envReady -> {
+                        Text("✅ مفعّلة: كل الأوامر والأدوات تعمل داخلها، ومساحة العمل مربوطة على /workspace", color = Color(0xFF7CC47C), fontSize = 12.sp)
+                        TextButton(onClick = { LinuxEnv.remove(context); refresh() }) {
+                            Text("🗑️ حذف البيئة", color = Color(0xFFE94560), fontSize = 11.sp)
+                        }
+                    }
+                    else -> {
+                        Text(
+                            "غير مفعّلة. التفعيل ينزّل نظام Alpine (نحو 4MB) ثم الأدوات الأساسية، ويحتاج اتصالاً ومساحة تقارب 400MB.",
+                            color = ENV_MUTED, fontSize = 12.sp
+                        )
+                        if (LinuxEnv.lastError.isNotBlank()) {
+                            Text("❌ " + LinuxEnv.lastError, color = Color(0xFFE94560), fontSize = 11.sp)
+                        }
+                        Button(onClick = { LinuxEnv.startInstall(context) }, colors = ButtonDefaults.buttonColors(containerColor = ENV_GOLD)) {
+                            Text("⬇️ تحميل وتفعيل", color = Color(0xFF121212))
+                        }
+                    }
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -111,7 +144,7 @@ fun LocalEnvTab() {
                             Text(status.tool.label, color = Color.White, fontWeight = FontWeight.Bold)
                             Text(status.version, color = ENV_MUTED, fontSize = 11.sp)
                         }
-                        if (!status.ok && status.tool.id != "ca") {
+                        if (!status.ok && status.tool.id != "ca" && envReady) {
                             Button(
                                 enabled = !busy,
                                 onClick = {
@@ -127,7 +160,7 @@ fun LocalEnvTab() {
                             ) { Text("تثبيت", color = Color(0xFF121212)) }
                         }
                     }
-                    if (!status.ok) {
+                    if (!status.ok && !envReady) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 status.tool.manualCommand,
@@ -144,7 +177,7 @@ fun LocalEnvTab() {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "التثبيت التلقائي يعمل إذا كان على الجهاز مدير حزم (pkg/apt). غير ذلك انسخ الأمر ونفّذه في Termux ثم اضغط «فحص».",
+            "الأدوات تُثبَّت داخل بيئة Linux المفعّلة أعلاه عبر apk، وتبقى بعد إغلاق التطبيق.",
             color = ENV_MUTED, fontSize = 11.sp
         )
     }

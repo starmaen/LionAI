@@ -38,13 +38,13 @@ object LocalEnv {
 
     val TOOLS = listOf(
         DevTool("opencode", "OpenCode", "opencode --version", null, "npm install -g opencode-ai"),
-        DevTool("git", "Git", "git --version", "git", "pkg install git"),
-        DevTool("bash", "Bash", "bash --version", "bash", "pkg install bash"),
-        DevTool("curl", "curl", "curl --version", "curl", "pkg install curl"),
-        DevTool("ssh", "SSH", "ssh -V", "openssh", "pkg install openssh"),
-        DevTool("rg", "ripgrep", "rg --version", "rg", "pkg install ripgrep"),
-        DevTool("adb", "ADB", "adb version", "adb", "pkg install android-tools"),
-        DevTool("python", "Python", "python3 --version || python --version", "python", "pkg install python")
+        DevTool("git", "Git", "git --version", "git", "apk add git"),
+        DevTool("bash", "Bash", "bash --version", "bash", "apk add bash"),
+        DevTool("curl", "curl", "curl --version", "curl", "apk add curl"),
+        DevTool("ssh", "SSH", "ssh -V", "openssh", "apk add openssh-client"),
+        DevTool("rg", "ripgrep", "rg --version", "rg", "apk add ripgrep"),
+        DevTool("adb", "ADB", "adb version", "adb", "apk add android-tools"),
+        DevTool("python", "Python", "python3 --version || python --version", "python", "apk add python3")
     )
 
     /** ينشئ مساحة العمل والمجلدات الأساسية ويختبرها فعلياً (كتابة/قراءة/ضغط/فك/حذف). */
@@ -110,29 +110,38 @@ object LocalEnv {
         false to (e.message ?: "")
     }
 
-    fun caCertificates(): DevToolStatus {
-        val dirs = listOf("/system/etc/security/cacerts", "/etc/ssl/certs", "/data/data/com.termux/files/usr/etc/tls")
-        val found = dirs.firstOrNull { File(it).isDirectory && (File(it).list()?.isNotEmpty() == true) }
-        return DevToolStatus(
-            DevTool("ca", "شهادات CA", "", null, "pkg install ca-certificates"),
-            found != null,
-            if (found != null) "installed" else "غير موجودة"
-        )
+    private fun caStatus(context: Context): DevToolStatus {
+        val tool = DevTool("ca", "شهادات CA", "", null, "apk add ca-certificates")
+        if (LinuxEnv.ready(context)) {
+            val ok = LinuxEnv.run(context, "test -s /etc/ssl/certs/ca-certificates.crt", 20).ok
+            return DevToolStatus(tool, ok, if (ok) "installed" else "غير موجودة")
+        }
+        val dirs = listOf("/system/etc/security/cacerts", "/etc/ssl/certs")
+        val found = dirs.any { File(it).isDirectory && (File(it).list()?.isNotEmpty() == true) }
+        return DevToolStatus(tool, found, if (found) "installed (النظام)" else "غير موجودة")
     }
 
     fun inventory(context: Context): List<DevToolStatus> {
+        val inEnv = LinuxEnv.ready(context)
         val statuses = TOOLS.map { tool ->
-            val (ok, text) = probe(context, tool.probe)
-            DevToolStatus(tool, ok, if (ok) text else "غير مثبتة")
+            if (inEnv) {
+                val res = LinuxEnv.run(context, tool.probe, 25)
+                val line = res.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty().take(120)
+                DevToolStatus(tool, res.ok, if (res.ok) line else "غير مثبتة")
+            } else {
+                val (ok, text) = probe(context, tool.probe)
+                DevToolStatus(tool, ok, if (ok) text else "غير مثبتة")
+            }
         }.toMutableList()
-        statuses.add(6, caCertificates())
+        statuses.add(6, caStatus(context))
         return statuses
     }
 
-    /** تثبيت أداة ناقصة: تلقائياً عبر pkg/apt إن وُجد، وإلا رسالة بالأمر اليدوي. */
+    /** تثبيت أداة ناقصة داخل بيئة Linux (apk). يتطلب تفعيل البيئة أولاً. */
     fun install(context: Context, tool: DevTool): ShellResult {
-        val key = tool.pkgKey
-            ?: return ShellResult(false, "ثبّت هذه الأداة يدوياً: ${tool.manualCommand}", 127, 0)
-        return ShellTools.install(context, key)
+        if (!LinuxEnv.ready(context)) {
+            return ShellResult(false, "فعّل بيئة Linux أولاً (زر التفعيل أعلى الشاشة) ثم ثبّت الأداة.", 1, 0)
+        }
+        return LinuxEnv.installTool(context, tool.id)
     }
 }

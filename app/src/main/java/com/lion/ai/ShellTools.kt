@@ -26,7 +26,7 @@ object ShellTools {
         "pip3", "pkg", "apt", "apt-get", "which", "command",
         "make", "cmake", "clang", "clang++", "go", "cargo", "rustc", "php", "ruby", "sqlite3", "shellcheck",
         "patch", "diff", "wget", "tree", "fd", "openssl", "ruff", "flake8", "black", "mypy", "pytest",
-        "eslint", "prettier", "tsc"
+        "eslint", "prettier", "tsc", "curl", "ssh", "opencode"
     )
 
     /** حزم مسموح تثبيتها فقط (لا يُمرَّر اسم الحزمة من النموذج مباشرة إلى الصدفة). */
@@ -104,15 +104,20 @@ object ShellTools {
         val temp = File(FileTools.root(context), ".lion-tmp").apply { mkdirs() }
         val started = System.currentTimeMillis()
         return try {
-            val shell = if (File("/system/bin/sh").exists()) "/system/bin/sh" else "sh"
-            val process = ProcessBuilder(shell, "-c", cleaned)
-                .directory(root)
-                .redirectErrorStream(true)
-                .apply {
-                    environment()["HOME"] = FileTools.root(context).absolutePath
-                    environment()["TMPDIR"] = temp.absolutePath
-                }
-                .start()
+            // بيئة Linux الحقيقية (Alpine/proot) إن كانت مفعّلة، وإلا صدفة أندرويد.
+            val process = if (LinuxEnv.ready(context)) {
+                LinuxEnv.start(context, cleaned, root)
+            } else {
+                val shell = if (File("/system/bin/sh").exists()) "/system/bin/sh" else "sh"
+                ProcessBuilder(shell, "-c", cleaned)
+                    .directory(root)
+                    .redirectErrorStream(true)
+                    .apply {
+                        environment()["HOME"] = FileTools.root(context).absolutePath
+                        environment()["TMPDIR"] = temp.absolutePath
+                    }
+                    .start()
+            }
             val output = StringBuilder()
             val reader = thread(start = true, name = "lion-shell-reader") {
                 process.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
@@ -262,6 +267,7 @@ object ShellTools {
     fun available(context: Context, name: String): Boolean {
         val safe = name.trim().filter { it.isLetterOrDigit() || it in "._-" }
         if (safe.isBlank()) return false
+        if (LinuxEnv.ready(context)) return LinuxEnv.run(context, "command -v $safe", 20).ok
         return try {
             val process = ProcessBuilder("sh", "-c", "command -v " + safe)
                 .redirectErrorStream(true)
@@ -298,6 +304,7 @@ object ShellTools {
                 0
             )
         if (available(context, key)) return ShellResult(true, "✅ $key مثبتة بالفعل.", 0, 0)
+        if (LinuxEnv.ready(context)) return LinuxEnv.installPackage(context, key, timeoutSec)
         val manager = when {
             available(context, "pkg") -> "pkg"
             available(context, "apt-get") -> "apt-get"
