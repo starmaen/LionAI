@@ -2222,6 +2222,7 @@ fun LionApp() {
                     currentChat = currentChat,
                     loading = loadingChats[currentChat] == true,
                     progress = toolStatus[currentChat],
+                    sessionSteps = AgentSessions.peek(currentChat)?.timeline().orEmpty(),
                     listState = listState,
                     context = context,
                     tts = tts,

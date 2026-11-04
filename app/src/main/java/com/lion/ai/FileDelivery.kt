@@ -2,6 +2,7 @@ package com.lion.ai
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
 import android.os.Environment
@@ -97,6 +98,50 @@ object FileDelivery {
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun contentUri(context: Context, file: File): String? = runCatching {
+        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file).toString()
+    }.getOrNull()
+
+    /** فتح بالعارض المناسب؛ APK يذهب إلى مثبّت الحزم في النظام. */
+    fun open(context: Context, file: File): Boolean = runCatching {
+        val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime(file.name))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(Intent.createChooser(view, if (file.extension.equals("apk", true)) "تثبيت APK" else "فتح بواسطة"))
+        true
+    }.getOrDefault(false)
+
+    fun canRunInTermux(file: File): Boolean = file.extension.lowercase() in setOf("apk", "sh", "py", "js", "ts", "zip")
+
+    /** يحفظ نسخة عامة أولاً لأن Termux لا يستطيع قراءة مساحة التطبيق الخاصة. */
+    fun runInTermux(context: Context, file: File): Boolean {
+        if (!canRunInTermux(file) || saveFile(context, file) == null) return false
+        val publicPath = "/sdcard/Download/LionAI/${file.name.replace("'", "'\\''")}"
+        val command = when (file.extension.lowercase()) {
+            "apk" -> "adb install -r '$publicPath'"
+            "sh" -> "bash '$publicPath'"
+            "py" -> "python '$publicPath'"
+            "js" -> "node '$publicPath'"
+            "ts" -> "npx tsx '$publicPath'"
+            "zip" -> "unzip -l '$publicPath'"
+            else -> return false
+        }
+        return runCatching {
+            val intent = Intent("com.termux.RUN_COMMAND").apply {
+                component = ComponentName("com.termux", "com.termux.app.RunCommandService")
+                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", command))
+                putExtra("com.termux.RUN_COMMAND_WORKDIR", "/sdcard/Download/LionAI")
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", false)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startService(intent)
+            true
+        }.getOrDefault(false)
     }
 
     fun extensionFor(lang: String): String = when (lang.lowercase()) {

@@ -247,6 +247,7 @@ internal fun FileCard(path: String, context: Context) {
         color = Color(0xFF1E1E1E),
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
     ) {
+        Column {
         Row(
             modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -292,6 +293,24 @@ internal fun FileCard(path: String, context: Context) {
                     Icon(Icons.Filled.Share, contentDescription = "مشاركة", tint = Color(0xFF9A9A9A))
                 }
             }
+        }
+        if (file != null) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp)) {
+                TextButton(onClick = {
+                    if (!FileDelivery.open(context, file)) Toast.makeText(context, "لا يوجد تطبيق مناسب للفتح", Toast.LENGTH_SHORT).show()
+                }) { Text(if (ext == "APK") "تثبيت" else "فتح", color = Color(0xFF7CC47C), fontSize = 11.sp) }
+                TextButton(onClick = {
+                    val uri = FileDelivery.contentUri(context, file)
+                    if (uri != null) copyToClipboard(context, "رابط ملف محلي", uri)
+                }) { Text("نسخ الرابط", color = Color(0xFF9A9A9A), fontSize = 11.sp) }
+                if (FileDelivery.canRunInTermux(file)) {
+                    TextButton(onClick = {
+                        val ok = FileDelivery.runInTermux(context, file)
+                        Toast.makeText(context, if (ok) "أُرسل إلى Termux" else "فعّل Allow External Apps في Termux ثم أعد المحاولة", Toast.LENGTH_LONG).show()
+                    }) { Text(if (ext == "APK") "تثبيت عبر Termux" else "تنفيذ عبر Termux", color = Color(0xFF64B5F6), fontSize = 11.sp) }
+                }
+            }
+        }
         }
     }
 }

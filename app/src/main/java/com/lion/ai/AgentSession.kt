@@ -96,7 +96,10 @@ class AgentSession(val chatId: String) {
         // لا نصفر الجلسة عند تغيّر صياغة الطلب: الأهم ألا تُفقد مهمة أو تعديلات.
         // تعليمات الاستئناف تخبر النموذج صراحةً كيف يتعامل مع مهمة جديدة تماماً.
         if (lastTask.isBlank()) lastTask = clean
-        if (provider.isNotBlank() && providers.lastOrNull() != provider) providers.add(provider)
+        if (provider.isNotBlank() && providers.lastOrNull() != provider) {
+            providers.add(provider)
+            steps.add(AgentStep("provider", true, "انتقل التنفيذ إلى $provider مع الاحتفاظ بالحالة والنتائج السابقة"))
+        }
         if (provider.isNotBlank()) lastProvider = provider
         completed = false
         updatedAt = System.currentTimeMillis()
@@ -224,6 +227,10 @@ class AgentSession(val chatId: String) {
         while (failures.size > 6) failures.removeAt(0)
         updatedAt = System.currentTimeMillis()
     }
+
+    /** مصدر العرض الحي نفسه المستخدم في الحفظ والاستئناف وتبديل المزود. */
+    @Synchronized
+    fun timeline(): List<AgentStep> = steps.toList()
 
     @Synchronized
     fun touchedFiles(): List<String> = files.toList()
