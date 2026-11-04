@@ -195,12 +195,16 @@ fun LionApp() {
     var attachment by remember { mutableStateOf<Attachment?>(null) }
     var imageAttachment by remember { mutableStateOf<ImageAttachment?>(null) }
 
-    // تشغيل خادم الذكاء الاصطناعي المحلي (Proxy) عند بدء التطبيق
+    // الخادم المحلي أداة توجيه اختيارية، لا يبدأ ولا يفرض نفسه على المزود المباشر.
     LaunchedEffect(Unit) {
-        val p = LocalAIProxy.start(context, prefs)
-        if (p > 0) {
-            localProxyUrl = "http://127.0.0.1:$p/v1/chat/completions"
-            localProxyStarted = true
+        val wanted = RoutePolicy.channelEnabled(prefs, Channel.LOCAL) ||
+            prefs.getString("provider", "") == RoutePolicy.LOCAL_PROXY
+        if (wanted) {
+            val p = withContext(Dispatchers.IO) { LocalAIProxy.start(context, prefs) }
+            if (p > 0) {
+                localProxyUrl = "http://127.0.0.1:$p/v1/chat/completions"
+                localProxyStarted = true
+            }
         }
     }
     var contacts by remember { mutableStateOf(listOf<Contact>()) }
@@ -569,24 +573,30 @@ fun LionApp() {
         }
     }
 
+    // منتقي موحّد في كل المحادثات والأوضاع: عدة ملفات، مع إمكانية إرفاق صورة وملف معاً.
     val fileLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
             scope.launch {
-                val result = withContext(Dispatchers.IO) { Attachments.read(context, uri) }
-                if (result.attachment != null) {
-                    attachment = result.attachment
-                    imageAttachment = null
-                } else if (result.image != null) {
-                    imageAttachment = result.image
-                    attachment = null
-                } else {
-                    attachment = null
-                    messages = messages + Message(
-                        result.error ?: "⚠️ تعذر قراءة الملف.",
-                        false
+                val results = withContext(Dispatchers.IO) {
+                    uris.take(8).map { uri -> Attachments.read(context, uri) }
+                }
+                val documents = results.mapNotNull { it.attachment }
+                val pickedImage = results.lastOrNull { it.image != null }?.image
+                if (documents.isNotEmpty()) {
+                    attachment = Attachment(
+                        documents.joinToString("، ") { it.name },
+                        documents.joinToString("\n\n") { "=== ${it.name} ===\n${it.text}" }
                     )
+                }
+                if (pickedImage != null) imageAttachment = pickedImage
+                val errors = results.mapNotNull { it.error }
+                if (documents.isEmpty() && pickedImage == null && errors.isEmpty()) {
+                    messages = messages + Message("⚠️ تعذر قراءة الملفات المختارة.", false)
+                    saveCurrent()
+                } else if (errors.isNotEmpty()) {
+                    messages = messages + Message(errors.joinToString("\n"), false)
                     saveCurrent()
                 }
             }
@@ -607,7 +617,6 @@ fun LionApp() {
                     showEditor = true
                 } else if (result.image != null) {
                     imageAttachment = result.image
-                    attachment = null
                 } else {
                     editAfterPick = false
                     messages = messages + Message(
@@ -891,6 +900,10 @@ fun LionApp() {
         val careful = central && (SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL)
         val mission = CentralBrain.policy(kind, chatMode, central)
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
+        // الخادم المحلي قناة مستقلة: تشغيله لا يشترط المباشر ولا الخارجي.
+        if (RoutePolicy.channelEnabled(prefs, Channel.LOCAL) && !LocalAIProxy.isRunning()) {
+            runCatching { LocalAIProxy.start(context, prefs) }
+        }
         // العقل المركزي يختار المزود وهو عارف بوضع المحادثة (عام/تعلّم/برمجة)
         // وبنوع المهمة، فيراعي الكفاءة والاتصال معاً.
         val plan = RoutePolicy.appPlan(prefs, kind, mode, chatId, chatMode)
@@ -908,7 +921,9 @@ fun LionApp() {
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
         }
-        val toolGroups = if (image == null && kind != TaskKind.FAST && modeProfile.allowTools) {
+        // الوصول لمساحة العمل يتبع إعداد الأدوات والمحتوى، لا الوضع التلقائي/اليدوي
+        // ولا نوع القناة (مباشر/محلي/خارجي) ولا كون السؤال قصيراً.
+        val toolGroups = if (image == null && modeProfile.allowTools) {
             modeProfile.groups
         } else {
             emptySet<ToolGroup>()
@@ -938,7 +953,7 @@ fun LionApp() {
             } else {
                 emptyList<WebSource>()
             }
-            val driveContext = if (chatMode == ChatMode.CODE && image == null && kind != TaskKind.FAST &&
+            val driveContext = if (image == null && modeProfile.allowTools &&
                 ConnectorAuth.isConnected(prefs, "google_drive")
             ) {
                 val driveId = Connectors.extractDriveId(prompt)
@@ -952,14 +967,14 @@ fun LionApp() {
             } else {
                 null
             }
-            val githubContext = if (chatMode == ChatMode.CODE && image == null && kind != TaskKind.FAST &&
+            val githubContext = if (image == null && modeProfile.allowTools &&
                 AiTools.githubReady(prefs) && AiTools.detectGitHubUrl(toolText) != null
             ) {
                 runCatching { AiTools.githubContext(prefs, toolText, 6000) }.getOrDefault("")
             } else {
                 ""
             }
-            val githubNote = if (chatMode == ChatMode.CODE && kind != TaskKind.FAST &&
+            val githubNote = if (modeProfile.allowTools &&
                 AiTools.githubMentioned(toolText) && !AiTools.githubReady(prefs)
             ) {
                 "\n\nملاحظة: GitHub غير مربوط حالياً. اطلب من المستخدم إضافة توكن GitHub من «الإعدادات ← أدوات الذكاء والتطوير»، ولا تدّعِ الوصول إلى GitHub."
@@ -1034,12 +1049,7 @@ fun LionApp() {
             val stickProvider = if (manualMode) null else {
                 ProviderStick.get(prefs, chatId) ?: LastRoute.get(prefs, chatId)?.provider
             }
-            val routesToTry = run {
-                val merged = (plan + rescueRoutes).distinctBy { it.provider }
-                if (stickProvider.isNullOrBlank()) merged
-                else listOfNotNull(merged.firstOrNull { it.provider == stickProvider }) +
-                    merged.filter { it.provider != stickProvider }
-            }
+            val routesToTry = RoutePolicy.mergeAttempts(plan, rescueRoutes, stickProvider)
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
             val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
             for (route in routesToTry) {
@@ -1874,19 +1884,6 @@ fun LionApp() {
         )
     }
 
-    // تفعيل الخادم الخارجي لا معنى له ما دام المزود النشط صفحة ويب (المسار
-    // يحوّلها إلى جلسة صفحة ولا يمرّ بالبوابة). عند التفعيل نثبّت أول مزود
-    // API مفعّل حتى يعمل الخادم فعلاً بدل أن يبدو معطلاً.
-    fun pinGatewayProvider() {
-        val current = prefs.getString("provider", "gemini").orEmpty()
-        if (!WebChatRuntime.handles(current)) return
-        val fallback = WebGateway.providers.firstOrNull { providerEnabled(prefs, it.id) }?.id ?: "gemini"
-        prefs.edit().putString("provider", fallback).putBoolean("auto_route", false).apply()
-        selectedProvider = fallback
-        autoRoute = false
-        syncActiveTab()
-    }
-
     val hub = hubCategory
     if (hub != null) {
         ProviderHubSheet(
@@ -1944,14 +1941,23 @@ fun LionApp() {
             onGatewayEnabled = { value ->
                 setProviderEnabled(prefs, WebGateway.ENABLED_ID, value)
                 gatewayEnabled = value
+                RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, value)
+                if (value && gatewayMode == WebGateway.MODE_OFF) {
+                    gatewayMode = WebGateway.MODE_AUTO
+                    prefs.edit().putString(WebGateway.KEY_MODE, gatewayMode).apply()
+                }
                 WebGateway.load(prefs)
-                if (value) pinGatewayProvider()
             },
             onGatewayMode = { value ->
                 prefs.edit().putString(WebGateway.KEY_MODE, value).apply()
                 gatewayMode = value
+                RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, value != WebGateway.MODE_OFF)
+                if (value == WebGateway.MODE_ONLY) {
+                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, false)
+                } else {
+                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, true)
+                }
                 WebGateway.load(prefs)
-                if (value != WebGateway.MODE_OFF) pinGatewayProvider()
             },
             onOpenSettings = {
                 hubCategory = null

@@ -146,7 +146,8 @@ object LocalAIProxy {
                 }
             }
 
-            val bodyBytes = ByteArray(contentLength.coerceIn(0, 4_000_000))
+            // الصور المشفّرة base64 والملفات قد تتجاوز 4MB؛ لا تقطع JSON عبر القناة المحلية.
+            val bodyBytes = ByteArray(contentLength.coerceIn(0, 16_000_000))
             var read = 0
             while (read < bodyBytes.size) {
                 val count = input.read(bodyBytes, read, bodyBytes.size - read)
@@ -348,6 +349,34 @@ object LocalAIProxy {
     private fun keyOf(prefs: SharedPreferences, provider: String): String =
         (prefs.getString("api_key_$provider", "") ?: "").trim()
 
+    internal data class IncomingContent(val text: String, val image: ImageAttachment?)
+
+    /** يحافظ على الصورة والنص في رسائل OpenAI multimodal بدل تحويلهما إلى JSON نصي. */
+    internal fun incomingContent(message: org.json.JSONObject?): IncomingContent {
+        val raw = message?.opt("content")
+        if (raw !is org.json.JSONArray) {
+            return IncomingContent(message?.optString("content", "").orEmpty(), null)
+        }
+        val texts = mutableListOf<String>()
+        var image: ImageAttachment? = null
+        for (i in 0 until raw.length()) {
+            val part = raw.optJSONObject(i) ?: continue
+            when (part.optString("type")) {
+                "text" -> part.optString("text").takeIf { it.isNotBlank() }?.let(texts::add)
+                "image_url" -> {
+                    val value = part.opt("image_url")
+                    val url = if (value is org.json.JSONObject) value.optString("url") else value?.toString().orEmpty()
+                    if (url.startsWith("data:image/")) {
+                        val mime = url.substringAfter("data:").substringBefore(';').ifBlank { "image/jpeg" }
+                        val encoded = url.substringAfter("base64,", "")
+                        if (encoded.isNotBlank()) image = ImageAttachment("مرفق-${i + 1}", mime, encoded)
+                    }
+                }
+            }
+        }
+        return IncomingContent(texts.joinToString("\n"), image)
+    }
+
     private fun processChatCompletion(
         body: String,
         prefs: SharedPreferences,
@@ -369,7 +398,7 @@ object LocalAIProxy {
                 for (i in 0 until messages.length()) {
                     val msg = messages.optJSONObject(i) ?: continue
                     val role = msg.optString("role")
-                    val content = msg.optString("content", "")
+                    val content = incomingContent(msg).text
                     when (role) {
                         "system" -> if (content.isNotBlank()) systemParts.add(content)
                         "user" -> if (i != lastUserIndex && content.isNotBlank()) history.add(ChatTurn("user", content))
@@ -377,22 +406,24 @@ object LocalAIProxy {
                     }
                 }
             }
-            val userText = if (lastUserIndex >= 0) {
-                messages?.optJSONObject(lastUserIndex)?.optString("content", "").orEmpty()
-            } else ""
+            val incoming = if (lastUserIndex >= 0) {
+                incomingContent(messages?.optJSONObject(lastUserIndex))
+            } else IncomingContent("", null)
+            val userText = incoming.text
+            val userImage = incoming.image
             val systemPrompt = systemParts.joinToString("\n\n").ifBlank { LLM_SYSTEM_PROMPT }
             val chatMode = chatModeOf(chatModeHeader, systemPrompt, prefs)
-            val taskKind = SmartRouter.classify(userText, false, 0, null)
+            val taskKind = SmartRouter.classify(userText, userImage != null, 0, null)
             val answerMode = AnswerMode.read(prefs)
             val accountId = (prefs.getString("cf_account_id", "") ?: "").trim()
 
             // نفس سياسة التطبيق: يدوي يبقى يدوياً، والتلقائي يستخدم العقل المركزي،
             // والمساعدة تضيف بديلاً عند فشل المزود المختار.
-            val planned = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode, chatId)
+            val planned = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode, chatId, userImage != null)
             val pinned = ProviderStick.get(prefs, chatId)
             // Once the backend has answered, do not let a later tool step silently change it.
             // A transport failure pauses the task; an explicit settings change releases the pin.
-            val routes = if (pinned != null) planned.filter { it.provider == pinned }.take(1) else planned
+            val routes = if (pinned != null) planned.filter { it.provider == pinned } else planned
             val manual = RoutePolicy.isManual(prefs)
             // اليدوي: المزود المختار يأخذ مهلة المهمة كاملة، وبعدها وقت إضافي للبدائل.
             val codingTask = chatMode == ChatMode.CODE || taskKind == TaskKind.DEV
@@ -420,6 +451,7 @@ object LocalAIProxy {
                     history = history,
                     modelOverride = route.model,
                     accountId = accountId,
+                    image = userImage,
                     systemPrompt = systemPrompt,
                     readTimeoutMs = cap,
                     chatModeHint = chatMode,

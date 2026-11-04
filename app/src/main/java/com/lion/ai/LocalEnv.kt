@@ -44,7 +44,12 @@ object LocalEnv {
         DevTool("ssh", "SSH", "ssh -V", "openssh", "apk add openssh-client"),
         DevTool("rg", "ripgrep", "rg --version", "rg", "apk add ripgrep"),
         DevTool("adb", "ADB", "adb version", "adb", "apk add android-tools"),
-        DevTool("python", "Python", "python3 --version || python --version", "python", "apk add python3")
+        DevTool("python", "Python + pip", "python --version && python3 -m pip --version", "python", "apk add python3 py3-pip"),
+        DevTool("node", "Node.js + npm", "node --version && npm --version", "node", "apk add nodejs npm"),
+        DevTool("java", "Java 17", "java -version", "java", "apk add openjdk17-jdk"),
+        DevTool("gradle", "Gradle", "gradle --version", "gradle", "apk add gradle"),
+        DevTool("jq", "jq", "jq --version", "jq", "apk add jq"),
+        DevTool("unzip", "ZIP tools", "unzip -v", "unzip", "apk add unzip zip")
     )
 
     /** ينشئ مساحة العمل والمجلدات الأساسية ويختبرها فعلياً (كتابة/قراءة/ضغط/فك/حذف). */
@@ -96,10 +101,14 @@ object LocalEnv {
     }
 
     private fun probe(context: Context, command: String): Pair<Boolean, String> = try {
-        val bin = File(FileTools.root(context), "tools/bin").absolutePath
+        val root = FileTools.root(context)
+        val bin = File(root, "tools/bin").absolutePath
+        val pythonBin = File(root, "tools/python/bin").absolutePath
         val builder = ProcessBuilder("sh", "-c", command).redirectErrorStream(true)
-        builder.environment()["PATH"] = bin + File.pathSeparator + (System.getenv("PATH") ?: "/system/bin")
-        builder.environment()["HOME"] = FileTools.root(context).absolutePath
+        builder.environment()["PATH"] = bin + File.pathSeparator + pythonBin + File.pathSeparator +
+            (System.getenv("PATH") ?: "/system/bin")
+        builder.environment()["HOME"] = root.absolutePath
+        builder.environment()["PYTHONUSERBASE"] = File(root, "tools/python").absolutePath
         val process = builder.start()
         val done = process.waitFor(8, TimeUnit.SECONDS)
         if (!done) process.destroyForcibly()

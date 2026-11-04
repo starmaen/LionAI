@@ -35,11 +35,16 @@ object LinuxEnv {
     var lastError by mutableStateOf("")
         private set
 
-    /** حزم الأساسيات: يجب أن تنجح كلها. */
-    private val CORE = "bash git curl openssh-client ripgrep ca-certificates"
+    /** حزم الأساسيات: git/sh/bash وPython/pip جزء إلزامي من بيئة التطوير. */
+    private val CORE = "bash git curl openssh-client ripgrep ca-certificates python3 py3-pip"
+    private val DEV_ALIASES =
+        "mkdir -p /usr/local/bin /workspace/tools/bin /workspace/tools/python && " +
+            "ln -sf /usr/bin/python3 /usr/local/bin/python && " +
+            "ln -sf /usr/bin/pip3 /usr/local/bin/pip && " +
+            "git --version && bash --version && sh -c ':' && python --version && python3 -m pip --version"
 
     /** حزم اختيارية: فشل أي واحدة لا يوقف الباقي. */
-    private val OPTIONAL = listOf("python3 py3-pip", "android-tools", "nodejs npm")
+    private val OPTIONAL = listOf("android-tools", "nodejs npm")
 
     private val APK = mapOf(
         "git" to "git", "python" to "python3 py3-pip", "node" to "nodejs npm",
@@ -87,7 +92,10 @@ object LinuxEnv {
             "/usr/bin/env", "-i",
             "HOME=/root", "USER=root", "LANG=C.UTF-8", "TERM=xterm-256color", "TMPDIR=/tmp",
             "SHELL=$shell",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            // أدوات المستخدم وpip/npm داخل مساحة العمل تبقى في PATH بعد كل تشغيل/تحديث.
+            "PATH=/workspace/tools/bin:/workspace/tools/python/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PYTHONUSERBASE=/workspace/tools/python",
+            "PIP_DISABLE_PIP_VERSION_CHECK=1",
             shell, "-c", script
         )
     }
@@ -199,8 +207,8 @@ object LinuxEnv {
             File(root, "etc/hosts").apply { delete() }.writeText("127.0.0.1 localhost\n::1 localhost\n")
             File(root, "etc/apk").mkdirs()
             File(root, "etc/apk/repositories").apply { delete() }.writeText(
-                "http://dl-cdn.alpinelinux.org/alpine/${release.branch}/main\n" +
-                    "http://dl-cdn.alpinelinux.org/alpine/${release.branch}/community\n"
+                "https://dl-cdn.alpinelinux.org/alpine/${release.branch}/main\n" +
+                    "https://dl-cdn.alpinelinux.org/alpine/${release.branch}/community\n"
             )
             File(root, "tmp").mkdirs()
             File(root, "root").mkdirs()
@@ -209,6 +217,8 @@ object LinuxEnv {
         progress = "📦 تثبيت الأساسيات (git, bash, curl, ssh, ripgrep)…"
         val core = run(context, "apk add --no-cache $CORE", 1200) { progress = "📦 " + it.take(70) }
         if (!core.ok) throw IllegalStateException("فشل تثبيت الأساسيات:\n" + core.output.takeLast(400))
+        val aliases = run(context, DEV_ALIASES, 120)
+        if (!aliases.ok) throw IllegalStateException("فشل تجهيز أوامر python/pip:\n" + aliases.output.takeLast(400))
         OPTIONAL.forEach { pkgs ->
             progress = "📦 $pkgs…"
             run(context, "apk add --no-cache $pkgs", 1200) { progress = "📦 " + it.take(70) }
@@ -228,6 +238,17 @@ object LinuxEnv {
         val pkgs = APK[key] ?: return ShellResult(false, "⛔ حزمة غير مدعومة داخل البيئة: $key", 126, 0)
         val result = run(context, "apk add --no-cache $pkgs", timeoutSec)
         return result.copy(output = "=== apk ===\n" + result.output.takeLast(12_000))
+    }
+
+    /** تحديث الحزم الأساسية مع إعادة تثبيت الأسماء المستعارة والتحقق من مسار الأدوات. */
+    fun updateEnvironment(context: Context): ShellResult {
+        if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
+        val result = run(
+            context,
+            "apk update && apk upgrade --no-cache && apk add --no-cache $CORE && $DEV_ALIASES",
+            1800
+        )
+        return result.copy(output = "=== تحديث البيئة والمكتبات ===\n" + result.output.takeLast(16_000))
     }
 
     fun installTool(context: Context, toolId: String): ShellResult {

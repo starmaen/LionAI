@@ -113,8 +113,12 @@ object ShellTools {
                     .directory(root)
                     .redirectErrorStream(true)
                     .apply {
-                        environment()["HOME"] = FileTools.root(context).absolutePath
+                        val workspace = FileTools.root(context).absolutePath
+                        environment()["HOME"] = workspace
                         environment()["TMPDIR"] = temp.absolutePath
+                        environment()["PATH"] = "$workspace/tools/bin:$workspace/tools/python/bin:" +
+                            (environment()["PATH"] ?: "/system/bin")
+                        environment()["PYTHONUSERBASE"] = "$workspace/tools/python"
                     }
                     .start()
             }
@@ -157,7 +161,10 @@ object ShellTools {
             val direct = File(clean)
             return if (direct.exists()) direct.absolutePath else "غير موجود: $clean"
         }
+        val workspace = FileTools.root(context)
         val fixed = listOf(
+            File(workspace, "tools/bin").absolutePath,
+            File(workspace, "tools/python/bin").absolutePath,
             "/system/bin", "/system/xbin", "/vendor/bin", "/data/local/bin",
             "/data/data/com.termux/files/usr/bin", "/usr/bin", "/usr/local/bin", "/bin"
         )
@@ -169,7 +176,6 @@ object ShellTools {
             val file = File(dir, clean)
             if (file.isFile && file.canExecute()) return file.absolutePath
         }
-        val workspace = FileTools.root(context)
         val local = File(workspace, clean)
         if (local.isFile && local.canExecute()) return local.absolutePath
         return "غير موجود في PATH (تحقق عبر shell_exec أو ثبّت الأداة)"

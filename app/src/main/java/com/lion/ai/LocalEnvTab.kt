@@ -90,8 +90,21 @@ fun LocalEnvTab() {
                     LinuxEnv.installing -> Text(LinuxEnv.progress, color = ENV_GOLD, fontSize = 12.sp)
                     envReady -> {
                         Text("✅ مفعّلة: كل الأوامر والأدوات تعمل داخلها، ومساحة العمل مربوطة على /workspace", color = Color(0xFF7CC47C), fontSize = 12.sp)
-                        TextButton(onClick = { LinuxEnv.remove(context); refresh() }) {
-                            Text("🗑️ حذف البيئة", color = Color(0xFFE94560), fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(enabled = !busy, onClick = {
+                                scope.launch {
+                                    busy = true
+                                    message = "⏳ جارٍ تحديث الحزم والتحقق من git/bash/sh/python/pip…"
+                                    val result = withContext(Dispatchers.IO) { LinuxEnv.updateEnvironment(context) }
+                                    message = (if (result.ok) "✅ اكتمل التحديث" else "❌ فشل التحديث") +
+                                        "\n" + result.output.takeLast(1200)
+                                    busy = false
+                                    refresh()
+                                }
+                            }) { Text("⬆️ تحديث البيئة والمكتبات", color = ENV_GOLD, fontSize = 11.sp) }
+                            TextButton(enabled = !busy, onClick = { LinuxEnv.remove(context); refresh() }) {
+                                Text("🗑️ حذف البيئة", color = Color(0xFFE94560), fontSize = 11.sp)
+                            }
                         }
                     }
                     else -> {

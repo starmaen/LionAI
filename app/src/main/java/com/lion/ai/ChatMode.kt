@@ -183,8 +183,8 @@ object ContextProfiles {
             allowWrite = enabled && AiTools.allowWrite(prefs),
             groups = base,
             promptSuffix = suffix,
-            injectProjectContext = mode == ChatMode.CODE,
-            injectAgentsFile = mode == ChatMode.CODE
+            injectProjectContext = mode == ChatMode.CODE || detectedAny,
+            injectAgentsFile = mode == ChatMode.CODE || detectedAny
         )
     }
 }

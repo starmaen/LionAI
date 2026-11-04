@@ -54,6 +54,21 @@ class DevLoopTest {
         assertEquals("إجابة فقط", ToolAgent.withNextStepInvite("إجابة فقط", false))
     }
 
+    @Test fun developmentToolsDoNotDependOnProviderOrChannelMode() {
+        val automatic = FakePrefs()
+        automatic.edit().putBoolean("agent_tools", true).putBoolean("tools_everywhere", true)
+            .putBoolean("auto_route", true).apply()
+        val manual = FakePrefs()
+        manual.edit().putBoolean("agent_tools", true).putBoolean("tools_everywhere", true)
+            .putBoolean("auto_route", false).putBoolean("channel_direct", false)
+            .putBoolean("channel_local", true).apply()
+        val request = "أصلح البناء وابنِ APK داخل مساحة العمل"
+        val autoGroups = ContextProfiles.of(ChatMode.GENERAL, automatic, request).groups
+        val manualGroups = ContextProfiles.of(ChatMode.GENERAL, manual, request).groups
+        assertTrue(autoGroups.containsAll(setOf(ToolGroup.FILES, ToolGroup.SHELL, ToolGroup.CODE)))
+        assertEquals(autoGroups, manualGroups)
+    }
+
     @Test fun codeModeForcesExecutionFromTheFirstMessage() {
         assertTrue(shouldForceExecution(ChatMode.CODE, TaskKind.FAST, false))
         assertTrue(shouldForceExecution(ChatMode.GENERAL, TaskKind.DEV, false))

@@ -166,7 +166,9 @@ fun HubChipsRow(
             selected = autoRoute,
             onClick = onToggleAuto
         )
-        HubCategory.entries.forEach { category ->
+        // الخادمان أدوات توجيه وليسا مزودين؛ تشغيلهما وإيقافهما من ⚙️ الإعدادات فقط.
+        HubCategory.entries.filterNot { it == HubCategory.LOCAL || it == HubCategory.EXTERNAL }
+            .forEach { category ->
             HubPill(
                 "${category.icon} ${category.label}",
                 selected = currentKind == category,
@@ -572,7 +574,6 @@ fun ProviderHubSheet(
                     }
 
                     HubCategory.INDEPENDENT -> {
-                        ChannelCard(prefs, selectedProvider) { onChanged() }
                         independent.forEach { info ->
                             ProviderRow(
                                 icon = if (info.free) "🟢" else "🔵",
@@ -775,7 +776,10 @@ internal fun LionComposer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        if (file != null) "📎 ${file.name}" else "🖼️ ${image?.name.orEmpty()}",
+                        listOfNotNull(
+                            file?.let { "📎 ${it.name}" },
+                            image?.let { "🖼️ ${it.name}" }
+                        ).joinToString("  ·  "),
                         color = Gold,
                         fontSize = 12.sp,
                         maxLines = 1,

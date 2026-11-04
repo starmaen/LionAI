@@ -398,6 +398,27 @@ fun SettingsScreen(
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(8.dp))
+                        var directChannel by remember {
+                            mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.DIRECT))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("🔌 استخدام الاتصال المباشر بالمزود", color = Color.White, fontSize = 13.sp)
+                                Text(
+                                    "مستقل تماماً؛ يمكن إيقافه عند استخدام خادم واحد فقط",
+                                    color = Color(0xFF9A9A9A), fontSize = 10.sp
+                                )
+                            }
+                            Switch(
+                                checked = directChannel,
+                                onCheckedChange = {
+                                    directChannel = it
+                                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, it)
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
                         var localChannel by remember {
                             mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.LOCAL))
                         }
@@ -419,6 +440,11 @@ fun SettingsScreen(
                                 onCheckedChange = {
                                     localChannel = it
                                     RoutePolicy.setChannelEnabled(prefs, Channel.LOCAL, it)
+                                    if (it) {
+                                        settingsScope.launch(Dispatchers.IO) { LocalAIProxy.start(ctx, prefs) }
+                                    } else {
+                                        LocalAIProxy.stop()
+                                    }
                                 },
                                 colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                             )
@@ -485,37 +511,10 @@ fun SettingsScreen(
                         Spacer(Modifier.height(8.dp))
                         OperationsRoomCard(prefs)
                         Spacer(Modifier.height(8.dp))
-                        // اختيار الخادم المحلي نفسه (وسيط) — مستقل عن مزودات API المباشرة.
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (!autoRouteSetting && provider == RoutePolicy.LOCAL_PROXY)
-                                        Color(0xFFFFB800) else Color(0xFF2A2A2A),
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .clickable {
-                                    provider = RoutePolicy.LOCAL_PROXY
-                                    autoRouteSetting = false
-                                    prefs.edit()
-                                        .putString("provider", RoutePolicy.LOCAL_PROXY)
-                                        .putString("local_proxy_backend", backend)
-                                        .putBoolean("auto_route", false)
-                                        .apply()
-                                }
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "🖥️ استخدم الخادم المحلي (وسيط → $backendName)",
-                                color = if (!autoRouteSetting && provider == RoutePolicy.LOCAL_PROXY)
-                                    Color(0xFF121212) else Color(0xFFE0E0E0),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            "المزود الخلفي للخادم: $backendName — اختياره لا يغيّر مزود المحادثة ولا وضعها التلقائي/اليدوي.",
+                            color = Color(0xFF9A9A9A), fontSize = 10.sp
+                        )
                         Spacer(Modifier.height(6.dp))
                         backendOptions.chunked(3).forEach { rowItems ->
                             Row(
@@ -534,16 +533,9 @@ fun SettingsScreen(
                                                 RoundedCornerShape(16.dp)
                                             )
                                             .clickable {
-                                                // اختيار مزود الخادم = تفعيل يدوي صريح:
-                                                // تتحول المحادثة كلها إلى الخادم بهذا المزود فوراً.
+                                                // إعداد وسيط مستقل: لا يغيّر مزود المحادثة ولا مسارها ولا وضعها.
                                                 backend = info.id
-                                                provider = RoutePolicy.LOCAL_PROXY
-                                                autoRouteSetting = false
-                                                prefs.edit()
-                                                    .putString("local_proxy_backend", info.id)
-                                                    .putString("provider", RoutePolicy.LOCAL_PROXY)
-                                                    .putBoolean("auto_route", false)
-                                                    .apply()
+                                                prefs.edit().putString("local_proxy_backend", info.id).apply()
                                             }
                                             .padding(horizontal = 8.dp, vertical = 8.dp),
                                         contentAlignment = Alignment.Center
@@ -634,14 +626,29 @@ fun SettingsScreen(
                                 fontSize = 10.sp
                             )
                             Spacer(Modifier.height(6.dp))
+                            var gatewayChannel by remember {
+                                mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.GATEWAY))
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "تفعيل خادم الويب",
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.weight(1f)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("تفعيل الخادم الخارجي كمسار تنفيذ", color = Color.White, fontSize = 13.sp)
+                                    Text(
+                                        "يعمل منفرداً أو مع المباشر والمحلي دون تغيير المزود",
+                                        color = Color(0xFF9A9A9A), fontSize = 10.sp
+                                    )
+                                }
+                                Switch(
+                                    checked = gatewayChannel,
+                                    onCheckedChange = {
+                                        gatewayChannel = it
+                                        RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, it)
+                                        setProviderEnabled(prefs, WebGateway.ENABLED_ID, it)
+                                        if (it && gwMode == WebGateway.MODE_OFF) gwMode = WebGateway.MODE_AUTO
+                                        if (!it && gwMode != WebGateway.MODE_OFF) gwMode = WebGateway.MODE_OFF
+                                        saveGateway()
+                                    },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
                                 )
-                                ProviderToggle(prefs = prefs, id = WebGateway.ENABLED_ID)
                             }
                             Spacer(Modifier.height(6.dp))
                             Row(
@@ -661,6 +668,12 @@ fun SettingsScreen(
                                         ),
                                         onClick = {
                                             gwMode = mode
+                                            gatewayChannel = mode != WebGateway.MODE_OFF
+                                            RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, gatewayChannel)
+                                            setProviderEnabled(prefs, WebGateway.ENABLED_ID, gatewayChannel)
+                                            RoutePolicy.setChannelEnabled(
+                                                prefs, Channel.DIRECT, mode != WebGateway.MODE_ONLY
+                                            )
                                             saveGateway()
                                         }
                                     ) {
@@ -672,32 +685,6 @@ fun SettingsScreen(
                                         )
                                     }
                                 }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            var gatewayChannel by remember {
-                                mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.GATEWAY))
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "استخدام الخادم الخارجي كمسار تنفيذ",
-                                        color = Color.White,
-                                        fontSize = 13.sp
-                                    )
-                                    Text(
-                                        "يعمل منفرداً أو مع المباشر والمحلي — لا يلغي أياً منها",
-                                        color = Color(0xFF9A9A9A),
-                                        fontSize = 10.sp
-                                    )
-                                }
-                                Switch(
-                                    checked = gatewayChannel,
-                                    onCheckedChange = {
-                                        gatewayChannel = it
-                                        RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, it)
-                                    },
-                                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                                )
                             }
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(
@@ -1011,15 +998,8 @@ fun SettingsScreen(
                                                     RoundedCornerShape(16.dp)
                                                 )
                                                 .clickable {
-                                                    // مزود خلفي مستورد = تفعيل يدوي للخادم به فوراً.
                                                     backend = entry.id
-                                                    provider = RoutePolicy.LOCAL_PROXY
-                                                    autoRouteSetting = false
-                                                    prefs.edit()
-                                                        .putString("local_proxy_backend", entry.id)
-                                                        .putString("provider", RoutePolicy.LOCAL_PROXY)
-                                                        .putBoolean("auto_route", false)
-                                                        .apply()
+                                                    prefs.edit().putString("local_proxy_backend", entry.id).apply()
                                                 }
                                                 .padding(horizontal = 8.dp, vertical = 8.dp),
                                             contentAlignment = Alignment.Center

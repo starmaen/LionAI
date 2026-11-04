@@ -16,7 +16,7 @@ object RoutePolicy {
     const val CUSTOM = "custom"
 
     /** مفتاح موحّد للتلقائي/اليدوي — مستخدم من غرفة العمليات والإعدادات والمسار. */
-    const val PREF_AUTO = "ops_room_auto"
+    const val PREF_AUTO = "auto_route"
 
     fun selectedProvider(prefs: SharedPreferences): String {
         val raw = (prefs.getString("provider", "gemini") ?: "gemini").trim().ifBlank { "gemini" }
@@ -24,8 +24,8 @@ object RoutePolicy {
         return if (info != null && info.supportsAppChat) raw else "gemini"
     }
 
-    /** اليدوي = غير تلقائي. افتراضياً يدوي (false). */
-    fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean(PREF_AUTO, false)
+    /** اليدوي = غير تلقائي. الافتراضي تلقائي، مثل الواجهة والإعدادات. */
+    fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean(PREF_AUTO, true)
 
     fun assistEnabled(prefs: SharedPreferences): Boolean =
         isManual(prefs) && prefs.getBoolean("manual_assist", false)
@@ -208,7 +208,8 @@ object RoutePolicy {
         kind: TaskKind,
         mode: AnswerMode,
         chatMode: ChatMode,
-        chatId: String = ActiveChat.id
+        chatId: String = ActiveChat.id,
+        image: Boolean = false
     ): List<Route> {
         WebGateway.load(prefs)
         val manual = isManual(prefs)
@@ -224,7 +225,7 @@ object RoutePolicy {
         // اليدوي: المزود المختار أولاً ثم بدائل عند فشله فقط إن فعّل المستخدم المساعدة.
         // التلقائي: العقل المركزي ثم البدائل.
         val rescue = if ((manual && assist) || (!manual && expand)) {
-            CentralBrain.rescueRoutes(prefs, kind, if (manual) listOf(chosen) else central, image = false)
+            CentralBrain.rescueRoutes(prefs, kind, if (manual) listOf(chosen) else central, image = image)
                 .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
         } else {
             emptyList()
@@ -237,16 +238,29 @@ object RoutePolicy {
         } else {
             emptyList()
         }
-        return (combine(
-            manual = manual,
-            assist = if (manual) assist else true,
-            chosen = chosen,
-            central = if (manual) emptyList() else central,
-            rescue = rescue,
-            limit = 6
-        ) + manualChain)
+        val routes = if (manual) {
+            // لا تعِد إضافة chosen المباشر هنا: ربما أوقف المستخدم القناة المباشرة عمداً.
+            manualChain + rescue
+        } else {
+            combine(
+                manual = false,
+                assist = true,
+                chosen = chosen,
+                central = central,
+                rescue = rescue,
+                limit = 6
+            )
+        }
+        return routes
             .distinctBy { it.provider + "|" + it.via }
             .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
+    }
+
+    /** دمج محاولات التنفيذ دون إسقاط القنوات المختلفة للمزود نفسه. */
+    fun mergeAttempts(plan: List<Route>, rescue: List<Route>, stickProvider: String? = null): List<Route> {
+        val merged = (plan + rescue).distinctBy { it.provider + "|" + it.via }
+        if (stickProvider.isNullOrBlank()) return merged
+        return merged.filter { it.provider == stickProvider } + merged.filter { it.provider != stickProvider }
     }
 
     /**
