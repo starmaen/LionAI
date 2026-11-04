@@ -1,6 +1,7 @@
 package com.lion.ai
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,4 +35,29 @@ class DevLoopTest {
         assertTrue(profile.groups.contains(ToolGroup.CONTROL))
         assertTrue(profile.groups.contains(ToolGroup.MEMORY))
     }
+    @Test fun compressedSystemKeepsTheWholeDevelopmentCore() {
+        val input = ToolGroup.values().toSet()
+        val core = ToolAgent.coreGroups(input)
+        setOf(
+            ToolGroup.META, ToolGroup.FILES, ToolGroup.CODE, ToolGroup.GITHUB,
+            ToolGroup.SHELL, ToolGroup.QUALITY, ToolGroup.CONTROL, ToolGroup.MEMORY
+        ).forEach { assertTrue("missing $it", core.contains(it)) }
+    }
+
+    @Test fun askAndCompletionMessagesKeepContinuationNatural() {
+        val ask = ToolAgent.formatUserAsk("  هل أتابع؟  ")
+        assertTrue(ask.startsWith("هل أتابع؟"))
+        assertTrue(ask.contains("أنتظر ردك"))
+
+        val done = ToolAgent.withNextStepInvite("تم التحقق.", true)
+        assertTrue(done.contains("أرسل أي رد أو قرار"))
+        assertEquals("إجابة فقط", ToolAgent.withNextStepInvite("إجابة فقط", false))
+    }
+
+    @Test fun codeModeForcesExecutionFromTheFirstMessage() {
+        assertTrue(shouldForceExecution(ChatMode.CODE, TaskKind.FAST, false))
+        assertTrue(shouldForceExecution(ChatMode.GENERAL, TaskKind.DEV, false))
+        assertFalse(shouldForceExecution(ChatMode.GENERAL, TaskKind.FAST, false))
+    }
+
 }

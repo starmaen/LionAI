@@ -146,6 +146,9 @@ private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): Li
 }
 
 
+internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: Boolean): Boolean =
+    chatMode == ChatMode.CODE || kind == TaskKind.DEV || hasWork
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LionApp() {
@@ -1060,7 +1063,7 @@ fun LionApp() {
                                 timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L),
                                 session = session,
                                 chatMode = chatMode,
-                                forceExecution = kind == TaskKind.DEV || session.hasWork(),
+                                forceExecution = shouldForceExecution(chatMode, kind, session.hasWork()),
                                 providerLabel = SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,

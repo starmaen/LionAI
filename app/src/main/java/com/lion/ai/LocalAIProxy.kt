@@ -395,7 +395,9 @@ object LocalAIProxy {
             val routes = if (pinned != null) planned.filter { it.provider == pinned }.take(1) else planned
             val manual = RoutePolicy.isManual(prefs)
             // اليدوي: المزود المختار يأخذ مهلة المهمة كاملة، وبعدها وقت إضافي للبدائل.
-            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(taskKind) + (if (manual) 60_000L else 0L)
+            val codingTask = chatMode == ChatMode.CODE || taskKind == TaskKind.DEV
+            val installedProviderTimeout = if (codingTask) 900_000L else SmartRouter.timeoutMs(taskKind)
+            val deadline = System.currentTimeMillis() + installedProviderTimeout + (if (manual) 60_000L else 0L)
             val chosenProvider = routes.firstOrNull()?.provider
             val tried = mutableListOf<String>()
             var reply = ""
@@ -405,10 +407,10 @@ object LocalAIProxy {
             for (route in routes) {
                 if (System.currentTimeMillis() >= deadline) break
                 val started = System.currentTimeMillis()
-                val perAttempt = if (manual && route.provider == chosenProvider) {
-                    SmartRouter.timeoutMs(taskKind)
-                } else {
-                    LlmClient.attemptTimeoutMs(taskKind).toLong()
+                val perAttempt = when {
+                    codingTask && route.provider == chosenProvider -> 900_000L
+                    manual && route.provider == chosenProvider -> SmartRouter.timeoutMs(taskKind)
+                    else -> LlmClient.attemptTimeoutMs(taskKind).toLong()
                 }
                 val cap = minOf((deadline - System.currentTimeMillis()).coerceAtLeast(5_000L), perAttempt).toInt()
                 val candidate = LlmClient.ask(

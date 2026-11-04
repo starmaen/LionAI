@@ -36,6 +36,24 @@ object ToolAgent {
     private val ASK_ALT = Regex("\\[\\[QUESTION\\]\\](.*?)\\[\\[/QUESTION\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val TRAILING_QUESTION = Regex("[?؟]\\s*$")
 
+    internal fun coreGroups(groups: Set<ToolGroup>): Set<ToolGroup> {
+        val required = setOf(
+            ToolGroup.META, ToolGroup.FILES, ToolGroup.CODE, ToolGroup.GITHUB,
+            ToolGroup.SHELL, ToolGroup.QUALITY, ToolGroup.CONTROL, ToolGroup.MEMORY
+        )
+        return groups.filterTo(linkedSetOf()) { it in required }.ifEmpty { setOf(ToolGroup.META) }
+    }
+
+    internal fun formatUserAsk(question: String): String =
+        question.trim().let { "$it\n\n— 💬 أنتظر ردك لأكمل المهمة من هذه النقطة (لن أفقد ما تم إنجازه)." }
+
+    internal fun withNextStepInvite(answer: String, usedTools: Boolean): String {
+        if (!usedTools) return answer
+        val clean = answer.trimEnd()
+        if (clean.contains("أي رد") || clean.contains("الخطوة التالية")) return clean
+        return "$clean\n\nإن أردت خطوة تالية، أرسل أي رد أو قرار وسأتابع من الحالة الحالية."
+    }
+
     /** مزودات تعمل كخادم محلي: تُزوَّد بكل الأدوات وتُخاطَب بصيغة الأدوات المناسبة. */
     private val LOCAL_PROVIDERS = setOf("custom", "local_proxy")
 
@@ -155,11 +173,8 @@ object ToolAgent {
         val maxSystemChars = if (provider == "custom") 90_000 else 16_000
         var system = buildSystem(effectiveGroups)
         if (system.length > maxSystemChars) {
-            val core = effectiveGroups.filter {
-                it == ToolGroup.META || it == ToolGroup.FILES || it == ToolGroup.CODE || it == ToolGroup.GITHUB
-            }.toSet().ifEmpty { setOf(ToolGroup.META) }
+            val core = coreGroups(effectiveGroups)
             system = buildSystem(core)
-            if (system.length > maxSystemChars) system = buildSystem(setOf(ToolGroup.META))
         }
         system += if (memory.writeGranted) "\nالمستخدم أجاز التنفيذ في نطاق طلبه الحالي فقط. لا تنفذ أعمالاً غير مرتبطة به."
             else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها."
@@ -245,7 +260,7 @@ object ToolAgent {
                 )
             }
             publish("🧠 $label يخطط للخطوة ${step + 1}")
-            val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, 90_000L).toInt()
+            val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, 120_000L).toInt()
             val toolTurn = if (nativeTools != null && nativeTools.length() > 0) {
                 LlmClient.askWithTools(
                     message = current,
@@ -281,8 +296,8 @@ object ToolAgent {
                 session?.providerFailed(label, reply)
                 val progress = session?.contextBlock(2200).orEmpty()
                 return finish(
-                    reply + if (progress.isBlank()) "" else
-                        "\n\n♻️ حُفظ سجل العمل. توقفت بأمان؛ اطلب المتابعة لاستئناف المهمة.",
+                    reply + "\n\n♻️ حُفظ التقدم. أرسل أي رد وسأستأنف من النقطة نفسها." +
+                        if (progress.isBlank()) "" else "\n\n" + progress,
                     false, "تعذّر المزود الحالي"
                 )
             }
@@ -302,7 +317,7 @@ object ToolAgent {
                 session?.let { CheckpointStore.save(prefs, it) }
                 onProgress?.invoke("💬 بانتظار ردك")
                 return Result(
-                    explicitAsk + "\n\n— 💬 أنتظر ردك لأكمل المهمة من هذه النقطة (لن أفقد ما تم إنجازه).",
+                    formatUserAsk(explicitAsk),
                     used,
                     complete = false,
                     responded = memory.responded
@@ -347,7 +362,7 @@ object ToolAgent {
                         memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
                         session?.let { CheckpointStore.save(prefs, it) }
                         return Result(
-                            trimmed + "\n\n— 💬 أنتظر ردك لأكمل المهمة.",
+                            formatUserAsk(trimmed),
                             used,
                             complete = false,
                             responded = memory.responded
@@ -369,7 +384,7 @@ object ToolAgent {
                 if (AnswerGuard.claimsCompletedAction(reply) && okMutations == 0 && !memory.hasConfirmedMutation()) {
                     return finish("⛔ رفضت إعلان تعديل أو رفع بلا نتيجة أداة تؤكده. لم أعتبر المهمة مكتملة.", false, "لا دليل على تنفيذ التعديل")
                 }
-                val answer = finalAnswer(reply, used)
+                val answer = withNextStepInvite(finalAnswer(reply, used), used.isNotEmpty())
                 if (used.isNotEmpty()) session?.recordNote("اكتملت المهمة: " + answer.take(240))
                 if (used.isNotEmpty()) {
                     session?.markCompleted()
