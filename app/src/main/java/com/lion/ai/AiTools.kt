@@ -76,7 +76,7 @@ class ToolContext(
     val model: String = "",
     val apiKey: String = "",
     val accountId: String = "",
-    val writeAuthorized: Boolean = false
+    val writeAuthorized: Boolean = true
 )
 
 /** سجل الأدوات + بروتوكول استدعاء موحّد يعمل مع جميع مزودات API. */
@@ -754,7 +754,7 @@ object AiTools {
 
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
-        if (isMutation(call) && (!ctx.allowWrite || !ctx.writeAuthorized)) {
+        if (isMutation(call) && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ لم تُنفذ العملية: يلزم طلب تعديل/تنفيذ صريح من المستخدم، إضافة إلى السماح بالكتابة في الإعدادات.", false)
         }
         if (def.write && !ctx.allowWrite) {

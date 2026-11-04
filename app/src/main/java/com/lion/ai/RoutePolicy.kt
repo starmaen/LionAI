@@ -15,13 +15,17 @@ object RoutePolicy {
     const val LOCAL_PROXY = "local_proxy"
     const val CUSTOM = "custom"
 
+    /** مفتاح موحّد للتلقائي/اليدوي — مستخدم من غرفة العمليات والإعدادات والمسار. */
+    const val PREF_AUTO = "ops_room_auto"
+
     fun selectedProvider(prefs: SharedPreferences): String {
         val raw = (prefs.getString("provider", "gemini") ?: "gemini").trim().ifBlank { "gemini" }
         val info = PROVIDERS.firstOrNull { it.id == raw }
         return if (info != null && info.supportsAppChat) raw else "gemini"
     }
 
-    fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean("auto_route", true)
+    /** اليدوي = غير تلقائي. افتراضياً يدوي (false). */
+    fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean(PREF_AUTO, false)
 
     fun assistEnabled(prefs: SharedPreferences): Boolean =
         isManual(prefs) && prefs.getBoolean("manual_assist", false)
