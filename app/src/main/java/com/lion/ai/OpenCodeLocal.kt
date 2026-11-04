@@ -62,7 +62,11 @@ object OpenCodeLocal {
                 val provider = providers.optJSONObject(i) ?: continue
                 val id = provider.optString("id").ifBlank { continue }
                 val models = provider.optJSONObject("models") ?: continue
-                models.keys().forEach { model -> result += "$id/$model" }
+                val names = models.keys()
+                while (names.hasNext()) {
+                    val model = names.next()
+                    result += "$id/$model"
+                }
             }
         }
         return result.distinct().sortedWith(compareByDescending<String> { id ->
