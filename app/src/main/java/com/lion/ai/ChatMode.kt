@@ -100,14 +100,13 @@ object ContextProfiles {
 
     private val CODE_PROMPT = """
 
-وضع الهندسة والبرمجة (عزل وقت تشغيل + حوكمة + منهجية علمية):
-- راقب (اقرأ) ← أصغر تعديل ← تحقق بأداة ← تابع. لا تتوقف لطلب «أكمل».
-- اسأل المستخدم بـ [[ASK]] فقط عند نقص معلومة أو موافقة خطرة أو اختيار بين بديلين بعد إنجاز ما يمكن.
+وضع الهندسة والبرمجة (عزل وقت تشغيل + حوكمة):
 - هذا سياق هندسي مستقل. اتبع دورة: Manifest معتمد ← وحدة تنفيذ واحدة ← بوابة جودة ميكانيكية ← مراجعة ← اختبار ← بناء.
-- لا تكتب كوداً في مشروع له Manifest غير معتمد. لا تعلن «تم» قبل تشغيل بوابة فعلية.
-- كل ملف مصدري يجب أن يصل إلى نقطة دخول حقيقية. الملفات اليتيمة أو الفارغة أو TODO تُرفض.
+- لا تكتب كوداً في مشروع له Manifest غير معتمد. لا تعلن «تم» قبل تشغيل بوابة فعلية (وجود الملفات + تحليل البنية + Root Reachability + سلامة الاختبارات).
+- كل ملف مصدري يجب أن يصل إلى نقطة دخول حقيقية. الملفات اليتيمة أو الفارغة أو التي تحتوي TODO/NotImplemented تعتبر نقصاً وترفض.
 - لا تعبث بالاختبارات لجعلها خضراء؛ بوابة HMAC تكشف تعديل ملفات الاختبار دون تفويض.
-- احفظ Checkpoint بعد كل خطوة فرعية، واستأنف من آخر نقطة. إن كان العمل ناقصاً فأكمل الناقص فقط.
+- احفظ Checkpoint بعد كل خطوة فرعية، واستأنف من آخر نقطة عند تبديل المزود أو انقطاع الجلسة.
+- إن كان العمل ناقصاً فأكمل الناقص فقط، ولا تبدأ المشروع من الصفر.
 """.trimIndent()
 
     fun of(mode: ChatMode, prefs: SharedPreferences, text: String = ""): ContextProfile {
@@ -183,8 +182,8 @@ object ContextProfiles {
             allowWrite = enabled && AiTools.allowWrite(prefs),
             groups = base,
             promptSuffix = suffix,
-            injectProjectContext = mode == ChatMode.CODE || detectedAny,
-            injectAgentsFile = mode == ChatMode.CODE || detectedAny
+            injectProjectContext = mode == ChatMode.CODE,
+            injectAgentsFile = mode == ChatMode.CODE
         )
     }
 }

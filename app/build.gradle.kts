@@ -58,13 +58,6 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
-    // proot يُشغَّل من nativeLibraryDir: يجب استخراج المكتبات إلى القرص وعدم تجريدها.
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-            keepDebugSymbols += "**/libproot*.so"
-        }
-    }
 }
 
 dependencies {
@@ -77,7 +70,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
-    implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

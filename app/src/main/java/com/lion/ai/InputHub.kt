@@ -166,9 +166,7 @@ fun HubChipsRow(
             selected = autoRoute,
             onClick = onToggleAuto
         )
-        // الخادمان أدوات توجيه وليسا مزودين؛ تشغيلهما وإيقافهما من ⚙️ الإعدادات فقط.
-        HubCategory.entries.filterNot { it == HubCategory.LOCAL || it == HubCategory.EXTERNAL }
-            .forEach { category ->
+        HubCategory.entries.forEach { category ->
             HubPill(
                 "${category.icon} ${category.label}",
                 selected = currentKind == category,
@@ -441,22 +439,7 @@ fun ProviderHubSheet(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButton(
                                     enabled = !busy,
-                                    onClick = {
-                                        runCheck("⏳ أفحص الخادم الخارجي…") {
-                                            val health = WebGateway.test(prefs)
-                                            // فحص صحة الخادم لا يكفي: جرّب طلب محادثة فعلياً
-                                            // حتى يظهر سبب فشل البوابة الحقيقي (مفتاح/موديل/شبكة).
-                                            val probe = WebGateway.providers.firstOrNull {
-                                                providerEnabled(prefs, it.id)
-                                            }
-                                            if (probe == null) health else {
-                                                val model = (prefs.getString("model_${probe.id}", "") ?: "")
-                                                    .ifBlank { WebGateway.defaultModel(probe.id) }
-                                                health + "\n\n" +
-                                                    WebGateway.testProvider(prefs, probe.id, model)
-                                            }
-                                        }
-                                    }
+                                    onClick = { runCheck("⏳ أفحص الخادم الخارجي…") { WebGateway.test(prefs) } }
                                 ) { Text("🧪 اختبار الخادم", color = Gold, fontSize = 12.sp) }
                                 TextButton(onClick = onOpenSettings) {
                                     Text("⚙️ إعدادات البوابة والرابط", color = Gold, fontSize = 12.sp)
@@ -574,6 +557,7 @@ fun ProviderHubSheet(
                     }
 
                     HubCategory.INDEPENDENT -> {
+                        ChannelCard(prefs, selectedProvider) { onChanged() }
                         independent.forEach { info ->
                             ProviderRow(
                                 icon = if (info.free) "🟢" else "🔵",
@@ -603,17 +587,8 @@ fun ProviderHubSheet(
                                 enabled = providerEnabled(prefs, info.id),
                                 selected = selectedProvider == info.id,
                                 onToggle = { setProviderEnabled(prefs, info.id, it) },
-                                onSelect = if (category == HubCategory.WEB) {
-                                    { onSelectProvider(info.id) }
-                                } else {
-                                    { info.webviewUrl?.let(onOpenWeb) }
-                                },
-                                onOpen = if (category == HubCategory.WEB) {
-                                    { info.webviewUrl?.let(onOpenWeb) }
-                                } else {
-                                    null
-                                },
-                                selectLabel = if (category == HubCategory.WEB) "اختيار" else "فتح"
+                                onSelect = { info.webviewUrl?.let(onOpenWeb) },
+                                selectLabel = "فتح"
                             )
                         }
                     }
@@ -654,7 +629,6 @@ private fun ProviderRow(
     selected: Boolean,
     onToggle: (Boolean) -> Unit,
     onSelect: () -> Unit,
-    onOpen: (() -> Unit)? = null,
     selectLabel: String = "اختيار"
 ) {
     var on by remember(enabled) { mutableStateOf(enabled) }
@@ -702,11 +676,6 @@ private fun ProviderRow(
                 colors = SwitchDefaults.colors(checkedThumbColor = Gold)
             )
             Spacer(Modifier.width(4.dp))
-            if (onOpen != null) {
-                TextButton(onClick = onOpen) {
-                    Text("فتح ↗", color = Color(0xFF64B5F6), fontSize = 11.sp)
-                }
-            }
             TextButton(onClick = onSelect) {
                 Text(
                     if (selected) "نشط" else selectLabel,
@@ -776,10 +745,7 @@ internal fun LionComposer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        listOfNotNull(
-                            file?.let { "📎 ${it.name}" },
-                            image?.let { "🖼️ ${it.name}" }
-                        ).joinToString("  ·  "),
+                        if (file != null) "📎 ${file.name}" else "🖼️ ${image?.name.orEmpty()}",
                         color = Gold,
                         fontSize = 12.sp,
                         maxLines = 1,

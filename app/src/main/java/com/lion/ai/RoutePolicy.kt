@@ -15,17 +15,13 @@ object RoutePolicy {
     const val LOCAL_PROXY = "local_proxy"
     const val CUSTOM = "custom"
 
-    /** مفتاح موحّد للتلقائي/اليدوي — مستخدم من غرفة العمليات والإعدادات والمسار. */
-    const val PREF_AUTO = "auto_route"
-
     fun selectedProvider(prefs: SharedPreferences): String {
         val raw = (prefs.getString("provider", "gemini") ?: "gemini").trim().ifBlank { "gemini" }
         val info = PROVIDERS.firstOrNull { it.id == raw }
         return if (info != null && info.supportsAppChat) raw else "gemini"
     }
 
-    /** اليدوي = غير تلقائي. الافتراضي تلقائي، مثل الواجهة والإعدادات. */
-    fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean(PREF_AUTO, true)
+    fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean("auto_route", true)
 
     fun assistEnabled(prefs: SharedPreferences): Boolean =
         isManual(prefs) && prefs.getBoolean("manual_assist", false)
@@ -128,8 +124,7 @@ object RoutePolicy {
         // An explicit website selection must never turn into an API answer, even in auto/assist mode.
         if (WebChatRuntime.handles(chosen.provider)) return listOf(chosen.copy(via = Channel.WEB))
         if (isManual(prefs)) {
-            // Keep LastRoute so a later return to auto stays on the working provider.
-            // Do not let central ranking replace the user's pick.
+            ProviderStick.clear(prefs, chatId)
             // اليدوي: مزودك المختار أولاً عبر القنوات التي فعّلتها (مباشر/خارجي/محلي).
             // لا يبدّل العقل المركزي مزودك إلا إذا فعّلت «مساعدة العقل المركزي».
             val assist = assistEnabled(prefs)
@@ -178,24 +173,16 @@ object RoutePolicy {
      */
     fun applySticky(prefs: SharedPreferences, kind: TaskKind, chatId: String, routes: List<Route>): List<Route> {
         if (chatId.isBlank() || isManual(prefs)) return routes
-        if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) return routes
-        val stick = ProviderStick.get(prefs, chatId)
-            ?: LastRoute.get(prefs, chatId)?.provider
-            ?: return routes
+        if (kind == TaskKind.FAST || kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) return routes
+        val stick = ProviderStick.get(prefs, chatId) ?: return routes
         if (stick == LOCAL_PROXY || stick == CUSTOM) return routes
-        WebGateway.load(prefs)
-        // Skip only when the provider is disabled or has no key — not because another chat saw a blip.
-        if (!SmartRouter.available(prefs, stick)) return routes
+        if (!SmartRouter.available(prefs, stick) || SmartRouter.failureCount(stick) >= 2) return routes
         val existing = routes.firstOrNull { it.provider == stick }
-        val savedModel = prefs.getString("route_stick_model_$chatId", "").orEmpty()
-        val route = (existing ?: Route(
+        val route = existing ?: Route(
             stick,
             SmartRouter.candidates(kind).firstOrNull { it.provider == stick }?.model
                 ?.takeIf { it.isNotBlank() } ?: modelFor(prefs, stick)
-        )).let { candidate ->
-            val configured = modelFor(prefs, stick)
-            candidate.copy(model = configured.ifBlank { savedModel.ifBlank { candidate.model } })
-        }
+        )
         return listOf(route) + routes.filter { it.provider != stick }
     }
 
@@ -208,8 +195,7 @@ object RoutePolicy {
         kind: TaskKind,
         mode: AnswerMode,
         chatMode: ChatMode,
-        chatId: String = ActiveChat.id,
-        image: Boolean = false
+        chatId: String = ActiveChat.id
     ): List<Route> {
         WebGateway.load(prefs)
         val manual = isManual(prefs)
@@ -225,7 +211,7 @@ object RoutePolicy {
         // اليدوي: المزود المختار أولاً ثم بدائل عند فشله فقط إن فعّل المستخدم المساعدة.
         // التلقائي: العقل المركزي ثم البدائل.
         val rescue = if ((manual && assist) || (!manual && expand)) {
-            CentralBrain.rescueRoutes(prefs, kind, if (manual) listOf(chosen) else central, image = image)
+            CentralBrain.rescueRoutes(prefs, kind, if (manual) listOf(chosen) else central, image = false)
                 .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
         } else {
             emptyList()
@@ -238,29 +224,16 @@ object RoutePolicy {
         } else {
             emptyList()
         }
-        val routes = if (manual) {
-            // لا تعِد إضافة chosen المباشر هنا: ربما أوقف المستخدم القناة المباشرة عمداً.
-            manualChain + rescue
-        } else {
-            combine(
-                manual = false,
-                assist = true,
-                chosen = chosen,
-                central = central,
-                rescue = rescue,
-                limit = 6
-            )
-        }
-        return routes
+        return (combine(
+            manual = manual,
+            assist = if (manual) assist else true,
+            chosen = chosen,
+            central = if (manual) emptyList() else central,
+            rescue = rescue,
+            limit = 6
+        ) + manualChain)
             .distinctBy { it.provider + "|" + it.via }
             .filterNot { it.provider == LOCAL_PROXY || it.provider == CUSTOM }
-    }
-
-    /** دمج محاولات التنفيذ دون إسقاط القنوات المختلفة للمزود نفسه. */
-    fun mergeAttempts(plan: List<Route>, rescue: List<Route>, stickProvider: String? = null): List<Route> {
-        val merged = (plan + rescue).distinctBy { it.provider + "|" + it.via }
-        if (stickProvider.isNullOrBlank()) return merged
-        return merged.filter { it.provider == stickProvider } + merged.filter { it.provider != stickProvider }
     }
 
     /**
@@ -306,11 +279,10 @@ object ProviderStick {
         return if (provider.isNotBlank() && sig == signature(prefs)) provider else null
     }
 
-    fun set(prefs: SharedPreferences, chatId: String, provider: String, model: String = "") {
+    fun set(prefs: SharedPreferences, chatId: String, provider: String) {
         if (chatId.isBlank() || provider.isBlank()) return
         if (provider == RoutePolicy.LOCAL_PROXY || provider == RoutePolicy.CUSTOM) return
         if (RoutePolicy.isManual(prefs)) return
-        if (model.isNotBlank()) prefs.edit().putString("route_stick_model_$chatId", model).apply()
         val value = provider + "|" + signature(prefs)
         if (prefs.getString(key(chatId), null) != value) prefs.edit().putString(key(chatId), value).apply()
     }

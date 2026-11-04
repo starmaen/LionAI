@@ -45,12 +45,9 @@ test('requires a new assistant response and stable completion evidence',()=>with
   assert.equal(p.run('poll').status,'complete');
   assert.equal(p.run('poll').text,'new reply');
 }));
-test('stable text without generating becomes a completed answer',()=>withPage(p=>{
-  p.run('prepare');p.run('submit');p.answer('partial');p.run('poll');
-  p.advance(5100);
-  const done = p.run('poll');
-  assert.equal(done.status,'complete');
-  assert.equal(done.text,'partial');
+test('stable text alone is not considered completed',()=>withPage(p=>{
+  p.run('prepare');p.run('submit');p.answer('partial');p.run('poll');p.advance(60000);
+  assert.equal(p.run('poll').status,'streaming');
 }));
 test('observes generating indicator and waits until it stops',()=>withPage(p=>{
   p.run('prepare');p.run('submit');p.answer('result');
@@ -58,17 +55,10 @@ test('observes generating indicator and waits until it stops',()=>withPage(p=>{
   p.run('poll');p.advance(5000);assert.equal(p.run('poll').status,'streaming');
   stop.remove();assert.equal(p.run('poll').status,'complete');
 }));
-test('replaces a leftover composer draft so app Send can post',()=>withPage(p=>{
-  p.w.document.querySelector('#input').value='LionAI conversation context. leftover test';
-  assert.equal(p.run('prepare').status,'prepared');
-  assert.equal(p.w.document.querySelector('#input').value,'hello');
-  assert.equal(p.run('submit').status,'clicked');
-  assert.equal(p.clicks(),1);
-}));
-test('composer already holding the prompt is prepared without rewriting',()=>withPage(p=>{
-  p.w.document.querySelector('#input').value='hello';
-  assert.equal(p.run('prepare').status,'prepared');
-  assert.equal(p.w.document.querySelector('#input').value,'hello');
+test('never overwrites a user draft',()=>withPage(p=>{
+  p.w.document.querySelector('#input').value='my draft';
+  assert.equal(p.run('prepare').status,'draft');assert.equal(p.clicks(),0);
+  assert.equal(p.w.document.querySelector('#input').value,'my draft');
 }));
 test('detects changed drafts and disabled or missing send buttons',()=>withPage(p=>{
   p.run('prepare');const b=p.w.document.querySelector('#send');b.disabled=true;
@@ -93,18 +83,9 @@ test('JSON escaping preserves adversarial text without executing it',()=>withPag
   assert.equal(p.w.document.querySelector('#input').value,text);
   assert.equal(p.w.hacked,undefined);
 }));
-test('a real additional turn with new text completes',()=>withPage(p=>{
-  p.answer('تم',true);p.run('prepare');p.run('submit');p.answer('تم أيضاً',true);
+test('a real additional turn may repeat the same response text',()=>withPage(p=>{
+  p.answer('تم',true);p.run('prepare');p.run('submit');p.answer('تم',true);
   p.run('poll');p.advance(4000);assert.equal(p.run('poll').status,'complete');
-}));
-test('remounted old answers never count as a completed reply',()=>withPage(p=>{
-  const old=p.answer('old reply',true);
-  p.run('prepare');p.run('submit');
-  old.remove();
-  p.answer('old reply',true);
-  p.advance(5100);
-  assert.equal(p.run('poll').status,'awaiting_ack');
-  assert.equal(p.w.document.querySelector('#input').value,'');
 }));
 test('preserves code fences and removes copy button text from returned answer',()=>withPage(p=>{
   p.run('prepare');p.run('submit');const n=p.answer('',true);
@@ -155,7 +136,7 @@ test('click alone is not acknowledgement and never triggers another click',()=>w
   p.run('prepare');assert.equal(p.run('submit').status,'clicked');
   assert.equal(p.run('poll').status,'awaiting_ack');
   assert.equal(p.run('submit').status,'clicked');
-  p.advance(46000);assert.equal(p.run('poll').status,'send_unconfirmed');
+  p.advance(31000);assert.equal(p.run('poll').status,'send_unconfirmed');
 }));
 test('busy site is rejected before overwriting the composer',()=>withPage(p=>{
   const b=p.w.document.createElement('button');b.className='stop';p.w.document.body.append(b);
@@ -203,118 +184,13 @@ test('cleared or missing editor alone never confirms delivery',()=>withPage(p=>{
   assert.equal(p.run('poll').status,'awaiting_ack');
   p.w.document.querySelector('#input').remove();
   assert.equal(p.run('poll').status,'awaiting_ack');
-  p.advance(46000);
+  p.advance(31000);
   assert.equal(p.run('poll').status,'send_unconfirmed');
   assert.equal(p.clicks(),1);
 }));
-test('a five second stream pause without a stop button completes the captured answer',()=>withPage(p=>{
+test('a twelve second stream pause without completion evidence is never completed',()=>withPage(p=>{
   p.run('prepare');p.run('submit');p.answer('partial text');
   assert.equal(p.run('poll').status,'streaming');
-  p.advance(5100);
-  const done = p.run('poll');
-  assert.equal(done.status,'complete');
-  assert.equal(done.text,'partial text');
-}));
-
-const FALLBACK_PROMPT = 'please answer this question about the capital';
-test('fallback: reads the text the page added after our message when selectors miss',()=>withPage(p=>{
-  p.config.answer = '.no-such-selector';
-  p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
-  p.w.document.querySelector('#send').onclick = () => {};
-  const box = p.w.document.querySelector('#messages');
-  box.innerHTML = '<div class="u">' + FALLBACK_PROMPT + '</div><div class="x">The capital is Damascus.</div>';
-  const first = p.run('poll', FALLBACK_PROMPT);
-  assert.equal(first.status, 'streaming'); assert.equal(first.text, 'The capital is Damascus.');
-  p.advance(1200); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
-  p.advance(1200); const done = p.run('poll', FALLBACK_PROMPT);
-  assert.equal(done.status, 'complete'); assert.equal(done.text, 'The capital is Damascus.');
-  assert.equal(done.viaFallback, true);
-}));
-test('fallback reads a reply placed before the user turn (newest-first DOM)',()=>withPage(p=>{
-  p.config.answer = '.no-such-selector';
-  p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
-  p.w.document.querySelector('#messages').innerHTML =
-    '<div class="x">The capital is Damascus.</div><div class="u">' + FALLBACK_PROMPT + '</div>';
-  const first = p.run('poll', FALLBACK_PROMPT);
-  assert.equal(first.status, 'streaming');
-  assert.equal(first.text, 'The capital is Damascus.');
-  p.advance(2100);
-  const done = p.run('poll', FALLBACK_PROMPT);
-  assert.equal(done.status, 'complete');
-  assert.equal(done.text, 'The capital is Damascus.');
-}));
-test('flex-col-reverse list returns the newest reply not the oldest',()=>withPage(p=>{
-  const box = p.w.document.querySelector('#messages');
-  const orig = p.w.getComputedStyle.bind(p.w);
-  p.w.getComputedStyle = function(el) {
-    if (el === box) return {flexDirection: 'column-reverse'};
-    try { return orig(el); } catch (e) { return {flexDirection: 'column'}; }
-  };
-  const old = p.answer('old reply', true);
-  box.insertBefore(old, box.firstChild);
-  p.run('prepare'); p.run('submit');
-  const fresh = p.w.document.createElement('article');
-  fresh.className = 'assistant'; fresh.textContent = 'brand new reply';
-  const copy = p.w.document.createElement('button'); copy.className = 'copy'; fresh.append(copy);
-  box.insertBefore(fresh, box.firstChild);
-  const first = p.run('poll');
-  assert.equal(first.status, 'streaming');
-  assert.equal(first.text, 'brand new reply');
-  p.advance(800);
-  const done = p.run('poll');
-  assert.equal(done.status, 'complete');
-  assert.equal(done.text, 'brand new reply');
-}));
-test('composer fallback finds textarea when site input selector misses',()=>withPage(p=>{
-  p.config.input = '#no-such-input';
-  assert.equal(p.run('probe').status, 'ready');
-  assert.equal(p.run('prepare').status, 'prepared');
-  assert.equal(p.w.document.querySelector('#input').value, 'hello');
-}));
-test('login page is not treated as a chat composer',()=>withPage(p=>{
-  const pw = p.w.document.createElement('input'); pw.type = 'password'; p.w.document.body.append(pw);
-  assert.equal(p.run('probe').status, 'needs_input');
-  assert.equal(p.clicks(), 0);
-  assert.equal(p.w.document.querySelector('#input').value, '');
-}));
-test('locate returns send coordinates without clicking',()=>withPage(p=>{
-  p.w.HTMLElement.prototype.getBoundingClientRect = function() {
-    return {x: 12, y: 40, width: 48, height: 32, top: 40, left: 12, bottom: 72, right: 60};
-  };
-  p.run('prepare');
-  const r = p.run('locate');
-  assert.equal(r.status, 'located');
-  assert.equal(p.clicks(), 0);
-  assert.ok(r.x > 0 && r.y > 0 && r.w > 0 && r.h > 0);
-  assert.equal(p.run('locate').status, 'located');
-  assert.equal(p.clicks(), 0);
-}));
-test('enter delivers without a matching send button',()=>withPage(p=>{
-  p.run('prepare');
-  p.w.document.querySelector('#send').remove();
-  assert.equal(p.run('submit').status, 'needs_send');
-  assert.equal(p.run('enter').status, 'entered');
-  assert.equal(p.clicks(), 0);
-  assert.equal(p.run('poll').status, 'awaiting_ack');
-  p.answer('ok', true);
-  assert.equal(p.run('poll').status, 'streaming');
-}));
-test('locate then poll still requires acknowledgement',()=>withPage(p=>{
-  p.w.HTMLElement.prototype.getBoundingClientRect = function() {
-    return {x: 8, y: 8, width: 20, height: 20, top: 8, left: 8, bottom: 28, right: 28};
-  };
-  p.run('prepare'); p.run('locate');
-  assert.equal(p.run('poll').status, 'awaiting_ack');
-  p.advance(46000);
-  assert.equal(p.run('poll').status, 'send_unconfirmed');
-  assert.equal(p.clicks(), 0);
-}));
-test('fallback never completes while a generic stop button is visible',()=>withPage(p=>{
-  p.config.answer = '.no-such-selector';
-  p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
-  p.w.document.querySelector('#messages').innerHTML = '<div>' + FALLBACK_PROMPT + '</div><div>partial answer</div>';
-  assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
-  const b = p.w.document.createElement('button'); b.setAttribute('aria-label', 'Stop generating'); b.textContent = 'Stop';
-  p.w.document.body.append(b);
-  p.advance(30000); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
+  p.advance(12001);assert.equal(p.run('poll').status,'streaming');
+  p.advance(120000);assert.equal(p.run('poll').status,'streaming');
 }));

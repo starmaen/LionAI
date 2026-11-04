@@ -100,8 +100,6 @@ fun DevToolsScreen(
                 "code" -> CodeToolTab(context)
                 "manager" -> ToolManagerTab(prefs, onOpenGitHub, onOpenSettings)
                 "audit" -> ToolAuditTab()
-                "env" -> LocalEnvTab()
-                "terminal" -> TerminalToolTab(context)
             }
         }
     }
@@ -121,8 +119,6 @@ private fun ToolsHome(
         item {
             ToolCard("🌐", "متصفح الويب", "جلب صفحة، استخراج النص والأكواد والروابط والصور، استدعاء API، وتنزيل ملفات") { onTab("web") }
             ToolCard("🐙", "GitHub Explorer", "استعراض المستودعات، الشجرة، الملفات، README، الفروع، Issues، PRs، Actions") { onOpenGitHub() }
-            ToolCard("🖥️", "البيئة المحلية", "فحص مساحة العمل وأدوات المطوّر وتثبيت الناقص والحزم المساعدة") { onTab("env") }
-            ToolCard("💻", "Terminal", "أوامر Alpine/OpenCode داخل مساحة العمل، stdout/stderr ومهلة 30 ثانية") { onTab("terminal") }
             ToolCard("📁", "قارئ الملفات", "قراءة وكتابة ملفات مساحة العمل، CSV، JSON، ZIP، وحفظ التعديلات") { onTab("files") }
             ToolCard("🗄️", "قواعد البيانات", "إنشاء SQLite، تنفيذ SQL، عرض المخطط، استيراد/تصدير JSON") { onTab("db") }
             ToolCard("🔍", "محلل الكود", "مقاييس، دوال، كلاسات، Imports، تعقيد، TODO/FIXME، وملاحظات") { onTab("code") }
@@ -907,13 +903,7 @@ private fun ToolManagerTab(
             "🧰 أدوات: JSON/Base64/Hash/Regex" to ToolGroup.UTIL,
             "🔌 الموصلات: Drive/Gmail/Calendar/Notion/Slack" to ToolGroup.CONNECTORS,
             "🔥 Firebase: Firestore/Storage عبر REST" to ToolGroup.FIREBASE,
-            "🛡️ الأمان: فحص الأسرار + بوابات الجودة" to ToolGroup.QUALITY,
-            "⚡ التنفيذ والبناء: Gradle/JDK/أوامر محلية" to ToolGroup.SHELL,
-            "🛡️ الحوكمة والمخطط: Manifest وبوابات" to ToolGroup.CONTROL,
-            "🧠 الذاكرة ونقاط الاستئناف" to ToolGroup.MEMORY,
-            "🔗 خوادم MCP" to ToolGroup.MCP,
-            "💬 الاتصالات: واتساب/تلغرام/إشعارات" to ToolGroup.COMMS,
-            "🧭 إدارة الأدوات" to ToolGroup.META
+            "🛡️ الأمان: فحص الأسرار + بوابات الجودة" to ToolGroup.QUALITY
         ).forEach { (label, _) ->
             Text("• $label", color = Color.White, fontSize = 12.sp)
         }
@@ -924,57 +914,6 @@ private fun ToolManagerTab(
             }
             Button(onClick = onOpenSettings, colors = ButtonDefaults.buttonColors(containerColor = T_CARD)) {
                 Text("⚙️ الإعدادات", color = T_GOLD)
-            }
-        }
-    }
-}
-
-@Composable
-private fun TerminalToolTab(context: Context) {
-    val scope = rememberCoroutineScope()
-    var command by remember { mutableStateOf("") }
-    var output by remember { mutableStateOf("Alpine/OpenCode — /workspace\n") }
-    var running by remember { mutableStateOf(false) }
-
-    fun execute() {
-        if (command.isBlank() || running) return
-        val current = command.trim()
-        scope.launch {
-            running = true
-            output += "\n$ $current\n"
-            val result = withContext(Dispatchers.IO) { ShellTools.exec(context, current, 30) }
-            output = (output + result.output + "\n").takeLast(30_000)
-            command = ""
-            running = false
-        }
-    }
-
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
-        Text("💻 Terminal — Alpine / OpenCode", color = T_GOLD, fontWeight = FontWeight.Bold)
-        Text("التنفيذ محصور بمساحة العمل وقائمة الأوامر ومهلة 30 ثانية.", color = T_MUTED, fontSize = 11.sp)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = output,
-            onValueChange = {},
-            readOnly = true,
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-            colors = toolFieldColors(),
-            modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = command,
-                onValueChange = { command = it },
-                enabled = !running,
-                singleLine = true,
-                placeholder = { Text("node --version أو ls -la") },
-                colors = toolFieldColors(),
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(enabled = !running, onClick = { execute() }, colors = ButtonDefaults.buttonColors(containerColor = T_GOLD)) {
-                Text(if (running) "…" else "تشغيل", color = T_DARK)
             }
         }
     }

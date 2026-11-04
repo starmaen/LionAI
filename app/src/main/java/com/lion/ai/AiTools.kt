@@ -75,8 +75,7 @@ class ToolContext(
     val provider: String = "",
     val model: String = "",
     val apiKey: String = "",
-    val accountId: String = "",
-    val writeAuthorized: Boolean = true
+    val accountId: String = ""
 )
 
 /** سجل الأدوات + بروتوكول استدعاء موحّد يعمل مع جميع مزودات API. */
@@ -154,9 +153,6 @@ object AiTools {
         Def("file_verify", ToolGroup.FILES, """{"path":"","algorithm":"sha256","baseline":"integrity-baseline.json","max_files":5000}""", "فحص سلامة المشروع: بصمات كل الملفات، الفارغة، المكررة، والمقارنة بخط أساس"),
         Def("file_integrity_save", ToolGroup.FILES, """{"path":"","output":"integrity-baseline.json","algorithm":"sha256"}""", "حفظ خط أساس لبصمات ملفات المشروع للتحقق لاحقاً", true),
         Def("file_diff", ToolGroup.FILES, """{"first":"old.kt","second":"new.kt"}""", "مقارنة ملفين وإظهار الفروق"),
-        Def("read_file", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل (اسم متوافق مع OpenCode)"),
-        Def("write_file", ToolGroup.FILES, """{"path":"src/Main.kt","content":"..."}""", "إنشاء/تعديل ملف داخل مساحة العمل", true),
-        Def("list_dir", ToolGroup.FILES, """{"path":""}""", "استعراض محتويات مجلد في مساحة العمل"),
 
         // Database
         Def("db_list", ToolGroup.DATABASE, "{}", "قواعد SQLite الموجودة"),
@@ -333,8 +329,6 @@ object AiTools {
 
         // Shell / Android build
         Def("shell_exec", ToolGroup.SHELL, """{"command":"git status","cwd":"","timeout_sec":120}""", "تنفيذ أمر مسموح داخل مساحة العمل مع مهلة وسقف مخرجات", true),
-        Def("execute_command", ToolGroup.SHELL, """{"command":"node --version","cwd":"","timeout_sec":30}""", "تنفيذ أمر داخل Alpine/مساحة العمل بمهلة قصوى 30 ثانية", true),
-        Def("code_run", ToolGroup.SHELL, """{"language":"javascript","code":"console.log('ok')","timeout_sec":30}""", "تشغيل JavaScript/TypeScript أو Shell أو SQL وإرجاع stdout/stderr", true),
         Def("shell_which", ToolGroup.SHELL, """{"name":"git"}""", "التحقق من وجود أداة على الجهاز"),
         Def("toolchain_status", ToolGroup.SHELL, "{}", "حالة الحزم الأساسية (git/java/gradle/node/python/jq...) على الجهاز/الخادم"),
         Def("toolchain_install", ToolGroup.SHELL, """{"package":"git"}""", "تثبيت أداة تطوير من قائمة بيضاء عبر pkg/apt، أو من الإنترنت اختيارياً بصيغة pip:ruff أو npm:typescript", true),
@@ -442,19 +436,6 @@ object AiTools {
             groups.add(ToolGroup.GITHUB)
         }
         val wantsTools = Regex("(أداة|اداة|أدوات|ادوات|tool|tools|وكيل|agent)").containsMatchIn(t)
-        val shell = Regex(
-            "(gradle|gradlew|assemble|apk|sdkmanager|adb|jdk|ndk|termux|pip3|npm run|toolchain|" +
-                "android_build|بناء محلي|نفذ امر|نفذ أمر|shell|bash|sh\\\\b|تثبيت حزمه|تثبيت حزمة)"
-        )
-        if (shell.containsMatchIn(t) || ToolGroup.CODE in groups) groups.add(ToolGroup.SHELL)
-        val quality = Regex("(gate_run|lint|اختبار|اختبارات|بوابه|بوابة جوده|بوابة جودة|hmac|root reachability)")
-        if (quality.containsMatchIn(t) || ToolGroup.CODE in groups) groups.add(ToolGroup.QUALITY)
-        val control = Regex("(manifest|checkpoint|حوكمه|حوكمة|مخطط الملفات|pipeline)")
-        if (control.containsMatchIn(t) || ToolGroup.CODE in groups) groups.add(ToolGroup.CONTROL)
-        val memory = Regex("(ذاكره|ذاكرة المشروع|checkpoint_save|checkpoint_resume)")
-        if (memory.containsMatchIn(t)) groups.add(ToolGroup.MEMORY)
-        val mcp = Regex("(\\\\bmcp\\\\b|خوادم mcp|model context protocol)")
-        if (mcp.containsMatchIn(t)) groups.add(ToolGroup.MCP)
         if (groups.isNotEmpty() || wantsTools) groups.add(ToolGroup.META)
         return groups
     }
@@ -633,15 +614,7 @@ object AiTools {
     fun toolchainReport(ctx: ToolContext): String = buildString {
         append("حالة الأدوات على الجهاز/الخادم:\n")
         TOOLCHAIN.forEach { (binary, label) ->
-            val available = if (LinuxEnv.ready(ctx.context)) {
-                val probe = when (binary) {
-                    "java" -> "/usr/lib/jvm/java-17-openjdk/bin/java -version"
-                    "gradle" -> "JAVA_HOME=/usr/lib/jvm/java-17-openjdk gradle --version"
-                    else -> "command -v $binary"
-                }
-                LinuxEnv.run(ctx.context, probe, 15).ok
-            } else ShellTools.available(ctx.context, binary)
-            append(if (available) "✅ " else "❌ ")
+            append(if (ShellTools.available(ctx.context, binary)) "✅ " else "❌ ")
                 .append(label).append(" (").append(binary).append(")\n")
         }
         append("\nللتحميل: استخدم toolchain_install باسم الحزمة (git/python/node/java/gradle/curl/jq/unzip/ffmpeg...).")
@@ -761,20 +734,13 @@ object AiTools {
         "github_bootstrap_project", "github_create_repo", "github_create_branch"
     )
 
-    fun isMutation(call: ToolCall): Boolean = byName[call.name]?.write == true ||
-        call.name in setOf("web_download", "db_query", "file_present") ||
-        (call.name == "web_api" && call.args.optString("method", "GET").uppercase() !in setOf("GET", "HEAD", "OPTIONS"))
-
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
-        if (isMutation(call) && !ctx.allowWrite) {
-            return ToolResult(call.name, "⛔ لم تُنفذ العملية: يلزم طلب تعديل/تنفيذ صريح من المستخدم، إضافة إلى السماح بالكتابة في الإعدادات.", false)
-        }
         if (def.write && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
         }
-        val shellWrite = call.name in setOf("shell_exec", "execute_command", "code_run") &&
-            (call.name == "code_run" || ShellTools.looksLikeWrite(call.args.optString("command")))
+        val shellWrite = call.name == "shell_exec" &&
+            ShellTools.looksLikeWrite(call.args.optString("command"))
         if ((call.name in CODE_WRITE_TOOLS || shellWrite) && ctx.mode == ChatMode.CODE &&
             ctx.chatId.isNotBlank() && !PipelineStore.canWrite(ctx.prefs, ctx.chatId)
         ) {
@@ -1326,7 +1292,7 @@ object AiTools {
                 "✅ نُزّل إلى $relative (${download.bytes} بايت)"
             }
 
-            "file_list", "list_dir" -> {
+            "file_list" -> {
                 val entries = FileTools.list(ctx.context, args.optString("path"))
                 if (entries.isEmpty()) "المساحة فارغة." else entries.joinToString("\n") {
                     (if (it.directory) "📁 " else "📄 ") + it.path + if (!it.directory) " (${it.size} بايت)" else ""
@@ -1343,7 +1309,7 @@ object AiTools {
                     if (it.line == 0) "• ${it.path}" else "• ${it.path}:${it.line}: ${it.text}"
                 }
             }
-            "file_read", "read_file" -> {
+            "file_read" -> {
                 val info = FileTools.read(ctx.context, req(args, "path"))
                 if (info.binary) "📄 ${info.path} — ملف ثنائي (${info.size} بايت)" else
                     "📄 ${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n${info.text.take(14_000)}"
@@ -1389,7 +1355,7 @@ object AiTools {
                     }
                 }
             }
-            "file_write", "write_file" -> {
+            "file_write" -> {
                 val entry = FileTools.write(ctx.context, req(args, "path"), args.optString("content"))
                 "✅ كُتب ${entry.path} (${entry.size} بايت)"
             }
@@ -2572,12 +2538,11 @@ $code
             "memory_delete" -> if (ProjectMemory.delete(ctx.prefs, req(args, "id"))) "✅ حُذف القرار." else "❌ لم أجد القرار."
 
             // ===== Shell / Android =====
-            "execute_command", "shell_exec" -> {
-                val isShort = name == "execute_command"
+            "shell_exec" -> {
                 val result = ShellTools.exec(
                     ctx.context,
                     req(args, "command"),
-                    int(args, "timeout_sec", if (isShort) 30 else 120).coerceAtMost(if (isShort) 30 else 900),
+                    int(args, "timeout_sec", 120),
                     args.optString("cwd")
                 )
                 buildString {
@@ -2586,15 +2551,6 @@ $code
                     if (result.timedOut) append(" — انتهت المهلة")
                     append('\n').append(result.output)
                 }
-            }
-            "code_run" -> {
-                val result = CodeRunner.run(
-                    ctx.context,
-                    req(args, "language"),
-                    req(args, "code"),
-                    int(args, "timeout_sec", 30)
-                )
-                (if (result.ok) "✅" else "❌") + "\n" + result.output
             }
             "shell_which" -> ShellTools.which(ctx.context, req(args, "name"))
             "android_build" -> {

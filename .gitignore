@@ -45,6 +45,3 @@ venv/
 
 # JavaScript test dependencies
 scripts/node_modules/
-
-# يُجلب أثناء البناء عبر scripts/fetch-proot.sh
-app/src/main/jniLibs/

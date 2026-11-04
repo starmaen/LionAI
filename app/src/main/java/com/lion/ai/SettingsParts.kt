@@ -373,7 +373,7 @@ Spacer(Modifier.height(8.dp))
                         }
                     }
                 }
-                if (id in setOf("opencode", "opencode-go", "opencode-console") && (activeModel == "big-pickle" || activeModel.endsWith("-free"))) {
+                if (id.startsWith("opencode") && (activeModel == "big-pickle" || activeModel.endsWith("-free"))) {
                     Text(
                         "ℹ️ هذا موديل مجاني في OpenCode. إن رفضه المزود (FreeUsageLimit) اختر موديلاً مدفوعاً برصيد Zen أو فعّل مزود OpenCode Go.",
                         color = Amber,
@@ -400,7 +400,7 @@ Spacer(Modifier.height(8.dp))
                                 }
                                 val list = result.getOrNull()
                                 if (!list.isNullOrEmpty()) {
-                                    val ranked = if (id == "apinex") list else ModelRank.sorted(list)
+                                    val ranked = ModelRank.sorted(list)
                                     modelCache[id] = ranked
                                     ModelCatalog.saveCache(prefs, id, ranked)
                                     modelStatus = "✅ تم جلب ${ranked.size} موديل — الأقوى: " +
@@ -420,7 +420,7 @@ Spacer(Modifier.height(8.dp))
                 }
 
                 if (info.endpoint.isNotBlank() || info.custom ||
-                    id in setOf("groq", "openrouter", "apinex", "opencode", "opencode-go", "opencode-console", "deepseek", "openai")
+                    id in setOf("groq", "openrouter", "opencode", "opencode-go", "opencode-console", "deepseek", "openai")
                 ) {
                     Spacer(Modifier.height(8.dp))
                     Text(

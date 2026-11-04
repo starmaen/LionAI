@@ -30,14 +30,10 @@ object WebChatRuntime {
             .map { Route(it.id, model(prefs, it.id), Channel.WEB) }
 
     fun test(prefs: SharedPreferences, id: String): String {
-        if (!isWeb(id)) return "❌ الفحص لموقع واحد فقط — اختر الموقع من زر فحص بجانبه."
         LlmClient.reloadOverrides(prefs)
         val start = System.currentTimeMillis()
-        val reply = LlmClient.ask(
-            "أجب بكلمة واحدة: تم", "", id, emptyList(),
-            systemPrompt = "",
-            readTimeoutMs = 90_000
-        )
+        val reply = LlmClient.ask("أجب بكلمة واحدة: تم", "", id, emptyList(),
+            systemPrompt = "أنت تختبر اتصال صفحة ويب مع تطبيق LionAI. أجب فقط بكلمة تم.", readTimeoutMs = 90_000)
         val ok = !LlmClient.isErrorReply(reply) && reply.isNotBlank()
         SmartRouter.record(Route(id, "web-session", Channel.WEB), ok, System.currentTimeMillis() - start)
         return (if (ok) "✅ " else "❌ ") + providerInfo(id).shortName + ": " + reply.take(240)
