@@ -5,6 +5,7 @@ plugins {
 }
 
 android {
+    packaging { jniLibs { useLegacyPackaging = true } }
     namespace = "com.lion.ai"
     compileSdk = 35
 
