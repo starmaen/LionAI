@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -56,15 +57,15 @@ fun LocalEnvTab() {
     var report by remember { mutableStateOf<WorkspaceReport?>(null) }
     var tools by remember { mutableStateOf<List<DevToolStatus>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
+    var activeTool by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf("") }
+    val toolMessages = remember { mutableStateMapOf<String, String>() }
 
     fun refresh() {
         scope.launch {
-            busy = true
             val (r, t) = withContext(Dispatchers.IO) { LocalEnv.ensureWorkspace(context) to LocalEnv.inventory(context) }
             report = r
             tools = t
-            busy = false
         }
     }
     LaunchedEffect(LinuxEnv.installing) { if (!LinuxEnv.installing) refresh() }
@@ -84,25 +85,36 @@ fun LocalEnvTab() {
                 Text("🐧 بيئة Linux (Alpine + proot)", color = Color.White, fontWeight = FontWeight.Bold)
                 when {
                     !runtimeOk -> Text(
-                        "⚠️ مكوّن proot غير مضمّن في هذا البناء. ابنِ التطبيق عبر الـ workflow المحدّث.",
+                        "⚠️ proot أو إحدى مكتباته ناقصة (libtalloc/libandroid-shmem). ثبّت البناء المحدّث؛ لا تُعِد تثبيت الأدوات منفردة لأن العطل في مشغّل البيئة.",
                         color = Color(0xFFE94560), fontSize = 12.sp
                     )
                     LinuxEnv.installing -> Text(LinuxEnv.progress, color = ENV_GOLD, fontSize = 12.sp)
                     envReady -> {
                         Text("✅ مفعّلة: كل الأوامر والأدوات تعمل داخلها، ومساحة العمل مربوطة على /workspace", color = Color(0xFF7CC47C), fontSize = 12.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(enabled = !busy, onClick = {
+                            TextButton(enabled = !busy && activeTool == null, onClick = {
                                 scope.launch {
                                     busy = true
-                                    message = "⏳ جارٍ تحديث الحزم والتحقق من git/bash/sh/python/pip…"
+                                    message = "⏳ ترقية الحزم المثبتة فقط؛ لن تُثبّت أدوات جديدة…"
                                     val result = withContext(Dispatchers.IO) { LinuxEnv.updateEnvironment(context) }
-                                    message = (if (result.ok) "✅ اكتمل التحديث" else "❌ فشل التحديث") +
-                                        "\n" + result.output.takeLast(1200)
+                                    message = (if (result.ok) "✅ اكتملت الترقية" else "❌ فشلت الترقية") +
+                                        "\n" + result.output.takeLast(6000)
                                     busy = false
                                     refresh()
                                 }
-                            }) { Text("⬆️ تحديث البيئة والمكتبات", color = ENV_GOLD, fontSize = 11.sp) }
-                            TextButton(enabled = !busy, onClick = { LinuxEnv.remove(context); refresh() }) {
+                            }) { Text("⬆️ ترقية المثبّت فقط", color = ENV_GOLD, fontSize = 11.sp) }
+                            TextButton(enabled = !busy && activeTool == null, onClick = {
+                                scope.launch {
+                                    busy = true
+                                    val result = withContext(Dispatchers.IO) {
+                                        val runtime = LinuxEnv.diagnoseRuntime(context)
+                                        if (runtime.ok) LinuxEnv.run(context, "apk --version && cat /etc/alpine-release", 30) else runtime
+                                    }
+                                    message = "🔎 فحص مشغّل البيئة:\n" + result.output.takeLast(6000)
+                                    busy = false
+                                }
+                            }) { Text("🔎 تشخيص", color = ENV_GOLD, fontSize = 11.sp) }
+                            TextButton(enabled = !busy && activeTool == null, onClick = { LinuxEnv.remove(context); refresh() }) {
                                 Text("🗑️ حذف البيئة", color = Color(0xFFE94560), fontSize = 11.sp)
                             }
                         }
@@ -157,21 +169,33 @@ fun LocalEnvTab() {
                             Text(status.tool.label, color = Color.White, fontWeight = FontWeight.Bold)
                             Text(status.version, color = ENV_MUTED, fontSize = 11.sp)
                         }
-                        if (!status.ok && status.tool.id != "ca" && envReady) {
+                        if (status.tool.id != "ca" && envReady) {
                             Button(
-                                enabled = !busy,
+                                enabled = !busy && activeTool == null,
                                 onClick = {
+                                    val id = status.tool.id
                                     scope.launch {
-                                        busy = true
+                                        activeTool = id
+                                        toolMessages[id] = "⏳ ${status.tool.label}: بدأت عملية هذه الأداة فقط…"
                                         val res = withContext(Dispatchers.IO) { LocalEnv.install(context, status.tool) }
-                                        message = (if (res.ok) "✅ " else "❌ ") + status.tool.label + ": " + res.output.takeLast(300)
-                                        busy = false
+                                        toolMessages[id] = (if (res.ok) "✅ " else "❌ exit ${res.exitCode}: ") +
+                                            status.tool.label + "\n" + res.output.takeLast(6000)
+                                        activeTool = null
                                         refresh()
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = ENV_GOLD)
-                            ) { Text("تثبيت", color = Color(0xFF121212)) }
+                            ) {
+                                Text(
+                                    if (activeTool == status.tool.id) "جارٍ…" else if (status.ok) "تحديث" else "تثبيت",
+                                    color = Color(0xFF121212)
+                                )
+                            }
                         }
+                    }
+                    toolMessages[status.tool.id]?.let { log ->
+                        Text(log, color = if (log.startsWith("✅")) Color(0xFF7CC47C) else Color(0xFFFF9A9A), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        TextButton(onClick = { copyText(context, log) }) { Text("نسخ سجل ${status.tool.label}", color = ENV_GOLD, fontSize = 11.sp) }
                     }
                     if (!status.ok && !envReady) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

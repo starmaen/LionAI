@@ -43,9 +43,6 @@ object LinuxEnv {
             "ln -sf /usr/bin/pip3 /usr/local/bin/pip && " +
             "git --version && bash --version && sh -c ':' && python --version && python3 -m pip --version"
 
-    /** حزم اختيارية: فشل أي واحدة لا يوقف الباقي. */
-    private val OPTIONAL = listOf("android-tools", "nodejs npm")
-
     private val APK = mapOf(
         "git" to "git", "python" to "python3 py3-pip", "node" to "nodejs npm",
         "java" to "openjdk17-jdk", "gradle" to "gradle", "curl" to "curl", "jq" to "jq",
@@ -62,9 +59,34 @@ object LinuxEnv {
     private fun marker(context: Context): File = File(base(context), ".installed")
     private fun proot(context: Context): File = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
     private fun loader(context: Context): File = File(context.applicationInfo.nativeLibraryDir, "libproot-loader.so")
+    private val runtimeLibraries = listOf("libtalloc.so", "libandroid-shmem.so")
 
-    /** هل مكوّن proot مضمّن في هذا البناء؟ */
-    fun runtimeAvailable(context: Context): Boolean = proot(context).exists() && loader(context).exists()
+    /** proot واعتمادياته يجب أن تكون مضمّنة كلها؛ وجود proot وحده لا يكفي. */
+    fun runtimeAvailable(context: Context): Boolean =
+        proot(context).exists() && loader(context).exists() && runtimeLibraries.all {
+            File(context.applicationInfo.nativeLibraryDir, it).isFile
+        }
+
+    /** اختبار تشغيل حقيقي يعرض خطأ dynamic linker بدل رسالة فشل عامة. */
+    fun diagnoseRuntime(context: Context): ShellResult {
+        if (!runtimeAvailable(context)) {
+            val missing = (listOf(proot(context), loader(context)) + runtimeLibraries.map {
+                File(context.applicationInfo.nativeLibraryDir, it)
+            }).filterNot { it.isFile }.joinToString { it.name }
+            return ShellResult(false, "مكوّنات Linux الناقصة من APK: $missing. ثبّت البناء المحدّث.", 1, 0)
+        }
+        return try {
+            val process = ProcessBuilder(proot(context).absolutePath, "--version")
+                .redirectErrorStream(true).start()
+            val finished = process.waitFor(15, TimeUnit.SECONDS)
+            if (!finished) process.destroyForcibly()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            val code = if (finished) process.exitValue() else 124
+            ShellResult(finished && code == 0, output.ifBlank { "proot --version: exit $code" }, code, 0, !finished)
+        } catch (e: Exception) {
+            ShellResult(false, "تعذر تشغيل proot: ${e.message ?: e.javaClass.simpleName}", 1, 0)
+        }
+    }
 
     /** هل البيئة مثبّتة وجاهزة للتشغيل؟ */
     fun ready(context: Context): Boolean =
@@ -181,9 +203,11 @@ object LinuxEnv {
         }
     }
 
+    @Synchronized
     private fun install(context: Context) {
-        if (!runtimeAvailable(context)) {
-            throw IllegalStateException("مكوّن proot غير مضمّن في هذا البناء. استخدم نسخة مبنية عبر الـ workflow المحدّث.")
+        val diagnostic = diagnoseRuntime(context)
+        if (!diagnostic.ok) {
+            throw IllegalStateException("proot لا يعمل:\n${diagnostic.output.takeLast(4000)}")
         }
         val root = rootfs(context)
         if (!(marker(context).exists() && File(root, "bin/busybox").exists())) {
@@ -214,15 +238,12 @@ object LinuxEnv {
             File(root, "root").mkdirs()
             marker(context).writeText(release.file)
         }
-        progress = "📦 تثبيت الأساسيات (git, bash, curl, ssh, ripgrep)…"
-        val core = run(context, "apk add --no-cache $CORE", 1200) { progress = "📦 " + it.take(70) }
-        if (!core.ok) throw IllegalStateException("فشل تثبيت الأساسيات:\n" + core.output.takeLast(400))
+        progress = "📦 تثبيت الحزم الأساسية فقط…"
+        val core = run(context, "apk add --no-cache $CORE", 1200) { progress = "📦 " + it.take(100) }
+        if (!core.ok) throw IllegalStateException("فشل تثبيت الأساسيات (exit ${core.exitCode}):\n" + core.output.takeLast(8000))
         val aliases = run(context, DEV_ALIASES, 120)
-        if (!aliases.ok) throw IllegalStateException("فشل تجهيز أوامر python/pip:\n" + aliases.output.takeLast(400))
-        OPTIONAL.forEach { pkgs ->
-            progress = "📦 $pkgs…"
-            run(context, "apk add --no-cache $pkgs", 1200) { progress = "📦 " + it.take(70) }
-        }
+        if (!aliases.ok) throw IllegalStateException("فشل تجهيز أوامر python/pip:\n" + aliases.output.takeLast(4000))
+        // ADB وNode وOpenCode وبقية الأدوات تُثبّت فقط عند اختيارها، لا ضمنياً هنا.
     }
 
     fun remove(context: Context) {
@@ -234,38 +255,44 @@ object LinuxEnv {
 
     // ───────────── تثبيت الأدوات الناقصة داخل البيئة ─────────────
 
+    @Synchronized
     fun installPackage(context: Context, key: String, timeoutSec: Int = 900): ShellResult {
+        if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
         val pkgs = APK[key] ?: return ShellResult(false, "⛔ حزمة غير مدعومة داخل البيئة: $key", 126, 0)
         val result = run(context, "apk add --no-cache $pkgs", timeoutSec)
-        return result.copy(output = "=== apk ===\n" + result.output.takeLast(12_000))
+        return result.copy(output = "=== $key فقط: apk add $pkgs ===\n" + result.output.takeLast(16_000))
     }
 
-    /** تحديث الحزم الأساسية مع إعادة تثبيت الأسماء المستعارة والتحقق من مسار الأدوات. */
+    /** ترقية الحزم المثبتة فقط. زر مستقل وصريح؛ لا يستدعيه أي زر أداة. */
+    @Synchronized
     fun updateEnvironment(context: Context): ShellResult {
         if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
-        val result = run(
-            context,
-            "apk update && apk upgrade --no-cache && apk add --no-cache $CORE && $DEV_ALIASES",
-            1800
-        )
-        return result.copy(output = "=== تحديث البيئة والمكتبات ===\n" + result.output.takeLast(16_000))
+        val result = run(context, "apk update && apk upgrade --no-cache && $DEV_ALIASES", 1800)
+        return result.copy(output = "=== ترقية الحزم المثبتة فقط ===\n" + result.output.takeLast(16_000))
     }
 
+    /** عملية واحدة في كل مرة على مستوى التطبيق كله، وتستهدف الأداة المحددة فقط. */
+    @Synchronized
     fun installTool(context: Context, toolId: String): ShellResult {
-        if (toolId == "opencode") {
-            val result = run(
+        if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
+        val result = if (toolId == "opencode") {
+            run(
                 context,
-                "apk add --no-cache libstdc++ libgcc nodejs npm && npm install -g opencode-ai",
+                "apk add --no-cache libstdc++ libgcc nodejs npm && " +
+                    "npm install -g opencode-ai --no-audit --no-fund && opencode --version",
                 1500
             )
-            return result.copy(output = "=== opencode ===\n" + result.output.takeLast(12_000))
+        } else {
+            val key = when (toolId) {
+                "ssh" -> "openssh"
+                "python" -> "python"
+                else -> toolId
+            }
+            val pkgs = APK[key] ?: return ShellResult(false, "⛔ أداة غير مدعومة: $toolId", 126, 0)
+            val aliases = if (key == "python") " && $DEV_ALIASES" else ""
+            run(context, "apk add --no-cache $pkgs$aliases", 1200)
         }
-        val key = when (toolId) {
-            "ssh" -> "openssh"
-            "python" -> "python"
-            else -> toolId
-        }
-        return installPackage(context, key)
+        return result.copy(output = "=== ${if (result.ok) "نجحت" else "فشلت"} عملية $toolId فقط (exit ${result.exitCode}) ===\n" + result.output.takeLast(16_000))
     }
 
     // ───────────── مساعدات الشبكة والملفات ─────────────
