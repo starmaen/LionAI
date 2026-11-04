@@ -59,7 +59,9 @@ object ShellTools {
         "tree" to listOf("tree"),
         "fd" to listOf("fd"),
         "wget" to listOf("wget"),
-        "openssl" to listOf("openssl")
+        "openssl" to listOf("openssl"),
+        "bash" to listOf("bash"),
+        "adb" to listOf("android-tools")
     )
     /** أدوات مسموح استيرادها عبر pip/npm من الإنترنت (اختيارياً): الاسم يجب أن يكون في القائمة. */
     private val PIP_TOOLS = setOf("ruff", "flake8", "black", "mypy", "pytest", "pylint", "bandit")

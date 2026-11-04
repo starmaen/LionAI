@@ -100,6 +100,7 @@ fun DevToolsScreen(
                 "code" -> CodeToolTab(context)
                 "manager" -> ToolManagerTab(prefs, onOpenGitHub, onOpenSettings)
                 "audit" -> ToolAuditTab()
+                "env" -> LocalEnvTab()
             }
         }
     }
@@ -119,6 +120,7 @@ private fun ToolsHome(
         item {
             ToolCard("🌐", "متصفح الويب", "جلب صفحة، استخراج النص والأكواد والروابط والصور، استدعاء API، وتنزيل ملفات") { onTab("web") }
             ToolCard("🐙", "GitHub Explorer", "استعراض المستودعات، الشجرة، الملفات، README، الفروع، Issues، PRs، Actions") { onOpenGitHub() }
+            ToolCard("🖥️", "البيئة المحلية", "فحص مساحة العمل وأدوات المطوّر (Git, Bash, curl, SSH, ripgrep, ADB, Python, OpenCode) وتثبيت الناقص") { onTab("env") }
             ToolCard("📁", "قارئ الملفات", "قراءة وكتابة ملفات مساحة العمل، CSV، JSON، ZIP، وحفظ التعديلات") { onTab("files") }
             ToolCard("🗄️", "قواعد البيانات", "إنشاء SQLite، تنفيذ SQL، عرض المخطط، استيراد/تصدير JSON") { onTab("db") }
             ToolCard("🔍", "محلل الكود", "مقاييس، دوال، كلاسات، Imports، تعقيد، TODO/FIXME، وملاحظات") { onTab("code") }
