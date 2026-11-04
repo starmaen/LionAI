@@ -29,12 +29,11 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Fetch proot (Linux environment runtime, checksum-verified)
-      run: bash scripts/fetch-proot.sh
-
     - name: Install OpenCode (official binary)
       run: |
         curl -fsSL https://opencode.ai/install | sh
+        # Add to PATH for this job
+        echo "$HOME/.opencode/bin" >> $GITHUB_PATH
         # Verify installation
         command -v opencode && opencode --version
 
