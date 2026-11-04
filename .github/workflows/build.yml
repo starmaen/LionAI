@@ -31,11 +31,15 @@ jobs:
 
     - name: Install OpenCode (official binary)
       run: |
+        set -euo pipefail
+        echo "Installing OpenCode..."
         curl -fsSL https://opencode.ai/install | sh
         # Add to PATH for this job
         echo "$HOME/.opencode/bin" >> $GITHUB_PATH
-        # Verify installation
+        # Verify installation with verbose output
+        ls -la $HOME/.opencode/bin/ || true
         command -v opencode && opencode --version
+        echo "OpenCode installed successfully"
 
     - name: Test browser session DOM bridge
       run: npm --prefix scripts ci --ignore-scripts && npm --prefix scripts test
