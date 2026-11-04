@@ -52,7 +52,6 @@ val PROVIDERS = listOf(
         models = emptyList()
     ),
     // ===== مزودات API (مفتاح أو بدون مفتاح) =====
-    
     ProviderInfo(
         id = "custom",
         label = "مخصص (OpenAI-Compatible)",
