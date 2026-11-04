@@ -19,6 +19,10 @@ data class AlpineRelease(val file: String, val sha256: String, val branch: Strin
     val url: String get() = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/$file"
 }
 
+/** Android لا يضيف مجلد مكتبات التطبيق تلقائياً عند exec لمكتبة كبرنامج مستقل. */
+internal fun prootProcessEnvironment(nativeLibraryDir: String): Map<String, String> =
+    mapOf("LD_LIBRARY_PATH" to nativeLibraryDir)
+
 /**
  * بيئة Linux حقيقية داخل التطبيق: Alpine (aarch64) تعمل عبر proot.
  *
@@ -76,8 +80,10 @@ object LinuxEnv {
             return ShellResult(false, "مكوّنات Linux الناقصة من APK: $missing. ثبّت البناء المحدّث.", 1, 0)
         }
         return try {
-            val process = ProcessBuilder(proot(context).absolutePath, "--version")
-                .redirectErrorStream(true).start()
+            val builder = ProcessBuilder(proot(context).absolutePath, "--version")
+                .redirectErrorStream(true)
+            builder.environment().putAll(prootProcessEnvironment(context.applicationInfo.nativeLibraryDir))
+            val process = builder.start()
             val finished = process.waitFor(15, TimeUnit.SECONDS)
             if (!finished) process.destroyForcibly()
             val output = process.inputStream.bufferedReader().use { it.readText() }
@@ -126,6 +132,7 @@ object LinuxEnv {
     fun start(context: Context, script: String, hostCwd: File? = null): Process {
         val tmp = File(base(context), "tmp").apply { mkdirs() }
         val builder = ProcessBuilder(command(context, script, hostCwd)).redirectErrorStream(true)
+        builder.environment().putAll(prootProcessEnvironment(context.applicationInfo.nativeLibraryDir))
         builder.environment()["PROOT_LOADER"] = loader(context).absolutePath
         builder.environment()["PROOT_TMP_DIR"] = tmp.absolutePath
         builder.environment()["PROOT_NO_SECCOMP"] = "1"
