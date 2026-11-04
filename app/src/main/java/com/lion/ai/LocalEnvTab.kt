@@ -212,9 +212,38 @@ fun LocalEnvTab() {
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
+        Text("📦 الحزم المساعدة", color = ENV_GOLD, fontWeight = FontWeight.Bold)
+        Text("ICU للنصوص العربية، SQLite، وحزم npm داخل /workspace/tools/node.", color = ENV_MUTED, fontSize = 11.sp)
+        listOf("icu" to "ICU كامل", "sqlite" to "SQLite CLI", "axios" to "Axios", "lodash" to "Lodash", "cheerio" to "Cheerio", "sqlite3" to "SQLite3 npm").forEach { (id, label) ->
+            Card(Modifier.fillMaxWidth().padding(vertical = 3.dp), colors = CardDefaults.cardColors(containerColor = ENV_CARD)) {
+                Column(Modifier.padding(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, color = Color.White, modifier = Modifier.weight(1f))
+                        Button(
+                            enabled = envReady && !busy && activeTool == null,
+                            onClick = {
+                                scope.launch {
+                                    activeTool = "support:$id"
+                                    toolMessages["support:$id"] = "⏳ تثبيت $label فقط…"
+                                    val res = withContext(Dispatchers.IO) { LinuxEnv.installSupportPackage(context, id) }
+                                    toolMessages["support:$id"] = (if (res.ok) "✅ " else "❌ ") + res.output.takeLast(6000)
+                                    activeTool = null
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ENV_GOLD)
+                        ) { Text(if (activeTool == "support:$id") "جارٍ…" else "تثبيت/تحديث", color = Color(0xFF121212), fontSize = 11.sp) }
+                    }
+                    toolMessages["support:$id"]?.let { log ->
+                        Text(log, color = if (log.startsWith("✅")) Color(0xFF7CC47C) else Color(0xFFFF9A9A), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        TextButton(onClick = { copyText(context, log) }) { Text("نسخ السجل", color = ENV_GOLD, fontSize = 11.sp) }
+                    }
+                }
+            }
+        }
         Spacer(Modifier.height(8.dp))
         Text(
-            "الأدوات تُثبَّت داخل بيئة Linux المفعّلة أعلاه عبر apk، وتبقى بعد إغلاق التطبيق.",
+            "كل زر ينفّذ حزمة واحدة فقط. الأدوات والحزم تبقى بعد إغلاق التطبيق.",
             color = ENV_MUTED, fontSize = 11.sp
         )
     }

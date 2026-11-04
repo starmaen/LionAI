@@ -46,8 +46,8 @@ object LocalEnv {
         DevTool("adb", "ADB", "adb version", "adb", "apk add android-tools"),
         DevTool("python", "Python + pip", "python --version && python3 -m pip --version", "python", "apk add python3 py3-pip"),
         DevTool("node", "Node.js + npm", "node --version && npm --version", "node", "apk add nodejs npm"),
-        DevTool("java", "Java 17", "java -version", "java", "apk add openjdk17-jdk"),
-        DevTool("gradle", "Gradle", "gradle --version", "gradle", "apk add gradle"),
+        DevTool("java", "Java 17", "/usr/lib/jvm/java-17-openjdk/bin/java -version", "java", "apk add openjdk17-jdk"),
+        DevTool("gradle", "Gradle (JDK 17)", "JAVA_HOME=/usr/lib/jvm/java-17-openjdk gradle --version", "gradle", "apk add openjdk17-jdk gradle"),
         DevTool("jq", "jq", "jq --version", "jq", "apk add jq"),
         DevTool("unzip", "ZIP tools", "unzip -v", "unzip", "apk add unzip zip")
     )

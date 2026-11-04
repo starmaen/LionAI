@@ -309,8 +309,8 @@ object ShellTools {
                 126,
                 0
             )
+        if (LinuxEnv.ready(context)) return LinuxEnv.installTool(context, key, timeoutSec)
         if (available(context, key)) return ShellResult(true, "✅ $key مثبتة بالفعل.", 0, 0)
-        if (LinuxEnv.ready(context)) return LinuxEnv.installPackage(context, key, timeoutSec)
         val manager = when {
             available(context, "pkg") -> "pkg"
             available(context, "apt-get") -> "apt-get"

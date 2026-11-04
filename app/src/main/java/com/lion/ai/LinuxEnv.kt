@@ -49,7 +49,8 @@ object LinuxEnv {
 
     private val APK = mapOf(
         "git" to "git", "python" to "python3 py3-pip", "node" to "nodejs npm",
-        "java" to "openjdk17-jdk", "gradle" to "gradle", "curl" to "curl", "jq" to "jq",
+        "java" to "openjdk17-jdk", "gradle" to "openjdk17-jdk gradle", "curl" to "curl", "jq" to "jq",
+        "icu" to "icu-data-full", "sqlite" to "sqlite sqlite-dev",
         "unzip" to "unzip", "zip" to "zip", "tar" to "tar", "ffmpeg" to "ffmpeg",
         "build-essential" to "build-base", "openssh" to "openssh-client", "rg" to "ripgrep",
         "make" to "make", "cmake" to "cmake", "clang" to "clang", "go" to "go", "cargo" to "cargo",
@@ -120,10 +121,13 @@ object LinuxEnv {
             "/usr/bin/env", "-i",
             "HOME=/root", "USER=root", "LANG=C.UTF-8", "TERM=xterm-256color", "TMPDIR=/tmp",
             "SHELL=$shell",
+            "JAVA_HOME=/usr/lib/jvm/java-17-openjdk",
+            "NODE_PATH=/workspace/tools/node/lib/node_modules",
             // أدوات المستخدم وpip/npm داخل مساحة العمل تبقى في PATH بعد كل تشغيل/تحديث.
-            "PATH=/workspace/tools/bin:/workspace/tools/python/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PATH=/usr/lib/jvm/java-17-openjdk/bin:/workspace/tools/bin:/workspace/tools/node/bin:/workspace/tools/python/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "PYTHONUSERBASE=/workspace/tools/python",
             "PIP_DISABLE_PIP_VERSION_CHECK=1",
+            "NPM_CONFIG_PREFIX=/workspace/tools/node",
             shell, "-c", script
         )
     }
@@ -278,9 +282,24 @@ object LinuxEnv {
         return result.copy(output = "=== ترقية الحزم المثبتة فقط ===\n" + result.output.takeLast(16_000))
     }
 
+    /** حزم مساعدة مستقلة: كل زر ينفّذ حزمة واحدة فقط ويعرض سجلها. */
+    @Synchronized
+    fun installSupportPackage(context: Context, id: String): ShellResult {
+        if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
+        val command = when (id) {
+            "icu" -> "apk add --no-cache icu-data-full"
+            "sqlite" -> "apk add --no-cache sqlite sqlite-dev && sqlite3 --version"
+            "axios", "lodash", "cheerio", "sqlite3" ->
+                "mkdir -p /workspace/tools/node && npm install --prefix /workspace/tools/node $id --no-audit --no-fund"
+            else -> return ShellResult(false, "حزمة غير مدعومة: $id", 126, 0)
+        }
+        val result = run(context, command, 1200)
+        return result.copy(output = "=== $id فقط • exit ${result.exitCode} ===\n" + result.output.takeLast(16_000))
+    }
+
     /** عملية واحدة في كل مرة على مستوى التطبيق كله، وتستهدف الأداة المحددة فقط. */
     @Synchronized
-    fun installTool(context: Context, toolId: String): ShellResult {
+    fun installTool(context: Context, toolId: String, timeoutSec: Int = 1200): ShellResult {
         if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
         val result = if (toolId == "opencode") {
             run(
@@ -296,8 +315,14 @@ object LinuxEnv {
                 else -> toolId
             }
             val pkgs = APK[key] ?: return ShellResult(false, "⛔ أداة غير مدعومة: $toolId", 126, 0)
-            val aliases = if (key == "python") " && $DEV_ALIASES" else ""
-            run(context, "apk add --no-cache $pkgs$aliases", 1200)
+            val verification = when (key) {
+                "python" -> " && $DEV_ALIASES"
+                "java" -> " && /usr/lib/jvm/java-17-openjdk/bin/java -version"
+                "gradle" -> " && JAVA_HOME=/usr/lib/jvm/java-17-openjdk gradle --version"
+                "jq" -> " && jq --version"
+                else -> ""
+            }
+            run(context, "apk add --no-cache $pkgs$verification", timeoutSec)
         }
         return result.copy(output = "=== ${if (result.ok) "نجحت" else "فشلت"} عملية $toolId فقط (exit ${result.exitCode}) ===\n" + result.output.takeLast(16_000))
     }

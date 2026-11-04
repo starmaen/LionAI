@@ -154,6 +154,9 @@ object AiTools {
         Def("file_verify", ToolGroup.FILES, """{"path":"","algorithm":"sha256","baseline":"integrity-baseline.json","max_files":5000}""", "فحص سلامة المشروع: بصمات كل الملفات، الفارغة، المكررة، والمقارنة بخط أساس"),
         Def("file_integrity_save", ToolGroup.FILES, """{"path":"","output":"integrity-baseline.json","algorithm":"sha256"}""", "حفظ خط أساس لبصمات ملفات المشروع للتحقق لاحقاً", true),
         Def("file_diff", ToolGroup.FILES, """{"first":"old.kt","second":"new.kt"}""", "مقارنة ملفين وإظهار الفروق"),
+        Def("read_file", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل (اسم متوافق مع OpenCode)"),
+        Def("write_file", ToolGroup.FILES, """{"path":"src/Main.kt","content":"..."}""", "إنشاء/تعديل ملف داخل مساحة العمل", true),
+        Def("list_dir", ToolGroup.FILES, """{"path":""}""", "استعراض محتويات مجلد في مساحة العمل"),
 
         // Database
         Def("db_list", ToolGroup.DATABASE, "{}", "قواعد SQLite الموجودة"),
@@ -330,6 +333,8 @@ object AiTools {
 
         // Shell / Android build
         Def("shell_exec", ToolGroup.SHELL, """{"command":"git status","cwd":"","timeout_sec":120}""", "تنفيذ أمر مسموح داخل مساحة العمل مع مهلة وسقف مخرجات", true),
+        Def("execute_command", ToolGroup.SHELL, """{"command":"node --version","cwd":"","timeout_sec":30}""", "تنفيذ أمر داخل Alpine/مساحة العمل بمهلة قصوى 30 ثانية", true),
+        Def("code_run", ToolGroup.SHELL, """{"language":"javascript","code":"console.log('ok')","timeout_sec":30}""", "تشغيل JavaScript/TypeScript أو Shell أو SQL وإرجاع stdout/stderr", true),
         Def("shell_which", ToolGroup.SHELL, """{"name":"git"}""", "التحقق من وجود أداة على الجهاز"),
         Def("toolchain_status", ToolGroup.SHELL, "{}", "حالة الحزم الأساسية (git/java/gradle/node/python/jq...) على الجهاز/الخادم"),
         Def("toolchain_install", ToolGroup.SHELL, """{"package":"git"}""", "تثبيت أداة تطوير من قائمة بيضاء عبر pkg/apt، أو من الإنترنت اختيارياً بصيغة pip:ruff أو npm:typescript", true),
@@ -628,7 +633,15 @@ object AiTools {
     fun toolchainReport(ctx: ToolContext): String = buildString {
         append("حالة الأدوات على الجهاز/الخادم:\n")
         TOOLCHAIN.forEach { (binary, label) ->
-            append(if (ShellTools.available(ctx.context, binary)) "✅ " else "❌ ")
+            val available = if (LinuxEnv.ready(ctx.context)) {
+                val probe = when (binary) {
+                    "java" -> "/usr/lib/jvm/java-17-openjdk/bin/java -version"
+                    "gradle" -> "JAVA_HOME=/usr/lib/jvm/java-17-openjdk gradle --version"
+                    else -> "command -v $binary"
+                }
+                LinuxEnv.run(ctx.context, probe, 15).ok
+            } else ShellTools.available(ctx.context, binary)
+            append(if (available) "✅ " else "❌ ")
                 .append(label).append(" (").append(binary).append(")\n")
         }
         append("\nللتحميل: استخدم toolchain_install باسم الحزمة (git/python/node/java/gradle/curl/jq/unzip/ffmpeg...).")
@@ -760,8 +773,8 @@ object AiTools {
         if (def.write && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
         }
-        val shellWrite = call.name == "shell_exec" &&
-            ShellTools.looksLikeWrite(call.args.optString("command"))
+        val shellWrite = call.name in setOf("shell_exec", "execute_command", "code_run") &&
+            (call.name == "code_run" || ShellTools.looksLikeWrite(call.args.optString("command")))
         if ((call.name in CODE_WRITE_TOOLS || shellWrite) && ctx.mode == ChatMode.CODE &&
             ctx.chatId.isNotBlank() && !PipelineStore.canWrite(ctx.prefs, ctx.chatId)
         ) {
@@ -1313,7 +1326,7 @@ object AiTools {
                 "✅ نُزّل إلى $relative (${download.bytes} بايت)"
             }
 
-            "file_list" -> {
+            "file_list", "list_dir" -> {
                 val entries = FileTools.list(ctx.context, args.optString("path"))
                 if (entries.isEmpty()) "المساحة فارغة." else entries.joinToString("\n") {
                     (if (it.directory) "📁 " else "📄 ") + it.path + if (!it.directory) " (${it.size} بايت)" else ""
@@ -1330,7 +1343,7 @@ object AiTools {
                     if (it.line == 0) "• ${it.path}" else "• ${it.path}:${it.line}: ${it.text}"
                 }
             }
-            "file_read" -> {
+            "file_read", "read_file" -> {
                 val info = FileTools.read(ctx.context, req(args, "path"))
                 if (info.binary) "📄 ${info.path} — ملف ثنائي (${info.size} بايت)" else
                     "📄 ${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n${info.text.take(14_000)}"
@@ -1376,7 +1389,7 @@ object AiTools {
                     }
                 }
             }
-            "file_write" -> {
+            "file_write", "write_file" -> {
                 val entry = FileTools.write(ctx.context, req(args, "path"), args.optString("content"))
                 "✅ كُتب ${entry.path} (${entry.size} بايت)"
             }
@@ -2559,11 +2572,12 @@ $code
             "memory_delete" -> if (ProjectMemory.delete(ctx.prefs, req(args, "id"))) "✅ حُذف القرار." else "❌ لم أجد القرار."
 
             // ===== Shell / Android =====
-            "shell_exec" -> {
+            "execute_command", "shell_exec" -> {
+                val isShort = name == "execute_command"
                 val result = ShellTools.exec(
                     ctx.context,
                     req(args, "command"),
-                    int(args, "timeout_sec", 120),
+                    int(args, "timeout_sec", if (isShort) 30 else 120).coerceAtMost(if (isShort) 30 else 900),
                     args.optString("cwd")
                 )
                 buildString {
@@ -2572,6 +2586,15 @@ $code
                     if (result.timedOut) append(" — انتهت المهلة")
                     append('\n').append(result.output)
                 }
+            }
+            "code_run" -> {
+                val result = CodeRunner.run(
+                    ctx.context,
+                    req(args, "language"),
+                    req(args, "code"),
+                    int(args, "timeout_sec", 30)
+                )
+                (if (result.ok) "✅" else "❌") + "\n" + result.output
             }
             "shell_which" -> ShellTools.which(ctx.context, req(args, "name"))
             "android_build" -> {
