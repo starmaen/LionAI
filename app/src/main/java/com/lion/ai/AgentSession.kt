@@ -193,7 +193,7 @@ class AgentSession(val chatId: String) {
     fun recordTool(tool: String, ok: Boolean, output: String, path: String = "") {
         val summary = output.replace(Regex("\\s+"), " ").trim().take(240)
         steps.add(AgentStep(tool, ok, summary, path.trim().take(160)))
-        if (ok && path.isNotBlank() && tool != "file_read" && tool != "github_read_file") {
+        if (ok && path.isNotBlank() && tool !in setOf("file_read", "read_file", "file_list", "list_dir", "file_tree", "github_read_file")) {
             files.add(path.trim().take(160))
         }
         while (steps.size > 60) steps.removeAt(0)

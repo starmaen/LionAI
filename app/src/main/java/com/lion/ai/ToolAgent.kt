@@ -441,7 +441,7 @@ object ToolAgent {
                 val fingerprint = memory.key(call.name, identityArgs)
                 val mutating = AiTools.isMutation(call)
                 val receipt = if (mutating) memory.receipt(fingerprint) else null
-                val cacheable = call.name in setOf("github_read_file", "github_list_tree", "github_list_dir", "file_read", "file_read_many", "file_tree")
+                val cacheable = call.name in setOf("github_read_file", "github_list_tree", "github_list_dir", "file_read", "read_file", "file_read_many", "file_tree", "file_list", "list_dir")
                 val cached = if (cacheable && !call.args.optBoolean("refresh", false)) memory.cachedRead(fingerprint) else null
                 val result = when {
                     mutating && (!memory.writeGranted || !toolContext.allowWrite) -> ToolResult(call.name, "⛔ لم أنفذ التعديل: لا يوجد إذن صريح صالح لهذه المهمة.", false)
@@ -522,7 +522,7 @@ object ToolAgent {
     }
 
     private val GATE_WRITE_TOOLS = setOf(
-        "file_write", "file_append", "file_apply_patch", "file_delete", "file_move",
+        "file_write", "write_file", "file_append", "file_apply_patch", "file_delete", "file_move",
         "file_copy", "file_mkdir", "file_unzip", "code_patch", "github_write_file",
         "github_commit_files", "github_push_workspace"
     )

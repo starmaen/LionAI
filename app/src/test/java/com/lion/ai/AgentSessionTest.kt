@@ -1,5 +1,6 @@
 package com.lion.ai
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -66,6 +67,15 @@ class AgentSessionTest {
         session.recordTool("file_tree", true, "شجرة")
         session.beginTurn("مهمة جديدة")
         assertFalse(session.continuity.resume)
+    }
+
+    @Test
+    fun readAliasesDoNotBecomeModifiedProjectFiles() {
+        val session = AgentSession("chat_reads")
+        session.recordTool("read_file", true, "contents", "src/Main.kt")
+        session.recordTool("list_dir", true, "files", "src")
+        session.recordTool("write_file", true, "written", "src/Main.kt")
+        assertEquals(listOf("src/Main.kt"), session.touchedFiles())
     }
 
     @Test

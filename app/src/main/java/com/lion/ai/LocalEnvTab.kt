@@ -106,11 +106,8 @@ fun LocalEnvTab() {
                             TextButton(enabled = !busy && activeTool == null, onClick = {
                                 scope.launch {
                                     busy = true
-                                    val result = withContext(Dispatchers.IO) {
-                                        val runtime = LinuxEnv.diagnoseRuntime(context)
-                                        if (runtime.ok) LinuxEnv.run(context, "apk --version && cat /etc/alpine-release", 30) else runtime
-                                    }
-                                    message = "🔎 فحص مشغّل البيئة:\n" + result.output.takeLast(6000)
+                                    val result = withContext(Dispatchers.IO) { LinuxEnv.diagnoseEnvironment(context) }
+                                    message = "🔎 فحص المشغّل وDNS والمستودعات والإصدارات:\n" + result.output.takeLast(10000)
                                     busy = false
                                 }
                             }) { Text("🔎 تشخيص", color = ENV_GOLD, fontSize = 11.sp) }

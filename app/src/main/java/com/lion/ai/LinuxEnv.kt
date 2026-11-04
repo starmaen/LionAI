@@ -23,6 +23,18 @@ data class AlpineRelease(val file: String, val sha256: String, val branch: Strin
 internal fun prootProcessEnvironment(nativeLibraryDir: String): Map<String, String> =
     mapOf("LD_LIBRARY_PATH" to nativeLibraryDir)
 
+/** لا نعيد المحاولة عند خطأ حزمة/صلاحية، بل فقط عند عطل شبكة مؤقت قابل للزوال. */
+internal fun isTransientPackageNetworkError(output: String): Boolean {
+    val text = output.lowercase()
+    if ("no such package" in text || "permission denied" in text || "initialization of vm" in text) return false
+    return listOf(
+        "dns: transient error", "temporary failure in name resolution", "temporarily unavailable",
+        "network is unreachable", "connection timed out", "operation timed out", "timed out",
+        "connection reset by peer", "connection refused", "temporary error", "try again later",
+        "eai_again", "unexpected eof", "tls handshake timeout"
+    ).any { it in text }
+}
+
 /**
  * بيئة Linux حقيقية داخل التطبيق: Alpine (aarch64) تعمل عبر proot.
  *
@@ -93,6 +105,28 @@ object LinuxEnv {
         } catch (e: Exception) {
             ShellResult(false, "تعذر تشغيل proot: ${e.message ?: e.javaClass.simpleName}", 1, 0)
         }
+    }
+
+    /** فحص المشغل وDNS ومستودعات apk والمساحة دون تثبيت أي أداة. */
+    fun diagnoseEnvironment(context: Context): ShellResult {
+        val runtime = diagnoseRuntime(context)
+        if (!runtime.ok) return runtime
+        if (!ready(context)) return ShellResult(false, "مشغّل proot يعمل، لكن Alpine غير مفعّلة بعد.", 1, 0)
+        val script = """
+            status=0
+            echo '=== Alpine ==='; cat /etc/alpine-release
+            echo '=== Workspace ==='; df -h /workspace
+            echo '=== Repositories ==='; cat /etc/apk/repositories
+            echo '=== DNS ==='; nslookup dl-cdn.alpinelinux.org || status=1
+            echo '=== APK index ==='; apk update || status=1
+            echo '=== Tool versions ==='
+            node --version 2>/dev/null || echo 'node: غير مثبت'
+            python3 --version 2>/dev/null || echo 'python3: غير مثبت'
+            /usr/lib/jvm/java-17-openjdk/bin/java -version 2>&1 || echo 'Java 17: غير مثبت أو لا يعمل'
+            JAVA_HOME=/usr/lib/jvm/java-17-openjdk gradle --version 2>&1 || echo 'Gradle: غير مثبت أو لا يعمل'
+            exit ${'$'}status
+        """.trimIndent()
+        return run(context, script, 120)
     }
 
     /** هل البيئة مثبّتة وجاهزة للتشغيل؟ */
@@ -182,6 +216,29 @@ object LinuxEnv {
         }
     }
 
+    /** apk/npm آمنان لإعادة المحاولة عند DNS/انقطاع مؤقت؛ ثلاث محاولات كحد أقصى. */
+    private fun runPackageCommand(
+        context: Context,
+        script: String,
+        timeoutSec: Int,
+        onLine: ((String) -> Unit)? = null
+    ): ShellResult {
+        val attempts = mutableListOf<String>()
+        repeat(3) { index ->
+            val result = run(context, script, timeoutSec, onLine = onLine)
+            attempts += "--- المحاولة ${index + 1}/3 • exit ${result.exitCode} ---\n${result.output}"
+            if (result.ok) return result.copy(output = attempts.joinToString("\n"))
+            if (!isTransientPackageNetworkError(result.output) || index == 2) {
+                return result.copy(output = attempts.joinToString("\n"))
+            }
+            val notice = "⚠️ عطل شبكة مؤقت؛ إعادة المحاولة ${index + 2}/3 بعد ${index + 1} ثوانٍ…"
+            onLine?.invoke(notice)
+            attempts += notice
+            Thread.sleep((index + 1) * 1500L)
+        }
+        error("unreachable")
+    }
+
     // ───────────── التفعيل: تنزيل + فك + أساسيات ─────────────
 
     fun parseRelease(yaml: String): AlpineRelease? {
@@ -250,7 +307,7 @@ object LinuxEnv {
             marker(context).writeText(release.file)
         }
         progress = "📦 تثبيت الحزم الأساسية فقط…"
-        val core = run(context, "apk add --no-cache $CORE", 1200) { progress = "📦 " + it.take(100) }
+        val core = runPackageCommand(context, "apk add --no-cache $CORE", 1200) { progress = "📦 " + it.take(100) }
         if (!core.ok) throw IllegalStateException("فشل تثبيت الأساسيات (exit ${core.exitCode}):\n" + core.output.takeLast(8000))
         val aliases = run(context, DEV_ALIASES, 120)
         if (!aliases.ok) throw IllegalStateException("فشل تجهيز أوامر python/pip:\n" + aliases.output.takeLast(4000))
@@ -270,7 +327,7 @@ object LinuxEnv {
     fun installPackage(context: Context, key: String, timeoutSec: Int = 900): ShellResult {
         if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
         val pkgs = APK[key] ?: return ShellResult(false, "⛔ حزمة غير مدعومة داخل البيئة: $key", 126, 0)
-        val result = run(context, "apk add --no-cache $pkgs", timeoutSec)
+        val result = runPackageCommand(context, "apk add --no-cache $pkgs", timeoutSec)
         return result.copy(output = "=== $key فقط: apk add $pkgs ===\n" + result.output.takeLast(16_000))
     }
 
@@ -278,7 +335,7 @@ object LinuxEnv {
     @Synchronized
     fun updateEnvironment(context: Context): ShellResult {
         if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
-        val result = run(context, "apk update && apk upgrade --no-cache && $DEV_ALIASES", 1800)
+        val result = runPackageCommand(context, "apk update && apk upgrade --no-cache && $DEV_ALIASES", 1800)
         return result.copy(output = "=== ترقية الحزم المثبتة فقط ===\n" + result.output.takeLast(16_000))
     }
 
@@ -293,7 +350,7 @@ object LinuxEnv {
                 "mkdir -p /workspace/tools/node && npm install --prefix /workspace/tools/node $id --no-audit --no-fund"
             else -> return ShellResult(false, "حزمة غير مدعومة: $id", 126, 0)
         }
-        val result = run(context, command, 1200)
+        val result = runPackageCommand(context, command, 1200)
         return result.copy(output = "=== $id فقط • exit ${result.exitCode} ===\n" + result.output.takeLast(16_000))
     }
 
@@ -302,7 +359,7 @@ object LinuxEnv {
     fun installTool(context: Context, toolId: String, timeoutSec: Int = 1200): ShellResult {
         if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
         val result = if (toolId == "opencode") {
-            run(
+            runPackageCommand(
                 context,
                 "apk add --no-cache libstdc++ libgcc nodejs npm && " +
                     "npm install -g opencode-ai --no-audit --no-fund && opencode --version",
@@ -322,7 +379,7 @@ object LinuxEnv {
                 "jq" -> " && jq --version"
                 else -> ""
             }
-            run(context, "apk add --no-cache $pkgs$verification", timeoutSec)
+            runPackageCommand(context, "apk add --no-cache $pkgs$verification", timeoutSec)
         }
         return result.copy(output = "=== ${if (result.ok) "نجحت" else "فشلت"} عملية $toolId فقط (exit ${result.exitCode}) ===\n" + result.output.takeLast(16_000))
     }
