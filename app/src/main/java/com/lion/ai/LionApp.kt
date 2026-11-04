@@ -149,6 +149,21 @@ private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): Li
 internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: Boolean): Boolean =
     chatMode == ChatMode.CODE || kind == TaskKind.DEV || hasWork
 
+/** سؤال قدرة/شرح لا يجب أن يفتح دورة أدوات طويلة؛ الأمر التنفيذي والاستئناف يفتحانها. */
+internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean): Boolean {
+    if (hasWork) return true
+    val text = prompt.trim().lowercase()
+    if (text.isBlank()) return false
+    val explicitAction = Regex(
+        "(اقرأ\\s+الملف|افحص\\s+(الملف|المشروع)|حلل\\s+(الملف|المشروع)|راجع\\s+(الملف|المشروع)|" +
+            "عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|اكتب\\s+الملف|أنشئ|انشئ|ابنِ|ارفع|ادفع|commit|push|build|install|execute|read\\s+file|write\\s+file)"
+    )
+    if (explicitAction.containsMatchIn(text)) return true
+    val question = text.endsWith("؟") || text.endsWith("?") ||
+        Regex("^(هل|ما|ماذا|كيف|لماذا|اشرح|وضح|لخص|ما رأيك|what|how|why|explain|can you)\\b").containsMatchIn(text)
+    return !question
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LionApp() {
@@ -928,6 +943,7 @@ fun LionApp() {
         } else {
             emptySet<ToolGroup>()
         }
+        val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask)
         loadingChats[chatId] = true
         toolStatus[chatId] = ""
         ActiveChat.id = chatId
@@ -1009,7 +1025,7 @@ fun LionApp() {
             val llmPromptBase = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
             // غرفة العمليات (برمجة + تلقائي فقط): استشارة متوازية ثم منفّذ واحد بالأدوات.
-            val opsBrief = if (toolGroups.isNotEmpty() && OperationsRoom.enabled(prefs, chatMode)) {
+            val opsBrief = if (agentRequested && OperationsRoom.enabled(prefs, chatMode)) {
                 withContext(Dispatchers.IO) {
                     runCatching {
                         OperationsRoom.brief(
@@ -1043,8 +1059,12 @@ fun LionApp() {
             var sawFalseClaim = false
             val failed = mutableListOf<String>()
             // اليدوي: مزودك المختار يأخذ مهلة المهمة كاملة، ثم وقت إضافي للبدائل (لا تبديل صامت بسبب بطء المزود).
-            val executionBudget = if (toolGroups.isNotEmpty()) 900_000L else SmartRouter.timeoutMs(kind)
-            val deadline = System.currentTimeMillis() + executionBudget + (if (manualMode) 60_000L else 0L)
+            val executionBudget = when {
+                agentRequested -> 240_000L // أربع دقائق للمهمة التنفيذية بدل خمس عشرة؛ الاستئناف محفوظ.
+                image != null -> 150_000L   // الصورة تُرسل لنموذج رؤية مباشرة، بلا دورة أدوات.
+                else -> SmartRouter.timeoutMs(kind)
+            }
+            val deadline = System.currentTimeMillis() + executionBudget + (if (manualMode) 30_000L else 0L)
             val chosenProvider = plan.firstOrNull()?.provider
             val stickProvider = if (manualMode) null else {
                 ProviderStick.get(prefs, chatId) ?: LastRoute.get(prefs, chatId)?.provider
@@ -1058,8 +1078,10 @@ fun LionApp() {
                 val pinned = route.provider == chosenProvider || route.provider == stickProvider
                 // المزود العامل/المختار يأخذ مهلة المهمة كاملة. لا يُستبدل لأنه بطيء.
                 val routeBudget = when {
-                    toolGroups.isNotEmpty() && pinned -> executionBudget
-                    toolGroups.isNotEmpty() -> 180_000L
+                    agentRequested && pinned -> executionBudget
+                    agentRequested -> 75_000L
+                    image != null && pinned -> 100_000L
+                    image != null -> 45_000L
                     pinned -> SmartRouter.timeoutMs(kind)
                     WebChatRuntime.handles(route.provider) -> 90_000L
                     route.provider == RoutePolicy.LOCAL_PROXY -> SmartRouter.timeoutMs(kind) + 30_000L
@@ -1072,7 +1094,7 @@ fun LionApp() {
                 // Web sessions are real chat pages: no app tools, no tool protocol.
                 // Never run the tool agent on them; otherwise the site receives the full
                 // tool spec plus extra "you used no tool" messages and the binding breaks.
-                var agentResult = if (toolGroups.isNotEmpty() && !WebChatRuntime.handles(route.provider)) {
+                var agentResult = if (agentRequested && !WebChatRuntime.handles(route.provider)) {
                     withContext(Dispatchers.IO) {
                         runCatching {
                             ToolAgent.run(

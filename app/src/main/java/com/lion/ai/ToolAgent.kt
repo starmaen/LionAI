@@ -22,9 +22,9 @@ object ToolAgent {
         val usedTools: Boolean get() = tools.isNotEmpty()
     }
 
-    private const val MAX_STEPS_CODE = 96
-    private const val MAX_STEPS_TOOLS = 64
-    private const val MAX_CYCLES = 3
+    private const val MAX_STEPS_CODE = 40
+    private const val MAX_STEPS_TOOLS = 24
+    private const val MAX_CYCLES = 2
 
     /** سقف دورة الأدوات: لا يُوقف العمل بعد 6 خطوات ولا يُطلب «أكمل». */
     internal fun stepBudget(chatMode: ChatMode, hasTools: Boolean): Int = when {

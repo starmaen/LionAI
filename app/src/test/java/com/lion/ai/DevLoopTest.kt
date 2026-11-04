@@ -7,8 +7,8 @@ import org.junit.Test
 
 class DevLoopTest {
     @Test fun toolLoopIsNotCappedAtSixSteps() {
-        assertEquals(96, ToolAgent.stepBudget(ChatMode.CODE, false))
-        assertEquals(96, ToolAgent.stepBudget(ChatMode.GENERAL, true))
+        assertEquals(40, ToolAgent.stepBudget(ChatMode.CODE, false))
+        assertEquals(40, ToolAgent.stepBudget(ChatMode.GENERAL, true))
         assertTrue(ToolAgent.stepBudget(ChatMode.GENERAL, false) > 6)
         assertTrue(ToolAgent.stepBudget(ChatMode.LEARN, false) > 6)
     }
@@ -67,6 +67,14 @@ class DevLoopTest {
         val manualGroups = ContextProfiles.of(ChatMode.GENERAL, manual, request).groups
         assertTrue(autoGroups.containsAll(setOf(ToolGroup.FILES, ToolGroup.SHELL, ToolGroup.CODE)))
         assertEquals(autoGroups, manualGroups)
+    }
+
+    @Test fun simpleQuestionsUseFastDirectResponseButCommandsStillUseTools() {
+        assertFalse(shouldUseAgentForPrompt("هل تستطيع قراءة ملف؟", false))
+        assertFalse(shouldUseAgentForPrompt("اشرح ما هي غرفة العمليات", false))
+        assertTrue(shouldUseAgentForPrompt("اقرأ الملف src/Main.kt", false))
+        assertTrue(shouldUseAgentForPrompt("أصلح الخطأ في المشروع", false))
+        assertTrue(shouldUseAgentForPrompt("هل تستطيع قراءة ملف؟", true))
     }
 
     @Test fun codeModeForcesExecutionFromTheFirstMessage() {
