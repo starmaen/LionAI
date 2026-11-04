@@ -29,21 +29,6 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Install OpenCode (direct binary download)
-      run: |
-        set -euo pipefail
-        echo "Installing OpenCode..."
-        # Create bin directory
-        mkdir -p $HOME/.opencode/bin
-        # Download OpenCode binary directly
-        curl -fsSL -o $HOME/.opencode/bin/opencode https://opencode.ai/releases/latest/opencode-linux-amd64
-        chmod +x $HOME/.opencode/bin/opencode
-        # Add to PATH for this job
-        echo "$HOME/.opencode/bin" >> $GITHUB_PATH
-        # Verify installation
-        command -v opencode && opencode --version
-        echo "OpenCode installed successfully"
-
     - name: Test browser session DOM bridge
       run: npm --prefix scripts ci --ignore-scripts && npm --prefix scripts test
 
