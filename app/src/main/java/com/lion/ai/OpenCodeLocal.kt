@@ -57,15 +57,18 @@ object OpenCodeLocal {
         val root = request("/config/providers", "GET").second
         val defaults = root.optJSONObject("default")
         val result = mutableListOf<String>()
-        root.optJSONArray("providers")?.let { providers ->
+        val providers = root.optJSONArray("providers")
+        if (providers != null) {
             for (i in 0 until providers.length()) {
-                val provider = providers.optJSONObject(i) ?: continue
-                val id = provider.optString("id").ifBlank { continue }
-                val models = provider.optJSONObject("models") ?: continue
-                val names = models.keys()
-                while (names.hasNext()) {
-                    val model = names.next()
-                    result += "$id/$model"
+                val provider = providers.optJSONObject(i)
+                val id = provider?.optString("id").orEmpty()
+                val models = provider?.optJSONObject("models")
+                if (id.isNotBlank() && models != null) {
+                    val names = models.keys()
+                    while (names.hasNext()) {
+                        val model = names.next()
+                        result += "$id/$model"
+                    }
                 }
             }
         }
@@ -104,10 +107,11 @@ object OpenCodeLocal {
         val response = request("/session/$sessionId/message", "POST", body).second
         val texts = mutableListOf<String>()
         val tools = mutableListOf<String>()
-        response.optJSONArray("parts")?.let { array ->
-            for (i in 0 until array.length()) {
-                val part = array.optJSONObject(i) ?: continue
-                when (part.optString("type")) {
+        val responseParts = response.optJSONArray("parts")
+        if (responseParts != null) {
+            for (i in 0 until responseParts.length()) {
+                val part = responseParts.optJSONObject(i)
+                if (part != null) when (part.optString("type")) {
                     "text" -> part.optString("text").takeIf { it.isNotBlank() }?.let(texts::add)
                     "tool" -> tools += part.optString("tool").ifBlank { "tool" } + ": " + part.optJSONObject("state")?.optString("status").orEmpty()
                 }
