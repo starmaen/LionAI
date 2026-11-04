@@ -991,8 +991,25 @@ fun LionApp() {
             }
             val withDrive = if (driveContext.isNullOrBlank()) baseLlmPrompt else
                 baseLlmPrompt + "\n\n=== بيانات Google Drive من الرابط في رسالة المستخدم ===\n" + driveContext
-            val llmPrompt = if (githubContext.isBlank()) withDrive else
+            val llmPromptBase = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
+            // غرفة العمليات (برمجة + تلقائي فقط): استشارة متوازية ثم منفّذ واحد بالأدوات.
+            val opsBrief = if (toolGroups.isNotEmpty() && OperationsRoom.enabled(prefs, chatMode)) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        OperationsRoom.brief(
+                            prefs = prefs,
+                            message = llmPromptBase,
+                            history = history.takeLast(6),
+                            systemPrompt = systemPrompt,
+                            chatId = chatId,
+                            keyOf = { keyOf(it) },
+                            onLog = { status -> toolStatus[chatId] = status }
+                        )
+                    }.getOrDefault("")
+                }
+            } else ""
+            val llmPrompt = llmPromptBase + opsBrief
             // العقل المركزي يضمن أن لكل مجال مزوداً بديلاً جاهزاً عند فشل المسار الأساسي.
             // في اليدوي: لا يتدخل العقل المركزي إلا إذا فعّل المستخدم «مساعدة العقل المركزي».
             val rescueRoutes = if ((manualMode && RoutePolicy.assistEnabled(prefs)) ||
@@ -1064,7 +1081,7 @@ fun LionApp() {
                                 session = session,
                                 chatMode = chatMode,
                                 forceExecution = shouldForceExecution(chatMode, kind, session.hasWork()),
-                                providerLabel = SmartRouter.label(route, kind),
+                                providerLabel = if (OperationsRoom.enabled(prefs, chatMode)) "غرفة العمليات" else SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,
                                 onProgress = { status -> toolStatus[chatId] = status }

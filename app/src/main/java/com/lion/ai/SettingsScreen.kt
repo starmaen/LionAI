@@ -483,6 +483,8 @@ fun SettingsScreen(
                             fontSize = 12.sp
                         )
                         Spacer(Modifier.height(8.dp))
+                        OperationsRoomCard(prefs)
+                        Spacer(Modifier.height(8.dp))
                         // اختيار الخادم المحلي نفسه (وسيط) — مستقل عن مزودات API المباشرة.
                         Box(
                             modifier = Modifier
