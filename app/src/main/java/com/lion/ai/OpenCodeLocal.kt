@@ -31,7 +31,7 @@ object OpenCodeLocal {
         val probe = LinuxEnv.run(context, "command -v opencode", 20)
         if (!probe.ok) {
             // محاولة تثبيت تلقائي عبر ShellTools
-            val install = ShellTools.installExternal(context, "opencode", 180)
+            val install = LinuxEnv.installTool(context, "opencode")
             if (!install.ok) {
                 throw IllegalStateException("فشل تثبيت OpenCode تلقائياً: ${install.output}")
             }
@@ -40,20 +40,32 @@ object OpenCodeLocal {
             check(verify.ok) { "OpenCode لم يصبح متاحاً بعد التثبيت" }
         }
         server?.destroy()
-        server = LinuxEnv.start(
+        val tail = java.util.concurrent.ConcurrentLinkedDeque<String>()
+        val process = LinuxEnv.start(
             context,
-            "opencode serve --hostname 127.0.0.1 --port $PORT",
+            "OPENCODE_DISABLE_AUTOUPDATE=1 opencode serve --hostname 127.0.0.1 --port $PORT",
             FileTools.root(context)
         )
+        server = process
         thread(name = "opencode-local-log", isDaemon = true) {
-            runCatching { server?.inputStream?.bufferedReader()?.useLines { lines -> lines.forEach { } } }
+            runCatching {
+                process.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        tail.addLast(line.take(300))
+                        while (tail.size > 30) tail.pollFirst()
+                    }
+                }
+            }
         }
-        repeat(40) {
+        // أول تشغيل تحت proot بطيء (فك الملف التنفيذي وجلب كتالوج النماذج)، فننتظر حتى دقيقتين.
+        repeat(480) {
             if (isRunning()) return BASE
-            if (server?.isAlive == false) throw IllegalStateException("توقف opencode serve؛ راجع إعداداته من Terminal")
+            if (!process.isAlive) {
+                throw IllegalStateException("توقف opencode serve:\n" + tail.joinToString("\n").takeLast(1500))
+            }
             Thread.sleep(250)
         }
-        throw IllegalStateException("لم يستجب opencode serve خلال 10 ثوانٍ")
+        throw IllegalStateException("لم يستجب opencode serve خلال دقيقتين:\n" + tail.joinToString("\n").takeLast(1500))
     }
 
     fun stop() {

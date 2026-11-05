@@ -595,38 +595,62 @@ object LlmClient {
         }
     }
 
+    private val apinexCalls = java.util.ArrayDeque<Long>()
+
+    /** APInex المجاني محدود (حوالي 5 طلبات/دقيقة): نوزّع الطلبات بدل إغراقه فيرد 429. */
+    private fun throttleFor(url: String) {
+        if (!url.contains("apinex.bond")) return
+        val wait = synchronized(apinexCalls) {
+            val now = System.currentTimeMillis()
+            while (apinexCalls.isNotEmpty() && now - apinexCalls.first > 60_000) apinexCalls.removeFirst()
+            val w = if (apinexCalls.size >= 5) (apinexCalls.first + 60_000 - now).coerceIn(0, 20_000) else 0L
+            apinexCalls.addLast(now + w)
+            w
+        }
+        if (wait > 0) Thread.sleep(wait)
+    }
+
     internal fun postJson(
         url: String,
         headers: Map<String, String>,
         body: JSONObject
     ): JSONObject {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = LLM_CONNECT_TIMEOUT
-            readTimeout = currentReadTimeout()
-            doOutput = true
-            useCaches = false
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", LLM_USER_AGENT)
-            headers.forEach { (name, value) -> setRequestProperty(name, value) }
-        }
-
-        try {
-            connection.outputStream.use { output ->
-                output.write(body.toString().toByteArray(Charsets.UTF_8))
+        throttleFor(url)
+        var attempt = 0
+        while (true) {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = LLM_CONNECT_TIMEOUT
+                readTimeout = currentReadTimeout()
+                doOutput = true
+                useCaches = false
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", LLM_USER_AGENT)
+                headers.forEach { (name, value) -> setRequestProperty(name, value) }
             }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            val json = runCatching { JSONObject(raw) }.getOrNull()
+            try {
+                connection.outputStream.use { output ->
+                    output.write(body.toString().toByteArray(Charsets.UTF_8))
+                }
+                val status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                val json = runCatching { JSONObject(raw) }.getOrNull()
 
-            if (status !in 200..299) {
-                throw LlmException(status, errorMessage(json, raw))
+                if ((status == 429 || status == 503) && attempt < 2) {
+                    val retryAfter = connection.getHeaderField("Retry-After")?.trim()?.toLongOrNull()?.times(1000)
+                    attempt++
+                    Thread.sleep((retryAfter ?: (4_000L * attempt)).coerceIn(1_000L, 20_000L))
+                    continue
+                }
+                if (status !in 200..299) {
+                    throw LlmException(status, errorMessage(json, raw))
+                }
+                return json ?: throw LlmException(status, "رد غير صالح من المزود")
+            } finally {
+                connection.disconnect()
             }
-            return json ?: throw LlmException(status, "رد غير صالح من المزود")
-        } finally {
-            connection.disconnect()
         }
     }
 

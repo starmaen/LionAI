@@ -71,6 +71,42 @@ object LinuxEnv {
         "bash" to "bash", "adb" to "android-tools", "ca" to "ca-certificates"
     )
 
+    /** § = علامة الدولار (لتفادي استيفاء Kotlin داخل النص). */
+    private val OPENCODE_INSTALL_SCRIPT = """
+        set -e
+        OC=/workspace/tools/opencode
+        DL=/workspace/tools/downloads
+        mkdir -p /workspace/tools/bin "§DL" "§OC"
+        echo "== 1/5 الحزم المطلوبة =="
+        apk add --no-cache libstdc++ libgcc curl jq tar ca-certificates
+        echo "== 2/5 جلب بيانات الإصدار =="
+        META=§(curl -fsSL --retry 3 --connect-timeout 20 https://registry.npmjs.org/opencode-linux-arm64-musl/latest)
+        VER=§(echo "§META" | jq -r .version)
+        URL=§(echo "§META" | jq -r .dist.tarball)
+        SUM=§(echo "§META" | jq -r .dist.shasum)
+        [ -n "§VER" ] && [ "§VER" != "null" ] || { echo "تعذر قراءة إصدار OpenCode من سجل npm"; exit 11; }
+        echo "الإصدار: §VER"
+        FILE="§DL/opencode-§VER.tgz"
+        echo "== 3/5 التنزيل (قابل للاستئناف) =="
+        curl -fL --retry 5 --retry-delay 3 --connect-timeout 20 -sS -C - -o "§FILE" "§URL" &
+        PID=§!
+        while kill -0 §PID 2>/dev/null; do
+          echo "§(( §(stat -c %s "§FILE" 2>/dev/null || echo 0) / 1048576 )) MB"
+          sleep 3
+        done
+        wait §PID || { echo "فشل التنزيل؛ أعد الضغط للاستئناف من حيث توقف"; exit 12; }
+        echo "== 4/5 التحقق والفك =="
+        echo "§SUM  §FILE" | sha1sum -c - || { rm -f "§FILE"; echo "فشل التحقق من سلامة الملف"; exit 13; }
+        rm -rf "§OC"; mkdir -p "§OC"
+        tar xzf "§FILE" -C "§OC"
+        cp -a "§OC/package/." "§OC/" && rm -rf "§OC/package"
+        chmod +x "§OC/bin/opencode"
+        ln -sf "§OC/bin/opencode" /workspace/tools/bin/opencode
+        rm -f "§FILE"
+        echo "== 5/5 فحص التشغيل =="
+        timeout 60 opencode --version || { echo "الملف نُزّل لكنه لا يعمل داخل proot (exit §?)"; ls -l "§OC/bin"; exit 14; }
+    """.trimIndent()
+
     fun base(context: Context): File = File(context.filesDir, "linux").apply { mkdirs() }
     fun rootfs(context: Context): File = File(base(context), "alpine")
     private fun marker(context: Context): File = File(base(context), ".installed")
@@ -359,12 +395,9 @@ object LinuxEnv {
     fun installTool(context: Context, toolId: String, timeoutSec: Int = 1200): ShellResult {
         if (!ready(context)) return ShellResult(false, "فعّل بيئة Linux أولاً.", 1, 0)
         val result = if (toolId == "opencode") {
-            runPackageCommand(
-                context,
-                "apk add --no-cache libstdc++ libgcc nodejs npm && " +
-                    "npm install -g opencode-ai --no-audit --no-fund && opencode --version",
-                1500
-            )
+            // تثبيت مباشر للملف التنفيذي الجاهز (musl/arm64) بدل npm: لا Node ولا postinstall،
+            // مع تنزيل قابل للاستئناف وتحقق sha1 من سجل npm وسجل تقدّم ظاهر في الواجهة.
+            runPackageCommand(context, OPENCODE_INSTALL_SCRIPT.replace('§', '$'), 2400) { progress = "⬇️ " + it.take(100) }
         } else {
             val key = when (toolId) {
                 "ssh" -> "openssh"
