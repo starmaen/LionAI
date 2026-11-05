@@ -3,9 +3,12 @@ package com.lion.ai
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
@@ -22,16 +25,38 @@ object BootImageTools {
     private val MAGIC = "ANDROID!".toByteArray(Charsets.US_ASCII)
     private const val RAMDISK_DIR = "ramdisk"
     private const val RAMDISK_META = "ramdisk.meta.json"
+    private const val HEADER_BYTES = 1660
+
+    /** حد أقصى لصورة boot/recovery. الأكبر يُرفض برسالة واضحة بدل استهلاك ذاكرة يقتل التطبيق. */
+    internal const val MAX_IMAGE_BYTES = 128L * 1024 * 1024
 
     private fun u32(b: ByteBuffer, off: Int): Long = b.getInt(off).toLong() and 0xFFFFFFFFL
 
+    private fun u32At(head: ByteArray, b: ByteBuffer, off: Int): Long =
+        if (off + 4 <= head.size) u32(b, off) else 0L
+
+    private fun longAt(head: ByteArray, b: ByteBuffer, off: Int): Long =
+        if (off + 8 <= head.size) b.getLong(off) else 0L
+
     private fun cstr(data: ByteArray, off: Int, len: Int): String {
         var end = off
-        while (end < off + len && data[end] != 0.toByte()) end++
+        while (end < off + len && end < data.size && data[end] != 0.toByte()) end++
         return String(data, off, end - off, Charsets.UTF_8)
     }
 
     private fun align(n: Long, page: Long): Long = (n + page - 1) / page * page
+
+    internal class Part(val offset: Long, val size: Long)
+
+    internal class Meta(
+        val header: JSONObject,
+        val kernel: Part,
+        val ramdisk: Part,
+        val second: Part,
+        val dtbo: Part,
+        val dtb: Part,
+        val signature: Part
+    )
 
     internal class Parsed(
         val header: JSONObject,
@@ -49,71 +74,111 @@ object BootImageTools {
         return data.copyOfRange(off.toInt(), (off + size).toInt())
     }
 
-    internal fun parse(data: ByteArray): Parsed {
-        require(data.size >= 1632 && data.copyOfRange(0, 8).contentEquals(MAGIC)) {
+    private fun requireInside(p: Part, total: Long, what: String) {
+        require(p.size == 0L || (p.offset >= 0 && p.offset + p.size <= total)) {
+            "حجم/موضع $what خارج الملف (الصورة تالفة أو غير مدعومة)"
+        }
+    }
+
+    internal fun parseHeader(head: ByteArray, total: Long): Meta {
+        require(head.size >= 8 && head.copyOfRange(0, 8).contentEquals(MAGIC)) {
             "ليست صورة boot بترويسة ANDROID! (قد تكون vendor_boot أو صورة ممسوحة/مضغوطة)"
         }
-        val b = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
-        val version = u32(b, 40).toInt()
+        require(total >= 1632) { "الصورة أصغر من ترويسة boot" }
+        val b = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN)
+        val version = u32At(head, b, 40).toInt()
         val h = JSONObject().put("header_version", version)
         if (version >= 3) {
             val page = 4096L
-            val kSize = u32(b, 8)
-            val rSize = u32(b, 12)
-            h.put("page_size", page).put("os_version", u32(b, 16))
-                .put("cmdline", cstr(data, 44, 1536)).put("extra_cmdline", "")
-            var off = page
-            val kernel = slice(data, off, kSize, "kernel"); off += align(kSize, page)
-            val ramdisk = slice(data, off, rSize, "ramdisk"); off += align(rSize, page)
-            var sig = ByteArray(0)
-            if (version >= 4 && data.size >= 1584) {
-                sig = slice(data, off, u32(b, 1580), "signature")
-            }
-            return Parsed(h, kernel, ramdisk, ByteArray(0), ByteArray(0), ByteArray(0), sig)
+            val kSize = u32At(head, b, 8)
+            val rSize = u32At(head, b, 12)
+            h.put("page_size", page).put("os_version", u32At(head, b, 16))
+                .put("cmdline", cstr(head, 44, 1536)).put("extra_cmdline", "")
+            val kernel = Part(page, kSize).also { requireInside(it, total, "kernel") }
+            val rOff = page + align(kSize, page)
+            val ramdisk = Part(rOff, rSize).also { requireInside(it, total, "ramdisk") }
+            val sigOff = rOff + align(rSize, page)
+            val sig = if (version >= 4 && head.size >= 1584) {
+                Part(sigOff, u32At(head, b, 1580)).also { requireInside(it, total, "signature") }
+            } else Part(0, 0)
+            return Meta(h, kernel, ramdisk, Part(0, 0), Part(0, 0), Part(0, 0), sig)
         }
-        val page = u32(b, 36)
+        val page = u32At(head, b, 36)
         require(page >= 512 && page <= 65536 && (page and (page - 1)) == 0L) { "page_size غير صالح: $page" }
-        val kSize = u32(b, 8)
-        val rSize = u32(b, 16)
-        val sSize = u32(b, 24)
         h.put("page_size", page)
-            .put("kernel_addr", u32(b, 12)).put("ramdisk_addr", u32(b, 20)).put("second_addr", u32(b, 28))
-            .put("tags_addr", u32(b, 32)).put("os_version", u32(b, 44))
-            .put("name", cstr(data, 48, 16)).put("cmdline", cstr(data, 64, 512))
-            .put("extra_cmdline", cstr(data, 608, 1024))
+            .put("kernel_addr", u32At(head, b, 12)).put("ramdisk_addr", u32At(head, b, 20))
+            .put("second_addr", u32At(head, b, 28)).put("tags_addr", u32At(head, b, 32))
+            .put("os_version", u32At(head, b, 44))
+            .put("name", cstr(head, 48, 16)).put("cmdline", cstr(head, 64, 512))
+            .put("extra_cmdline", cstr(head, 608, 1024))
         var off = page
-        val kernel = slice(data, off, kSize, "kernel"); off += align(kSize, page)
-        val ramdisk = slice(data, off, rSize, "ramdisk"); off += align(rSize, page)
-        val second = slice(data, off, sSize, "second"); off += align(sSize, page)
-        var dtbo = ByteArray(0)
-        var dtb = ByteArray(0)
+        val kernel = Part(off, u32At(head, b, 8)).also { requireInside(it, total, "kernel") }
+        off += align(kernel.size, page)
+        val ramdisk = Part(off, u32At(head, b, 16)).also { requireInside(it, total, "ramdisk") }
+        off += align(ramdisk.size, page)
+        val second = Part(off, u32At(head, b, 24)).also { requireInside(it, total, "second") }
+        off += align(second.size, page)
+        var dtbo = Part(0, 0)
+        var dtb = Part(0, 0)
         if (version >= 1) {
-            val dSize = u32(b, 1632)
-            dtbo = slice(data, off, dSize, "recovery_dtbo"); off += align(dSize, page)
+            dtbo = Part(off, u32At(head, b, 1632)).also { requireInside(it, total, "recovery_dtbo") }
+            off += align(dtbo.size, page)
         }
         if (version >= 2) {
-            val tSize = u32(b, 1648)
-            h.put("dtb_addr", b.getLong(1652))
-            dtb = slice(data, off, tSize, "dtb")
+            h.put("dtb_addr", longAt(head, b, 1652))
+            dtb = Part(off, u32At(head, b, 1648)).also { requireInside(it, total, "dtb") }
         }
-        return Parsed(h, kernel, ramdisk, second, dtbo, dtb, ByteArray(0))
+        return Meta(h, kernel, ramdisk, second, dtbo, dtb, Part(0, 0))
     }
 
-    private fun isGzip(d: ByteArray) = d.size > 2 && d[0] == 0x1f.toByte() && d[1] == 0x8b.toByte()
+    internal fun parse(data: ByteArray): Parsed {
+        require(data.size >= 8) { "الملف فارغ أو تالف" }
+        val m = parseHeader(data.copyOf(minOf(data.size, HEADER_BYTES)), data.size.toLong())
+        fun read(p: Part, what: String) = slice(data, p.offset, p.size, what)
+        return Parsed(
+            m.header, read(m.kernel, "kernel"), read(m.ramdisk, "ramdisk"), read(m.second, "second"),
+            read(m.dtbo, "recovery_dtbo"), read(m.dtb, "dtb"), read(m.signature, "signature")
+        )
+    }
+
+    /** يقرأ الترويسة فقط من الملف (بدون تحميل الصورة كاملة) لحماية الذاكرة. */
+    internal fun headerOf(file: File): Meta {
+        val total = file.length()
+        require(total <= MAX_IMAGE_BYTES) {
+            "الصورة أكبر من ${MAX_IMAGE_BYTES / (1024 * 1024)} ميجابايت؛ اختر صورة boot/recovery أصغر."
+        }
+        RandomAccessFile(file, "r").use { raf ->
+            val len = minOf(total, HEADER_BYTES.toLong()).toInt()
+            require(len >= 8) { "الملف فارغ أو تالف" }
+            val head = ByteArray(len)
+            raf.readFully(head)
+            return parseHeader(head, total)
+        }
+    }
+
+    private fun isGzipFile(file: File, offset: Long): Boolean {
+        if (file.length() - offset < 2) return false
+        val pair = ByteArray(2)
+        RandomAccessFile(file, "r").use { raf ->
+            raf.seek(offset)
+            raf.readFully(pair)
+        }
+        return pair[0] == 0x1f.toByte() && pair[1] == 0x8b.toByte()
+    }
 
     fun info(context: Context, path: String): String {
         val file = FileTools.file(context, path)
         require(file.isFile) { "غير موجود: $path" }
-        val p = parse(file.readBytes())
-        val h = p.header
+        val m = headerOf(file)
+        val h = m.header
         return buildString {
             append("📦 ").append(FileTools.relative(context, file)).append(" (").append(file.length()).append(" بايت)\n")
             append("إصدار الترويسة: ").append(h.getInt("header_version"))
                 .append("، page_size=").append(h.getLong("page_size")).append('\n')
-            append("kernel=").append(p.kernel.size).append("  ramdisk=").append(p.ramdisk.size)
-                .append(if (isGzip(p.ramdisk)) " (gzip)" else "")
-                .append("  second=").append(p.second.size).append("  dtbo=").append(p.dtbo.size)
-                .append("  dtb=").append(p.dtb.size).append("  signature=").append(p.signature.size).append('\n')
+            append("kernel=").append(m.kernel.size).append("  ramdisk=").append(m.ramdisk.size)
+                .append(if (isGzipFile(file, m.ramdisk.offset)) " (gzip)" else "")
+                .append("  second=").append(m.second.size).append("  dtbo=").append(m.dtbo.size)
+                .append("  dtb=").append(m.dtb.size).append("  signature=").append(m.signature.size).append('\n')
             append("cmdline: ").append(h.optString("cmdline"))
             if (h.optString("extra_cmdline").isNotBlank()) append(' ').append(h.optString("extra_cmdline"))
         }
@@ -174,31 +239,105 @@ object BootImageTools {
         return f
     }
 
-    private fun extractRamdisk(ramdisk: ByteArray, outDir: File): String {
-        if (ramdisk.isEmpty()) return "ramdisk فارغ"
-        if (!isGzip(ramdisk)) return "ramdisk غير gzip (مثل lz4/xz): حُفظ خاماً في ramdisk.raw ولم يُفك"
-        val cpio = GZIPInputStream(ByteArrayInputStream(ramdisk)).use { it.readBytes() }
-        val entries = parseCpio(cpio)
+    private fun readFully(input: InputStream, buf: ByteArray) {
+        var off = 0
+        while (off < buf.size) {
+            val n = input.read(buf, off, buf.size - off)
+            if (n < 0) throw IllegalArgumentException("cpio تالف: ملف مقطوع")
+            off += n
+        }
+    }
+
+    private fun readFullyOrEof(input: InputStream, buf: ByteArray): Boolean {
+        val first = input.read()
+        if (first < 0) return false
+        buf[0] = first.toByte()
+        var off = 1
+        while (off < buf.size) {
+            val n = input.read(buf, off, buf.size - off)
+            if (n < 0) throw IllegalArgumentException("cpio تالف: ملف مقطوع")
+            off += n
+        }
+        return true
+    }
+
+    private fun skipFully(input: InputStream, count: Long) {
+        if (count <= 0) return
+        val buf = ByteArray(64 * 1024)
+        var remaining = count
+        while (remaining > 0) {
+            val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+            if (n < 0) throw IllegalArgumentException("cpio تالف: ملف مقطوع")
+            remaining -= n
+        }
+    }
+
+    private fun skipPad(input: InputStream, size: Long) {
+        val pad = (4 - (size % 4)) % 4
+        if (pad > 0) skipFully(input, pad)
+    }
+
+    private fun copyExactly(input: InputStream, out: OutputStream, count: Long) {
+        val buf = ByteArray(64 * 1024)
+        var remaining = count
+        while (remaining > 0) {
+            val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+            if (n < 0) throw IllegalArgumentException("cpio تالف: ملف مقطوع")
+            out.write(buf, 0, n)
+            remaining -= n
+        }
+    }
+
+    /** يفك ramdisk من ملفه مباشرة إلى القرص، دون تحميل الصورة أو cpio كاملاً في الذاكرة. */
+    internal fun extractRamdisk(raw: File, outDir: File): String {
+        if (raw.length() == 0L) return "ramdisk فارغ"
+        if (!isGzipFile(raw, 0)) return "ramdisk غير gzip (مثل lz4/xz): حُفظ خاماً في ramdisk.raw ولم يُفك"
         val root = File(outDir, RAMDISK_DIR).apply { deleteRecursively(); mkdirs() }
         val meta = JSONArray()
-        entries.forEach { e ->
-            val type = e.mode and 0xF000
-            if (e.name != ".") {
-                val f = safeChild(root, e.name)
-                when (type) {
-                    0x4000L -> f.mkdirs()
-                    0x8000L, 0xA000L -> { f.parentFile?.mkdirs(); f.writeBytes(e.data) }
-                    else -> Unit
+        var count = 0
+        FileInputStream(raw).use { fis ->
+            GZIPInputStream(fis, 64 * 1024).use { input ->
+                while (true) {
+                    val header = ByteArray(110)
+                    if (!readFullyOrEof(input, header)) break
+                    require(String(header, 0, 6, Charsets.US_ASCII) == "070701") { "ramdisk ليس بصيغة cpio newc" }
+                    val mode = hex(header, 14); val uid = hex(header, 22); val gid = hex(header, 30)
+                    val nlink = hex(header, 38); val mtime = hex(header, 46); val fsize = hex(header, 54)
+                    val dMaj = hex(header, 62); val dMin = hex(header, 70)
+                    val rMaj = hex(header, 78); val rMin = hex(header, 86)
+                    val nsize = hex(header, 94)
+                    require(nsize in 1..65536) { "cpio تالف: اسم بطول غير صالح" }
+                    val nameBytes = ByteArray(nsize.toInt())
+                    readFully(input, nameBytes)
+                    val name = String(nameBytes, 0, nsize.toInt() - 1, Charsets.UTF_8)
+                    skipPad(input, 110L + nsize)
+                    if (name == "TRAILER!!!") break
+                    val type = mode and 0xF000
+                    if (name != ".") {
+                        val f = safeChild(root, name)
+                        when (type) {
+                            0x4000L -> f.mkdirs()
+                            0x8000L, 0xA000L -> {
+                                f.parentFile?.mkdirs()
+                                f.outputStream().buffered().use { out -> copyExactly(input, out, fsize) }
+                            }
+                            else -> skipFully(input, fsize)
+                        }
+                    } else {
+                        skipFully(input, fsize)
+                    }
+                    skipPad(input, fsize)
+                    meta.put(
+                        JSONObject().put("name", name).put("mode", mode).put("uid", uid).put("gid", gid)
+                            .put("nlink", nlink).put("mtime", mtime).put("devmajor", dMaj).put("devminor", dMin)
+                            .put("rdevmajor", rMaj).put("rdevminor", rMin)
+                    )
+                    count++
                 }
             }
-            meta.put(
-                JSONObject().put("name", e.name).put("mode", e.mode).put("uid", e.uid).put("gid", e.gid)
-                    .put("nlink", e.nlink).put("mtime", e.mtime).put("devmajor", e.devMajor).put("devminor", e.devMinor)
-                    .put("rdevmajor", e.rdevMajor).put("rdevminor", e.rdevMinor)
-            )
         }
         File(outDir, RAMDISK_META).writeText(meta.toString(1))
-        return "ramdisk فُك إلى $RAMDISK_DIR/ (${entries.size} عنصراً)"
+        return "ramdisk فُك إلى $RAMDISK_DIR/ ($count عنصراً)"
     }
 
     private fun packRamdisk(dir: File): ByteArray? {
@@ -241,23 +380,40 @@ object BootImageTools {
 
     // ───────────────────────── unpack / repack ─────────────────────────
 
+    /** ينسخ مقطعاً من الصورة إلى ملف بدون تحميل الصورة كاملة في الذاكرة. */
+    private fun copyRange(src: File, part: Part, dst: File) {
+        if (part.size == 0L) return
+        RandomAccessFile(src, "r").use { raf ->
+            raf.seek(part.offset)
+            dst.outputStream().buffered().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var remaining = part.size
+                while (remaining > 0) {
+                    val n = raf.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+                    if (n < 0) throw IllegalArgumentException("الصورة أقصر من المتوقع (ملف مقطوع)")
+                    out.write(buf, 0, n)
+                    remaining -= n
+                }
+            }
+        }
+    }
+
     fun unpack(context: Context, path: String, outDirPath: String): String {
         val file = FileTools.file(context, path)
         require(file.isFile) { "غير موجود: $path" }
-        val p = parse(file.readBytes())
+        val m = headerOf(file)
         val dir = FileTools.file(context, outDirPath.ifBlank { "boot_unpacked" })
         dir.mkdirs()
-        File(dir, "header.json").writeText(p.header.toString(2))
-        fun save(name: String, bytes: ByteArray) { if (bytes.isNotEmpty()) File(dir, name).writeBytes(bytes) }
-        save("kernel", p.kernel)
-        save("second", p.second)
-        save("recovery_dtbo", p.dtbo)
-        save("dtb", p.dtb)
-        save("signature", p.signature)
-        save("ramdisk.raw", p.ramdisk)
-        val rd = extractRamdisk(p.ramdisk, dir)
+        File(dir, "header.json").writeText(m.header.toString(2))
+        copyRange(file, m.kernel, File(dir, "kernel"))
+        copyRange(file, m.second, File(dir, "second"))
+        copyRange(file, m.dtbo, File(dir, "recovery_dtbo"))
+        copyRange(file, m.dtb, File(dir, "dtb"))
+        copyRange(file, m.signature, File(dir, "signature"))
+        copyRange(file, m.ramdisk, File(dir, "ramdisk.raw"))
+        val rd = extractRamdisk(File(dir, "ramdisk.raw"), dir)
         return "✅ فُكّت ${FileTools.relative(context, file)} إلى ${FileTools.relative(context, dir)}\n" +
-            "kernel=${p.kernel.size} ramdisk=${p.ramdisk.size} second=${p.second.size} dtbo=${p.dtbo.size} dtb=${p.dtb.size}\n" +
+            "kernel=${m.kernel.size} ramdisk=${m.ramdisk.size} second=${m.second.size} dtbo=${m.dtbo.size} dtb=${m.dtb.size}\n" +
             rd + "\nعدّل الملفات (cmdline في header.json، أو ملفات ramdisk/) ثم استدعِ boot_repack."
     }
 

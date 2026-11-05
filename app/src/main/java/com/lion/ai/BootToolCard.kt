@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private const val MAX_IMAGE_BYTES = 256L * 1024 * 1024
+private val MAX_IMAGE_BYTES = BootImageTools.MAX_IMAGE_BYTES
 
 private fun displayName(context: Context, uri: Uri): String =
     runCatching {
@@ -53,11 +53,31 @@ private fun copyToUploads(context: Context, uri: Uri): String {
             if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L
         }
     }.getOrNull() ?: -1L
-    require(size <= MAX_IMAGE_BYTES) { "الصورة أكبر من 256 ميجابايت" }
+    require(size <= MAX_IMAGE_BYTES) {
+        "الصورة أكبر من ${MAX_IMAGE_BYTES / (1024 * 1024)} ميجابايت؛ اختر صورة boot/recovery أصغر."
+    }
     val dir = File(FileTools.root(context), "uploads").apply { mkdirs() }
     val file = File(dir, displayName(context, uri))
-    context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
-        ?: error("تعذّر فتح الملف")
+    try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            file.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    require(total <= MAX_IMAGE_BYTES) {
+                        "الصورة أكبر من ${MAX_IMAGE_BYTES / (1024 * 1024)} ميجابايت؛ اختر صورة boot/recovery أصغر."
+                    }
+                    out.write(buf, 0, n)
+                }
+            }
+        } ?: error("تعذّر فتح الملف")
+    } catch (e: Throwable) {
+        file.delete()
+        throw e
+    }
     return "uploads/" + file.name
 }
 
@@ -72,24 +92,60 @@ fun BootToolCard() {
     var log by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
 
-    fun run(label: String, block: () -> String) {
+    fun errorText(e: Throwable): String = when (e) {
+        is OutOfMemoryError -> "❌ الذاكرة غير كافية لمعالجة الصورة. أغلق التطبيقات الأخرى أو استخدم صورة أصغر."
+        else -> "❌ ${e.message ?: e.javaClass.simpleName}"
+    }
+
+    fun run(label: String, block: () -> String, onDone: (String) -> Unit = {}) {
         scope.launch {
             busy = true
             log = "⏳ $label…"
-            log = withContext(Dispatchers.IO) {
-                runCatching(block).getOrElse { "❌ ${it.message ?: it.javaClass.simpleName}" }
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    block()
+                } catch (e: Throwable) {
+                    errorText(e)
+                }
+            }
+            log = result
+            onDone(result)
+            busy = false
+        }
+    }
+
+    fun handlePicked(uri: Uri?) {
+        if (uri == null) return
+        scope.launch {
+            busy = true
+            log = "⏳ نسخ الصورة إلى مساحة العمل…"
+            val picked = withContext(Dispatchers.IO) {
+                runCatching {
+                    val path = copyToUploads(context, uri)
+                    path to ("boot_unpacked/" + File(path).nameWithoutExtension)
+                }
+            }
+            picked.onSuccess { (path, dir) ->
+                imagePath = path
+                unpackDir = dir
+                outputPath = ""
+                log = "✅ جاهزة: $path"
+            }.onFailure { e ->
+                log = errorText(e)
             }
             busy = false
         }
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) run("نسخ الصورة إلى مساحة العمل") {
-            val path = copyToUploads(context, uri)
-            imagePath = path
-            unpackDir = "boot_unpacked/" + File(path).nameWithoutExtension
-            outputPath = ""
-            "✅ جاهزة: $path"
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { handlePicked(it) }
+    val fallbackPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { handlePicked(it) }
+
+    fun launchPicker() {
+        val opened = runCatching { picker.launch(arrayOf("*/*")) }
+        if (opened.isFailure) {
+            runCatching { fallbackPicker.launch("*/*") }.onFailure { e ->
+                log = "❌ تعذّر فتح منتقي الملفات: ${e.message ?: e.javaClass.simpleName}"
+            }
         }
     }
 
@@ -104,7 +160,7 @@ fun BootToolCard() {
                 "الناتج غير موقّع (AVB) ويحتاج بوتلودر مفتوحاً؛ احتفظ بنسخة من الأصلية.",
             color = Color(0xFF9A9A9A), fontSize = 11.sp
         )
-        Button(enabled = !busy, onClick = { picker.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(containerColor = gold)) {
+        Button(enabled = !busy, onClick = { launchPicker() }, colors = ButtonDefaults.buttonColors(containerColor = gold)) {
             Text("📂 اختيار صورة (.img)", color = Color(0xFF121212))
         }
         if (imagePath.isNotBlank()) Text("الصورة: $imagePath", color = Color(0xFFEDEDED), fontSize = 12.sp)
@@ -116,11 +172,9 @@ fun BootToolCard() {
                 run("فك الصورة") { BootImageTools.unpack(context, imagePath, unpackDir) }
             }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("🧩 فك", color = gold, fontSize = 12.sp) }
             Button(enabled = !busy && unpackDir.isNotBlank(), onClick = {
-                run("تركيب الصورة") {
-                    val target = "deliverables/" + File(unpackDir).name + "-new.img"
-                    val message = BootImageTools.repack(context, unpackDir, target)
+                val target = "deliverables/" + File(unpackDir).name + "-new.img"
+                run("تركيب الصورة", block = { BootImageTools.repack(context, unpackDir, target) }) {
                     outputPath = target
-                    message
                 }
             }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6D00))) { Text("🔧 تركيب", color = Color.White, fontSize = 12.sp) }
         }

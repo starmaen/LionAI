@@ -5,6 +5,9 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.zip.GZIPOutputStream
 
 class BootImageToolsTest {
     private fun bytes(n: Int, seed: Int) = ByteArray(n) { ((it * 31 + seed) and 0xFF).toByte() }
@@ -55,5 +58,50 @@ class BootImageToolsTest {
     @Test fun rejectsNonBootImages() {
         val result = runCatching { BootImageTools.parse(ByteArray(4000)) }
         assertTrue(result.isFailure)
+    }
+
+    @Test fun streamingRamdiskExtractWritesFilesAndMeta() {
+        val entries = listOf(
+            BootImageTools.Cpio(".", 0x41EDL, 0, 0, 2, 0, 0, 0, 0, 0, ByteArray(0)),
+            BootImageTools.Cpio("init", 0x81EDL, 0, 0, 1, 100, 0, 0, 0, 0, "#!/bin/sh\n".toByteArray()),
+            BootImageTools.Cpio("sbin", 0x41EDL, 0, 0, 2, 0, 0, 0, 0, 0, ByteArray(0)),
+            BootImageTools.Cpio("sbin/init", 0x81EDL, 0, 0, 1, 0, 0, 0, 0, 0, "x".toByteArray())
+        )
+        val gz = ByteArrayOutputStream().also { out ->
+            GZIPOutputStream(out).use { it.write(BootImageTools.buildCpio(entries)) }
+        }.toByteArray()
+        val dir = File.createTempFile("lion-rd", "").apply { delete(); mkdirs() }
+        try {
+            val raw = File(dir, "ramdisk.raw")
+            raw.writeBytes(gz)
+            val message = BootImageTools.extractRamdisk(raw, dir)
+            assertTrue(message.contains("4 عنصراً"))
+            assertEquals("#!/bin/sh\n", File(dir, "ramdisk/init").readText())
+            assertEquals("x", File(dir, "ramdisk/sbin/init").readText())
+            assertTrue(File(dir, "ramdisk.meta.json").isFile)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test fun fileHeaderReadsOnlyHeaderAndKeepsPartOffsets() {
+        val h = JSONObject().put("header_version", 2).put("page_size", 4096L)
+            .put("kernel_addr", 0x8000L).put("ramdisk_addr", 0x1000000L).put("second_addr", 0L)
+            .put("tags_addr", 0x100L).put("os_version", 0x1234L).put("name", "lion")
+            .put("cmdline", "console=ttyS0").put("extra_cmdline", "").put("dtb_addr", 0x2000L)
+        val kernel = bytes(9000, 11); val ramdisk = bytes(5000, 12); val dtbo = bytes(300, 13)
+        val image = BootImageTools.buildImage(h, kernel, ramdisk, ByteArray(0), dtbo, ByteArray(0), ByteArray(0))
+        val file = File.createTempFile("lion-boot", ".img")
+        try {
+            file.writeBytes(image)
+            val meta = BootImageTools.headerOf(file)
+            assertEquals(kernel.size.toLong(), meta.kernel.size)
+            assertEquals(ramdisk.size.toLong(), meta.ramdisk.size)
+            assertEquals(dtbo.size.toLong(), meta.dtbo.size)
+            assertTrue(meta.ramdisk.offset >= meta.kernel.offset + meta.kernel.size)
+            assertEquals(2, meta.header.getInt("header_version"))
+        } finally {
+            file.delete()
+        }
     }
 }
