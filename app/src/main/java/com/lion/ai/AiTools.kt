@@ -136,6 +136,9 @@ object AiTools {
         Def("file_list", ToolGroup.FILES, """{"path":""}""", "عرض ملفات مساحة العمل"),
         Def("file_search", ToolGroup.FILES, """{"query":"TODO","path":"","max_results":50}""", "بحث نصي في مساحة العمل (اسم/مسار/محتوى)"),
         Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل"),
+        Def("boot_info", ToolGroup.FILES, """{"path":"uploads/boot.img"}""", "تحليل ترويسة boot/recovery.img (إصدار، أحجام، cmdline)"),
+        Def("boot_unpack", ToolGroup.FILES, """{"path":"uploads/boot.img","out_dir":"boot_unpacked"}""", "فك boot/recovery.img: kernel وramdisk (إلى مجلد) وdtb وheader.json", true),
+        Def("boot_repack", ToolGroup.FILES, """{"dir":"boot_unpacked","target":"deliverables/boot-new.img"}""", "إعادة تركيب boot/recovery.img من مجلد الفك بعد التعديل (غير موقّعة)", true),
         Def("pdf_info", ToolGroup.FILES, """{"path":"uploads/a.pdf"}""", "عدد صفحات PDF وبياناته"),
         Def("pdf_read", ToolGroup.FILES, """{"path":"uploads/a.pdf","pages":"1-5","max_chars":12000}""", "قراءة نص PDF (كل الصفحات أو نطاق)"),
         Def("pdf_merge", ToolGroup.FILES, """{"paths":["uploads/a.pdf","uploads/b.pdf"],"target":"deliverables/merged.pdf"}""", "دمج عدة ملفات PDF في ملف واحد", true),
@@ -393,7 +396,7 @@ object AiTools {
             "(\\.zip\\b|\\.csv\\b|\\.json\\b|\\.ya?ml\\b|\\.xml\\b|\\.txt\\b|\\.kt\\b|\\.java\\b|\\.py\\b|\\.js\\b|" +
                 "ملف|ملفات|مجلد|مشروع|مساحة العمل|workspace|zip|ضغط|للتنزيل|للتحميل|pdf|docx|xlsx|أرشيف|ارشيف|csv|yaml|xml|احفظ|أحفظ|اكتب ملف|أنشئ ملف|انشئ ملف|اقرأ ملف|قراءة ملف|" +
                 "ابحث في الملفات|ابحث في المشروع|بحث في الملفات|بحث في الكود|grep|فك الضغط|فك ضغط|استخرج الملفات|استخراج الملفات|" +
-                "شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين|patch|تعديل ملف|احذف ملف)"
+                "دمج|ادمج|merge|boot|recovery|ramdisk|بوت|ريكفري|\\.img\\b|شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين|patch|تعديل ملف|احذف ملف)"
         )
         if (files.containsMatchIn(t)) groups.add(ToolGroup.FILES)
         val db = Regex("(sql|sqlite|database|قاعدة بيانات|قواعد بيانات|جدول بيانات|استعلام|جدول|قاعدة|db\\b)")
@@ -1420,6 +1423,13 @@ object AiTools {
                 }.orEmpty()
                 val entry = FileTools.zipCreate(ctx.context, req(args, "target"), sources)
                 "✅ أُنشئ ${entry.path} (${entry.size} بايت)"
+            }
+            "boot_info" -> BootImageTools.info(ctx.context, req(args, "path"))
+            "boot_unpack" -> BootImageTools.unpack(ctx.context, req(args, "path"), args.optString("out_dir"))
+            "boot_repack" -> {
+                val msg = BootImageTools.repack(ctx.context, req(args, "dir"), args.optString("target"))
+                val rel = FileTools.relative(ctx.context, resolveWorkspace(ctx, args.optString("target").ifBlank { "deliverables/boot-new.img" }))
+                msg + "\n" + FileDelivery.marker(rel)
             }
             "pdf_info" -> PdfTools.info(ctx.context, req(args, "path"))
             "pdf_read" -> PdfTools.read(ctx.context, req(args, "path"), args.optString("pages"), int(args, "max_chars", 12000).coerceIn(500, 30_000))
