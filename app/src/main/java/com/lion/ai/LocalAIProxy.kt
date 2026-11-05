@@ -339,7 +339,6 @@ object LocalAIProxy {
         ChatMode.entries.firstOrNull { it.id == header.trim().lowercase() }?.let { return it }
         return when {
             systemPrompt.contains("وضع الهندسة والبرمجة") -> ChatMode.CODE
-            systemPrompt.contains("وضع التعلّم") -> ChatMode.LEARN
             systemPrompt.contains("وضع الدردشة العامة") -> ChatMode.GENERAL
             else -> ContextStore.defaultMode(prefs)
         }

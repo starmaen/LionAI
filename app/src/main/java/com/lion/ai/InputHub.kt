@@ -147,7 +147,7 @@ fun HubChipsRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // أيقونة محادثة واحدة: تفتح الأوضاع الثلاثة (عام / برمجة / تعلّم) للانتقاء.
+        // أيقونة محادثة واحدة: تفتح الوضعين (عام / المطوّر) للانتقاء.
         HubPill(
             text = "💬 ${mode.short} ▾",
             selected = true,

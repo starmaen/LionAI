@@ -27,23 +27,16 @@ enum class ChatMode(
     ),
     CODE(
         id = "code",
-        label = "هندسة وبرمجة",
-        short = "برمجة",
+        label = "المطوّر",
+        short = "المطوّر",
         icon = "🛠️",
         color = 0xFF2196F3,
-        hint = "سياق هندسي كامل: Manifest وبوابات جودة وأدوات ملفات وصدفة وGit وبناء."
-    ),
-    LEARN(
-        id = "learn",
-        label = "تعلّم",
-        short = "تعلّم",
-        icon = "🎓",
-        color = 0xFFFFC107,
-        hint = "شرح موجّه وأسئلة سقراطية وتمارين، بلا إنشاء ملفات أو تعديل مشاريع."
+        hint = "بيئة التطوير الحقيقية: ملفات وصدفة وGit وبناء، مع شرح وتعليم أثناء العمل."
     );
 
     companion object {
-        fun fromId(id: String?): ChatMode = entries.firstOrNull { it.id == id } ?: GENERAL
+        // وضع «تعلّم» القديم اندمج في «المطوّر»: المحادثات المحفوظة به تنتقل تلقائياً.
+        fun fromId(id: String?): ChatMode = if (id == "learn") CODE else entries.firstOrNull { it.id == id } ?: GENERAL
     }
 }
 
@@ -75,14 +68,6 @@ object ContextProfiles {
 - إن طُلب عمل تنفيذي فاستخدم الأدوات المتاحة فعلياً بدل الاعتذار عن عدم القدرة.
 """.trimIndent()
 
-    private val LEARN_PROMPT = """
-
-وضع التعلّم:
-- أنت مدرّب تعليمي. اشرح بالفهم التدريجي، واسأل أسئلة سقراطية قصيرة، واقترح تمارين عملية.
-- يمكنك شرح الكود داخل الرد، وإعطاء أمثلة نصية.
-- عند طلب تطبيق فعلي استخدم الأدوات المتاحة واتبع مبادئ الهندسة (تحقق قبل التسليم).
-""".trimIndent()
-
     private val ALL_TOOLS_NOTE = """
 
 الأدوات مفعّلة في هذه المحادثة أيضاً:
@@ -95,7 +80,7 @@ object ContextProfiles {
 
 الأدوات غير مفعّلة في هذا الوضع:
 - لا تستخدم أي أداة ملفات أو صدفة أو Git أو GitHub، ولا تدّعِ أنك عدّلت شيئاً.
-- إن طلب المستخدم عملاً تنفيذياً فاقترح ترقية المحادثة إلى «هندسة وبرمجة» أو تفعيل «الأدوات في كل الأوضاع» من إعدادات أدوات المطور.
+- إن طلب المستخدم عملاً تنفيذياً فاقترح ترقية المحادثة إلى «المطوّر» أو تفعيل «الأدوات في كل الأوضاع» من إعدادات أدوات المطور.
 """.trimIndent()
 
     private val CODE_PROMPT = """
@@ -108,6 +93,7 @@ object ContextProfiles {
 - كل ملف مصدري يجب أن يصل إلى نقطة دخول حقيقية. الملفات اليتيمة أو الفارغة أو TODO تُرفض.
 - لا تعبث بالاختبارات لجعلها خضراء؛ بوابة HMAC تكشف تعديل ملفات الاختبار دون تفويض.
 - احفظ Checkpoint بعد كل خطوة فرعية، واستأنف من آخر نقطة. إن كان العمل ناقصاً فأكمل الناقص فقط.
+- أنت مطوّر ومعلّم معاً: نفّذ بالأدوات، ثم اشرح باختصار ما فعلته ولماذا؛ وعند سؤال تعليمي اشرح تدريجياً بأمثلة وتمرين قصير دون إنشاء ملفات لم تُطلب.
 """.trimIndent()
 
     fun of(mode: ChatMode, prefs: SharedPreferences, text: String = ""): ContextProfile {
@@ -116,7 +102,7 @@ object ContextProfiles {
         val everywhere = prefs.getBoolean("tools_everywhere", true)
         val allowHere = enabled && (mode == ChatMode.CODE || everywhere)
         if (!allowHere) {
-            val prompt = (if (mode == ChatMode.LEARN) LEARN_PROMPT else if (mode == ChatMode.CODE) CODE_PROMPT else GENERAL_PROMPT)
+            val prompt = (if (mode == ChatMode.CODE) CODE_PROMPT else GENERAL_PROMPT)
             return ContextProfile(
                 mode = mode,
                 allowTools = false,
@@ -167,7 +153,7 @@ object ContextProfiles {
                 allowTools = false,
                 allowWrite = false,
                 groups = emptySet(),
-                promptSuffix = if (mode == ChatMode.LEARN) LEARN_PROMPT else GENERAL_PROMPT,
+                promptSuffix = GENERAL_PROMPT,
                 injectProjectContext = false,
                 injectAgentsFile = false
             )
@@ -175,7 +161,7 @@ object ContextProfiles {
         val suffix = if (mode == ChatMode.CODE) {
             CODE_PROMPT + "\n\n" + DevRoles.prompt() + "\n\n" + ContextStore.governancePrompt(prefs)
         } else {
-            (if (mode == ChatMode.LEARN) LEARN_PROMPT else GENERAL_PROMPT) + ALL_TOOLS_NOTE
+            GENERAL_PROMPT + ALL_TOOLS_NOTE
         }
         return ContextProfile(
             mode = mode,
@@ -261,12 +247,7 @@ object ModeGuard {
         return ACCESS_TARGET.containsMatchIn(normalized) && ACCESS_ACTION.containsMatchIn(normalized)
     }
 
-    fun promotionOffer(mode: ChatMode): String = when (mode) {
-        ChatMode.LEARN ->
-            "🎓 هذا طلب برمجي تنفيذي، ووضع التعلّم لا ينشئ ملفات أو يعدّل مشاريع. " +
-                "ارقِ المحادثة صراحةً إلى «هندسة وبرمجة» لتنفيذه بأدواته وبواباته."
-        else ->
-            "🔒 هذا طلب برمجي، والمحادثة الحالية في وضع «دردشة عامة» بلا أدوات ملفات أو صدفة أو Git. " +
-                "ارقِ المحادثة صراحةً إلى «هندسة وبرمجة» ليُنشأ سياق برمجي مستقل ولا يتلوث سياق الدردشة العامة."
-    }
+    fun promotionOffer(mode: ChatMode): String =
+        "🔒 هذا طلب برمجي تنفيذي، والمحادثة الحالية في وضع «عام» بلا أدوات ملفات أو صدفة أو Git. " +
+            "انتقل إلى وضع «المطوّر» ليُنفَّذ في بيئة التطوير ولا يتلوث سياق الدردشة العامة."
 }

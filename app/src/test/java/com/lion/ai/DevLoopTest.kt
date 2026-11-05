@@ -10,7 +10,6 @@ class DevLoopTest {
         assertEquals(40, ToolAgent.stepBudget(ChatMode.CODE, false))
         assertEquals(40, ToolAgent.stepBudget(ChatMode.GENERAL, true))
         assertTrue(ToolAgent.stepBudget(ChatMode.GENERAL, false) > 6)
-        assertTrue(ToolAgent.stepBudget(ChatMode.LEARN, false) > 6)
     }
 
     @Test fun codingRequestEnablesShellQualityAndControlTools() {

@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /**
  * العقل المركزي كمدير ومنسّق:
- * - يحدد سياسة كل مهمة حسب الوضع (عام/تعلّم/برمجة) ونوع السؤال.
+ * - يحدد سياسة كل مهمة حسب الوضع (عام/المطوّر) ونوع السؤال.
  * - يفرض المصادر للأسئلة العامة والمعرفية عندما يكون ذلك مفيداً.
  * - يوجّه مزوداً آخر للتحقق من الإجابة عند الحاجة (بدل عرض أي رد بلا تدقيق).
  * - يوسّع قائمة البدائل حتى لا ينتهي الحوار بـ «المزود لا يعمل».
@@ -54,12 +54,6 @@ object CentralBrain {
                 verifyAnswers = false,
                 expandFallbacks = true
             )
-            ChatMode.LEARN -> MissionPolicy(
-                focus = MissionFocus.TEACHING,
-                requireSources = kind == TaskKind.GENERAL || kind == TaskKind.FACTUAL,
-                verifyAnswers = kind == TaskKind.FACTUAL,
-                expandFallbacks = true
-            )
             ChatMode.GENERAL -> when (kind) {
                 TaskKind.GENERAL, TaskKind.FACTUAL -> MissionPolicy(
                     focus = MissionFocus.RELIABLE,
@@ -102,7 +96,7 @@ object CentralBrain {
         val failing = routes.filterNot { it in healthy }
         val ordered = (healthy + failing).toMutableList()
         // 2) الكفاءة قبل السرعة في المهام التي تهلوس فيها النماذج الضعيفة.
-        val needsReliable = mode == ChatMode.LEARN || kind == TaskKind.FACTUAL ||
+        val needsReliable = kind == TaskKind.FACTUAL ||
             kind == TaskKind.LONG_DOC || kind == TaskKind.CODE || kind == TaskKind.DEV
         if (needsReliable) {
             val reliable = ordered.filter { SmartRouter.isReliableModel(it.provider, it.model) }
@@ -226,7 +220,6 @@ object CentralBrain {
         }
         val modeRule = when (mode) {
             ChatMode.CODE -> "تحقق من عدم ادّعاء تنفيذ خطوات أو تعديلات لم تحدث فعلاً."
-            ChatMode.LEARN -> "تحقق أن الشرح متدرج وواضح وتعليمي، وأن المعلومات صحيحة ومطابقة للسؤال."
             else -> "تحقق من صحة المعلومات ووضوحها والتزامها بالسؤال، وعدم اختراع تفاصيل أو مصادر."
         }
         return buildString {

@@ -919,7 +919,7 @@ fun LionApp() {
         if (RoutePolicy.channelEnabled(prefs, Channel.LOCAL) && !LocalAIProxy.isRunning()) {
             runCatching { LocalAIProxy.start(context, prefs) }
         }
-        // العقل المركزي يختار المزود وهو عارف بوضع المحادثة (عام/تعلّم/برمجة)
+        // العقل المركزي يختار المزود وهو عارف بوضع المحادثة (عام/المطوّر)
         // وبنوع المهمة، فيراعي الكفاءة والاتصال معاً.
         val plan = RoutePolicy.appPlan(prefs, kind, mode, chatId, chatMode)
         val auto = !manualMode
@@ -929,7 +929,6 @@ fun LionApp() {
         val modeProfile = ContextProfiles.of(chatMode, prefs, toolText)
         val basePrompt = when {
             chatMode == ChatMode.CODE -> LLM_DEV_PROMPT
-            chatMode == ChatMode.LEARN -> LLM_SYSTEM_PROMPT
             kind == TaskKind.DEV -> LLM_DEV_PROMPT
             kind == TaskKind.FAST -> LLM_FAST_PROMPT
             SmartRouter.isStrict(kind) -> LLM_FACT_PROMPT

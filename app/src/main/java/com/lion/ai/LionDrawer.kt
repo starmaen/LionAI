@@ -106,7 +106,7 @@ internal fun LionDrawerContent(
             if (generalChats.isNotEmpty()) {
                 item(key = "mode_general_header") {
                     Text(
-                        "💬 عام وتعلّم (${generalChats.size})",
+                        "💬 عام (${generalChats.size})",
                         color = Color(0xFF4CAF50),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -129,7 +129,7 @@ internal fun LionDrawerContent(
             if (codeChats.isNotEmpty()) {
                 item(key = "mode_code_header") {
                     Text(
-                        "🛠️ هندسة وبرمجة (${codeChats.size})",
+                        "🛠️ المطوّر (${codeChats.size})",
                         color = Color(0xFF2196F3),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,

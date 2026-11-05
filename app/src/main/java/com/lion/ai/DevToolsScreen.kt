@@ -748,7 +748,7 @@ private fun ToolManagerTab(
                 prefs.edit().putBoolean("tools_everywhere", it).apply()
             }, colors = SwitchDefaults.colors(checkedThumbColor = T_GOLD))
             Spacer(Modifier.width(8.dp))
-            Text("تفعيل كل الأدوات في الأوضاع الثلاثة (عام/تعلّم/برمجة)", color = Color.White, fontSize = 12.sp)
+            Text("تفعيل كل الأدوات في الوضعين (عام/المطوّر)", color = Color.White, fontSize = 12.sp)
         }
         Spacer(Modifier.height(10.dp))
         HorizontalDivider(color = Color(0xFF2A2A2A))
