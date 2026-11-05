@@ -26,13 +26,7 @@ class BootImageParser {
     }
 
     fun build(boot: BootImage, outputPath: String): Result<File> = runCatching {
-        FileOutputStream(outputPath).use { fos ->
-            fos.write(ByteArray(2048))
-            boot.kernel?.let { fos.write(it) }
-            boot.ramdisk?.let { fos.write(it) }
-            boot.second?.let { fos.write(it) }
-        }
-        File(outputPath)
+        throw UnsupportedOperationException("بناء boot.img غير مدعوم بعد: الترويسة الصفرية تنتج صورة غير قابلة للإقلاع. استخدم mkbootimg.")
     }
 
     private fun readInt(d: ByteArray, o: Int) = ((d[o].toInt() and 0xFF) or ((d[o+1].toInt() and 0xFF) shl 8) or

@@ -21,7 +21,7 @@ class Ext4ImageHandler {
     }
 
     fun build(sourceDir: String, outputPath: String): Result<File> = runCatching {
-        File(outputPath).also { it.writeBytes(ByteArray(1024)) }
+        throw UnsupportedOperationException("بناء EXT4 غير مدعوم بعد؛ لا تُنتَج صورة وهمية.")
     }
 
     private fun readInt(d: ByteArray, o: Int) = ((d[o].toInt() and 0xFF) or ((d[o+1].toInt() and 0xFF) shl 8) or

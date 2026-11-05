@@ -57,7 +57,7 @@ class ImgTools(private val context: Context) {
     }}
 
     suspend fun deliverToUser(file: File): Result<Uri> = withContext(Dispatchers.IO) { runCatching {
-        FileDelivery.getUriForFile(context, file) ?: throw IllegalStateException("فشل إنشاء URI")
+        Uri.parse(FileDelivery.contentUri(context, file) ?: throw IllegalStateException("فشل إنشاء رابط الملف"))
     }}
 
     private fun detectImgType(file: File) = when {
@@ -86,10 +86,8 @@ class ImgTools(private val context: Context) {
         return comp
     }
 
-    private fun unpackExt4Image(file: File, out: File): List<String> {
-        File(out, "image.info").writeText("EXT4\nالحجم: ${file.length()}\nيحتاج ext4-utils")
-        return listOf("image.info")
-    }
+    private fun unpackExt4Image(file: File, out: File): List<String> =
+        throw UnsupportedOperationException("فك EXT4 غير مدعوم بعد (يحتاج debugfs/e2fsprogs داخل بيئة Linux). لن أنشئ مخرجات وهمية.")
 
     private fun repackBootImage(dir: File, out: File) {
         FileOutputStream(out).use { 
@@ -98,7 +96,8 @@ class ImgTools(private val context: Context) {
         }
     }
 
-    private fun repackExt4Image(dir: File, out: File) { out.writeBytes(ByteArray(0)) }
+    private fun repackExt4Image(dir: File, out: File): Unit =
+        throw UnsupportedOperationException("إعادة بناء EXT4 غير مدعومة بعد؛ منعت إنشاء صورة فارغة قد تُتلف الجهاز عند الفلاش.")
 
     private fun createZip(src: File, zip: File): File {
         FileOutputStream(zip).use { fos -> ZipOutputStream(fos).use { zos ->
