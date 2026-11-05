@@ -290,6 +290,8 @@ fun LocalEnvTab() {
         Spacer(Modifier.height(16.dp))
         OpenCodeAuthCard()
         Spacer(Modifier.height(16.dp))
+        BootToolCard()
+        Spacer(Modifier.height(16.dp))
         LionTerminal()
         Spacer(Modifier.height(24.dp))
     }
