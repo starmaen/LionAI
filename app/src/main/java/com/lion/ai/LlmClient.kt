@@ -603,7 +603,7 @@ object LlmClient {
         val wait = synchronized(apinexCalls) {
             val now = System.currentTimeMillis()
             while (apinexCalls.isNotEmpty() && now - apinexCalls.first > 60_000) apinexCalls.removeFirst()
-            val w = if (apinexCalls.size >= 5) (apinexCalls.first + 60_000 - now).coerceIn(0, 20_000) else 0L
+            val w = if (apinexCalls.size >= 5) (apinexCalls.first + 60_000 - now).coerceIn(0L, 20_000L) else 0L
             apinexCalls.addLast(now + w)
             w
         }
