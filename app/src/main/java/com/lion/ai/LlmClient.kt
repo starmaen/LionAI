@@ -104,6 +104,9 @@ object LlmClient {
     internal fun normalizeCustomUrl(raw: String): String {
         var url = raw.trim().trimEnd('/')
         if (url.isBlank()) return ""
+        // حروف زائدة قبل http (لصق/إكمال تلقائي من لوحة المفاتيح) تُحذف بدل أن تكسر البروتوكول.
+        val schemeAt = Regex("(?i)https?://").find(url)?.range?.first ?: -1
+        if (schemeAt > 0) url = url.substring(schemeAt)
         if (!url.contains("://")) {
             val host = url.substringBefore('/').substringBefore(':').lowercase()
             val second172 = host.split('.').getOrNull(1)?.toIntOrNull() ?: -1
