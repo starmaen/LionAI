@@ -166,10 +166,10 @@ fun BootToolCard() {
         if (imagePath.isNotBlank()) Text("الصورة: $imagePath", color = Color(0xFFEDEDED), fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = !busy && imagePath.isNotBlank(), onClick = {
-                run("تحليل الترويسة") { BootImageTools.info(context, imagePath) }
+                run("تحليل الترويسة", block = { BootImageTools.info(context, imagePath) })
             }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("🔍 تحليل", color = gold, fontSize = 12.sp) }
             Button(enabled = !busy && imagePath.isNotBlank(), onClick = {
-                run("فك الصورة") { BootImageTools.unpack(context, imagePath, unpackDir) }
+                run("فك الصورة", block = { BootImageTools.unpack(context, imagePath, unpackDir) })
             }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("🧩 فك", color = gold, fontSize = 12.sp) }
             Button(enabled = !busy && unpackDir.isNotBlank(), onClick = {
                 val target = "deliverables/" + File(unpackDir).name + "-new.img"
