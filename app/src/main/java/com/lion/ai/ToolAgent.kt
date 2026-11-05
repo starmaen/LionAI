@@ -259,6 +259,14 @@ object ToolAgent {
         while (cycle < MAX_CYCLES) {
         for (step in 0 until maxSteps) {
             currentCoroutineContext().ensureActive()
+            if (session != null && AgentInterrupt.consume(session.chatId)) {
+                session.recordNote("قاطع المستخدم العمل؛ حُفظت نقطة التوقف لأجيب ثم أتابع")
+                CheckpointStore.save(prefs, session)
+                return finish(
+                    "⏸ توقفت عند نقطة آمنة وحُفظ ما أنجزته. أستمع لملاحظتك الآن، ثم أتابع من النقطة نفسها.",
+                    false, "قاطع المستخدم"
+                )
+            }
             if (System.currentTimeMillis() > deadline) {
                 session?.recordNote("انتهى وقت التنفيذ قبل اكتمال المهمة")
                 return finish(

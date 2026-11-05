@@ -1919,12 +1919,24 @@ $code
                     GitHubClient.listArtifacts(token, owner, repo, current.id)
                 }.getOrDefault(emptyList())
                 if (current.conclusion == "success") {
+                    val minutes = (System.currentTimeMillis() - started) / 1000
+                    var delivered = ""
+                    artifacts.firstOrNull { !it.expired }?.let { art ->
+                        runCatching {
+                            val safe = art.name.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").take(80).ifBlank { "artifact" }
+                            val target = File(File(FileTools.root(ctx.context), "downloads"), if (safe.contains('.')) safe else "$safe.zip")
+                            val file = GitHubClient.downloadArtifact(token, owner, repo, art.id, target)
+                            delivered = "\n📥 نُزّل المخرج «${art.name}» (${FileTools.formatSize(file.length())}) وهو جاهز للتنزيل:\n" +
+                                FileDelivery.marker(FileTools.relative(ctx.context, file))
+                        }.onFailure { delivered = "\n⚠️ نجح البناء لكن تعذّر تنزيل المخرج تلقائياً (${it.message?.take(80)}). استخدم github_download_artifact id=${art.id}." }
+                    }
                     return buildString {
-                        append("✅ اكتمل البناء #${current.number} بنجاح.\n")
-                        append(runSummary(current))
-                        if (artifacts.isNotEmpty()) {
-                            append("\nالمخرجات: ").append(artifacts.joinToString("، ") { "${it.name} (id=${it.id})" })
-                        }
+                        append("✅ نجح البناء #${current.number} خلال ${minutes} ثانية تقريباً.\n")
+                        append("🔗 صفحة البناء: ").append(current.htmlUrl).append('\n')
+                        append("🌿 الفرع: ").append(current.branch).append(" · الإصدار: ").append(current.headSha.take(7))
+                        append(delivered)
+                        if (artifacts.isEmpty()) append("\nلم ينتج هذا البناء ملفات للتنزيل.")
+                        append("\n\nقدّم للمستخدم الآن: ما نجح، رابط البناء أعلاه، وبطاقة التنزيل إن وُجدت. لا تلصق محتوى الملف.")
                     }
                 }
                 val jobs = GitHubClient.listRunJobs(token, owner, repo, current.id)
@@ -1937,10 +1949,11 @@ $code
                 }
                 buildString {
                     append("❌ فشل البناء #${current.number} (${current.conclusion}).\n")
+                    append("🔗 ").append(current.htmlUrl).append('\n')
                     append(runSummary(current)).append('\n')
                     append(failed.joinToString("\n") { "• ${it.name}: ${it.conclusion}" })
                     if (logs.isNotBlank()) append("\n\nسجل الفشل:\n").append(logs.take(16_000))
-                    append("\n\nأصلح السبب ثم أعد الرفع. يمكنك أيضاً github_rerun أو github_job_log.")
+                    append("\n\nاشرح للمستخدم بإيجاز: أين فشل البناء (الخطوة والملف والسطر) وما السبب، ثم أخبره أنك تصلحه الآن، أصلح السبب وأعد الرفع والبناء حتى ينجح. يمكنك أيضاً github_rerun أو github_job_log.")
                 }
             }
             "github_run_logs" -> {

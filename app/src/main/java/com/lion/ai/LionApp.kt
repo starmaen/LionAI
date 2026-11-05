@@ -183,6 +183,8 @@ fun LionApp() {
     var showArchive by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var input by remember { mutableStateOf("") }
+    // ملاحظة مقاطعة تنتظر انتهاء توقف الوكيل لتُرسل بعده في المحادثة نفسها.
+    var queuedAfterRun by remember { mutableStateOf<String?>(null) }
     /** الرد الذي يستكمل المستخدم سياقه عبر زر "رد على هذا الرد". */
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
@@ -1447,6 +1449,10 @@ fun LionApp() {
             val replaced = replaceIndex != null && replaceInChat(chatId, replaceIndex, newMessage)
             if (!replaced) appendToChat(chatId, newMessage)
             loadingChats[chatId] = false
+            // مقاطعة مؤجلة: بعد أن حُفظت نقطة التوقف تُرسل ملاحظة المستخدم كرسالة تالية في المحادثة نفسها.
+            AgentInterrupt.takeQueued(chatId)?.let { pending ->
+                if (chatId == currentChat) queuedAfterRun = pending
+            }
             if (autoSpeak && chatId == currentChat) {
                 tts?.speak(reply.take(500), TextToSpeech.QUEUE_FLUSH, null, null)
             }
@@ -1467,7 +1473,15 @@ fun LionApp() {
     }
 
     fun sendMessage() {
-        if (loadingChats[currentChat] == true) return
+        if (loadingChats[currentChat] == true) {
+            val note = input.trim()
+            if (note.isNotEmpty() && attachment == null && imageAttachment == null) {
+                AgentInterrupt.request(currentChat, note)
+                input = ""
+                toolStatus[currentChat] = "⏸ سأتوقف عند أقرب نقطة آمنة وأحفظ عملي، ثم أجيب على ملاحظتك"
+            }
+            return
+        }
         val text = input.trim()
         val file = attachment
         val image = imageAttachment
@@ -2003,6 +2017,14 @@ fun LionApp() {
         )
     }
 
+    LaunchedEffect(queuedAfterRun, loadingChats[currentChat]) {
+        val pending = queuedAfterRun
+        if (pending != null && loadingChats[currentChat] != true) {
+            queuedAfterRun = null
+            input = pending
+            sendMessage()
+        }
+    }
     LaunchedEffect(messages.size, loadingChats[currentChat]) {
         val count = messages.size + if (loadingChats[currentChat] == true) 1 else 0
         if (count > 0) listState.animateScrollToItem(count - 1)
