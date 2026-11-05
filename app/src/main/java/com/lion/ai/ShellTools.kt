@@ -354,4 +354,13 @@ object ShellTools {
             ShellResult(false, "❌ التثبيت ظاهرياً نجح لكن الأمر غير متاح: ${verify.output}", 1, install.elapsedMs)
         }
     }
+
+    fun logcat(context: Context, filter: String = "", lines: Int = 300): ShellResult {
+        val safeFilter = filter.trim().filter { it.isLetterOrDigit() || it in " _-.:*" }
+        val command = buildString {
+            append("adb logcat -d -t ").append(lines.coerceIn(20, 2000))
+            if (safeFilter.isNotBlank()) append(" -s ").append(safeFilter)
+        }
+        return exec(context, command, 60)
+    }
 }
