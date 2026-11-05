@@ -653,7 +653,7 @@ object LlmClient {
                 val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 val json = runCatching { JSONObject(raw) }.getOrNull()
 
-                if ((status == 429 || status == 503) && attempt < 2) {
+                if (status == 429 && attempt < 2) {
                     val retryAfter = connection.getHeaderField("Retry-After")?.trim()?.toLongOrNull()?.times(1000)
                     attempt++
                     Thread.sleep((retryAfter ?: (4_000L * attempt)).coerceIn(1_000L, 20_000L))
