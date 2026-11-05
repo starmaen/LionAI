@@ -136,6 +136,11 @@ object AiTools {
         Def("file_list", ToolGroup.FILES, """{"path":""}""", "عرض ملفات مساحة العمل"),
         Def("file_search", ToolGroup.FILES, """{"query":"TODO","path":"","max_results":50}""", "بحث نصي في مساحة العمل (اسم/مسار/محتوى)"),
         Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل"),
+        Def("pdf_info", ToolGroup.FILES, """{"path":"uploads/a.pdf"}""", "عدد صفحات PDF وبياناته"),
+        Def("pdf_read", ToolGroup.FILES, """{"path":"uploads/a.pdf","pages":"1-5","max_chars":12000}""", "قراءة نص PDF (كل الصفحات أو نطاق)"),
+        Def("pdf_merge", ToolGroup.FILES, """{"paths":["uploads/a.pdf","uploads/b.pdf"],"target":"deliverables/merged.pdf"}""", "دمج عدة ملفات PDF في ملف واحد", true),
+        Def("pdf_split", ToolGroup.FILES, """{"path":"uploads/a.pdf","pages":"1-3,7","target":"deliverables/part.pdf"}""", "استخراج صفحات محددة من PDF", true),
+        Def("pdf_create", ToolGroup.FILES, """{"text":"...","target":"deliverables/doc.pdf"}""", "إنشاء PDF من نص (يدعم العربية)", true),
         Def("file_read_many", ToolGroup.FILES, """{"paths":["src/Main.kt","README.md"],"max_chars":6000}""", "قراءة عدة ملفات في طلب واحد"),
         Def("file_stat", ToolGroup.FILES, """{"path":"src"}""", "حجم/نوع/أسطر ملف أو إحصاء مجلد"),
         Def("file_write", ToolGroup.FILES, """{"path":"src/Main.kt","content":"..."}""", "إنشاء/تعديل ملف", true),
@@ -1415,6 +1420,23 @@ object AiTools {
                 }.orEmpty()
                 val entry = FileTools.zipCreate(ctx.context, req(args, "target"), sources)
                 "✅ أُنشئ ${entry.path} (${entry.size} بايت)"
+            }
+            "pdf_info" -> PdfTools.info(ctx.context, req(args, "path"))
+            "pdf_read" -> PdfTools.read(ctx.context, req(args, "path"), args.optString("pages"), int(args, "max_chars", 12000).coerceIn(500, 30_000))
+            "pdf_merge" -> {
+                val msg = PdfTools.merge(ctx.context, stringList(args.optJSONArray("paths")), args.optString("target"))
+                val rel = FileTools.relative(ctx.context, resolveWorkspace(ctx, args.optString("target").ifBlank { "deliverables/output.pdf" }.let { if (it.lowercase().endsWith(".pdf")) it else "$it.pdf" }))
+                msg + "\n" + FileDelivery.marker(rel)
+            }
+            "pdf_split" -> {
+                val msg = PdfTools.split(ctx.context, req(args, "path"), req(args, "pages"), args.optString("target"))
+                val rel = FileTools.relative(ctx.context, resolveWorkspace(ctx, args.optString("target").ifBlank { "deliverables/output.pdf" }.let { if (it.lowercase().endsWith(".pdf")) it else "$it.pdf" }))
+                msg + "\n" + FileDelivery.marker(rel)
+            }
+            "pdf_create" -> {
+                val msg = PdfTools.create(ctx.context, req(args, "text"), args.optString("target"))
+                val rel = FileTools.relative(ctx.context, resolveWorkspace(ctx, args.optString("target").ifBlank { "deliverables/output.pdf" }.let { if (it.lowercase().endsWith(".pdf")) it else "$it.pdf" }))
+                msg + "\n" + FileDelivery.marker(rel)
             }
             "file_present" -> {
                 val path = req(args, "path")

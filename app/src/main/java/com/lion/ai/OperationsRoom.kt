@@ -31,15 +31,23 @@ object OperationsRoom {
     private const val MAX_PARALLEL = 3
     private const val PER_PROVIDER_MS = 120_000L
 
-    /** تعمل فقط في وضع البرمجة وبعد تفعيل المستخدم للخيار التلقائي. */
+    /** تعمل في وضع المطوّر عندما يكون الخيار الرئيسي «تلقائي» (وتتوقف تماماً في اليدوي). */
     fun enabled(prefs: SharedPreferences, mode: ChatMode): Boolean =
-        mode == ChatMode.CODE && prefs.getBoolean(PREF_AUTO, false) && coreProviders(prefs).isNotEmpty()
+        mode == ChatMode.CODE && !RoutePolicy.isManual(prefs) && coreProviders(prefs).isNotEmpty()
 
-    fun coreProviders(prefs: SharedPreferences): List<String> =
-        (prefs.getString(PREF_CORE, "") ?: "")
+    /** المزودات الأساسية التي اختارها المستخدم، وإن لم يختر فأفضل المتاح لمهام التطوير تلقائياً. */
+    fun coreProviders(prefs: SharedPreferences): List<String> {
+        val chosen = (prefs.getString(PREF_CORE, "") ?: "")
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }
             .filter { SmartRouter.available(prefs, it) }
             .distinct()
+        if (chosen.isNotEmpty()) return chosen
+        return SmartRouter.candidates(TaskKind.DEV)
+            .map { it.provider }
+            .filter { SmartRouter.available(prefs, it) }
+            .distinct()
+            .take(MAX_PARALLEL)
+    }
 
     private fun routeOf(prefs: SharedPreferences, id: String): Route {
         val model = prefs.getString("model_$id", "")?.takeIf { it.isNotBlank() } ?: LlmClient.defaultModel(id)

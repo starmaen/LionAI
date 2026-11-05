@@ -76,6 +76,21 @@ object Attachments {
 
     // ---------------------------------------------------------------- الدخول الرئيسي
 
+    /** ينسخ الملف الأصلي إلى مساحة العمل (uploads/) لتعمل عليه أدوات الوكيل (دمج/تقسيم/تحويل). */
+    fun saveToWorkspace(context: Context, uri: Uri): String? = try {
+        if (fileSize(context, uri) > MAX_FILE_BYTES) null else {
+            val clean = displayName(context, uri).replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "file" }
+            val dir = java.io.File(FileTools.root(context), "uploads").apply { mkdirs() }
+            val base = clean.substringBeforeLast('.')
+            val ext = if (clean.contains('.')) "." + clean.substringAfterLast('.') else ""
+            var target = java.io.File(dir, clean)
+            var n = 1
+            while (target.exists()) { target = java.io.File(dir, "$base-$n$ext"); n++ }
+            context.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+            if (target.exists()) "uploads/" + target.name else null
+        }
+    } catch (e: Exception) { null }
+
     fun read(context: Context, uri: Uri): Result {
         val name = displayName(context, uri)
         val mime = context.contentResolver.getType(uri) ?: ""

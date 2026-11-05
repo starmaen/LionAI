@@ -594,15 +594,20 @@ fun LionApp() {
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
             scope.launch {
+                val savedPaths = mutableListOf<String>()
                 val results = withContext(Dispatchers.IO) {
-                    uris.take(8).map { uri -> Attachments.read(context, uri) }
+                    uris.take(8).map { uri ->
+                        Attachments.saveToWorkspace(context, uri)?.let { savedPaths.add(it) }
+                        Attachments.read(context, uri)
+                    }
                 }
                 val documents = results.mapNotNull { it.attachment }
                 val pickedImage = results.lastOrNull { it.image != null }?.image
                 if (documents.isNotEmpty()) {
                     attachment = Attachment(
                         documents.joinToString("، ") { it.name },
-                        documents.joinToString("\n\n") { "=== ${it.name} ===\n${it.text}" }
+                        documents.joinToString("\n\n") { "=== ${it.name} ===\n${it.text}" } +
+                            if (savedPaths.isNotEmpty()) "\n\n[الملفات الأصلية محفوظة في مساحة العمل: ${savedPaths.joinToString("، ")}]" else ""
                     )
                 }
                 if (pickedImage != null) imageAttachment = pickedImage
@@ -1400,15 +1405,18 @@ fun LionApp() {
                 // وفي التلقائي نُبقي القرار للعقل المركزي بدل الإيحاء بمزود ثابت.
                 val routeLabel = if (route.provider == RoutePolicy.LOCAL_PROXY) {
                     if (auto) {
-                        "محلي · العقل المركزي"
+                        "Lion AI"
                     } else {
                         val backend = LocalAIProxy.backendProvider(prefs)
                         val model = RoutePolicy.modelFor(prefs, backend)
                             .ifBlank { providerInfo(backend).defaultModel }
                         RoutePolicy.shortName(backend) + " · " + model + " · محلي"
                     }
+                } else if (auto) {
+                    // التلقائي: لا يظهر اسم مزود ولا موديل، فقط توقيع هادئ.
+                    "Lion AI"
                 } else {
-                    SmartRouter.label(route, if (auto) kind else null)
+                    SmartRouter.label(route, null)
                 }
                 routeLabel +
                     (if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else "") +

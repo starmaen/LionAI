@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.sp
  */
 @Composable
 fun OperationsRoomCard(prefs: SharedPreferences) {
-    var enabled by remember { mutableStateOf(prefs.getBoolean(OperationsRoom.PREF_AUTO, false)) }
+    val enabled = true  // يتبع خيار «تلقائي» الرئيسي؛ هنا اختيار المزودات الأساسية فقط (اختياري).
     var core by remember {
         mutableStateOf(
             (prefs.getString(OperationsRoom.PREF_CORE, "") ?: "")
@@ -53,14 +53,10 @@ fun OperationsRoomCard(prefs: SharedPreferences) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth()) {
             Text("🧠 غرفة العمليات (وضع البرمجة)", color = Color(0xFFFFB800), fontSize = 13.sp)
-            Switch(checked = enabled, onCheckedChange = {
-                enabled = it
-                prefs.edit().putBoolean(OperationsRoom.PREF_AUTO, it).apply()
-            })
         }
         Text(
-            if (enabled) "تلقائي: تُستشار مزوداتك الأساسية بالتوازي ثم ينفّذ منفّذ واحد بالأدوات ويقدّم إجابة واحدة."
-            else "يدوي: يعمل مزودك المختار كما هو.",
+            "تعمل تلقائياً في وضع المطوّر عند اختيار «🧠 تلقائي»: تُستشار المزودات بالتوازي ثم تعود إجابة واحدة. " +
+                "اترك الاختيار فارغاً ليختار العقل المركزي الأفضل المتاح، وفي «✋ يدوي» يعمل مزودك فقط.",
             color = Color(0xFFB0B0B0), fontSize = 11.sp
         )
         if (enabled) {
