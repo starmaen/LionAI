@@ -124,6 +124,7 @@ internal fun LionMessageList(
     onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit,
     onRegenerate: (Int) -> Unit,
     onReply: (Int) -> Unit = {},
+    onAskReply: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -132,7 +133,12 @@ internal fun LionMessageList(
             val canRegenerate = !message.isUser && previousUser != null && index > 0 &&
                 messages[index - 1].isUser && message.pending == null &&
                 messages.drop(index + 1).none { it.isUser } && !ActionDetector.looksLikeCommand(previousUser.text)
-            Bubble(message, context, tts, index, onPendingChoice, canRegenerate, { onRegenerate(index) }, { onReply(index) })
+            Bubble(
+                message, context, tts, index, onPendingChoice, canRegenerate,
+                { onRegenerate(index) }, { onReply(index) },
+                askEnabled = !loading && index == messages.lastIndex,
+                onAskReply = onAskReply
+            )
         }
         if (loading) {
             item {

@@ -4,7 +4,7 @@ internal enum class WorkVisualState { RUNNING, SUCCESS, ERROR, PERMISSION, PROVI
 internal data class WorkVisual(val title: String, val detail: String, val state: WorkVisualState)
 
 internal fun toolDisplayName(tool: String): String = when (tool) {
-    "provider" -> "تبديل المزود"
+    "provider" -> "متابعة مع مزود بديل"
     "file_read", "read_file", "github_read_file" -> "قراءة ملف"
     "file_write", "write_file", "github_write_file" -> "كتابة ملف"
     "file_tree", "file_list", "list_dir" -> "فحص مساحة العمل"

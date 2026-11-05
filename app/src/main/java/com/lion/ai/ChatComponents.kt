@@ -240,7 +240,9 @@ fun Bubble(
     onPendingChoice: (Int, PendingAction, Recipient?, String) -> Unit,
     canRegenerate: Boolean = false,
     onRegenerate: () -> Unit = {},
-    onReply: () -> Unit = {}
+    onReply: () -> Unit = {},
+    askEnabled: Boolean = false,
+    onAskReply: (String) -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -262,7 +264,7 @@ fun Bubble(
             Column(modifier = Modifier.padding(if (message.isUser) 12.dp else 4.dp)) {
                 val links = if (!message.isUser) extractLinks(message.text) else emptyList()
                 if (message.text.isNotBlank()) {
-                    MessageContent(message.text, message.isUser, context)
+                    MessageContent(message.text, message.isUser, context, askEnabled, onAskReply)
                 }
 
                 if (message.replyTo?.isNotBlank() == true) {

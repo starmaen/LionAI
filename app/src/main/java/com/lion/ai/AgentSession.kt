@@ -97,8 +97,11 @@ class AgentSession(val chatId: String) {
         // تعليمات الاستئناف تخبر النموذج صراحةً كيف يتعامل مع مهمة جديدة تماماً.
         if (lastTask.isBlank()) lastTask = clean
         if (provider.isNotBlank() && providers.lastOrNull() != provider) {
+            val handoff = providers.isNotEmpty()
             providers.add(provider)
-            steps.add(AgentStep("provider", true, "انتقل التنفيذ إلى $provider مع الاحتفاظ بالحالة والنتائج السابقة"))
+            if (handoff) {
+                steps.add(AgentStep("provider", true, "توقف المزود السابق وحُفظ العمل. يتابع مزود بديل من النقطة نفسها دون إعادة ما تم."))
+            }
         }
         if (provider.isNotBlank()) lastProvider = provider
         completed = false

@@ -1174,6 +1174,9 @@ fun LionApp() {
                 }
                 if (!error && !falseClaim && fallback == null) fallback = route to r
                 failed.add(providerInfo(route.provider).shortName + if (low) " (رد غير موثوق)" else "")
+                if (agentRequested && routesToTry.indexOf(route) < routesToTry.lastIndex) {
+                    toolStatus[chatId] = "⏸ توقف المزود وحُفظ العمل السابق — نتابع مع مزود بديل"
+                }
             }
             if (used == null) {
                 val f = fallback
@@ -1225,9 +1228,9 @@ fun LionApp() {
             if (manualMode && switchedTo != null && chosenProvider != null &&
                 switchedTo.provider != chosenProvider && !reply.startsWith("⚠️")
             ) {
-                reply += "\n\n↪️ مزودك المختار (" + RoutePolicy.shortName(chosenProvider) + ") لم يرد" +
-                    (if (lastErrorReply.isNotBlank()) ": " + lastErrorReply.replace("\n", " ").take(140) else "") +
-                    "، فأجاب " + RoutePolicy.shortName(switchedTo.provider) + " بدلاً منه."
+                reply += "\n\n↪️ توقف " + RoutePolicy.shortName(chosenProvider) +
+                    (if (lastErrorReply.isNotBlank()) " (" + lastErrorReply.replace("\n", " ").take(80) + ")" else "") +
+                    " — حُفظ عملك وتابع " + RoutePolicy.shortName(switchedTo.provider) + " من النقطة نفسها."
             }
             // العقل المركزي يدقّق الإجابات غير الموثوقة أو المعرفية غير المدعومة بمصادر.
             val answeredBy = used
@@ -2257,6 +2260,7 @@ fun LionApp() {
                     tts = tts,
                     onPendingChoice = { i, p, r, c -> onPendingChoice(i, p, r, c) },
                     onRegenerate = { i -> regenerate(i) },
+                    onAskReply = { answer -> input = answer; sendMessage() },
                     onReply = { i ->
                         messages.getOrNull(i)?.let { target ->
                             replyingTo = target

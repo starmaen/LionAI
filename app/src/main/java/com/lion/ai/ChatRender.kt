@@ -37,6 +37,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -315,18 +324,104 @@ internal fun FileCard(path: String, context: Context) {
     }
 }
 
-/** محتوى الرسالة مرتّباً: نص منسّق، أكواد قابلة للنسخ والحفظ، وبطاقات ملفات للتنزيل. */
+internal const val ASK_MARK = "— 💬 أنتظر ردك"
+
+/** بطاقة قرار/صلاحية: خيارات قابلة للضغط + حقل ملاحظات، ثم يتابع الوكيل بعد الإرسال. */
 @Composable
-internal fun MessageContent(text: String, isUser: Boolean, context: Context) {
-    val segs = remember(text) { parseSegments(text) }
+internal fun AskCard(body: String, options: List<String>, enabled: Boolean, onSend: (String) -> Unit) {
+    var selected by remember(body) { mutableStateOf(-1) }
+    var note by remember(body) { mutableStateOf("") }
+    val choices = if (options.isEmpty()) listOf("✅ موافق، تابع", "⛔ لا تنفّذ") else options
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF1B1710),
+        border = BorderStroke(1.dp, Color(0xFF5A4A1E)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("🦁 يحتاج العمل قرارك للمتابعة", color = Color(0xFFFFB800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            if (body.isNotBlank()) MdText(body, Color(0xFFE9E9E9))
+            Spacer(Modifier.height(8.dp))
+            choices.forEachIndexed { i, label ->
+                val on = i == selected
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (on) Color(0xFF2E2511) else Color(0xFF16130C))
+                        .border(1.dp, if (on) Color(0xFFFFB800) else Color(0xFF332B16), RoundedCornerShape(10.dp))
+                        .clickable(enabled = enabled) { selected = i }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(if (on) "◉" else "○", color = Color(0xFFFFB800), fontSize = 14.sp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(label, color = Color(0xFFEDEDED), fontSize = 13.sp)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                enabled = enabled,
+                placeholder = { Text("ملاحظات للتنفيذ (اختياري)", color = Color(0xFF8A8A8A), fontSize = 12.sp) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFFFB800),
+                    unfocusedBorderColor = Color(0xFF332B16),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFFFFB800)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(6.dp))
+            Button(
+                enabled = enabled && selected >= 0,
+                onClick = {
+                    val choice = choices.getOrNull(selected).orEmpty()
+                    onSend(choice + if (note.isNotBlank()) "\nملاحظات: ${note.trim()}" else "")
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800), contentColor = Color(0xFF121212))
+            ) { Text("متابعة", fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+/** محتوى الرسالة مرتّباً: نص منسّق، أكواد قابلة للنسخ والحفظ، بطاقات ملفات، وبطاقة قرار عند انتظار الرد. */
+@Composable
+internal fun MessageContent(
+    text: String,
+    isUser: Boolean,
+    context: Context,
+    askEnabled: Boolean = false,
+    onAskReply: (String) -> Unit = {}
+) {
+    val askAt = if (!isUser) text.indexOf(ASK_MARK) else -1
+    val shown = if (askAt >= 0) text.substring(0, askAt).trim() else text
+    val segs = remember(shown) { parseSegments(shown) }
     val color = if (isUser) Color(0xFFF2F2F2) else Color(0xFFE9E9E9)
     Column {
         segs.forEach { seg ->
             when (seg) {
-                is Seg.Text -> MdText(if (isUser) seg.text else AnswerGuard.sanitizeForDisplay(seg.text), color)
+                is Seg.Text -> if (askAt >= 0 && seg === segs.last()) {
+                    val lines = seg.text.lines()
+                    val options = lines.map { it.trim() }
+                        .filter { it.startsWith("- ") || it.startsWith("• ") }
+                        .map { it.drop(2).trim() }
+                    val body = lines.filterNot { it.trim().startsWith("- ") || it.trim().startsWith("• ") }
+                        .joinToString("\n").trim()
+                    AskCard(AnswerGuard.sanitizeForDisplay(body), options, askEnabled, onAskReply)
+                } else {
+                    MdText(if (isUser) seg.text else AnswerGuard.sanitizeForDisplay(seg.text), color)
+                }
                 is Seg.Code -> CodeCard(seg.lang, seg.code, context)
                 is Seg.FileRef -> FileCard(seg.path, context)
             }
+        }
+        if (askAt >= 0 && (segs.isEmpty() || segs.last() !is Seg.Text)) {
+            AskCard("", emptyList(), askEnabled, onAskReply)
         }
     }
 }
