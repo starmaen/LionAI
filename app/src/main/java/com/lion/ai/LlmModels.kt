@@ -11,6 +11,12 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
         val apiKey = rawKey.filterNot { it.isWhitespace() }
         val bearer = mapOf("Authorization" to "Bearer $apiKey")
         val ids: List<String> = when (provider) {
+            "apinex" -> {
+                requireKey(apiKey)
+                val json = getJson("https://api.apinex.bond/v1/models", bearer)
+                idsOf(json.optJSONArray("data"), "id").sortedWith(compareByDescending<String> { it.startsWith("free/") }.thenBy { it })
+            }
+            "opencode-local" -> OpenCodeLocal.listModels()
             "opencode", "opencode-go", "opencode-console" -> {
                 val headers = if (apiKey.isNotBlank()) bearer else emptyMap()
                 val bases = when (provider) {

@@ -146,6 +146,24 @@ private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): Li
 }
 
 
+internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: Boolean): Boolean =
+    chatMode == ChatMode.CODE || kind == TaskKind.DEV || hasWork
+
+/** سؤال قدرة/شرح لا يجب أن يفتح دورة أدوات طويلة؛ الأمر التنفيذي والاستئناف يفتحانها. */
+internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean): Boolean {
+    if (hasWork) return true
+    val text = prompt.trim().lowercase()
+    if (text.isBlank()) return false
+    val explicitAction = Regex(
+        "(اقرأ\\s+الملف|افحص\\s+(الملف|المشروع)|حلل\\s+(الملف|المشروع)|راجع\\s+(الملف|المشروع)|" +
+            "عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|اكتب\\s+الملف|أنشئ|انشئ|ابنِ|ارفع|ادفع|commit|push|build|install|execute|read\\s+file|write\\s+file)"
+    )
+    if (explicitAction.containsMatchIn(text)) return true
+    val question = text.endsWith("؟") || text.endsWith("?") ||
+        Regex("^(هل|ما|ماذا|كيف|لماذا|اشرح|وضح|لخص|ما رأيك|what|how|why|explain|can you)\\b").containsMatchIn(text)
+    return !question
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LionApp() {
@@ -192,12 +210,16 @@ fun LionApp() {
     var attachment by remember { mutableStateOf<Attachment?>(null) }
     var imageAttachment by remember { mutableStateOf<ImageAttachment?>(null) }
 
-    // تشغيل خادم الذكاء الاصطناعي المحلي (Proxy) عند بدء التطبيق
+    // الخادم المحلي أداة توجيه اختيارية، لا يبدأ ولا يفرض نفسه على المزود المباشر.
     LaunchedEffect(Unit) {
-        val p = LocalAIProxy.start(context, prefs)
-        if (p > 0) {
-            localProxyUrl = "http://127.0.0.1:$p/v1/chat/completions"
-            localProxyStarted = true
+        val wanted = RoutePolicy.channelEnabled(prefs, Channel.LOCAL) ||
+            prefs.getString("provider", "") == RoutePolicy.LOCAL_PROXY
+        if (wanted) {
+            val p = withContext(Dispatchers.IO) { LocalAIProxy.start(context, prefs) }
+            if (p > 0) {
+                localProxyUrl = "http://127.0.0.1:$p/v1/chat/completions"
+                localProxyStarted = true
+            }
         }
     }
     var contacts by remember { mutableStateOf(listOf<Contact>()) }
@@ -566,24 +588,30 @@ fun LionApp() {
         }
     }
 
+    // منتقي موحّد في كل المحادثات والأوضاع: عدة ملفات، مع إمكانية إرفاق صورة وملف معاً.
     val fileLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
             scope.launch {
-                val result = withContext(Dispatchers.IO) { Attachments.read(context, uri) }
-                if (result.attachment != null) {
-                    attachment = result.attachment
-                    imageAttachment = null
-                } else if (result.image != null) {
-                    imageAttachment = result.image
-                    attachment = null
-                } else {
-                    attachment = null
-                    messages = messages + Message(
-                        result.error ?: "⚠️ تعذر قراءة الملف.",
-                        false
+                val results = withContext(Dispatchers.IO) {
+                    uris.take(8).map { uri -> Attachments.read(context, uri) }
+                }
+                val documents = results.mapNotNull { it.attachment }
+                val pickedImage = results.lastOrNull { it.image != null }?.image
+                if (documents.isNotEmpty()) {
+                    attachment = Attachment(
+                        documents.joinToString("، ") { it.name },
+                        documents.joinToString("\n\n") { "=== ${it.name} ===\n${it.text}" }
                     )
+                }
+                if (pickedImage != null) imageAttachment = pickedImage
+                val errors = results.mapNotNull { it.error }
+                if (documents.isEmpty() && pickedImage == null && errors.isEmpty()) {
+                    messages = messages + Message("⚠️ تعذر قراءة الملفات المختارة.", false)
+                    saveCurrent()
+                } else if (errors.isNotEmpty()) {
+                    messages = messages + Message(errors.joinToString("\n"), false)
                     saveCurrent()
                 }
             }
@@ -604,7 +632,6 @@ fun LionApp() {
                     showEditor = true
                 } else if (result.image != null) {
                     imageAttachment = result.image
-                    attachment = null
                 } else {
                     editAfterPick = false
                     messages = messages + Message(
@@ -870,6 +897,11 @@ fun LionApp() {
         replaceIndex: Int? = null,
         forcePrecise: Boolean = false
     ) {
+        if (loadingChats[chatId] == true) return
+        val previousSession = AgentSessions.of(prefs, chatId)
+        val resumingTask = !previousSession.completed && previousSession.hasWork() &&
+            !WriteIntent.isNewTask(prompt)
+        val kind = if (resumingTask) TaskKind.DEV else kind
         val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
         val chatMode = ChatRepository.modeOf(prefs, chatId)
         // نفس مصدر الحقيقة الذي يستخدمه الخادم المحلي والإعدادات.
@@ -883,12 +915,17 @@ fun LionApp() {
         val careful = central && (SmartRouter.isStrict(kind) || kind == TaskKind.GENERAL)
         val mission = CentralBrain.policy(kind, chatMode, central)
         val hasTrusted = SmartRouter.hasTrusted(prefs, kind)
+        // الخادم المحلي قناة مستقلة: تشغيله لا يشترط المباشر ولا الخارجي.
+        if (RoutePolicy.channelEnabled(prefs, Channel.LOCAL) && !LocalAIProxy.isRunning()) {
+            runCatching { LocalAIProxy.start(context, prefs) }
+        }
         // العقل المركزي يختار المزود وهو عارف بوضع المحادثة (عام/تعلّم/برمجة)
         // وبنوع المهمة، فيراعي الكفاءة والاتصال معاً.
-        val plan = planFor(kind, mode, chatMode)
+        val plan = RoutePolicy.appPlan(prefs, kind, mode, chatId, chatMode)
         val auto = !manualMode
         val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
-        val toolText = if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext
+        val toolText = (if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext) +
+            if (resumingTask) "\n" + previousSession.lastTask else ""
         val modeProfile = ContextProfiles.of(chatMode, prefs, toolText)
         val basePrompt = when {
             chatMode == ChatMode.CODE -> LLM_DEV_PROMPT
@@ -899,15 +936,20 @@ fun LionApp() {
             careful -> LLM_CAREFUL_PROMPT
             else -> LLM_SYSTEM_PROMPT
         }
-        val toolGroups = if (image == null && kind != TaskKind.FAST && modeProfile.allowTools) {
+        // الوصول لمساحة العمل يتبع إعداد الأدوات والمحتوى، لا الوضع التلقائي/اليدوي
+        // ولا نوع القناة (مباشر/محلي/خارجي) ولا كون السؤال قصيراً.
+        val toolGroups = if (image == null && modeProfile.allowTools) {
             modeProfile.groups
         } else {
             emptySet<ToolGroup>()
         }
+        val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask)
         loadingChats[chatId] = true
         toolStatus[chatId] = ""
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
+        session.beginTurn(prompt)
+        CheckpointStore.save(prefs, session)
         var agentComplete = true
         var agentAsked = false
         scope.launch {
@@ -927,7 +969,7 @@ fun LionApp() {
             } else {
                 emptyList<WebSource>()
             }
-            val driveContext = if (chatMode == ChatMode.CODE && image == null && kind != TaskKind.FAST &&
+            val driveContext = if (image == null && modeProfile.allowTools &&
                 ConnectorAuth.isConnected(prefs, "google_drive")
             ) {
                 val driveId = Connectors.extractDriveId(prompt)
@@ -941,14 +983,14 @@ fun LionApp() {
             } else {
                 null
             }
-            val githubContext = if (chatMode == ChatMode.CODE && image == null && kind != TaskKind.FAST &&
+            val githubContext = if (image == null && modeProfile.allowTools &&
                 AiTools.githubReady(prefs) && AiTools.detectGitHubUrl(toolText) != null
             ) {
                 runCatching { AiTools.githubContext(prefs, toolText, 6000) }.getOrDefault("")
             } else {
                 ""
             }
-            val githubNote = if (chatMode == ChatMode.CODE && kind != TaskKind.FAST &&
+            val githubNote = if (modeProfile.allowTools &&
                 AiTools.githubMentioned(toolText) && !AiTools.githubReady(prefs)
             ) {
                 "\n\nملاحظة: GitHub غير مربوط حالياً. اطلب من المستخدم إضافة توكن GitHub من «الإعدادات ← أدوات الذكاء والتطوير»، ولا تدّعِ الوصول إلى GitHub."
@@ -969,7 +1011,8 @@ fun LionApp() {
                 ""
             }
             val sessionBlock = session.contextBlock()
-            val systemPrompt = basePrompt + modeProfile.promptSuffix + projectBlock + sessionBlock +
+            val systemPrompt = basePrompt + modeProfile.promptSuffix + projectBlock +
+                (if (toolGroups.isEmpty()) sessionBlock else "") +
                 answerLengthSuffix() +
                 (if (sources.isNotEmpty()) "\n\n" + LLM_GROUNDED_RULES else "") + githubNote + toolsNote
             val baseLlmPrompt = if (sources.isEmpty()) {
@@ -979,8 +1022,25 @@ fun LionApp() {
             }
             val withDrive = if (driveContext.isNullOrBlank()) baseLlmPrompt else
                 baseLlmPrompt + "\n\n=== بيانات Google Drive من الرابط في رسالة المستخدم ===\n" + driveContext
-            val llmPrompt = if (githubContext.isBlank()) withDrive else
+            val llmPromptBase = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
+            // غرفة العمليات (برمجة + تلقائي فقط): استشارة متوازية ثم منفّذ واحد بالأدوات.
+            val opsBrief = if (agentRequested && OperationsRoom.enabled(prefs, chatMode)) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        OperationsRoom.brief(
+                            prefs = prefs,
+                            message = llmPromptBase,
+                            history = history.takeLast(6),
+                            systemPrompt = systemPrompt,
+                            chatId = chatId,
+                            keyOf = { keyOf(it) },
+                            onLog = { status -> toolStatus[chatId] = status }
+                        )
+                    }.getOrDefault("")
+                }
+            } else ""
+            val llmPrompt = llmPromptBase + opsBrief
             // العقل المركزي يضمن أن لكل مجال مزوداً بديلاً جاهزاً عند فشل المسار الأساسي.
             // في اليدوي: لا يتدخل العقل المركزي إلا إذا فعّل المستخدم «مساعدة العقل المركزي».
             val rescueRoutes = if ((manualMode && RoutePolicy.assistEnabled(prefs)) ||
@@ -991,7 +1051,6 @@ fun LionApp() {
             } else {
                 emptyList()
             }
-            val routesToTry = (plan + rescueRoutes).distinctBy { it.provider }
             var reply = ""
             var used: Route? = null
             var fallback: Pair<Route, String>? = null
@@ -1000,26 +1059,33 @@ fun LionApp() {
             var sawFalseClaim = false
             val failed = mutableListOf<String>()
             // اليدوي: مزودك المختار يأخذ مهلة المهمة كاملة، ثم وقت إضافي للبدائل (لا تبديل صامت بسبب بطء المزود).
-            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(kind) + (if (manualMode) 60_000L else 0L)
+            val executionBudget = when {
+                agentRequested -> 240_000L // أربع دقائق للمهمة التنفيذية بدل خمس عشرة؛ الاستئناف محفوظ.
+                image != null -> 150_000L   // الصورة تُرسل لنموذج رؤية مباشرة، بلا دورة أدوات.
+                else -> SmartRouter.timeoutMs(kind)
+            }
+            val deadline = System.currentTimeMillis() + executionBudget + (if (manualMode) 30_000L else 0L)
             val chosenProvider = plan.firstOrNull()?.provider
-            val stickProvider = if (manualMode) null else ProviderStick.get(prefs, chatId)
+            val stickProvider = if (manualMode) null else {
+                ProviderStick.get(prefs, chatId) ?: LastRoute.get(prefs, chatId)?.provider
+            }
+            val routesToTry = RoutePolicy.mergeAttempts(plan, rescueRoutes, stickProvider)
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
             val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
             for (route in routesToTry) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
-                // الخادم المحلي قد يجرّب بديلاً داخلياً عند فشل المزود؛ نمنحه مهلة المهمة
-                // كاملة حتى لا ينتهي وقت العميل قبل أن يصل البديل.
-                val routeBudget = if (manualMode && route.provider == chosenProvider) {
-                    SmartRouter.timeoutMs(kind)
-                } else if (WebChatRuntime.handles(route.provider)) {
-                    90_000L
-                } else if (route.provider == RoutePolicy.LOCAL_PROXY) {
-                    // الخادم المحلي يملك سلسلة بدائل داخلية: نمنحه مهلة المهمة
-                    // كاملة مع هامش إضافي حتى لا ينقطع قبل أن يصل بديله.
-                    SmartRouter.timeoutMs(kind) + 30_000L
-                } else {
-                    LlmClient.attemptTimeoutMs(kind).toLong()
+                val pinned = route.provider == chosenProvider || route.provider == stickProvider
+                // المزود العامل/المختار يأخذ مهلة المهمة كاملة. لا يُستبدل لأنه بطيء.
+                val routeBudget = when {
+                    agentRequested && pinned -> executionBudget
+                    agentRequested -> 75_000L
+                    image != null && pinned -> 100_000L
+                    image != null -> 45_000L
+                    pinned -> SmartRouter.timeoutMs(kind)
+                    WebChatRuntime.handles(route.provider) -> 90_000L
+                    route.provider == RoutePolicy.LOCAL_PROXY -> SmartRouter.timeoutMs(kind) + 30_000L
+                    else -> LlmClient.attemptTimeoutMs(kind).toLong()
                 }
                 val attemptCap = minOf(
                     (deadline - System.currentTimeMillis()).coerceAtLeast(5_000L),
@@ -1028,7 +1094,7 @@ fun LionApp() {
                 // Web sessions are real chat pages: no app tools, no tool protocol.
                 // Never run the tool agent on them; otherwise the site receives the full
                 // tool spec plus extra "you used no tool" messages and the binding breaks.
-                var agentResult = if (toolGroups.isNotEmpty() && !WebChatRuntime.handles(route.provider)) {
+                var agentResult = if (agentRequested && !WebChatRuntime.handles(route.provider)) {
                     withContext(Dispatchers.IO) {
                         runCatching {
                             ToolAgent.run(
@@ -1046,43 +1112,18 @@ fun LionApp() {
                                 timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L),
                                 session = session,
                                 chatMode = chatMode,
-                                forceExecution = kind == TaskKind.DEV || session.hasWork(),
-                                providerLabel = SmartRouter.label(route, kind),
+                                forceExecution = shouldForceExecution(chatMode, kind, session.hasWork()),
+                                providerLabel = if (OperationsRoom.enabled(prefs, chatMode)) "غرفة العمليات" else SmartRouter.label(route, kind),
                                 via = route.via,
+                                userRequest = prompt,
                                 onProgress = { status -> toolStatus[chatId] = status }
                             )
-                        }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList(), complete = false) }
+                        }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList(), complete = false, responded = session.continuity.responded) }
                     }
                 } else {
                     null
                 }
-                // إن فشل مسار الأدوات (خطأ مزود) نجرّب رداً عادياً بنفس المزود حتى لا تتوقف المحادثة.
-                val failedAgent = agentResult
-                if (!WebChatRuntime.handles(route.provider) && failedAgent != null && !failedAgent.complete && failedAgent.tools.isEmpty() &&
-                    LlmClient.isErrorReply(failedAgent.answer)
-                ) {
-                    val plain = withContext(Dispatchers.IO) {
-                        runCatching {
-                            LlmClient.ask(
-                                message = llmPrompt,
-                                apiKey = keyOf(route.provider),
-                                provider = route.provider,
-                                history = requestHistory,
-                                modelOverride = route.model,
-                                accountId = accountId(),
-                                image = image,
-                                systemPrompt = systemPrompt,
-                                readTimeoutMs = attemptCap,
-                                chatModeHint = chatMode,
-                                via = route.via
-                            )
-                        }.getOrNull()
-                    }
-                    if (plain != null && !LlmClient.isErrorReply(plain)) {
-                        agentResult = ToolAgent.Result(plain, emptyList())
-                        toolStatus[chatId] = "↩️ تم تجاهل الأدوات مؤقتاً (فشل مسار الأدوات)"
-                    }
-                }
+                // No tool-less retry: it would discard execution state and can invent completion.
                 val r = agentResult?.answer ?: withContext(Dispatchers.IO) {
                     LlmClient.ask(
                         message = llmPrompt,
@@ -1095,10 +1136,13 @@ fun LionApp() {
                         systemPrompt = systemPrompt,
                         readTimeoutMs = attemptCap,
                         chatModeHint = chatMode,
-                        via = route.via
+                        via = route.via,
+                        chatId = chatId
                     )
                 }
-                val error = LlmClient.isErrorReply(r)
+                // Local pauses/budgets are not evidence that a responsive provider failed.
+                val keepAgent = agentResult?.responded == true
+                val error = LlmClient.isErrorReply(r) && !keepAgent
                 if (agentResult != null) {
                     agentComplete = agentResult.complete
                     agentAsked = agentAsked || session.pendingQuestion != null
@@ -1108,9 +1152,12 @@ fun LionApp() {
                 // ادّعاء تنفيذ تعديل/رفع/PR دون استدعاء أي أداة = هلوسة خطيرة تُرفض دائماً حتى في الوضع اليدوي.
                 val falseClaim = !error && kind == TaskKind.DEV && noTools &&
                     AnswerGuard.claimsCompletedAction(r)
-                if (falseClaim) sawFalseClaim = true
-                val low = !error && noTools &&
-                    (falseClaim || (central && route.provider != stickProvider && AnswerGuard.isLowQuality(r, kind, prompt)))
+                if (falseClaim) {
+                    sawFalseClaim = true
+                    // Reject an unsupported claim without silently replacing a responsive provider.
+                    break
+                }
+                val low = !error && noTools && falseClaim
                 SmartRouter.record(route, !error && !low, System.currentTimeMillis() - started)
                 if (!error && !low) {
                     reply = r
@@ -1118,7 +1165,7 @@ fun LionApp() {
                     toolNames = agentResult?.tools.orEmpty()
                     LlmClient.recordSuccess(route.provider, route.model)
                     LastRoute.set(prefs, chatId, route)
-                    if (!manualMode && kind != TaskKind.FAST) ProviderStick.set(prefs, chatId, route.provider)
+                    if (!manualMode) ProviderStick.set(prefs, chatId, route.provider, route.model)
                     break
                 }
                 if (!error && !falseClaim && fallback == null) fallback = route to r
@@ -1180,7 +1227,8 @@ fun LionApp() {
             }
             // العقل المركزي يدقّق الإجابات غير الموثوقة أو المعرفية غير المدعومة بمصادر.
             val answeredBy = used
-            if (answeredBy != null && image == null && !prompt.contains("محتوى الملف (") &&
+            if (prefs.getBoolean("central_cross_provider_review", false) && toolGroups.isEmpty() &&
+                answeredBy != null && image == null && !prompt.contains("محتوى الملف (") &&
                 System.currentTimeMillis() < deadline - 6_000
             ) {
                 val judge = CentralBrain.judgeRoute(prefs, kind, answeredBy, routesToTry)
@@ -1415,8 +1463,8 @@ fun LionApp() {
         val image = imageAttachment
         if (text.isEmpty() && file == null && image == null) return
 
-        // تحية أو «هل أنت هنا؟» لا تستحق انتظار مزود؛ نرد فوراً من دون شبكة.
-        if (file == null && image == null) {
+        // تحية فورية للمزودات API فقط. جلسات الويب يجب أن تصل للموقع حتى للرسائل القصيرة.
+        if (file == null && image == null && !WebChatRuntime.handles(selectedProvider)) {
             QuickReply.forText(text)?.let { quick ->
                 val reply = replyingTo
                 replyingTo = null
@@ -1801,7 +1849,20 @@ fun LionApp() {
                 syncActiveTab()
             },
             onChooseProvider = { info ->
-                if (info.webviewUrl != null) {
+                if (WebChatRuntime.handles(info.id)) {
+                    // مزودات ويب حقيقية: الاختيار يجعلها هي المزود، لا يفتح صفحتها.
+                    prefs.edit()
+                        .putString("provider", info.id)
+                        .putBoolean("auto_route", false)
+                        .putBoolean(WebChatRuntime.ENABLED, true)
+                        .putBoolean("web_chat_enabled_${info.id}", true)
+                        .apply()
+                    LlmClient.reloadOverrides(prefs)
+                    selectedProvider = info.id
+                    autoRoute = false
+                    showModelSheet = false
+                    syncActiveTab()
+                } else if (info.group == ProviderGroup.MEDIA && info.webviewUrl != null) {
                     showModelSheet = false
                     context.startActivity(
                         Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl)
@@ -1860,6 +1921,15 @@ fun LionApp() {
                     .putString("provider", id)
                     .putBoolean("auto_route", false)
                     .apply()
+                // اختيار مزود ويب صريحاً يعني تفعيل جلسته للشات مباشرة،
+                // وإلا فسيرفضه المسار بانتظار تفعيل يدوي من بطاقة Lion Chat.
+                if (WebChatRuntime.handles(id)) {
+                    prefs.edit()
+                        .putBoolean(WebChatRuntime.ENABLED, true)
+                        .putBoolean("web_chat_enabled_$id", true)
+                        .apply()
+                    LlmClient.reloadOverrides(prefs)
+                }
                 selectedProvider = id
                 autoRoute = false
                 when (hub) {
@@ -1893,11 +1963,22 @@ fun LionApp() {
             onGatewayEnabled = { value ->
                 setProviderEnabled(prefs, WebGateway.ENABLED_ID, value)
                 gatewayEnabled = value
+                RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, value)
+                if (value && gatewayMode == WebGateway.MODE_OFF) {
+                    gatewayMode = WebGateway.MODE_AUTO
+                    prefs.edit().putString(WebGateway.KEY_MODE, gatewayMode).apply()
+                }
                 WebGateway.load(prefs)
             },
             onGatewayMode = { value ->
                 prefs.edit().putString(WebGateway.KEY_MODE, value).apply()
                 gatewayMode = value
+                RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, value != WebGateway.MODE_OFF)
+                if (value == WebGateway.MODE_ONLY) {
+                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, false)
+                } else {
+                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, true)
+                }
                 WebGateway.load(prefs)
             },
             onOpenSettings = {
@@ -2163,6 +2244,7 @@ fun LionApp() {
                     currentChat = currentChat,
                     loading = loadingChats[currentChat] == true,
                     progress = toolStatus[currentChat],
+                    sessionSteps = AgentSessions.peek(currentChat)?.timeline().orEmpty(),
                     listState = listState,
                     context = context,
                     tts = tts,

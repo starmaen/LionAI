@@ -20,9 +20,11 @@ data class AgentStep(
  * بدل البدء من الصفر. تحفظ الجلسة الخطوات الناجحة، الملفات التي تغيّرت، المزودات
  * التي جُرّبت، وأي سؤال معلّق ينتظر رد المستخدم.
  *
- * لا تحفظ أسراراً ولا محتوى ملفات كاملاً، بل ملخصات قصيرة فقط.
+ * تحفظ ملخصاً وسجل أدوات للاستئناف داخل تفضيلات التطبيق المشفرة؛ قد يتضمن محتوى ملفات.
  */
 class AgentSession(val chatId: String) {
+    var continuity = TaskContinuity()
+        private set
     private val steps = mutableListOf<AgentStep>()
     private val files = LinkedHashSet<String>()
     private val providers = mutableListOf<String>()
@@ -53,10 +55,19 @@ class AgentSession(val chatId: String) {
         private set
 
     @Synchronized
+    fun beginTurn(userRequest: String) {
+        val followUp = !completed && hasWork() && !WriteIntent.isNewTask(userRequest)
+        continuity.begin(userRequest, !completed, pendingQuestion != null || followUp)
+        if (!continuity.resume) lastTask = userRequest.take(600)
+        completed = false
+    }
+
+    @Synchronized
     fun hasWork(): Boolean = pendingQuestion != null || steps.any { it.tool != "user" }
 
     @Synchronized
     fun reset() {
+        continuity = TaskContinuity()
         steps.clear()
         files.clear()
         providers.clear()
@@ -85,7 +96,10 @@ class AgentSession(val chatId: String) {
         // لا نصفر الجلسة عند تغيّر صياغة الطلب: الأهم ألا تُفقد مهمة أو تعديلات.
         // تعليمات الاستئناف تخبر النموذج صراحةً كيف يتعامل مع مهمة جديدة تماماً.
         if (lastTask.isBlank()) lastTask = clean
-        if (provider.isNotBlank() && providers.lastOrNull() != provider) providers.add(provider)
+        if (provider.isNotBlank() && providers.lastOrNull() != provider) {
+            providers.add(provider)
+            steps.add(AgentStep("provider", true, "انتقل التنفيذ إلى $provider مع الاحتفاظ بالحالة والنتائج السابقة"))
+        }
         if (provider.isNotBlank()) lastProvider = provider
         completed = false
         updatedAt = System.currentTimeMillis()
@@ -122,6 +136,7 @@ class AgentSession(val chatId: String) {
             )
         }
         return JSONObject()
+            .put("continuity", continuity.json())
             .put("chat_id", chatId)
             .put("mode", mode)
             .put("task", lastTask)
@@ -138,6 +153,7 @@ class AgentSession(val chatId: String) {
     @Synchronized
     fun importJson(obj: JSONObject) {
         reset()
+        obj.optJSONObject("continuity")?.let { continuity.restore(it) }
         mode = obj.optString("mode", ChatMode.GENERAL.id)
         lastTask = obj.optString("task", "")
         lastProvider = obj.optString("provider", "")
@@ -180,7 +196,7 @@ class AgentSession(val chatId: String) {
     fun recordTool(tool: String, ok: Boolean, output: String, path: String = "") {
         val summary = output.replace(Regex("\\s+"), " ").trim().take(240)
         steps.add(AgentStep(tool, ok, summary, path.trim().take(160)))
-        if (ok && path.isNotBlank() && tool != "file_read" && tool != "github_read_file") {
+        if (ok && path.isNotBlank() && tool !in setOf("file_read", "read_file", "file_list", "list_dir", "file_tree", "github_read_file")) {
             files.add(path.trim().take(160))
         }
         while (steps.size > 60) steps.removeAt(0)
@@ -211,6 +227,10 @@ class AgentSession(val chatId: String) {
         while (failures.size > 6) failures.removeAt(0)
         updatedAt = System.currentTimeMillis()
     }
+
+    /** مصدر العرض الحي نفسه المستخدم في الحفظ والاستئناف وتبديل المزود. */
+    @Synchronized
+    fun timeline(): List<AgentStep> = steps.toList()
 
     @Synchronized
     fun touchedFiles(): List<String> = files.toList()

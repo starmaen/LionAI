@@ -29,8 +29,9 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
     var expanded by remember { mutableStateOf(false) }
     var revision by remember { mutableIntStateOf(0) }
     var report by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
+    var testingId by remember { mutableStateOf<String?>(null) }
     var testJob by remember { mutableStateOf<Job?>(null) }
+    val busy = testingId != null
     var consent by remember { mutableStateOf(false) }
     var configure by remember { mutableStateOf<String?>(null) }
     DisposableEffect(prefs) {
@@ -45,17 +46,18 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
         LlmClient.reloadOverrides(prefs)
         onActivate(id)
     }
-    fun test(ids: List<String>) {
+    fun testOne(id: String) {
+        testJob?.cancel()
+        prefs.edit().putBoolean("web_chat_enabled_$id", true).apply()
         testJob = scope.launch {
-            busy = true
-            report = "فحص جلسات المواقع برسائل فعلية — موقع واحد في كل مرة."
+            testingId = id
+            val name = providerInfo(id).shortName
+            report = "فحص $name فقط — لن تُفحص مواقع أخرى."
             try {
-                for (id in ids) {
-                    ensureActive()
-                    val line = runInterruptible(Dispatchers.IO) { WebChatRuntime.test(prefs, id) }
-                    report += "\n$line"
-                }
-            } finally { busy = false }
+                ensureActive()
+                val line = runInterruptible(Dispatchers.IO) { WebChatRuntime.test(prefs, id) }
+                report = line
+            } finally { testingId = null }
         }
     }
     Card(Modifier.fillMaxWidth().padding(vertical = 8.dp), shape = RoundedCornerShape(16.dp),
@@ -91,26 +93,25 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                         edit.apply()
                     }) { Text("تعطيل الكل") }
                 }
-                Row {
-                    TextButton(enabled = enabled && !busy && WebChatRuntime.members(prefs).isNotEmpty(),
-                        onClick = { test(WebChatRuntime.members(prefs).map { it.id }) }) { Text("فحص جماعي", color = orange) }
-                    if (busy) TextButton(onClick = { testJob?.cancel() }) { Text("إيقاف الفحص") }
-                }
-                TextButton(enabled = WebChatRuntime.available(prefs, WebChatRuntime.HUB) && !busy,
-                    onClick = { activate(WebChatRuntime.HUB) }) { Text("استخدام المجموعة في الشات", color = orange) }
+                if (busy) TextButton(onClick = { testJob?.cancel(); testingId = null }) { Text("إيقاف الفحص") }
                 providers.forEach { info ->
                     HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(info.shortName, color = orange, modifier = Modifier.weight(1f))
                         Switch(prefs.getBoolean("web_chat_enabled_${info.id}", false), {
                             prefs.edit().putBoolean("web_chat_enabled_${info.id}", it).apply()
-                        }, enabled = !busy, colors = SwitchDefaults.colors(checkedThumbColor = orange))
+                        }, enabled = testingId == null, colors = SwitchDefaults.colors(checkedThumbColor = orange))
                     }
-                    Text(prefs.getString("web_session_status_${info.id}", "⚪ لم يُختبر الاتصال بالصفحة بعد").orEmpty(),
-                        color = Color.LightGray, fontSize = 12.sp)
+                    Text(
+                        when {
+                            testingId == info.id -> "⏳ جارٍ فحص ${info.shortName} فقط…"
+                            else -> prefs.getString("web_session_status_${info.id}", "⚪ لم يُختبر الاتصال بالصفحة بعد").orEmpty()
+                        },
+                        color = Color.LightGray, fontSize = 12.sp
+                    )
                     Row {
-                        TextButton(enabled = !busy && WebChatRuntime.available(prefs, info.id), onClick = { activate(info.id) }) { Text("اختيار للشات") }
-                        TextButton(enabled = !busy && WebChatRuntime.available(prefs, info.id), onClick = { test(listOf(info.id)) }) { Text("فحص") }
+                        TextButton(enabled = testingId == null && WebChatRuntime.available(prefs, info.id), onClick = { activate(info.id) }) { Text("اختيار للشات") }
+                        TextButton(enabled = enabled && testingId == null, onClick = { testOne(info.id) }) { Text("فحص ${info.shortName} فقط") }
                         TextButton(enabled = !busy, onClick = { WebSessionTransport.open(info.id) }) { Text("الجلسة") }
                     }
                     Row {
@@ -124,7 +125,8 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                     Row {
                         TextButton(enabled = !busy, onClick = { configure = info.id }) { Text("محددات المطور") }
                         TextButton(onClick = {
-                            context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", info.webviewUrl))
+                            val sessionUrl = WebSiteAdapters.get(info.id, prefs)?.url ?: info.webviewUrl
+                            context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", sessionUrl))
                         }) { Text("الصفحة الجانبية") }
                     }
                 }
@@ -134,7 +136,7 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
         }
     }
     if (consent) AlertDialog(onDismissRequest = { consent = false }, title = { Text("تفعيل جلسات المواقع") },
-        text = { Text("عند الإرسال سيصل نص رسالتك وسجل الحوار وتعليمات الأدوات إلى الموقع المختار، باستخدام حسابك داخل WebView. قد يستهلك ذلك حصتك. الفحص الجماعي يرسل رسالة لكل موقع مفعّل. لن تُنقل الكوكيز إلى خادم خارجي. لا تُمنح الصفحة صلاحيات تنفيذ أدوات التطبيق مباشرةً.") },
+        text = { Text("عند الإرسال سيصل نص رسالتك فقط إلى الموقع المختار داخل WebView، باستخدام حسابك هناك. قد يستهلك ذلك حصتك. زر فحص بجانب كل موقع يختبر ذلك الموقع وحده. لن تُنقل الكوكيز إلى خادم خارجي.") },
         confirmButton = { TextButton(onClick = { prefs.edit().putBoolean(WebChatRuntime.ENABLED, true).apply(); consent = false }) { Text("أوافق وأفعّل") } },
         dismissButton = { TextButton(onClick = { consent = false }) { Text("إلغاء") } })
     configure?.let { id ->

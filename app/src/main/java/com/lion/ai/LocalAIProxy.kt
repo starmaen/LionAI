@@ -134,16 +134,20 @@ object LocalAIProxy {
 
             var contentLength = 0
             var chatModeHeader = ""
+            var chatIdHeader = ""
             headers.substringAfter("\r\n", "").lineSequence().forEach { line ->
                 val lower = line.lowercase()
                 if (lower.startsWith("content-length:")) {
                     contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                } else if (lower.startsWith("x-lion-chat-id:")) {
+                    chatIdHeader = line.substringAfter(":").trim().takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,100}")) }.orEmpty()
                 } else if (lower.startsWith("x-lion-chat-mode:")) {
                     chatModeHeader = line.substringAfter(":").trim()
                 }
             }
 
-            val bodyBytes = ByteArray(contentLength.coerceIn(0, 4_000_000))
+            // الصور المشفّرة base64 والملفات قد تتجاوز 4MB؛ لا تقطع JSON عبر القناة المحلية.
+            val bodyBytes = ByteArray(contentLength.coerceIn(0, 16_000_000))
             var read = 0
             while (read < bodyBytes.size) {
                 val count = input.read(bodyBytes, read, bodyBytes.size - read)
@@ -154,7 +158,7 @@ object LocalAIProxy {
 
             val response: String = when {
                 method == "POST" && path.startsWith("/v1/chat/completions") ->
-                    processChatCompletion(body, prefs, chatModeHeader)
+                    processChatCompletion(body, prefs, chatModeHeader, chatIdHeader)
                 method == "GET" && path.startsWith("/v1/models") -> {
                     val provider = backendProvider(prefs)
                     val model = (prefs.getString("model_$provider", "") ?: "").trim()
@@ -345,10 +349,39 @@ object LocalAIProxy {
     private fun keyOf(prefs: SharedPreferences, provider: String): String =
         (prefs.getString("api_key_$provider", "") ?: "").trim()
 
+    internal data class IncomingContent(val text: String, val image: ImageAttachment?)
+
+    /** يحافظ على الصورة والنص في رسائل OpenAI multimodal بدل تحويلهما إلى JSON نصي. */
+    internal fun incomingContent(message: org.json.JSONObject?): IncomingContent {
+        val raw = message?.opt("content")
+        if (raw !is org.json.JSONArray) {
+            return IncomingContent(message?.optString("content", "").orEmpty(), null)
+        }
+        val texts = mutableListOf<String>()
+        var image: ImageAttachment? = null
+        for (i in 0 until raw.length()) {
+            val part = raw.optJSONObject(i) ?: continue
+            when (part.optString("type")) {
+                "text" -> part.optString("text").takeIf { it.isNotBlank() }?.let(texts::add)
+                "image_url" -> {
+                    val value = part.opt("image_url")
+                    val url = if (value is org.json.JSONObject) value.optString("url") else value?.toString().orEmpty()
+                    if (url.startsWith("data:image/")) {
+                        val mime = url.substringAfter("data:").substringBefore(';').ifBlank { "image/jpeg" }
+                        val encoded = url.substringAfter("base64,", "")
+                        if (encoded.isNotBlank()) image = ImageAttachment("مرفق-${i + 1}", mime, encoded)
+                    }
+                }
+            }
+        }
+        return IncomingContent(texts.joinToString("\n"), image)
+    }
+
     private fun processChatCompletion(
         body: String,
         prefs: SharedPreferences,
-        chatModeHeader: String = ""
+        chatModeHeader: String = "",
+        chatId: String = ""
     ): String {
         return try {
             val json = org.json.JSONObject(body)
@@ -365,7 +398,7 @@ object LocalAIProxy {
                 for (i in 0 until messages.length()) {
                     val msg = messages.optJSONObject(i) ?: continue
                     val role = msg.optString("role")
-                    val content = msg.optString("content", "")
+                    val content = incomingContent(msg).text
                     when (role) {
                         "system" -> if (content.isNotBlank()) systemParts.add(content)
                         "user" -> if (i != lastUserIndex && content.isNotBlank()) history.add(ChatTurn("user", content))
@@ -373,21 +406,29 @@ object LocalAIProxy {
                     }
                 }
             }
-            val userText = if (lastUserIndex >= 0) {
-                messages?.optJSONObject(lastUserIndex)?.optString("content", "").orEmpty()
-            } else ""
+            val incoming = if (lastUserIndex >= 0) {
+                incomingContent(messages?.optJSONObject(lastUserIndex))
+            } else IncomingContent("", null)
+            val userText = incoming.text
+            val userImage = incoming.image
             val systemPrompt = systemParts.joinToString("\n\n").ifBlank { LLM_SYSTEM_PROMPT }
             val chatMode = chatModeOf(chatModeHeader, systemPrompt, prefs)
-            val taskKind = SmartRouter.classify(userText, false, 0, null)
+            val taskKind = SmartRouter.classify(userText, userImage != null, 0, null)
             val answerMode = AnswerMode.read(prefs)
             val accountId = (prefs.getString("cf_account_id", "") ?: "").trim()
 
             // نفس سياسة التطبيق: يدوي يبقى يدوياً، والتلقائي يستخدم العقل المركزي،
             // والمساعدة تضيف بديلاً عند فشل المزود المختار.
-            val routes = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode)
+            val planned = RoutePolicy.serverPlan(prefs, taskKind, answerMode, chatMode, chatId, userImage != null)
+            val pinned = ProviderStick.get(prefs, chatId)
+            // Once the backend has answered, do not let a later tool step silently change it.
+            // A transport failure pauses the task; an explicit settings change releases the pin.
+            val routes = if (pinned != null) planned.filter { it.provider == pinned } else planned
             val manual = RoutePolicy.isManual(prefs)
             // اليدوي: المزود المختار يأخذ مهلة المهمة كاملة، وبعدها وقت إضافي للبدائل.
-            val deadline = System.currentTimeMillis() + SmartRouter.timeoutMs(taskKind) + (if (manual) 60_000L else 0L)
+            val codingTask = chatMode == ChatMode.CODE || taskKind == TaskKind.DEV
+            val installedProviderTimeout = if (codingTask) 900_000L else SmartRouter.timeoutMs(taskKind)
+            val deadline = System.currentTimeMillis() + installedProviderTimeout + (if (manual) 60_000L else 0L)
             val chosenProvider = routes.firstOrNull()?.provider
             val tried = mutableListOf<String>()
             var reply = ""
@@ -397,10 +438,10 @@ object LocalAIProxy {
             for (route in routes) {
                 if (System.currentTimeMillis() >= deadline) break
                 val started = System.currentTimeMillis()
-                val perAttempt = if (manual && route.provider == chosenProvider) {
-                    SmartRouter.timeoutMs(taskKind)
-                } else {
-                    LlmClient.attemptTimeoutMs(taskKind).toLong()
+                val perAttempt = when {
+                    codingTask && route.provider == chosenProvider -> 900_000L
+                    manual && route.provider == chosenProvider -> SmartRouter.timeoutMs(taskKind)
+                    else -> LlmClient.attemptTimeoutMs(taskKind).toLong()
                 }
                 val cap = minOf((deadline - System.currentTimeMillis()).coerceAtLeast(5_000L), perAttempt).toInt()
                 val candidate = LlmClient.ask(
@@ -410,6 +451,7 @@ object LocalAIProxy {
                     history = history,
                     modelOverride = route.model,
                     accountId = accountId,
+                    image = userImage,
                     systemPrompt = systemPrompt,
                     readTimeoutMs = cap,
                     chatModeHint = chatMode,
@@ -421,7 +463,7 @@ object LocalAIProxy {
                     reply = candidate
                     used = route
                     LlmClient.recordSuccess(route.provider, route.model)
-                    if (!manual && taskKind != TaskKind.FAST) ProviderStick.set(prefs, ActiveChat.id, route.provider)
+                    if (!manual) ProviderStick.set(prefs, chatId, route.provider, route.model)
                     break
                 }
                 lastError = candidate

@@ -152,7 +152,7 @@ object LlmClient {
 
     /** هل الموديل الحالي يقرأ الصور؟ (OpenRouter يعتمد على الموديل، وخطأ المزود يُعرض إن لم يدعمها) */
     fun supportsVision(provider: String, model: String): Boolean = when (provider) {
-        "gemini", "openai", "claude", "deepseek", "openrouter", "opencode", "opencode-go", "opencode-console",
+        "gemini", "openai", "claude", "deepseek", "openrouter", "apinex", "opencode", "opencode-go", "opencode-console", "opencode-local",
         "mistral", "cloudflare", "zai", "ollama", "together", "nvidia", "ovh", "custom" -> true
         "groq" -> (model.ifBlank { providerInfo("groq").defaultModel }).contains("llama-4")
         else -> false
@@ -218,8 +218,10 @@ object LlmClient {
     fun defaultModel(provider: String): String = providerInfo(provider).defaultModel
 
     /** ترويسات اختيارية تُخبر الخادم المحلي بوضع المحادثة الحالي. */
-    private fun proxyHeaders(mode: ChatMode?): Map<String, String> =
-        if (mode == null) emptyMap() else mapOf("X-Lion-Chat-Mode" to mode.id)
+    private fun proxyHeaders(mode: ChatMode?, chatId: String): Map<String, String> = buildMap {
+        mode?.let { put("X-Lion-Chat-Mode", it.id) }
+        if (chatId.matches(Regex("[A-Za-z0-9_-]{1,100}"))) put("X-Lion-Chat-Id", chatId)
+    }
 
     fun ask(
         message: String,
@@ -233,7 +235,8 @@ object LlmClient {
         readTimeoutMs: Int = 0,
         chatModeHint: ChatMode? = null,
         forceDirect: Boolean = false,
-        via: String = Channel.AUTO
+        via: String = Channel.AUTO,
+        chatId: String = ""
     ): String {
         if (WebChatRuntime.handles(provider)) {
             val prefs = WebChatRuntime.prefs() ?: return "⚠️ افتح إعدادات جلسات الويب أولاً."
@@ -241,10 +244,12 @@ object LlmClient {
             if (image != null) return "⚠️ إرسال الصور آلياً إلى الصفحات غير مدعوم؛ افتح الصفحة لرفع الصورة يدوياً."
             val prompt = WebSessionTransport.prompt(systemPrompt, normalize(history), message)
             if (prompt.length > 60_000) return "⚠️ سياق المحادثة أكبر من حد النقل الآمن للصفحة (60000 حرف). اختصره أو ابدأ محادثة جديدة."
+            // A named site is only that site. The hub may rank verified members.
+            // Individual فحص and in-app Send to Arena/Claude/… must never fan out.
             val members = if (provider == WebChatRuntime.HUB) WebChatRuntime.members(prefs)
                 else listOf(providerInfo(provider))
             val routes = members.map { Route(it.id, "web-session", Channel.WEB) }
-            val ordered = if (prefs.getBoolean(WebChatRuntime.CENTRAL, true)) {
+            val ordered = if (provider == WebChatRuntime.HUB && prefs.getBoolean(WebChatRuntime.CENTRAL, true)) {
                 CentralBrain.rankRoutes(prefs, SmartRouter.classify(message, false, 0, null), routes, chatModeHint ?: ChatMode.GENERAL)
             } else routes
             val deadline = System.currentTimeMillis() + (if (readTimeoutMs > 0) readTimeoutMs else 90_000)
@@ -256,14 +261,17 @@ object LlmClient {
                 val result = WebSessionTransport.exchange(route.provider, prompt, remaining)
                 SmartRouter.record(route, result.success, System.currentTimeMillis() - started)
                 prefs.edit().putBoolean("web_session_verified_${route.provider}", result.success).apply()
-                if (result.success) {
+                if (result.success && result.text.isNotBlank() && !isErrorReply(result.text)) {
                     recordSuccess(provider, "web-session/${route.provider}")
                     return result.text
                 }
-                lastErrors[route.provider] = result.text.take(200)
-                errors += "${providerInfo(route.provider).shortName}: ${result.text}"
-                // Never silently re-send to another site after uncertain delivery.
-                if (result.submitted) return result.text
+                val failText = result.text.ifBlank { "لم يصل جواب من الصفحة" }.let {
+                    if (isErrorReply(it)) it else "⚠️ $it"
+                }
+                lastErrors[route.provider] = failText.take(200)
+                errors += "${providerInfo(route.provider).shortName}: $failText"
+                // Uncertain delivery: never retry another site and never treat leftover page text as the chat reply.
+                if (result.submitted) return failText
             }
             return "⚠️ لم يصل جواب من جلسات الويب.\n" + errors.joinToString("\n")
         }
@@ -301,6 +309,7 @@ object LlmClient {
                 val attempt = runCatching {
                     callOpenAiCompatible(
                         WebGateway.chatUrl(gateway.url), gateway.token, gwModel, turns, message,
+                        extraHeaders = mapOf("X-Api-Key" to gateway.token),
                         maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                     )
                 }
@@ -322,6 +331,11 @@ object LlmClient {
                 "gemini" -> callGemini(message, apiKey, model, turns, image, systemPrompt)
                 "opencode", "opencode-go", "opencode-console" -> callOpenCode(
                     provider, message, apiKey, model, turns, image, systemPrompt
+                )
+                "opencode-local" -> OpenCodeLocal.chat(message, model, turns, image, systemPrompt, chatId)
+                "apinex" -> callOpenAiCompatible(
+                    endpoint("apinex", "https://api.apinex.bond/v1/chat/completions"), apiKey, model, turns, message,
+                    maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                 )
                 "groq" -> callOpenAiCompatible(
                     endpoint("groq", "https://api.groq.com/openai/v1/chat/completions"), apiKey, model, turns, message,
@@ -378,7 +392,7 @@ object LlmClient {
                     } else {
                         callOpenAiCompatible(
                             baseUrl, apiKey, model, turns, message,
-                            extraHeaders = proxyHeaders(chatModeHint),
+                            extraHeaders = proxyHeaders(chatModeHint, chatId),
                             maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
                         )
                     }
@@ -487,13 +501,14 @@ object LlmClient {
         tools: JSONArray = JSONArray(),
         readTimeoutMs: Int = 0,
         chatModeHint: ChatMode? = null,
-        via: String = Channel.AUTO
+        via: String = Channel.AUTO,
+        chatId: String = ""
     ): ToolReply {
         if ((provider != "custom" && provider != "local_proxy") || tools.length() == 0) {
             return ToolReply(
                 ask(
                     message, apiKey, provider, history, modelOverride, accountId, null,
-                    systemPrompt, readTimeoutMs, chatModeHint, false, via
+                    systemPrompt, readTimeoutMs, chatModeHint, false, via, chatId
                 ),
                 emptyList()
             )
@@ -510,7 +525,7 @@ object LlmClient {
             try {
                 callOpenAiTools(
                     normalizeCustomUrl(raw), key, model, turns, message, systemPrompt, tools,
-                    extraHeaders = if (provider == "local_proxy") proxyHeaders(chatModeHint) else emptyMap()
+                    extraHeaders = if (provider == "local_proxy") proxyHeaders(chatModeHint, chatId) else emptyMap()
                 )
             } catch (e: Exception) {
                 ToolReply("⚠️ تعذر استدعاء أدوات الخادم: ${e.message ?: e.javaClass.simpleName}", emptyList())

@@ -60,5 +60,17 @@ class WebChatRuntimeTest {
         assertFalse(claude.accepts("https://claude.ai@evil.example/"))
         assertFalse(claude.accepts("https://evil@claude.ai/"))
         assertFalse(WebSiteAdapters.get("arena")!!.url.contains("submitPrompt"))
+        assertTrue(WebSiteAdapters.get("arena")!!.url.contains("/text/direct"))
+        assertTrue(requireNotNull(WebSiteAdapters.get("duckduckgo_web")).accepts("https://duck.ai/"))
+        assertTrue(requireNotNull(WebSiteAdapters.get("chatgpt_web")).accepts("https://chat.openai.com/"))
+        assertTrue(requireNotNull(WebSiteAdapters.get("kimi_web")).accepts("https://kimi.moonshot.cn/"))
+        assertTrue(claude.send.contains("send-button") || claude.send.contains("aria-label"))
+        WebSiteAdapters.all().forEach { adapter ->
+            assertTrue(adapter.id, adapter.send.contains("aria-label") || adapter.send.contains("send-button"))
+            assertTrue(adapter.id, adapter.input.contains("textarea") || adapter.input.contains("contenteditable"))
+            val host = java.net.URI(adapter.url).host.lowercase().removePrefix("www.")
+            assertTrue(adapter.id, adapter.accepts("https://www.$host/"))
+            assertTrue(adapter.id, adapter.accepts("https://$host/"))
+        }
     }
 }

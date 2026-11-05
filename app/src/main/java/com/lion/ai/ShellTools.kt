@@ -66,24 +66,6 @@ object ShellTools {
     /** أدوات مسموح استيرادها عبر pip/npm من الإنترنت (اختيارياً): الاسم يجب أن يكون في القائمة. */
     private val PIP_TOOLS = setOf("ruff", "flake8", "black", "mypy", "pytest", "pylint", "bandit")
     private val NPM_TOOLS = setOf("typescript", "eslint", "prettier", "tsx", "jshint")
-    
-    /** أدوات خارجية تُثبت عبر سكريبتات رسمية (ليست apk/npm) */
-    private val EXTERNAL_TOOLS = mapOf(
-        "opencode" to ExternalTool(
-            name = "opencode",
-            checkCmd = "command -v opencode",
-            installCmd = "curl -fsSL https://opencode.ai/install | sh",
-            minVersion = "0.1.0"
-        )
-    )
-    
-    private data class ExternalTool(
-        val name: String,
-        val checkCmd: String,
-        val installCmd: String,
-        val minVersion: String
-    )
-
     private val BLOCKED = listOf(
         Regex("(^|\\s)(sudo|su|mount|umount|reboot|shutdown|mkfs|dd|iptables|setenforce)(\\s|$)"),
         Regex("rm\\s+-[a-z]*r[a-z]*f?\\s+/(\\s|$)"),
@@ -93,7 +75,7 @@ object ShellTools {
         Regex("(/etc/|/proc/|/sys/)"),
         Regex("(curl|wget)[^\\n|]*\\|\\s*(sh|bash)"),
         Regex("(^|[;&|]\\s*)(sh|bash)\\s+-[a-z]*c(\\s|$)"),
-        Regex("(^|\\s)chmod\\s+777\\s+/"
+        Regex("(^|\\s)chmod\\s+777\\s+/")
     )
     private const val MAX_OUTPUT = 18_000
 
@@ -249,13 +231,13 @@ object ShellTools {
 
     fun parseBuildErrors(raw: String): List<String> {
         val results = LinkedHashSet<String>()
-        Regex("""(?m)^e:\\s+file://([^:]+):\\s*\\((\\d+),\\s*(\\d+)\\):\\s*(.+)$""").findAll(raw).forEach {
+        Regex("""(?m)^e:\s+file://([^:]+):\s*\((\d+),\s*(\d+)\):\s*(.+)$""").findAll(raw).forEach {
             results.add("${it.groupValues[1]}:${it.groupValues[2]} — ${it.groupValues[4].trim()}")
         }
-        Regex("""(?m)^(.+?\\.(?:kt|java|xml|gradle|kts)):(\\d+):\\s*(?:error:\\s*)?(.+)$""").findAll(raw).forEach {
+        Regex("""(?m)^(.+?\.(?:kt|java|xml|gradle|kts)):(\d+):\s*(?:error:\s*)?(.+)$""").findAll(raw).forEach {
             results.add("${it.groupValues[1]}:${it.groupValues[2]} — ${it.groupValues[3].trim()}")
         }
-        Regex("""(?m)^(.+?\\.(?:kt|java)):(\\d+),\\s*(\\d+):\\s*(.+)$""").findAll(raw).forEach {
+        Regex("""(?m)^(.+?\.(?:kt|java)):(\d+),\s*(\d+):\s*(.+)$""").findAll(raw).forEach {
             results.add("${it.groupValues[1]}:${it.groupValues[2]} — ${it.groupValues[4].trim()}")
         }
         return results.toList()
@@ -320,39 +302,35 @@ object ShellTools {
             val result = exec(context, command, timeoutSec)
             return result.copy(output = "=== $kind ===\n" + result.output.takeLast(12_000))
         }
-        
-        val pkgList = PACKAGES[key]
-            ?: return ShellResult(false, "⛔ حزمة غير مسموحة: $key. المسموح: " + PACKAGES.keys.sorted().joinToString("، "), 126, 0)
-        
-        val script = "apk add --no-cache " + pkgList.joinToString(" ")
-        val result = LinuxEnv.run(context, script, timeoutSec)
-        return result.copy(output = "=== apk add ===\n" + result.output.takeLast(12_000))
-    }
-
-    /** تثبيت أداة خارجية عبر سكريبت رسمي */
-    fun installExternal(context: Context, toolName: String, timeoutSec: Int = 180): ShellResult {
-        val tool = EXTERNAL_TOOLS[toolName.lowercase()]
-            ?: return ShellResult(false, "⛔ أداة خارجية غير معروفة: $toolName", 126, 0)
-        
-        // فحص إذا كانت مثبتة بالفعل
-        val check = exec(context, tool.checkCmd, 20)
-        if (check.ok) {
-            return ShellResult(true, "✅ ${tool.name} مثبت بالفعل", 0, 0)
+        val candidates = PACKAGES[key]
+            ?: return ShellResult(
+                false,
+                "⛔ حزمة غير مسموحة: $packageName. المسموح: " + PACKAGES.keys.joinToString("، "),
+                126,
+                0
+            )
+        if (LinuxEnv.ready(context)) return LinuxEnv.installTool(context, key, timeoutSec)
+        if (available(context, key)) return ShellResult(true, "✅ $key مثبتة بالفعل.", 0, 0)
+        val manager = when {
+            available(context, "pkg") -> "pkg"
+            available(context, "apt-get") -> "apt-get"
+            available(context, "apt") -> "apt"
+            else -> ""
         }
-        
-        // تثبيت عبر السكريبت الرسمي
-        val install = exec(context, tool.installCmd, timeoutSec)
-        if (!install.ok) {
-            return ShellResult(false, "❌ فشل تثبيت ${tool.name}: ${install.output.takeLast(2000)}", install.exitCode, install.elapsedMs)
+        if (manager.isBlank()) {
+            return ShellResult(
+                false,
+                "❌ لا يوجد مدير حزم (pkg/apt). ثبّت «$key» يدوياً على الجهاز/الخادم: " + candidates.joinToString("/"),
+                127,
+                0
+            )
         }
-        
-        // تحقق من التثبيت
-        val verify = exec(context, tool.checkCmd, 20)
-        return if (verify.ok) {
-            ShellResult(true, "✅ تم تثبيت ${tool.name} بنجاح", 0, install.elapsedMs)
-        } else {
-            ShellResult(false, "❌ التثبيت ظاهرياً نجح لكن الأمر غير متاح: ${verify.output}", 1, install.elapsedMs)
+        val command = when (manager) {
+            "pkg" -> "pkg install -y " + candidates.first()
+            else -> manager + " install -y " + candidates.first()
         }
+        val result = exec(context, command, timeoutSec)
+        return result.copy(output = "=== $manager ===\n" + result.output.takeLast(12_000))
     }
 
     fun logcat(context: Context, filter: String = "", lines: Int = 300): ShellResult {

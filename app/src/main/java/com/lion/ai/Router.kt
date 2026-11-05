@@ -271,7 +271,7 @@ object SmartRouter {
             r("kilo", "kilo-auto/free"), r("llm7", "fast"), r("nvidia", "openai/gpt-oss-20b"),
             r("cloudflare", "@cf/openai/gpt-oss-20b"), r("ollama", "gpt-oss:20b"),
             r("openrouter", "nvidia/nemotron-nano-9b-v2:free"), r("zai", "glm-4.7-flash"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("apinex", "free/minimax-m3.1-flash"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
             r("opencode-console", "glm-5.3-flash"), r("ovh", "gpt-oss-20b"), r("deepseek", "deepseek-flash"),
             r("openai", "gpt-6-luna"), r("claude", "claude-haiku-5-5")
         )
@@ -283,7 +283,7 @@ object SmartRouter {
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "nvidia/nemotron-3-super-120b-a12b:free"), r("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("apinex", "free/minimax-m3.1-flash"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
             r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"), r("llm7", "default"),
             r("aihorde", "auto")
         )
@@ -294,12 +294,12 @@ object SmartRouter {
             r("zai", "glm-4.7-flash"), r("cloudflare", "@cf/openai/gpt-oss-120b"),
             r("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"),
             r("ovh", "gpt-oss-120b"), r("ollama", "gpt-oss:120b"), r("groq", "openai/gpt-oss-120b"),
-            r("kilo", "kilo-auto/free"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("kilo", "kilo-auto/free"), r("apinex", "free/minimax-m3.1-flash"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
             r("hf", "deepseek-ai/DeepSeek-V4.1-Flash-1017"), r("llm7", "default")
         )
         TaskKind.CODE -> listOf(
             r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("apinex", "free/minimax-m3.1-flash"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
             r("opencode-console", "deepseek-v4.1-flash"), r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
             r("kilo", "poolside/laguna-s-2.1:free"), r("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
             r("gemini", "gemini-3.8-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
@@ -311,7 +311,7 @@ object SmartRouter {
         // مهام التطوير تحتاج نماذج قوية في اتباع الأدوات وتعديل المستودعات، مع بدائل مجانية قادرة.
         TaskKind.DEV -> listOf(
             r("claude", "claude-sonnet-5-5"), r("deepseek", "deepseek-flash"), r("openai", "gpt-6-luna"),
-            r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
+            r("apinex", "free/minimax-m3.1-flash"), r("opencode", "glm-5.3-flash"), r("opencode-go", "deepseek-v4.1-flash"),
             r("opencode-console", "deepseek-v4.1-flash"), r("gemini", "gemini-3.8-flash"),
             r("mistral", "codestral-latest"), r("groq", "openai/gpt-oss-120b"),
             r("zai", "glm-4.7-flash"), r("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
@@ -366,7 +366,7 @@ object SmartRouter {
     /** مزودات نعتبرها قوية بما يكفي للأسئلة المعرفية الحساسة. */
     private val TRUSTED_FACTUAL = setOf(
         "gemini", "groq", "claude", "openai", "deepseek", "mistral",
-        "cohere", "nvidia", "zai", "cloudflare", "together", "ovh", "ollama", "hf"
+        "cohere", "nvidia", "zai", "cloudflare", "together", "ovh", "ollama", "hf", "apinex", "opencode-local"
     )
 
     fun isStrict(kind: TaskKind): Boolean = kind == TaskKind.FACTUAL || kind == TaskKind.LONG_DOC
@@ -382,7 +382,14 @@ object SmartRouter {
     )
 
     /** هل المزود + الموديل معاً جديران بالأسئلة التي تحتاج دقة؟ */
+    /** جلسات ويب لنماذج رائدة معروفة: تُحسب موثوقة في المهام عالية الدقة (لا Arena لأن نموذجها متغيّر). */
+    private val TRUSTED_WEB = setOf(
+        "chatgpt_web", "claude_web", "gemini_web", "deepseek_web", "copilot_web",
+        "perplexity_web", "grok_web", "aistudio_web", "qwen_web", "kimi_web"
+    )
+
     fun isReliableModel(provider: String, model: String): Boolean {
+        if (WebChatRuntime.isWeb(provider)) return provider in TRUSTED_WEB
         if (!isTrustedFactual(provider)) return false
         val info = PROVIDERS.firstOrNull { it.id == provider } ?: return false
         val id = model.ifBlank { info.defaultModel }.lowercase(Locale.ROOT)
@@ -432,14 +439,22 @@ object SmartRouter {
     ): List<Route> {
         // موديل المزود الذي اخترته/حدّثته من قائمة النماذج يتقدّم على الموديل الافتراضي المكتوب في القوائم
         // (إلا في الصور حيث يلزم موديل يدعم الرؤية).
-        val webRoutes = if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) emptyList() else WebChatRuntime.routes(prefs)
-        val availableRoutes = (webRoutes + candidates(kind)).filter { available(prefs, it.provider) }.map {
-            if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) it else withUserModel(prefs, it)
-        }
-        val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
         // المسار السريع يبقى سريعاً دائماً: لا نرفعه إلى نماذج ثقيلة مهما كان وضع الجودة.
         val fastOnly = kind == TaskKind.FAST || mode == AnswerMode.FAST
         val strict = !fastOnly && (isStrict(kind) || (mode == AnswerMode.PRECISE && kind == TaskKind.GENERAL))
+        // جلسات الويب (نماذج رائدة مجاناً لكنها أبطأ): للمهام عالية الدقة والتطوير تتقدّم على API،
+        // وفي بقية المهام تأتي بعدها كبديل. لا تُستعمل للتحية السريعة ولا للصور.
+        val webRoutes = if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT || fastOnly) {
+            emptyList()
+        } else {
+            WebChatRuntime.routes(prefs)
+        }
+        val webFirst = strict || kind == TaskKind.DEV
+        val merged = if (webFirst) webRoutes + candidates(kind) else candidates(kind) + webRoutes
+        val availableRoutes = merged.filter { available(prefs, it.provider) }.map {
+            if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) it else withUserModel(prefs, it)
+        }
+        val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
         val preferReliable = !fastOnly && (
             (kind == TaskKind.GENERAL && mode != AnswerMode.FAST) ||
                 mode == AnswerMode.PRECISE || kind == TaskKind.DEV

@@ -101,6 +101,38 @@ class ChannelRoutingTest {
     }
 
     @Test
+    fun automaticPreferenceUsesTheSameKeyAsTheUi() {
+        val prefs = FakePrefs()
+        prefs.edit().putBoolean("auto_route", true).apply()
+        assertTrue(RoutePolicy.PREF_AUTO == "auto_route")
+        assertFalse(RoutePolicy.isManual(prefs))
+        prefs.edit().putBoolean("auto_route", false).apply()
+        assertTrue(RoutePolicy.isManual(prefs))
+    }
+
+    @Test
+    fun executionMergeKeepsEveryChannelOfTheSameProvider() {
+        val plan = listOf(
+            Route("gemini", "m", Channel.DIRECT),
+            Route("gemini", "m", Channel.GATEWAY),
+            Route("gemini", "m", Channel.LOCAL)
+        )
+        val merged = RoutePolicy.mergeAttempts(plan, emptyList(), "gemini")
+        assertEquals(listOf(Channel.DIRECT, Channel.GATEWAY, Channel.LOCAL), merged.map { it.via })
+    }
+
+    @Test
+    fun localServerManualPlanDoesNotReenableDirect() {
+        val prefs = manualPrefs(gatewayConfigured = true)
+        RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, false)
+        RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, true)
+        val plan = RoutePolicy.serverPlan(prefs, TaskKind.GENERAL, AnswerMode.BALANCED, ChatMode.GENERAL)
+        assertTrue(plan.isNotEmpty())
+        assertTrue(plan.none { it.via == Channel.DIRECT })
+        assertTrue(plan.any { it.via == Channel.GATEWAY })
+    }
+
+    @Test
     fun lastRouteRemembersTheChannelThatAnswered() {
         val prefs = manualPrefs()
         LastRoute.set(prefs, "chat-1", Route("groq", "openai/gpt-oss-120b", Channel.GATEWAY))

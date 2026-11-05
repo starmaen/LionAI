@@ -1,6 +1,5 @@
 package com.lion.ai
 
-import com.lion.ai.ShellTools
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -29,16 +28,7 @@ object OpenCodeLocal {
         val context = ContextHolder.require()
         check(LinuxEnv.ready(context)) { "فعّل بيئة Linux أولاً ثم ثبّت OpenCode" }
         val probe = LinuxEnv.run(context, "command -v opencode", 20)
-        if (!probe.ok) {
-            // محاولة تثبيت تلقائي عبر ShellTools
-            val install = LinuxEnv.installTool(context, "opencode")
-            if (!install.ok) {
-                throw IllegalStateException("فشل تثبيت OpenCode تلقائياً: ${install.output}")
-            }
-            // تحقق مرة أخرى بعد التثبيت
-            val verify = LinuxEnv.run(context, "command -v opencode", 20)
-            check(verify.ok) { "OpenCode لم يصبح متاحاً بعد التثبيت" }
-        }
+        check(probe.ok) { "OpenCode غير مثبت. ثبّته من البيئة المحلية أولاً." }
         server?.destroy()
         val tail = java.util.concurrent.ConcurrentLinkedDeque<String>()
         val process = LinuxEnv.start(

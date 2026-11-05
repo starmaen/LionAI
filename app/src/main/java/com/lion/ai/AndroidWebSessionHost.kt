@@ -9,6 +9,8 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceResponse
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -22,6 +24,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONTokener
 import org.json.JSONObject
 
@@ -61,7 +65,7 @@ internal class AndroidWebSessionHost(
             val focusAllowed = value || view === inputLease
             view.isFocusable = focusAllowed
             view.isFocusableInTouchMode = focusAllowed
-            view.isClickable = value
+            view.isClickable = focusAllowed
             view.settings.javaScriptCanOpenWindowsAutomatically = value
             if (!focusAllowed && view.hasFocus()) view.clearFocus()
         }
@@ -95,9 +99,30 @@ internal class AndroidWebSessionHost(
         var submitted: Boolean = false,
         var lastStatus: String = "loading",
         /** Track observed streaming text for an explicit incomplete-response error at timeout. */
-        var lastText: String = ""
+        var lastText: String = "",
+        /** Compact page diagnostics from the injected script, appended to timeout errors. */
+        var lastDiag: String = "",
+        var tapped: Boolean = false,
+        var enterTried: Boolean = false,
+        var lastTextAt: Long = 0L
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+
+    /** Dispatch a real touch so the page receives a trusted click (JS .click() is often ignored). */
+    private fun tapCss(view: WebView, cssX: Double, cssY: Double) {
+        if (cssX <= 0.0 || cssY <= 0.0 || view.width <= 0 || view.height <= 0) return
+        val scale = view.scale.toDouble().takeIf { it > 0.0 } ?: 1.0
+        val x = (cssX * scale).toFloat().coerceIn(1f, (view.width - 1).toFloat())
+        val y = (cssY * scale).toFloat().coerceIn(1f, (view.height - 1).toFloat())
+        view.requestFocus()
+        val downTime = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+        val up = MotionEvent.obtain(downTime, downTime + 40L, MotionEvent.ACTION_UP, x, y, 0)
+        view.dispatchTouchEvent(down)
+        view.dispatchTouchEvent(up)
+        down.recycle()
+        up.recycle()
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun viewFor(adapter: WebSiteAdapter): WebView {
@@ -115,7 +140,7 @@ internal class AndroidWebSessionHost(
         view.isFocusable = interactive
         view.isFocusableInTouchMode = interactive
         view.isClickable = interactive
-        view.setOnTouchListener { _, _ -> !interactive }
+        view.setOnTouchListener { v, _ -> !(interactive || v === inputLease) }
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -133,6 +158,11 @@ internal class AndroidWebSessionHost(
             javaScriptCanOpenWindowsAutomatically = false
             userAgentString = mobileUserAgent(WebSettings.getDefaultUserAgent(activity))
         }
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                WebSettingsCompat.setRequestedWithHeaderOriginAllowList(view.settings, emptySet())
+            }
+        } catch (_: Throwable) { }
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
         val load = WebPageLoad()
@@ -310,16 +340,21 @@ internal class AndroidWebSessionHost(
             return
         }
         if (System.currentTimeMillis() >= p.deadline) {
-            // A deadline cannot prove completion. The site may still be generating.
-            if (p.stage == "poll" && p.submitted && p.lastText.isNotBlank()) {
-                fail(p, "وصل جزء من جواب الموقع، لكن لم يُؤكد اكتماله قبل المهلة. لم أعِد الإرسال؛ راجع الجلسة.")
+            // Send already happened and a new answer was captured — return it rather
+            // than dropping a reply that is sitting on the page.
+            if (p.submitted && p.lastText.isNotBlank() &&
+                p.lastStatus in setOf("streaming", "waiting", "sent", "complete")
+            ) {
+                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
                 return
             }
             val message = when (p.lastStatus) {
                 "needs_input", "origin", "loading" -> "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
-                "awaiting_ack", "clicked" -> "نُقر الإرسال لكن الموقع لم يؤكد استقبال الرسالة. لم أعِد الإرسال."
-                "streaming", "waiting" -> "لم يتم تأكيد اكتمال جواب جديد. افحص محدد الجواب وأزرار الإيقاف/النسخ."
+                "awaiting_ack", "clicked" -> "نُقر الإرسال لكن الموقع لم يؤكد استقبال الرسالة. لم أعِد الإرسال." +
+                    (if (p.lastDiag.isNotBlank()) " [" + p.lastDiag + "]" else "")
+                "streaming", "waiting" -> "لم يتم تأكيد اكتمال جواب جديد. افتح الجلسة وتأكد أن الموقع أجاب ولا يطلب تحققاً." +
+                    (if (p.lastDiag.isNotBlank()) " [" + p.lastDiag + "]" else "")
                 else -> "انتهت مهلة الموقع (${p.lastStatus})."
             }
             fail(p, message)
@@ -349,9 +384,9 @@ internal class AndroidWebSessionHost(
             .replace("__LION_TOKEN__", JSONObject.quote(p.request.token))
             .replace("__LION_ACTION__", JSONObject.quote(p.stage))
             .replace("__LION_PROMPT__", JSONObject.quote(p.request.prompt))
-        if (p.stage == "prepare" || p.stage == "submit") acquireEditorFocus(p.view)
-        // Mark possible delivery before evaluating: a navigation can lose the callback after click.
-        if (p.stage == "submit") p.submitted = true
+        if (p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
+            acquireEditorFocus(p.view)
+        }
         p.view.evaluateJavascript(js) { raw ->
             if (pending !== p || destroyed) return@evaluateJavascript
             val decoded = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
@@ -361,6 +396,7 @@ internal class AndroidWebSessionHost(
             } else {
                 val state = result.optString("status")
                 p.lastStatus = state
+                result.optString("diag").takeIf { it.isNotBlank() }?.let { p.lastDiag = it }
                 when (state) {
                     "origin" -> {
                         val actual = result.optString("actualOrigin", "unknown")
@@ -370,10 +406,34 @@ internal class AndroidWebSessionHost(
                     }
                     "ready" -> p.stage = "prepare"
                     "prepared" -> {
-                        p.stage = "submit"
+                        p.stage = "locate"
                         status(p, "وصل النص إلى حقل الموقع؛ جارٍ الإرسال")
                     }
-                    "needs_send" -> p.submitted = false
+                    "located" -> {
+                        p.submitted = true
+                        if (!p.tapped) {
+                            p.tapped = true
+                            tapCss(p.view, result.optDouble("x"), result.optDouble("y"))
+                        }
+                        p.stage = "poll"
+                        releaseEditorFocus()
+                        status(p, "نُقر زر الإرسال من التطبيق؛ ننتظر تأكيد الموقع")
+                    }
+                    "entered" -> {
+                        p.submitted = true
+                        p.enterTried = true
+                        p.stage = "poll"
+                        releaseEditorFocus()
+                        status(p, "أُرسل Enter إلى حقل الموقع؛ ننتظر تأكيد الاستقبال")
+                    }
+                    "needs_send" -> {
+                        p.submitted = false
+                        when {
+                            p.stage == "locate" && !p.enterTried -> p.stage = "enter"
+                            p.stage == "enter" && !p.tapped -> p.stage = "submit"
+                            else -> Unit
+                        }
+                    }
                     "clicked" -> {
                         p.submitted = true
                         p.stage = "poll"
@@ -382,7 +442,7 @@ internal class AndroidWebSessionHost(
                     }
                     "awaiting_ack" -> status(p, "لم يؤكد الموقع استقبال الرسالة بعد")
                     "send_unconfirmed" -> {
-                        fail(p, "تمت محاولة النقر لكن الموقع لم يؤكد الإرسال خلال 30 ثانية. لم أعِد المحاولة ولم أستخدم API.")
+                        fail(p, "تمت محاولة النقر لكن الموقع لم يؤكد الإرسال خلال 45 ثانية. لم أعِد المحاولة ولم أستخدم API.")
                         return@evaluateJavascript
                     }
                     "site_busy" -> {
@@ -397,10 +457,14 @@ internal class AndroidWebSessionHost(
                         status(p, "أُرسلت الرسالة إلى الصفحة؛ بانتظار جواب جديد")
                     }
                     "streaming" -> {
-                        // Keep the latest streamed text; some sites never show a completion signal.
                         val streamed = result.optString("text")
-                        if (streamed.isNotBlank() && streamed != p.lastText) {
-                            p.lastText = streamed
+                        if (streamed.isNotBlank()) {
+                            if (streamed != p.lastText) {
+                                p.lastText = streamed
+                                p.lastTextAt = System.currentTimeMillis()
+                            }
+                            // Live-return: the in-app chat shows this while the page finishes.
+                            status(p, streamed.take(3500))
                         }
                     }
                     "complete" -> {
@@ -434,7 +498,12 @@ internal class AndroidWebSessionHost(
                     }
                 }
             }
-            main.postDelayed({ tick(p) }, 700)
+            val delayMs = when (p.stage) {
+                "poll" -> 220L
+                "prepare", "locate", "enter", "submit" -> 280L
+                else -> 450L
+            }
+            main.postDelayed({ tick(p) }, delayMs)
         }
     }
     override fun cancel(token: String) {

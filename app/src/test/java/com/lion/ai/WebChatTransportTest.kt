@@ -24,7 +24,7 @@ class WebChatTransportTest {
             done(WebSessionTransport.Reply("وصل الرد من الصفحة", true, true))
         }
     }
-    @Test fun actualAskUsesBrowserNotGatewayAndPreservesContext() {
+    @Test fun actualAskUsesBrowserNotGatewayAndSendsLatestMessageOnly() {
         val browser = Browser(); attach(browser)
         val prefs = FakePrefs()
         prefs.edit().putBoolean(WebChatRuntime.ENABLED, true)
@@ -38,13 +38,42 @@ class WebChatTransportTest {
         assertEquals("وصل الرد من الصفحة", reply)
         val request = browser.requests.single()
         assertEquals("claude_web", request.provider)
-        assertTrue(request.prompt.contains("تعليمات الأدوات والضوابط"))
-        assertTrue(request.prompt.contains("سؤال سابق"))
-        assertTrue(request.prompt.contains("رد سابق"))
-        assertTrue(request.prompt.endsWith("سؤال جديد"))
+        assertEquals("سؤال جديد", request.prompt)
         prefs.edit().putBoolean("web_chat_enabled_claude_web", false).apply()
         assertTrue(LlmClient.isErrorReply(LlmClient.ask("لا ترسل", "", "claude_web", emptyList())))
         assertEquals(1, browser.requests.size)
+    }
+    @Test fun namedWebsiteNeverFansOutToOtherSites() {
+        val browser = object : Browser() {
+            override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
+                requests.add(request)
+                done(WebSessionTransport.Reply("⚠️ failed", false, false))
+            }
+        }
+        attach(browser)
+        val prefs = FakePrefs()
+        prefs.edit().putBoolean(WebChatRuntime.ENABLED, true)
+            .putBoolean("web_chat_enabled_arena", true)
+            .putBoolean("web_chat_enabled_claude_web", true)
+            .putBoolean("web_session_verified_claude_web", true)
+            .putBoolean(WebChatRuntime.CENTRAL, true).apply()
+        LlmClient.reloadOverrides(prefs)
+        assertTrue(LlmClient.isErrorReply(LlmClient.ask("hi", "", "arena", emptyList(), readTimeoutMs = 1000)))
+        assertEquals(listOf("arena"), browser.requests.map { it.provider })
+    }
+    @Test fun submittedFailureIsAnErrorNotAChatReply() {
+        attach(object : Browser() {
+            override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
+                done(WebSessionTransport.Reply("old page markdown", false, true))
+            }
+        })
+        val prefs = FakePrefs()
+        prefs.edit().putBoolean(WebChatRuntime.ENABLED, true)
+            .putBoolean("web_chat_enabled_arena", true).apply()
+        LlmClient.reloadOverrides(prefs)
+        val reply = LlmClient.ask("hi", "", "arena", emptyList(), readTimeoutMs = 1000)
+        assertTrue(LlmClient.isErrorReply(reply))
+        assertTrue(reply.contains("old page markdown"))
     }
     @Test fun missingHostFailsRatherThanSilentlyCallingAnApi() {
         assertFalse(WebSessionTransport.exchange("arena", "hello", 1000).success)

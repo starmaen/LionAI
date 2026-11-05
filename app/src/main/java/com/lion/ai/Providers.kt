@@ -53,18 +53,6 @@ val PROVIDERS = listOf(
     ),
     // ===== مزودات API (مفتاح أو بدون مفتاح) =====
     ProviderInfo(
-        id = "local_proxy",
-        label = "خادم محلي (Proxy داخل التطبيق)",
-        tagline = "خادم HTTP يعمل على 127.0.0.1 داخل التطبيق ويوجه الطلبات لمزودي الذكاء الاصطناعي عبر الإنترنت",
-        docsUrl = "https://github.com/starmaen/LionAI",
-        defaultModel = "gemini-3.8-flash",
-        shortName = "محلي",
-        keyless = true,
-        custom = true,
-        modelHint = "يبدأ تلقائياً عند فتح التطبيق على http://127.0.0.1:<port>/v1/chat/completions. ينقل طلباتك لمزود الذكاء الاصطناعي النشط (Gemini، DeepSeek، إلخ) ويعيد الرد بصيغة OpenAI.",
-        models = emptyList()
-    ),
-    ProviderInfo(
         id = "custom",
         label = "مخصص (OpenAI-Compatible)",
         tagline = "Gateway / LiteLLM / Ollama / أي خادم متوافق — Base URL + مفتاح اختياري",
@@ -85,6 +73,31 @@ val PROVIDERS = listOf(
         shortName = "Gemini",
         modelHint = "الموديلات المجانية تتغير، وبعض موديلات Pro مدفوعة. زر «تحديث» يعرض موديلات حسابك؛ راجع صفحة الأسعار.",
         models = listOf("gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.8-flash", "gemini-3.1-flash-lite")
+    ),
+    ProviderInfo(
+        id = "apinex",
+        label = "APInex",
+        tagline = "OpenAI-compatible — نماذج Free/ ونماذج مدفوعة من كتالوج واحد",
+        docsUrl = "https://apinex.bond/models",
+        defaultModel = "free/minimax-m3.1-flash",
+        shortName = "APInex",
+        modelHint = "مفتاح sk-apx من لوحة APInex. زر «تحديث» يجلب كل النماذج، والمجاني يبدأ بـ free/ مثل free/kimi-k3 وfree/gpt-6-luna وfree/gemini-3.8-flash.",
+        models = listOf(
+            "free/minimax-m3.1-flash", "free/kimi-k3", "free/gpt-6-luna",
+            "free/glm-5.3-flash", "free/gemini-3.8-flash", "free/qwen-3.8-max",
+            "claude-sonnet-5.5", "gpt-6.1-sol"
+        )
+    ),
+    ProviderInfo(
+        id = "opencode-local",
+        label = "OpenCode Local (البيئة)",
+        tagline = "عميل OpenCode الرسمي داخل Alpine — كل المزودات المرتبطة به",
+        docsUrl = "https://opencode.ai/docs/server/",
+        defaultModel = "opencode/big-pickle",
+        keyless = true,
+        shortName = "OpenCode Local",
+        modelHint = "يشغّل opencode serve داخل البيئة ويستخدم إعدادات ومفاتيح العميل الرسمي. اربط المزودات أولاً عبر opencode auth login، ثم اضغط «تحديث» لعرض provider/model.",
+        models = listOf("opencode/big-pickle")
     ),
     ProviderInfo(
         id = "opencode",
@@ -532,7 +545,7 @@ val PROVIDERS = listOf(
         modelHint = "دردشة مجانية بدون تسجيل دخول أو مفتاح، تتيح التبديل بين عدة نماذج داخل الصفحة.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://duckduckgo.com/aichat"
+        webviewUrl = "https://duck.ai"
     ),
     ProviderInfo(
         id = "gemini_web",

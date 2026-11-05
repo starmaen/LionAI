@@ -25,9 +25,14 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +46,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** أجزاء الرد بالترتيب: نص، كتلة كود، بطاقة ملف. */
 internal sealed interface Seg {
@@ -155,6 +163,10 @@ internal fun MdText(text: String, color: Color, size: Int = 15) {
 
 @Composable
 internal fun CodeCard(lang: String, code: String, context: Context) {
+    val scope = rememberCoroutineScope()
+    var running by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<ShellResult?>(null) }
+    val runnable = remember(lang) { CodeRunner.plan(lang) != null }
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = Color(0xFF161616),
@@ -169,6 +181,15 @@ internal fun CodeCard(lang: String, code: String, context: Context) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(lang, color = Color(0xFF9A9A9A), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                if (runnable) {
+                    TextButton(enabled = !running, onClick = {
+                        scope.launch {
+                            running = true
+                            result = withContext(Dispatchers.IO) { CodeRunner.run(context, lang, code, 30) }
+                            running = false
+                        }
+                    }) { Text(if (running) "…" else "▶ تشغيل", color = Color(0xFF7CC47C), fontSize = 12.sp) }
+                }
                 IconButton(
                     onClick = {
                         val name = "code." + FileDelivery.extensionFor(lang)
@@ -201,6 +222,16 @@ internal fun CodeCard(lang: String, code: String, context: Context) {
                     .horizontalScroll(rememberScrollState())
                     .padding(12.dp)
             )
+            result?.let {
+                Text(
+                    it.output,
+                    color = if (it.ok) Color(0xFF7CC47C) else Color(0xFFFF9A9A),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF101010)).padding(12.dp)
+                )
+            }
         }
     }
 }
@@ -216,6 +247,7 @@ internal fun FileCard(path: String, context: Context) {
         color = Color(0xFF1E1E1E),
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
     ) {
+        Column {
         Row(
             modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -261,6 +293,24 @@ internal fun FileCard(path: String, context: Context) {
                     Icon(Icons.Filled.Share, contentDescription = "مشاركة", tint = Color(0xFF9A9A9A))
                 }
             }
+        }
+        if (file != null) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp)) {
+                TextButton(onClick = {
+                    if (!FileDelivery.open(context, file)) Toast.makeText(context, "لا يوجد تطبيق مناسب للفتح", Toast.LENGTH_SHORT).show()
+                }) { Text(if (ext == "APK") "تثبيت" else "فتح", color = Color(0xFF7CC47C), fontSize = 11.sp) }
+                TextButton(onClick = {
+                    val uri = FileDelivery.contentUri(context, file)
+                    if (uri != null) copyToClipboard(context, "رابط ملف محلي", uri)
+                }) { Text("نسخ الرابط", color = Color(0xFF9A9A9A), fontSize = 11.sp) }
+                if (FileDelivery.canRunInTermux(file)) {
+                    TextButton(onClick = {
+                        val ok = FileDelivery.runInTermux(context, file)
+                        Toast.makeText(context, if (ok) "أُرسل إلى Termux" else "فعّل Allow External Apps في Termux ثم أعد المحاولة", Toast.LENGTH_LONG).show()
+                    }) { Text(if (ext == "APK") "تثبيت عبر Termux" else "تنفيذ عبر Termux", color = Color(0xFF64B5F6), fontSize = 11.sp) }
+                }
+            }
+        }
         }
     }
 }

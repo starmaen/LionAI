@@ -5,7 +5,6 @@ plugins {
 }
 
 android {
-    packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += "**/libproot*.so" } }
     namespace = "com.lion.ai"
     compileSdk = 35
 
@@ -59,6 +58,13 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // proot يُشغَّل من nativeLibraryDir: يجب استخراج المكتبات إلى القرص وعدم تجريدها.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += "**/libproot*.so"
+        }
+    }
 }
 
 dependencies {
