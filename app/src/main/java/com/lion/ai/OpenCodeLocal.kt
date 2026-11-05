@@ -64,6 +64,17 @@ object OpenCodeLocal {
         sessions.clear()
     }
 
+    /** يربط مزوداً بمفتاح API عبر خادم OpenCode المحلي (PUT /auth/{id}) ثم يعيد عدد النماذج المتاحة. */
+    fun setAuth(provider: String, key: String): String {
+        val id = provider.trim().lowercase().filter { it.isLetterOrDigit() || it in "-_." }
+        require(id.isNotBlank()) { "معرّف المزود غير صالح" }
+        require(key.isNotBlank()) { "المفتاح فارغ" }
+        start()
+        request("/auth/$id", "PUT", JSONObject().put("type", "api").put("key", key.trim()))
+        val count = runCatching { listModels().count { it.startsWith("$id/") } }.getOrDefault(0)
+        return "✅ رُبط $id" + if (count > 0) " — $count نموذج متاح" else " — اضغط «تحديث» في قائمة النماذج للتأكد"
+    }
+
     fun listModels(): List<String> {
         start()
         val root = request("/config/providers", "GET").second

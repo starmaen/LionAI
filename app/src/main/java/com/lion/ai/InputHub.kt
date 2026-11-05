@@ -166,8 +166,8 @@ fun HubChipsRow(
             selected = autoRoute,
             onClick = onToggleAuto
         )
-        // الخادمان أدوات توجيه وليسا مزودين؛ تشغيلهما وإيقافهما من ⚙️ الإعدادات فقط.
-        HubCategory.entries.filterNot { it == HubCategory.LOCAL || it == HubCategory.EXTERNAL }
+        // اختيار المزود من صندوق الكتابة ومن ⚙️ الإعدادات؛ تبقى «ميديا» فقط كمدخل مستقل للتوليد.
+        HubCategory.entries.filter { it == HubCategory.MEDIA }
             .forEach { category ->
             HubPill(
                 "${category.icon} ${category.label}",

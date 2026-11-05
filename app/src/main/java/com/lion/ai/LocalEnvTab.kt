@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -72,7 +73,7 @@ fun LocalEnvTab() {
     val envReady = remember(LinuxEnv.installing, report) { LinuxEnv.ready(context) }
     val runtimeOk = remember { LinuxEnv.runtimeAvailable(context) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("🖥️ البيئة المحلية", color = ENV_GOLD, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Button(enabled = !busy, onClick = { refresh() }, colors = ButtonDefaults.buttonColors(containerColor = ENV_CARD)) {
@@ -286,5 +287,10 @@ fun LocalEnvTab() {
             "كل زر ينفّذ حزمة واحدة فقط. الأدوات والحزم تبقى بعد إغلاق التطبيق.",
             color = ENV_MUTED, fontSize = 11.sp
         )
+        Spacer(Modifier.height(16.dp))
+        OpenCodeAuthCard()
+        Spacer(Modifier.height(16.dp))
+        LionTerminal()
+        Spacer(Modifier.height(24.dp))
     }
 }
