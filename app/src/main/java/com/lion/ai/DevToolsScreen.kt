@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,7 +72,7 @@ fun DevToolsScreen(
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    var tab by remember { mutableStateOf("home") }
+    var tab by rememberSaveable { mutableStateOf("home") }
 
     Scaffold(
         containerColor = T_DARK,

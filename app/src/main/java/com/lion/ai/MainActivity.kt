@@ -147,6 +147,7 @@ data class Contact(val name: String, val number: String, val normalized: String?
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashRecorder.install(this)
         enableEdgeToEdge()
         setContent {
             MaterialTheme(

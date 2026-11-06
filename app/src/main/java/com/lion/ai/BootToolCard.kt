@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -86,11 +87,12 @@ private fun copyToUploads(context: Context, uri: Uri): String {
 fun BootToolCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var imagePath by remember { mutableStateOf("") }
-    var unpackDir by remember { mutableStateOf("") }
-    var outputPath by remember { mutableStateOf("") }
-    var log by remember { mutableStateOf("") }
+    var imagePath by rememberSaveable { mutableStateOf("") }
+    var unpackDir by rememberSaveable { mutableStateOf("") }
+    var outputPath by rememberSaveable { mutableStateOf("") }
+    var log by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var crash by remember { mutableStateOf(CrashRecorder.last(context)) }
 
     fun errorText(e: Throwable): String = when (e) {
         is OutOfMemoryError -> "❌ الذاكرة غير كافية لمعالجة الصورة. أغلق التطبيقات الأخرى أو استخدم صورة أصغر."
@@ -160,6 +162,19 @@ fun BootToolCard() {
                 "الناتج غير موقّع (AVB) ويحتاج بوتلودر مفتوحاً؛ احتفظ بنسخة من الأصلية.",
             color = Color(0xFF9A9A9A), fontSize = 11.sp
         )
+        crash?.let { report ->
+            Column(
+                Modifier.fillMaxWidth().background(Color(0xFF2A1414), RoundedCornerShape(10.dp)).padding(10.dp)
+            ) {
+                Text("⚠️ آخر انهيار مسجّل للتطبيق — انسخه وأرسله للمطوّر", color = Color(0xFFFF9A9A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                SelectionContainer {
+                    Text(report.take(1500), color = Color(0xFFFFD0D0), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                }
+                Button(onClick = { CrashRecorder.clear(context); crash = null }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A2020))) {
+                    Text("حذف السجل", fontSize = 11.sp, color = Color.White)
+                }
+            }
+        }
         Button(enabled = !busy, onClick = { launchPicker() }, colors = ButtonDefaults.buttonColors(containerColor = gold)) {
             Text("📂 اختيار صورة (.img)", color = Color(0xFF121212))
         }

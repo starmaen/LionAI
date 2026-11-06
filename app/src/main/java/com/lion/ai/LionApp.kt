@@ -99,6 +99,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -174,10 +175,10 @@ fun LionApp() {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val listState = rememberLazyListState()
 
-    var showSettings by remember { mutableStateOf(false) }
-    var showGitHub by remember { mutableStateOf(false) }
-    var showDevTools by remember { mutableStateOf(false) }
-    var showConnectors by remember { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showGitHub by rememberSaveable { mutableStateOf(false) }
+    var showDevTools by rememberSaveable { mutableStateOf(false) }
+    var showConnectors by rememberSaveable { mutableStateOf(false) }
     var showContacts by remember { mutableStateOf(false) }
     var showScheduled by remember { mutableStateOf(false) }
     var showArchive by remember { mutableStateOf(false) }
