@@ -128,4 +128,17 @@ class DevTaskTest {
         assertFalse(shouldForceExecution(ChatMode.GENERAL, TaskKind.FAST, false, "أصلح الخطأ"))
     }
 
+    @Test fun simpleQuestionsAndChatNeverOpenTheExecutionPath() {
+        listOf(
+            "ما هي عاصمة فرنسا", "هل هذا الملف pdf؟", "ماذا تعني كلمة تعويذة", "هل كلمة معلومات صحيحة",
+            "أيمكن ضغط ملف pdf", "شكرا لك", "ما هو امتداد ملف الصور"
+        ).forEach {
+            assertFalse(it, shouldUseAgentForPrompt(it, false, ChatMode.GENERAL))
+            assertFalse(it, shouldUseAgentForPrompt(it, false, ChatMode.CODE))
+        }
+        listOf("اضغط المجلد إلى zip", "أنشئ ملف notes.txt", "اعمل لي تطبيق ملاحظات", "اقرأ الملف Main.kt").forEach {
+            assertTrue(it, shouldUseAgentForPrompt(it, false, ChatMode.GENERAL))
+        }
+    }
+
 }

@@ -11,7 +11,7 @@ object UserIntent {
     enum class Kind { CAPABILITY, QUESTION, REQUEST }
 
     private val INTERROGATIVE = Regex(
-        "^(?:و|ف)?(?:هل|ما|ماذا|كيف|لماذا|لما|متي|اين|كم|ايش|شو|ليش|اشرح|وضح|لخص|فسر|" +
+        "^(?:و|ف)?(?:هل|ايمكن|اليس|ما|ماذا|كيف|لماذا|لما|متي|اين|كم|ايش|شو|ليش|اشرح|وضح|لخص|فسر|عرف|" +
             "what|how|why|when|where|which|who|can|could|do|does|is|are|will|would|explain)(?:\\s|$)"
     )
 

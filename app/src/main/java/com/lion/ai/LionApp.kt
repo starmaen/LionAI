@@ -149,7 +149,8 @@ private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): Li
 /** أمر تنفيذي صريح (قراءة/تعديل/بناء/رفع...) يحتاج أدوات حتماً. */
 private val ACTION_REQUEST = Regex(
     "(اقرأ\\s+الملف|افحص\\s+(الملف|المشروع)|حلل\\s+(الملف|المشروع)|راجع\\s+(الملف|المشروع)|" +
-        "عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|اكتب\\s+الملف|أنشئ|انشئ|ابنِ|ارفع|ادفع|commit|push|build|install|execute|read\\s+file|write\\s+file)"
+        "عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|اكتب\\s+الملف|أنشئ|انشئ|ابنِ|ارفع|ادفع|اضغط|فك\\s+ضغط|انسخ|انقل|احفظ|اقرأ|افحص|حلل|" +
+        "commit|push|build|install|execute|read\\s+file|write\\s+file)"
 )
 
 /** إشارة إلى مشروع/خطأ/مسار فعلي: الجواب الصحيح يحتاج قراءة الواقع لا التخمين (ملف أو كود وحدهما لا تكفي). */
@@ -177,12 +178,12 @@ internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode:
     if (hasWork) return true
     val text = prompt.trim().lowercase()
     if (text.isBlank()) return false
-    val intent = UserIntent.classify(text)
-    // «هل بإمكانك إنشاء مجلدات وملفات؟» سؤال قدرة: جواب مباشر، لا أدوات ولا بطاقة قرار.
-    if (intent == UserIntent.Kind.CAPABILITY) return false
-    if (ACTION_REQUEST.containsMatchIn(text)) return true
-    if (chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)) return true
-    return intent != UserIntent.Kind.QUESTION
+    val projectRef = chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)
+    // الأصل جواب مباشر: أي سؤال (عاصمة؟ هل هذا ملف pdf؟ ماذا تعني كلمة؟ هل بإمكانك…؟) لا يفتح أدوات.
+    // الاستثناء الوحيد: سؤال عن مشروع/خطأ فعلي في «المطوّر» يقرأ الواقع قبل أن يجيب.
+    if (UserIntent.classify(text) != UserIntent.Kind.REQUEST) return projectRef
+    // غير ذلك: تُفتح الأدوات فقط لفعل تنفيذي صريح؛ العبارة الخبرية أو الشكر أو المحادثة تُجاب مباشرة.
+    return ACTION_REQUEST.containsMatchIn(text) || DevTask.matches(text) || projectRef
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -927,7 +928,11 @@ fun LionApp() {
     ) {
         if (loadingChats[chatId] == true) return
         val previousSession = AgentSessions.of(prefs, chatId)
-        val resumingTask = !previousSession.completed && previousSession.hasWork() &&
+        // سؤال/قدرة مستقل (ما عاصمة؟ هل هذا ملف pdf؟): يُجاب مباشرة ولا يمسّ جلسة العمل ولا يُعدّ استئنافاً لها.
+        // كان beginTurn يُستدعى لكل رسالة فيجعل الجلسة «غير مكتملة» فتدخل كل الأسئلة اللاحقة مسار التنفيذ.
+        val standalone = UserIntent.classify(prompt) != UserIntent.Kind.REQUEST &&
+            !WriteIntent.isContinuation(prompt)
+        val resumingTask = !standalone && !previousSession.completed && previousSession.hasWork() &&
             !WriteIntent.isNewTask(prompt)
         val kind = if (resumingTask) TaskKind.DEV else kind
         val mode = if (forcePrecise) AnswerMode.PRECISE else AnswerMode.read(prefs)
@@ -981,8 +986,10 @@ fun LionApp() {
         toolStatus[chatId] = ""
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
-        session.beginTurn(prefs, prompt)
-        CheckpointStore.save(prefs, session)
+        if (!standalone) {
+            session.beginTurn(prefs, prompt)
+            CheckpointStore.save(prefs, session)
+        }
         var agentComplete = true
         var agentAsked = false
         scope.launch {
@@ -1459,7 +1466,9 @@ fun LionApp() {
             }
             toolStatus.remove(chatId)
             // الجلسة تبقى فقط إذا لم تُقبل إجابة مكتملة أو كان هناك سؤال معلّق؛ اكتمال المهمة يصفّرها.
-            if (used != null && agentComplete && session.pendingQuestion == null) {
+            if (standalone) {
+                // سؤال مستقل: لا يُنهي ولا يمسح مهمة معلّقة.
+            } else if (used != null && agentComplete && session.pendingQuestion == null) {
                 AgentSessions.clear(prefs, chatId)
             } else if (!session.hasWork()) {
                 AgentSessions.clear(prefs, chatId)
