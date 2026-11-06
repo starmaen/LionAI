@@ -1481,7 +1481,7 @@ fun LionApp() {
                 anghamiUrl,
                 browserUrl,
                 via = via,
-                sources = if (used != null) sources else emptyList()
+                sources = if (used != null && chatMode != ChatMode.CODE) sources else emptyList()
             )
             val replaced = replaceIndex != null && replaceInChat(chatId, replaceIndex, newMessage)
             if (!replaced) appendToChat(chatId, newMessage)

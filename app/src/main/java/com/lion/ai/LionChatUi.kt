@@ -2,6 +2,7 @@ package com.lion.ai
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -38,10 +39,20 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 private fun TypingDots() {
-    Column(Modifier.padding(12.dp)) {
-        Text("تهيئة مسار التنفيذ", color = Color(0xFFB8B8B8), fontSize = 12.sp)
-        Spacer(Modifier.height(8.dp))
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFF83B8C6), trackColor = Color(0xFF20282B))
+    // نقاط انتظار فقط: لا نص «تهيئة مسار التنفيذ» لأن أغلب الردود مباشرة ولا تُشغّل أي تنفيذ.
+    val transition = rememberInfiniteTransition(label = "typingDots")
+    Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        repeat(3) { i ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(durationMillis = 600, delayMillis = i * 150), RepeatMode.Reverse),
+                label = "dot$i"
+            )
+            Canvas(Modifier.size(8.dp)) {
+                drawCircle(Color(0xFF83B8C6).copy(alpha = alpha))
+            }
+        }
     }
 }
 
