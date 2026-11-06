@@ -8,10 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
-      # اختياري: عند إضافته في GitHub Secrets يُستخدم تلقائياً، وإلا تبقى القيمة القديمة
-      # حتى لا ينكسر توقيع التحديثات.
       LION_KEYSTORE_PASSWORD: ${{ secrets.LION_KEYSTORE_PASSWORD }}
       LION_KEY_PASSWORD: ${{ secrets.LION_KEY_PASSWORD }}
     steps:
@@ -25,6 +23,34 @@ jobs:
 
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: false
+
+    - name: Cache npm dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          scripts/node_modules
+          ~/.npm
+        key: npm-${{ runner.os }}-${{ hashFiles('scripts/package-lock.json') }}
+        restore-keys: |
+          npm-${{ runner.os }}-
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('scripts/package-lock.json') }}
+        restore-keys: |
+          playwright-${{ runner.os }}-
+
+    - name: Cache Gradle wrapper
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/wrapper
+        key: gradle-wrapper-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -32,13 +58,17 @@ jobs:
     - name: Fetch proot (Linux environment runtime, checksum-verified)
       run: bash scripts/fetch-proot.sh
 
+    - name: Install npm dependencies
+      run: npm --prefix scripts ci --ignore-scripts --prefer-offline --no-audit
+
     - name: Test browser session DOM bridge
-      run: npm --prefix scripts ci --ignore-scripts && npm --prefix scripts test
+      run: npm --prefix scripts test
+
+    - name: Install Playwright Chromium (cached)
+      run: npm exec --prefix scripts -- playwright install --with-deps chromium
 
     - name: Test real Chromium editor and reply round trips (local fixtures)
-      run: |
-        npm exec --prefix scripts -- playwright install --with-deps chromium
-        npm --prefix scripts run test:browser
+      run: npm --prefix scripts run test:browser
 
     - name: Run unit tests
       run: |
