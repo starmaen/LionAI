@@ -68,6 +68,36 @@ class TaskContinuityTest {
         val m=TaskContinuity();m.begin("أصلح الخطأ",false);m.begin("لا تعدل أي شيء",true,true)
         assertTrue(m.resume);assertFalse(m.writeGranted)
     }
+    @Test fun permissionSurvivesSessionResetAndOnlyExplicitDenialOrNewTaskClearsIt() {
+        val prefs=FakePrefs(); val chat="chat_permission_store"
+        val first=AgentSession(chat)
+        first.beginTurn(prefs,"أنشئ ملف notes.txt")
+        assertTrue(PermissionStore.writeGranted(prefs,chat))
+        // جلسة جديدة تحاكي اكتمال الجلسة/إعادة التشغيل: "أكمل" يجب أن يورث الإذن.
+        val resumed=AgentSession(chat)
+        resumed.beginTurn(prefs,"أكمل")
+        assertTrue(resumed.continuity.writeGranted)
+        resumed.beginTurn(prefs,"مهمة جديدة")
+        assertFalse(PermissionStore.writeGranted(prefs,chat))
+        assertFalse(resumed.continuity.writeGranted)
+
+        val denied=AgentSession("chat_permission_denied")
+        denied.beginTurn(prefs,"أنشئ ملف a.txt")
+        assertTrue(PermissionStore.writeGranted(prefs,"chat_permission_denied"))
+        denied.beginTurn(prefs,"لا تنفذ أي تعديل")
+        assertFalse(PermissionStore.writeGranted(prefs,"chat_permission_denied"))
+    }
+
+    @Test fun decisionCardApprovalPersistsForTheWholeConversation() {
+        val prefs=FakePrefs(); val chat="chat_permission_approval"; val s=AgentSession(chat)
+        s.beginTurn(prefs,"هل يمكنك إنشاء مجلد youtube-translator؟")
+        s.askQuestion("هل أنشئ المجلد الآن؟")
+        assertFalse(PermissionStore.writeGranted(prefs,chat))
+        s.beginTurn(prefs,"✅ موافق، تابع")
+        assertTrue(s.continuity.writeGranted)
+        assertTrue(PermissionStore.writeGranted(prefs,chat))
+    }
+
     @Test fun exactFileContentsAndNextStepSurviveSerialization() {
         val s=AgentSession("chatA");s.beginTurn("اقرأ الملفات")
         val body="line1\n" + "function body beyond the old 240 character summary\n".repeat(30)

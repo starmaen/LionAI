@@ -102,6 +102,7 @@ object ChatRepository {
         ManifestStore.delete(prefs, id)
         PipelineStore.delete(prefs, id)
         CheckpointStore.delete(prefs, id)
+        PermissionStore.clear(prefs, id)
         AgentSessions.clear(id)
         val list = read(prefs).filter { it.id != id }
         val legacyIds = (prefs.getString("chat_ids", "") ?: "")

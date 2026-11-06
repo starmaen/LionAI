@@ -1,5 +1,6 @@
 package com.lion.ai
 
+import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -63,6 +64,33 @@ object WriteIntent {
     }
 }
 
+/**
+ * إذن الكتابة على مستوى المحادثة (وليس الدور فقط).
+ *
+ * المشكلة التي يعالجها: كانت الموافقة تعيش داخل جلسة الوكيل، فإذا اكتملت الجلسة أو أُعيد
+ * إنشاؤها ثم كتب المستخدم «أكمل» عاد الوكيل يطلب الإذن من جديد رغم منحه سابقاً.
+ * هذا المخزن يبقى بعد انتهاء الجلسة وبعد إعادة تشغيل التطبيق، ولا يُلغى إلا برفض صريح
+ * أو بدء مهمة جديدة صريحة أو حذف المحادثة.
+ */
+object PermissionStore {
+    private const val PREFIX = "perm_write_"
+
+    fun writeGranted(prefs: SharedPreferences, chatId: String): Boolean =
+        chatId.isNotBlank() && prefs.getBoolean(PREFIX + chatId, false)
+
+    fun grantWrite(prefs: SharedPreferences, chatId: String) {
+        if (chatId.isNotBlank()) prefs.edit().putBoolean(PREFIX + chatId, true).apply()
+    }
+
+    fun revokeWrite(prefs: SharedPreferences, chatId: String) {
+        if (chatId.isNotBlank()) prefs.edit().putBoolean(PREFIX + chatId, false).apply()
+    }
+
+    fun clear(prefs: SharedPreferences, chatId: String) {
+        if (chatId.isNotBlank()) prefs.edit().remove(PREFIX + chatId).apply()
+    }
+}
+
 /** Per-task receipts and exact tool-turn state, persisted in encrypted application preferences.
  * Results are data, not authorization. Bounded history is explicitly marked when trimmed.
  */
@@ -80,14 +108,21 @@ class TaskContinuity {
     private val receipts = JSONObject()
     private val reads = JSONObject()
 
-    fun begin(userRequest: String, unfinished: Boolean, answering: Boolean = false) {
+    fun begin(
+        userRequest: String,
+        unfinished: Boolean,
+        answering: Boolean = false,
+        persistedWrite: Boolean = false
+    ) {
         resume = unfinished && (WriteIntent.isContinuation(userRequest) || answering)
-        val approved = WriteIntent.isApproval(userRequest) && (resume || answering || writeGranted)
+        val approved = WriteIntent.isApproval(userRequest) &&
+            (resume || answering || writeGranted || persistedWrite)
         writeGranted = when {
             WriteIntent.isDenial(userRequest) -> false
             WriteIntent.permits(userRequest) -> true
             approved -> true
-            resume -> writeGranted
+            resume -> writeGranted || persistedWrite
+            persistedWrite -> true
             else -> false
         }
         responded = false

@@ -1,5 +1,6 @@
 package com.lion.ai
 
+import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -55,9 +56,32 @@ class AgentSession(val chatId: String) {
         private set
 
     @Synchronized
-    fun beginTurn(userRequest: String) {
+    fun beginTurn(userRequest: String) = beginTurnInternal(null, userRequest)
+
+    /**
+     * نسخة التطبيق: تقرأ/تكتب إذن الكتابة الدائم للمحادثة، فلا يضيع الإذن عند اكتمال الجلسة
+     * أو إعادة إنشاء الوكيل، ويُلغى فقط برفض صريح أو بدء مهمة جديدة صريحة.
+     */
+    @Synchronized
+    fun beginTurn(prefs: SharedPreferences, userRequest: String) =
+        beginTurnInternal(prefs, userRequest)
+
+    private fun beginTurnInternal(prefs: SharedPreferences?, userRequest: String) {
+        if (prefs != null && WriteIntent.isNewTask(userRequest)) {
+            PermissionStore.clear(prefs, chatId)
+        }
+        val persisted = prefs != null && PermissionStore.writeGranted(prefs, chatId)
         val followUp = !completed && hasWork() && !WriteIntent.isNewTask(userRequest)
-        continuity.begin(userRequest, !completed, pendingQuestion != null || followUp)
+        continuity.begin(
+            userRequest,
+            !completed,
+            pendingQuestion != null || followUp,
+            persistedWrite = persisted
+        )
+        if (prefs != null) {
+            if (continuity.writeGranted) PermissionStore.grantWrite(prefs, chatId)
+            else if (WriteIntent.isDenial(userRequest)) PermissionStore.revokeWrite(prefs, chatId)
+        }
         if (!continuity.resume) lastTask = userRequest.take(600)
         completed = false
     }

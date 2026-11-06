@@ -954,7 +954,7 @@ fun LionApp() {
         toolStatus[chatId] = ""
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
-        session.beginTurn(prompt)
+        session.beginTurn(prefs, prompt)
         CheckpointStore.save(prefs, session)
         var agentComplete = true
         var agentAsked = false
