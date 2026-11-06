@@ -101,6 +101,9 @@ fun DevToolsScreen(
                 "manager" -> ToolManagerTab(prefs, onOpenGitHub, onOpenSettings)
                 "audit" -> ToolAuditTab()
                 "env" -> LocalEnvTab()
+                "fsimg" -> androidx.compose.foundation.layout.Column(
+                    Modifier.verticalScroll(rememberScrollState()).padding(12.dp)
+                ) { FsImageToolCard() }
                 "boot" -> androidx.compose.foundation.layout.Column(
                     Modifier.verticalScroll(rememberScrollState()).padding(12.dp)
                 ) { BootToolCard() }
@@ -124,6 +127,7 @@ private fun ToolsHome(
             ToolCard("🌐", "متصفح الويب", "جلب صفحة، استخراج النص والأكواد والروابط والصور، استدعاء API، وتنزيل ملفات") { onTab("web") }
             ToolCard("🐙", "GitHub Explorer", "استعراض المستودعات، الشجرة، الملفات، README، الفروع، Issues، PRs، Actions") { onOpenGitHub() }
             ToolCard("🖥️", "البيئة المحلية", "فحص مساحة العمل، تثبيت الأدوات، ربط مزودات OpenCode، وTerminal حقيقي") { onTab("env") }
+            ToolCard("💽", "صور System / Vendor", "فك صور EXT4 وEROFS (حتى sparse)، تعديل الملفات، ثم إعادة البناء وتنزيل الناتج") { onTab("fsimg") }
             ToolCard("📦", "صور Boot / Recovery", "فك boot.img وrecovery.img، تعديل cmdline وramdisk، ثم إعادة التركيب وتنزيل الناتج") { onTab("boot") }
             ToolCard("📁", "قارئ الملفات", "قراءة وكتابة ملفات مساحة العمل، CSV، JSON، ZIP، وحفظ التعديلات") { onTab("files") }
             ToolCard("🗄️", "قواعد البيانات", "إنشاء SQLite، تنفيذ SQL، عرض المخطط، استيراد/تصدير JSON") { onTab("db") }

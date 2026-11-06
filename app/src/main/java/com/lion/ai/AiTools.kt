@@ -136,6 +136,9 @@ object AiTools {
         Def("file_list", ToolGroup.FILES, """{"path":""}""", "عرض ملفات مساحة العمل"),
         Def("file_search", ToolGroup.FILES, """{"query":"TODO","path":"","max_results":50}""", "بحث نصي في مساحة العمل (اسم/مسار/محتوى)"),
         Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل"),
+        Def("fs_image_info", ToolGroup.FILES, """{"path":"uploads/vendor.img"}""", "تحليل صورة system/vendor/product (EXT4 أو EROFS، عادية أو sparse)"),
+        Def("fs_image_unpack", ToolGroup.FILES, """{"path":"uploads/vendor.img","out_dir":"fs_unpacked/vendor"}""", "فك صورة system/vendor إلى مجلد (يثبّت debugfs/erofs-utils عند الحاجة)", true),
+        Def("fs_image_repack", ToolGroup.FILES, """{"dir":"fs_unpacked/vendor","target":"deliverables/vendor-new.img","size_mb":0}""", "إعادة بناء الصورة من مجلد الفك بنفس الصيغة (بلا وسوم SELinux وغير موقّعة)", true),
         Def("boot_info", ToolGroup.FILES, """{"path":"uploads/boot.img"}""", "تحليل ترويسة boot/recovery.img (إصدار، أحجام، cmdline)"),
         Def("boot_unpack", ToolGroup.FILES, """{"path":"uploads/boot.img","out_dir":"boot_unpacked"}""", "فك boot/recovery.img: kernel وramdisk (إلى مجلد) وdtb وheader.json", true),
         Def("boot_repack", ToolGroup.FILES, """{"dir":"boot_unpacked","target":"deliverables/boot-new.img"}""", "إعادة تركيب boot/recovery.img من مجلد الفك بعد التعديل (غير موقّعة)", true),
@@ -396,7 +399,7 @@ object AiTools {
             "(\\.zip\\b|\\.csv\\b|\\.json\\b|\\.ya?ml\\b|\\.xml\\b|\\.txt\\b|\\.kt\\b|\\.java\\b|\\.py\\b|\\.js\\b|" +
                 "ملف|ملفات|مجلد|مشروع|مساحة العمل|workspace|zip|ضغط|للتنزيل|للتحميل|pdf|docx|xlsx|أرشيف|ارشيف|csv|yaml|xml|احفظ|أحفظ|اكتب ملف|أنشئ ملف|انشئ ملف|اقرأ ملف|قراءة ملف|" +
                 "ابحث في الملفات|ابحث في المشروع|بحث في الملفات|بحث في الكود|grep|فك الضغط|فك ضغط|استخرج الملفات|استخراج الملفات|" +
-                "دمج|ادمج|merge|boot|recovery|ramdisk|بوت|ريكفري|\\.img\\b|شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين|patch|تعديل ملف|احذف ملف)"
+                "دمج|ادمج|merge|vendor|system\\\\.img|ext4|erofs|فندور|سيستم|boot|recovery|ramdisk|بوت|ريكفري|\\.img\\b|شجرة|tree|انقل ملف|انسخ ملف|بصمة|checksum|diff|فرق بين ملفين|patch|تعديل ملف|احذف ملف)"
         )
         if (files.containsMatchIn(t)) groups.add(ToolGroup.FILES)
         val db = Regex("(sql|sqlite|database|قاعدة بيانات|قواعد بيانات|جدول بيانات|استعلام|جدول|قاعدة|db\\b)")
@@ -1423,6 +1426,13 @@ object AiTools {
                 }.orEmpty()
                 val entry = FileTools.zipCreate(ctx.context, req(args, "target"), sources)
                 "✅ أُنشئ ${entry.path} (${entry.size} بايت)"
+            }
+            "fs_image_info" -> FsImageTools.info(ctx.context, req(args, "path"))
+            "fs_image_unpack" -> FsImageTools.unpack(ctx.context, req(args, "path"), args.optString("out_dir"))
+            "fs_image_repack" -> {
+                val msg = FsImageTools.repack(ctx.context, req(args, "dir"), args.optString("target"), int(args, "size_mb", 0).coerceIn(0, 8192))
+                val rel = FileTools.relative(ctx.context, resolveWorkspace(ctx, args.optString("target").ifBlank { "deliverables/" + req(args, "dir").trimEnd('/').substringAfterLast('/') + "-new.img" }))
+                msg + "\n" + FileDelivery.marker(rel)
             }
             "boot_info" -> BootImageTools.info(ctx.context, req(args, "path"))
             "boot_unpack" -> BootImageTools.unpack(ctx.context, req(args, "path"), args.optString("out_dir"))

@@ -173,8 +173,8 @@ fun BootToolCard() {
             }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("🧩 فك", color = gold, fontSize = 12.sp) }
             Button(enabled = !busy && unpackDir.isNotBlank(), onClick = {
                 val target = "deliverables/" + File(unpackDir).name + "-new.img"
-                run("تركيب الصورة", block = { BootImageTools.repack(context, unpackDir, target) }) {
-                    outputPath = target
+                run("تركيب الصورة", block = { BootImageTools.repack(context, unpackDir, target) }) { result ->
+                    if (result.startsWith("✅")) outputPath = target
                 }
             }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6D00))) { Text("🔧 تركيب", color = Color.White, fontSize = 12.sp) }
         }

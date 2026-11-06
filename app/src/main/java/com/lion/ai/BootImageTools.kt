@@ -188,8 +188,11 @@ object BootImageTools {
 
     internal class Cpio(
         val name: String, val mode: Long, val uid: Long, val gid: Long, val nlink: Long, val mtime: Long,
-        val devMajor: Long, val devMinor: Long, val rdevMajor: Long, val rdevMinor: Long, val data: ByteArray
-    )
+        val devMajor: Long, val devMinor: Long, val rdevMajor: Long, val rdevMinor: Long, val data: ByteArray,
+        val file: File? = null
+    ) {
+        val size: Long get() = file?.length() ?: data.size.toLong()
+    }
 
     private fun hex(s: ByteArray, off: Int): Long = String(s, off, 8, Charsets.US_ASCII).toLong(16)
 
@@ -216,20 +219,34 @@ object BootImageTools {
 
     internal fun buildCpio(entries: List<Cpio>): ByteArray {
         val out = ByteArrayOutputStream()
-        fun pad() { while (out.size() % 4 != 0) out.write(0) }
+        writeCpio(out, entries)
+        return out.toByteArray()
+    }
+
+    /** يكتب cpio (newc) إلى أي تدفق، ويقرأ بيانات الملفات على دفعات بدل تحميلها كلها. */
+    internal fun writeCpio(sink: OutputStream, entries: List<Cpio>) {
+        var written = 0L
+        fun w(bytes: ByteArray, len: Int = bytes.size) { sink.write(bytes, 0, len); written += len }
+        fun pad() { val n = ((4 - (written % 4)) % 4).toInt(); if (n > 0) w(ByteArray(n)) }
         fun put(e: Cpio, ino: Int) {
             val nameBytes = e.name.toByteArray(Charsets.UTF_8)
             val header = "070701" + listOf(
-                ino.toLong(), e.mode, e.uid, e.gid, e.nlink, e.mtime, e.data.size.toLong(),
+                ino.toLong(), e.mode, e.uid, e.gid, e.nlink, e.mtime, e.size,
                 e.devMajor, e.devMinor, e.rdevMajor, e.rdevMinor, (nameBytes.size + 1).toLong(), 0L
             ).joinToString("") { String.format("%08X", it) }
-            out.write(header.toByteArray(Charsets.US_ASCII))
-            out.write(nameBytes); out.write(0); pad()
-            out.write(e.data); pad()
+            w(header.toByteArray(Charsets.US_ASCII))
+            w(nameBytes); w(byteArrayOf(0)); pad()
+            val f = e.file
+            if (f != null) {
+                FileInputStream(f).use { input ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) { val n = input.read(buf); if (n < 0) break; w(buf, n) }
+                }
+            } else w(e.data)
+            pad()
         }
         entries.forEachIndexed { i, e -> put(e, i + 1) }
         put(Cpio("TRAILER!!!", 0, 0, 0, 1, 0, 0, 0, 0, 0, ByteArray(0)), entries.size + 1)
-        return out.toByteArray()
     }
 
     private fun safeChild(root: File, name: String): File {
@@ -340,10 +357,11 @@ object BootImageTools {
         return "ramdisk فُك إلى $RAMDISK_DIR/ ($count عنصراً)"
     }
 
-    private fun packRamdisk(dir: File): ByteArray? {
+    /** يبني ramdisk المعدّل (cpio+gzip) مباشرة في ملف؛ يعيد null إن لم يكن هناك مجلد مفكوك. */
+    private fun packRamdisk(dir: File, outFile: File): Boolean {
         val root = File(dir, RAMDISK_DIR)
         val metaFile = File(dir, RAMDISK_META)
-        if (!root.isDirectory || !metaFile.isFile) return null
+        if (!root.isDirectory || !metaFile.isFile) return false
         val meta = JSONArray(metaFile.readText())
         val known = HashSet<String>()
         val entries = mutableListOf<Cpio>()
@@ -353,17 +371,17 @@ object BootImageTools {
             known.add(name)
             val mode = m.getLong("mode")
             val type = mode and 0xF000
-            var data = ByteArray(0)
+            var source: File? = null
             if (name != ".") {
                 val f = safeChild(root, name)
                 when (type) {
                     0x4000L -> if (!f.isDirectory) continue
-                    0x8000L, 0xA000L -> { if (!f.isFile) continue; data = f.readBytes() }
+                    0x8000L, 0xA000L -> { if (!f.isFile) continue; source = f }
                     else -> Unit
                 }
             }
             entries.add(Cpio(name, mode, m.getLong("uid"), m.getLong("gid"), m.getLong("nlink"), m.getLong("mtime"),
-                m.getLong("devmajor"), m.getLong("devminor"), m.getLong("rdevmajor"), m.getLong("rdevminor"), data))
+                m.getLong("devmajor"), m.getLong("devminor"), m.getLong("rdevmajor"), m.getLong("rdevminor"), ByteArray(0), source))
         }
         // ملفات ومجلدات أُضيفت يدوياً: صلاحيات افتراضية root 0644/0755.
         val added = root.walkTopDown().filter { it != root }.map { it.relativeTo(root).path.replace(File.separatorChar, '/') }
@@ -371,11 +389,10 @@ object BootImageTools {
         added.forEach { name ->
             val f = File(root, name)
             if (f.isDirectory) entries.add(Cpio(name, 0x41EDL, 0, 0, 2, 0, 0, 0, 0, 0, ByteArray(0)))
-            else entries.add(Cpio(name, 0x81A4L, 0, 0, 1, 0, 0, 0, 0, 0, f.readBytes()))
+            else entries.add(Cpio(name, 0x81A4L, 0, 0, 1, 0, 0, 0, 0, 0, ByteArray(0), f))
         }
-        val gz = ByteArrayOutputStream()
-        GZIPOutputStream(gz).use { it.write(buildCpio(entries)) }
-        return gz.toByteArray()
+        GZIPOutputStream(outFile.outputStream().buffered(64 * 1024), 64 * 1024).use { writeCpio(it, entries) }
+        return true
     }
 
     // ───────────────────────── unpack / repack ─────────────────────────
@@ -417,77 +434,108 @@ object BootImageTools {
             rd + "\nعدّل الملفات (cmdline في header.json، أو ملفات ramdisk/) ثم استدعِ boot_repack."
     }
 
+    /** نسخة الذاكرة (للاختبارات والصور الصغيرة): تمر عبر الكاتب المتدفق نفسه. */
     internal fun buildImage(
         h: JSONObject, kernel: ByteArray, ramdisk: ByteArray, second: ByteArray,
         dtbo: ByteArray, dtb: ByteArray, signature: ByteArray
     ): ByteArray {
+        val tmp = File.createTempFile("bootimg", ".d")
+        try {
+            fun f(name: String, d: ByteArray) = File(tmp.parentFile, "${tmp.name}.$name").also { it.writeBytes(d) }
+            val files = listOf(f("k", kernel), f("r", ramdisk), f("s", second), f("o", dtbo), f("t", dtb), f("g", signature))
+            val out = File(tmp.parentFile, tmp.name + ".out")
+            try {
+                writeImage(h, files[0], files[1], files[2], files[3], files[4], files[5], out)
+                return out.readBytes()
+            } finally { files.forEach { it.delete() }; out.delete() }
+        } finally { tmp.delete() }
+    }
+
+    private fun lenOf(f: File?): Long = if (f != null && f.isFile) f.length() else 0L
+
+    private fun feedFile(sha: MessageDigest, f: File?) {
+        if (f != null && f.isFile) FileInputStream(f).use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) { val n = input.read(buf); if (n < 0) break; sha.update(buf, 0, n) }
+        }
+        sha.update(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(lenOf(f).toInt()).array())
+    }
+
+    /** يكتب الصورة مباشرة إلى ملف: الذاكرة المستهلكة ثابتة (ترويسة + مخزن 64KB) مهما كان الحجم. */
+    internal fun writeImage(
+        h: JSONObject, kernel: File?, ramdisk: File?, second: File?,
+        dtbo: File?, dtb: File?, signature: File?, target: File
+    ) {
         val version = h.getInt("header_version")
         val page = h.getLong("page_size")
+        val kSize = lenOf(kernel); val rSize = lenOf(ramdisk); val sSize = lenOf(second)
+        val oSize = lenOf(dtbo); val tSize = lenOf(dtb); val gSize = lenOf(signature)
         val cmdline = h.optString("cmdline").toByteArray(Charsets.UTF_8)
         val extra = h.optString("extra_cmdline").toByteArray(Charsets.UTF_8)
-        val out = ByteArrayOutputStream()
         val hdr = ByteBuffer.allocate(page.toInt()).order(ByteOrder.LITTLE_ENDIAN)
         hdr.put(MAGIC)
         if (version >= 3) {
             require(cmdline.size <= 1535) { "cmdline أطول من 1535 بايت" }
-            hdr.putInt(8, kernel.size).putInt(12, ramdisk.size).putInt(16, h.getLong("os_version").toInt())
+            hdr.putInt(8, kSize.toInt()).putInt(12, rSize.toInt()).putInt(16, h.getLong("os_version").toInt())
             hdr.putInt(20, if (version >= 4) 1584 else 1580).putInt(40, version)
             hdr.position(44); hdr.put(cmdline)
-            if (version >= 4) hdr.putInt(1580, signature.size)
+            if (version >= 4) hdr.putInt(1580, gSize.toInt())
         } else {
             require(cmdline.size <= 512) { "cmdline أطول من 512 بايت (انقل الزائد إلى extra_cmdline)" }
             require(extra.size <= 1024) { "extra_cmdline أطول من 1024 بايت" }
             fun addr(k: String) = h.optLong(k).toInt()
-            hdr.putInt(8, kernel.size).putInt(12, addr("kernel_addr")).putInt(16, ramdisk.size).putInt(20, addr("ramdisk_addr"))
-                .putInt(24, second.size).putInt(28, addr("second_addr")).putInt(32, addr("tags_addr"))
+            hdr.putInt(8, kSize.toInt()).putInt(12, addr("kernel_addr")).putInt(16, rSize.toInt()).putInt(20, addr("ramdisk_addr"))
+                .putInt(24, sSize.toInt()).putInt(28, addr("second_addr")).putInt(32, addr("tags_addr"))
                 .putInt(36, page.toInt()).putInt(40, version).putInt(44, h.optLong("os_version").toInt())
-            hdr.position(48); hdr.put(h.optString("name").toByteArray(Charsets.UTF_8).copyOf(minOf(15, h.optString("name").toByteArray().size)))
+            val nameBytes = h.optString("name").toByteArray(Charsets.UTF_8)
+            hdr.position(48); hdr.put(nameBytes.copyOf(minOf(15, nameBytes.size)))
             hdr.position(64); hdr.put(cmdline)
             hdr.position(608); hdr.put(extra)
             val sha = MessageDigest.getInstance("SHA-1")
-            fun feed(d: ByteArray) { sha.update(d); sha.update(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(d.size).array()) }
-            feed(kernel); feed(ramdisk); feed(second)
-            var dtboOffset = 0L
+            feedFile(sha, kernel); feedFile(sha, ramdisk); feedFile(sha, second)
             if (version >= 1) {
-                feed(dtbo)
-                dtboOffset = page + align(kernel.size.toLong(), page) + align(ramdisk.size.toLong(), page) + align(second.size.toLong(), page)
-                hdr.putInt(1632, dtbo.size).putLong(1636, dtboOffset).putInt(1644, if (version >= 2) 1660 else 1648)
+                feedFile(sha, dtbo)
+                val dtboOffset = page + align(kSize, page) + align(rSize, page) + align(sSize, page)
+                hdr.putInt(1632, oSize.toInt()).putLong(1636, dtboOffset).putInt(1644, if (version >= 2) 1660 else 1648)
             }
             if (version >= 2) {
-                feed(dtb)
-                hdr.putInt(1648, dtb.size).putLong(1652, h.optLong("dtb_addr"))
+                feedFile(sha, dtb)
+                hdr.putInt(1648, tSize.toInt()).putLong(1652, h.optLong("dtb_addr"))
             }
             hdr.position(576); hdr.put(sha.digest())
         }
-        out.write(hdr.array())
-        fun part(d: ByteArray) {
-            out.write(d)
-            val padLen = (align(d.size.toLong(), page) - d.size).toInt()
-            if (padLen > 0) out.write(ByteArray(padLen))
-        }
-        part(kernel); part(ramdisk)
-        if (version < 3) { part(second); if (version >= 1) part(dtbo); if (version >= 2) part(dtb) }
-        else if (version >= 4) part(signature)
-        return out.toByteArray()
+        target.parentFile?.mkdirs()
+        val partial = File(target.parentFile, target.name + ".part")
+        try {
+            partial.outputStream().buffered(64 * 1024).use { out ->
+                out.write(hdr.array())
+                val buf = ByteArray(64 * 1024)
+                fun part(f: File?, size: Long) {
+                    if (f != null && f.isFile) FileInputStream(f).use { input ->
+                        while (true) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n) }
+                    }
+                    var pad = align(size, page) - size
+                    while (pad > 0) { val n = minOf(pad, buf.size.toLong()).toInt(); out.write(ByteArray(n)); pad -= n }
+                }
+                part(kernel, kSize); part(ramdisk, rSize)
+                if (version < 3) { part(second, sSize); if (version >= 1) part(dtbo, oSize); if (version >= 2) part(dtb, tSize) }
+                else if (version >= 4) part(signature, gSize)
+            }
+            require(partial.renameTo(target) || run { target.delete(); partial.renameTo(target) }) { "تعذّر كتابة ${target.name}" }
+        } finally { partial.delete() }
     }
 
     fun repack(context: Context, dirPath: String, targetPath: String): String {
         val dir = FileTools.file(context, dirPath)
         require(dir.isDirectory) { "مجلد الفك غير موجود: $dirPath" }
         val h = JSONObject(File(dir, "header.json").also { require(it.isFile) { "header.json مفقود" } }.readText())
-        val version = h.getInt("header_version")
-        val page = h.getLong("page_size")
-        fun read(name: String) = File(dir, name).takeIf { it.isFile }?.readBytes() ?: ByteArray(0)
-        val kernel = read("kernel")
-        val ramdisk = packRamdisk(dir) ?: read("ramdisk.raw")
-        val second = read("second")
-        val dtbo = read("recovery_dtbo")
-        val dtb = read("dtb")
-        val signature = read("signature")
-        val image = buildImage(h, kernel, ramdisk, second, dtbo, dtb, signature)
+        fun part(name: String) = File(dir, name).takeIf { it.isFile }
+        val rebuilt = File(dir, "ramdisk.repacked.gz")
+        val ramdisk = if (packRamdisk(dir, rebuilt)) rebuilt else part("ramdisk.raw")
         val target = FileTools.file(context, targetPath.ifBlank { "deliverables/boot-new.img" })
-        target.parentFile?.mkdirs()
-        target.writeBytes(image)
+        try {
+            writeImage(h, part("kernel"), ramdisk, part("second"), part("recovery_dtbo"), part("dtb"), part("signature"), target)
+        } finally { rebuilt.delete() }
         return "✅ رُكّبت ${FileTools.relative(context, target)} (${target.length()} بايت)\n" +
             "⚠️ الصورة غير موقّعة (AVB/vbmeta): تعمل فقط مع بوتلودر مفتوح، وقد تحتاج تعطيل التحقق عند الفلاش. احتفظ بنسخة من الأصلية."
     }
