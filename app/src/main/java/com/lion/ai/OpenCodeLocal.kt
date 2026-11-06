@@ -64,15 +64,37 @@ object OpenCodeLocal {
         sessions.clear()
     }
 
-    /** يربط مزوداً بمفتاح API عبر خادم OpenCode المحلي (PUT /auth/{id}) ثم يعيد عدد النماذج المتاحة. */
+    /** يربط مزوداً بمفتاح API عبر خادم OpenCode المحلي (PUT /auth/{id}) ثم يزامن النماذج مع المنتقي. */
     fun setAuth(provider: String, key: String): String {
         val id = provider.trim().lowercase().filter { it.isLetterOrDigit() || it in "-_." }
         require(id.isNotBlank()) { "معرّف المزود غير صالح" }
         require(key.isNotBlank()) { "المفتاح فارغ" }
         start()
+        // request يرمي استثناءً عند أي HTTP غير 2xx، فالفشل يظهر للمستخدم ولا يُعلن نجاح كاذب.
         request("/auth/$id", "PUT", JSONObject().put("type", "api").put("key", key.trim()))
-        val count = runCatching { listModels().count { it.startsWith("$id/") } }.getOrDefault(0)
-        return "✅ رُبط $id" + if (count > 0) " — $count نموذج متاح" else " — اضغط «تحديث» في قائمة النماذج للتأكد"
+        val count = runCatching { syncModels().count { it.startsWith("$id/") } }.getOrDefault(0)
+        return if (count > 0) "✅ رُبط $id — $count موديل أُضيفت إلى قائمة الاختيار"
+        else "⚠️ حُفظ المفتاح لكن لم تظهر موديلات لـ $id. تأكد أن المعرّف من معرّفات OpenCode المعروفة (openai, anthropic, openrouter…)."
+    }
+
+    /** يجلب موديلات الخادم ويحفظها في كتالوج المنتقي (opencode-local) فتظهر فوراً بلا ضغط «تحديث». */
+    fun syncModels(): List<String> {
+        val models = listModels()
+        if (models.isNotEmpty()) {
+            ModelCatalog.saveCache(SecurePrefs.get(ContextHolder.require()), "opencode-local", models)
+        }
+        return models
+    }
+
+    /** إعادة تشغيل الخادم (ليقرأ ما أُضيف من الطرفية) ثم مزامنة الموديلات. */
+    fun restartAndSync(): String {
+        stop()
+        if (isRunning()) return "⚠️ الخادم يعمل خارج التطبيق (من الطرفية). أوقفه هناك ثم أعد المحاولة."
+        start()
+        val models = syncModels()
+        val providers = models.map { it.substringBefore('/') }.distinct()
+        return "✅ ${models.size} موديل من ${providers.size} منصة" +
+            if (providers.isNotEmpty()) ":\n" + providers.joinToString("، ") else ""
     }
 
     fun listModels(): List<String> {

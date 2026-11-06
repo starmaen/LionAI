@@ -157,8 +157,8 @@ fun LocalEnvTab() {
                             message = "⏳ تشغيل الخادم واكتشاف المزودات…"
                             val result = withContext(Dispatchers.IO) { runCatching {
                                 val url = OpenCodeLocal.start()
-                                val models = OpenCodeLocal.listModels()
-                                "✅ $url\n${models.size} نموذج مكتشف\n" + models.take(40).joinToString("\n")
+                                val models = OpenCodeLocal.syncModels()
+                                "✅ $url\n${models.size} نموذج مكتشف وأُضيف إلى قائمة الاختيار\n" + models.take(40).joinToString("\n")
                             }.getOrElse { "❌ ${it.message}" } }
                             message = result
                             activeTool = null
@@ -289,6 +289,8 @@ fun LocalEnvTab() {
         )
         Spacer(Modifier.height(16.dp))
         OpenCodeAuthCard()
+        Spacer(Modifier.height(16.dp))
+        OpenCodeExtrasCard()
         Spacer(Modifier.height(16.dp))
         BootToolCard()
         Spacer(Modifier.height(16.dp))
