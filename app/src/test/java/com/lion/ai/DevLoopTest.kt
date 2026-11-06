@@ -99,3 +99,13 @@ class PromiseWithoutActionTest {
         org.junit.Assert.assertFalse(ToolAgent.isIntentOnly("x".repeat(900) + " سأكمل"))
     }
 }
+
+class DevTaskTest {
+    @org.junit.Test fun detectsBuildRequestsButNotPlainQuestions() {
+        org.junit.Assert.assertTrue(DevTask.matches("اعمل وحدة ماجيسك لترجمة اليوتيوب"))
+        org.junit.Assert.assertTrue(DevTask.matches("أضف ميزة البحث إلى التطبيق"))
+        org.junit.Assert.assertTrue(DevTask.matches("build a kotlin script"))
+        org.junit.Assert.assertFalse(DevTask.matches("ما هي عاصمة فرنسا؟"))
+        org.junit.Assert.assertFalse(DevTask.matches("اكمل"))
+    }
+}

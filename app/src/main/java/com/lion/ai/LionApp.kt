@@ -1118,7 +1118,7 @@ fun LionApp() {
                                 timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L),
                                 session = session,
                                 chatMode = chatMode,
-                                forceExecution = shouldForceExecution(chatMode, kind, session.hasWork()),
+                                forceExecution = shouldForceExecution(chatMode, kind, session.hasWork()) || DevTask.matches(toolText),
                                 providerLabel = if (OperationsRoom.enabled(prefs, chatMode)) "غرفة العمليات" else SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,

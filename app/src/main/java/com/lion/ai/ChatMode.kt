@@ -97,6 +97,7 @@ object ContextProfiles {
 """.trimIndent()
 
     fun of(mode: ChatMode, prefs: SharedPreferences, text: String = ""): ContextProfile {
+        val devTask = mode != ChatMode.CODE && DevTask.matches(text)
         val enabled = AiTools.agentEnabled(prefs)
         // طلب المستخدم: الأدوات متاحة في كل الأوضاع (عام/تعلّم/برمجة) مع كل المزودات، ويمكن تعطيلها.
         val everywhere = prefs.getBoolean("tools_everywhere", true)
@@ -138,7 +139,11 @@ object ContextProfiles {
             base.addAll(ToolGroup.values().filter { it != ToolGroup.GITHUB || AiTools.githubReady(prefs) })
         } else {
             val detected = runCatching { AiTools.groupsFor(text, prefs) }.getOrDefault(emptySet())
-            detectedAny = detected.isNotEmpty()
+            detectedAny = detected.isNotEmpty() || devTask
+            if (devTask) {
+                // طلب بناء/تطوير في وضع «عام»: تُفتح أدوات التطوير تلقائياً بدل رد كلامي بلا تنفيذ.
+                base.addAll(listOf(ToolGroup.FILES, ToolGroup.CODE, ToolGroup.SHELL, ToolGroup.QUALITY, ToolGroup.CONTROL, ToolGroup.MEMORY))
+            }
             if (lean) {
                 base.addAll(detected.filter { it != ToolGroup.GITHUB || AiTools.githubReady(prefs) })
             } else {
@@ -250,4 +255,17 @@ object ModeGuard {
     fun promotionOffer(mode: ChatMode): String =
         "🔒 هذا طلب برمجي تنفيذي، والمحادثة الحالية في وضع «عام» بلا أدوات ملفات أو صدفة أو Git. " +
             "انتقل إلى وضع «المطوّر» ليُنفَّذ في بيئة التطوير ولا يتلوث سياق الدردشة العامة."
+}
+
+/** يكشف طلبات البناء/التطوير الصريحة (فعل تنفيذ + موضوع برمجي) ليعمل الوكيل بأدواته حتى في «عام». */
+object DevTask {
+    private val VERB = Regex(
+        """(?<![\p{L}])(اعمل|اعملي|اصنع|أضف|اضف|ضيف|طوّر|طور|برمج|ابنِ|ابن|ابني|صمم|صمّم|أنشئ|انشئ|حسّن|حسن|عدّل|عدل|أصلح|اصلح|ركّب|ركب|ترجم|حوّل|حول|اكتب|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|ارفع|ادفع|build|make|create|add|implement|develop|fix|write|generate)(?![\p{L}])""",
+        RegexOption.IGNORE_CASE
+    )
+    private val TOPIC = Regex(
+        """(وحدة|وحده|ميزة|ميزه|تطبيق|مشروع|كود|سكربت|سكريبت|برنامج|مكتبة|إضافة|اضافة|بوت|ماجيسك|magisk|module|feature|app|apk|script|code|plugin|library|gradle|kotlin|python|\.kt|\.py|\.js|api|واجهة|دالة|class|function|github|مستودع|ريبو)""",
+        RegexOption.IGNORE_CASE
+    )
+    fun matches(text: String): Boolean = text.length > 3 && VERB.containsMatchIn(text) && TOPIC.containsMatchIn(text)
 }
