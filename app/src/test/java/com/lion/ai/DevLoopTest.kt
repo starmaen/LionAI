@@ -83,3 +83,19 @@ class DevLoopTest {
     }
 
 }
+
+class PromiseWithoutActionTest {
+    @org.junit.Test fun detectsPromiseOnlyReplies() {
+        org.junit.Assert.assertTrue(ToolAgent.isIntentOnly("حاضر، سأعمل وحدة ماجيسك لترجمة يوتيوب وأخبرك بالنتيجة."))
+        org.junit.Assert.assertTrue(ToolAgent.isIntentOnly("سأكمل المهمة الآن."))
+        org.junit.Assert.assertTrue(ToolAgent.isIntentOnly("Sure, I'll start building the module now."))
+    }
+
+    @org.junit.Test fun acceptsRealResultsQuestionsAndToolCalls() {
+        org.junit.Assert.assertFalse(ToolAgent.isIntentOnly("✅ اكتمل البناء #12 ونجح، وهذا رابط التنزيل."))
+        org.junit.Assert.assertFalse(ToolAgent.isIntentOnly("هل تريد أن أبدأ بالوحدة أم بالواجهة؟"))
+        org.junit.Assert.assertFalse(ToolAgent.isIntentOnly("[[TOOL]]{\"name\":\"file_tree\",\"args\":{}}[[/TOOL]]"))
+        org.junit.Assert.assertFalse(ToolAgent.isIntentOnly("```kotlin\nfun main() {}\n```\nسأضيف الباقي لاحقاً"))
+        org.junit.Assert.assertFalse(ToolAgent.isIntentOnly("x".repeat(900) + " سأكمل"))
+    }
+}

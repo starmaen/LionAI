@@ -17,7 +17,9 @@ object ToolAgent {
         val answer: String,
         val tools: List<String>,
         val complete: Boolean = true,
-        val responded: Boolean = false
+        val responded: Boolean = false,
+        /** المزود كرّر وعداً بلا تنفيذ: يُعامل كفشل مزود ليتابع بديل من السياق نفسه. */
+        val stalled: Boolean = false
     ) {
         val usedTools: Boolean get() = tools.isNotEmpty()
     }
@@ -35,6 +37,26 @@ object ToolAgent {
     private val ASK = Regex("\\[\\[ASK\\]\\](.*?)\\[\\[/ASK\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val ASK_ALT = Regex("\\[\\[QUESTION\\]\\](.*?)\\[\\[/QUESTION\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val TRAILING_QUESTION = Regex("[?؟]\\s*$")
+
+    private val TOOL_BLOCK = Regex("\\[\\[TOOL\\]\\].*?\\[\\[/TOOL\\]\\]", RegexOption.DOT_MATCHES_ALL)
+    private val PROMISE = Regex(
+        "(سأ[ءا-ي]|سوف |سنقوم|سنبدأ|لنبدأ|فلنبدأ|دعني|حاضر|أبشر|بدأت|جاري|جارٍ|سيتم|الآن سأ|" +
+            "\\blet me\\b|\\bi'll\\b|\\bi will\\b|\\bi'm going to\\b|\\bi am going to\\b|\\bgoing to\\b|\\bwill now\\b)",
+        RegexOption.IGNORE_CASE
+    )
+    private val DONE_WORDS = Regex("(✅|اكتمل|اكتملت|نجح|تم إنشاء|تم تنفيذ|تم رفع|تم التعديل|تم الحفظ|جاهز للتنزيل|completed|done\\b)", RegexOption.IGNORE_CASE)
+
+    /**
+     * رد قصير يعد بالعمل ("سأكمل…") دون استدعاء أداة ولا نتيجة. في مهمة تنفيذية هذا ليس جواباً:
+     * يُدفع المزود للتنفيذ في الرد نفسه، وإن أصرّ يُعامل كفشل مزود.
+     */
+    internal fun isIntentOnly(reply: String): Boolean {
+        val text = reply.replace(TOOL_BLOCK, "").replace(ASK, "").replace(ASK_ALT, "").trim()
+        if (text.isEmpty() || text.length > 700 || text.contains("```")) return false
+        if (TRAILING_QUESTION.containsMatchIn(text.takeLast(200))) return false
+        if (DONE_WORDS.containsMatchIn(text)) return false
+        return PROMISE.containsMatchIn(text)
+    }
 
     internal fun coreGroups(groups: Set<ToolGroup>): Set<ToolGroup> {
         val required = setOf(
@@ -205,6 +227,7 @@ object ToolAgent {
         var lastSignature = ""
         var repeated = 0
         var nudges = 0
+        var promiseNudges = 0
         var gateNudges = 0
         var lastGateOk = true
         var lastGateText = ""
@@ -340,6 +363,26 @@ object ToolAgent {
             }
 
             val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
+            if (calls.isEmpty() && forceExecution && isIntentOnly(reply)) {
+                if (promiseNudges < 3 && System.currentTimeMillis() + 45_000 < deadline) {
+                    promiseNudges++
+                    session?.recordNote("المزود اكتفى بوعد بلا تنفيذ؛ دُفع للتنفيذ ($promiseNudges/3)")
+                    publish("⚠️ $label وعد بالعمل دون تنفيذ — أطلب منه التنفيذ الآن ($promiseNudges/3)")
+                    historyBuffer.add(ChatTurn("user", current))
+                    historyBuffer.add(ChatTurn("assistant", reply))
+                    current = "ردّك السابق وعدٌ بالعمل دون تنفيذ، وهذا مرفوض: لا وعود ولا «سأفعل». " +
+                        "المهمة تنفيذية. أرسل في هذا الرد نفسه استدعاء الأداة التالية المناسبة فقط بصيغة " +
+                        "[[TOOL]]{\"name\":\"...\",\"args\":{...}}[[/TOOL]] بلا أي مقدمة، وتابع خطوة بخطوة حتى تكتمل المهمة. " +
+                        "إن كان ينقصك قرار من المستخدم فاستعمل [[ASK]]…[[/ASK]]، وإن تعذّر التنفيذ فاذكر السبب الفعلي."
+                    continue
+                }
+                session?.providerFailed(label, "كرّر وعداً بلا تنفيذ")
+                session?.let { CheckpointStore.save(prefs, it) }
+                return finish(
+                    "⚠️ المزود الحالي كرّر الوعد بالعمل دون تنفيذ فعلي. حُفظ السياق والتقدم، ويتابع مزود بديل من النقطة نفسها.",
+                    false, "المزود لا ينفّذ"
+                ).copy(stalled = true)
+            }
             if (calls.isEmpty()) {
                 // بوابة ميكانيكية: لا يُقبل إعلان الانتهاء إذا كان Manifest قائماً والبوابة لم تجتز.
                 val manifest = if (chatMode == ChatMode.CODE && session != null) {

@@ -1147,8 +1147,9 @@ fun LionApp() {
                     )
                 }
                 // Local pauses/budgets are not evidence that a responsive provider failed.
-                val keepAgent = agentResult?.responded == true
-                val error = LlmClient.isErrorReply(r) && !keepAgent
+                val stalled = agentResult?.stalled == true
+                val keepAgent = agentResult?.responded == true && !stalled
+                val error = (LlmClient.isErrorReply(r) || stalled) && !keepAgent
                 if (agentResult != null) {
                     agentComplete = agentResult.complete
                     agentAsked = agentAsked || session.pendingQuestion != null
