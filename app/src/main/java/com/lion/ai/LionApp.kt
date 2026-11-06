@@ -152,14 +152,11 @@ private val ACTION_REQUEST = Regex(
         "عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|اكتب\\s+الملف|أنشئ|انشئ|ابنِ|ارفع|ادفع|commit|push|build|install|execute|read\\s+file|write\\s+file)"
 )
 
-/** إشارة إلى مشروع/ملف/خطأ فعلي: الجواب الصحيح يحتاج قراءة الواقع لا التخمين. */
+/** إشارة إلى مشروع/خطأ/مسار فعلي: الجواب الصحيح يحتاج قراءة الواقع لا التخمين (ملف أو كود وحدهما لا تكفي). */
 private val PROJECT_REFERENCE = Regex(
-    "(ملف|ملفات|مشروع|مستودع|ريبو|كود|الكود|خطأ|أخطاء|اخطاء|فشل|فشلت|بناء|سجل|لوج|مسار|مجلد|workflow|build|error|log|stack|exception|repo|github|gradle|apk|commit|" +
+    "(مشروع|مستودع|ريبو|خطأ|أخطاء|اخطاء|فشل|فشلت|بناء|سجل|لوج|workflow|build|error|log|stack|exception|repo|github|gradle|apk|commit|" +
         "\\.(?:kt|kts|java|py|js|ts|tsx|json|xml|ya?ml|md|gradle|sh)\\b|[\\w-]+/[\\w./-]+)"
 )
-
-/** سؤال قدرة عامة («هل تستطيع...؟») لا يفتح أدوات حتى لو ذكر كلمة ملف. */
-private val CAPABILITY_QUESTION = Regex("^(هل\\s+(تستطيع|يمكنك|تقدر|تدعم)|can you|are you able)")
 
 /**
  * التنفيذ الإجباري (دفع النموذج لاستدعاء أداة): في «المطوّر» لا يُفرض على كل رسالة،
@@ -180,12 +177,12 @@ internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode:
     if (hasWork) return true
     val text = prompt.trim().lowercase()
     if (text.isBlank()) return false
+    val intent = UserIntent.classify(text)
+    // «هل بإمكانك إنشاء مجلدات وملفات؟» سؤال قدرة: جواب مباشر، لا أدوات ولا بطاقة قرار.
+    if (intent == UserIntent.Kind.CAPABILITY) return false
     if (ACTION_REQUEST.containsMatchIn(text)) return true
-    val capability = CAPABILITY_QUESTION.containsMatchIn(text)
-    if (chatMode == ChatMode.CODE && !capability && PROJECT_REFERENCE.containsMatchIn(text)) return true
-    val question = text.endsWith("؟") || text.endsWith("?") ||
-        Regex("^(هل|ما|ماذا|كيف|لماذا|اشرح|وضح|لخص|ما رأيك|what|how|why|explain|can you)\\b").containsMatchIn(text)
-    return !question
+    if (chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)) return true
+    return intent != UserIntent.Kind.QUESTION
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
