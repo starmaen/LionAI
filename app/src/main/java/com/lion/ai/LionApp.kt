@@ -146,19 +146,43 @@ private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): Li
 }
 
 
-internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: Boolean): Boolean =
-    chatMode == ChatMode.CODE || kind == TaskKind.DEV || hasWork
+/** أمر تنفيذي صريح (قراءة/تعديل/بناء/رفع...) يحتاج أدوات حتماً. */
+private val ACTION_REQUEST = Regex(
+    "(اقرأ\\s+الملف|افحص\\s+(الملف|المشروع)|حلل\\s+(الملف|المشروع)|راجع\\s+(الملف|المشروع)|" +
+        "عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|اكتب\\s+الملف|أنشئ|انشئ|ابنِ|ارفع|ادفع|commit|push|build|install|execute|read\\s+file|write\\s+file)"
+)
 
-/** سؤال قدرة/شرح لا يجب أن يفتح دورة أدوات طويلة؛ الأمر التنفيذي والاستئناف يفتحانها. */
-internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean): Boolean {
+/** إشارة إلى مشروع/ملف/خطأ فعلي: الجواب الصحيح يحتاج قراءة الواقع لا التخمين. */
+private val PROJECT_REFERENCE = Regex(
+    "(ملف|ملفات|مشروع|مستودع|ريبو|كود|الكود|خطأ|أخطاء|اخطاء|فشل|فشلت|بناء|سجل|لوج|مسار|مجلد|workflow|build|error|log|stack|exception|repo|github|gradle|apk|commit|" +
+        "\\.(?:kt|kts|java|py|js|ts|tsx|json|xml|ya?ml|md|gradle|sh)\\b|[\\w-]+/[\\w./-]+)"
+)
+
+/** سؤال قدرة عامة («هل تستطيع...؟») لا يفتح أدوات حتى لو ذكر كلمة ملف. */
+private val CAPABILITY_QUESTION = Regex("^(هل\\s+(تستطيع|يمكنك|تقدر|تدعم)|can you|are you able)")
+
+/**
+ * التنفيذ الإجباري (دفع النموذج لاستدعاء أداة): في «المطوّر» لا يُفرض على كل رسالة،
+ * بل على الأوامر التنفيذية ومهام التطوير والاستئناف فقط؛ أسئلة المشروع تستخدم الأدوات عند الحاجة بلا إجبار.
+ * عند تمرير prompt = null يبقى السلوك القديم (إجبار دائم في المطوّر).
+ */
+internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: Boolean, prompt: String? = null): Boolean {
+    if (kind == TaskKind.DEV || hasWork) return true
+    if (chatMode != ChatMode.CODE) return false
+    return prompt == null || ACTION_REQUEST.containsMatchIn(prompt.trim().lowercase())
+}
+
+/**
+ * يقرر هل تُفتح دورة الأدوات. الأمر التنفيذي والاستئناف يفتحانها دائماً.
+ * في «المطوّر» تُفتح أيضاً لأي سؤال يشير إلى مشروع/ملف/خطأ فعلي (يقرأ الواقع قبل أن يجيب).
+ */
+internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode: ChatMode = ChatMode.GENERAL): Boolean {
     if (hasWork) return true
     val text = prompt.trim().lowercase()
     if (text.isBlank()) return false
-    val explicitAction = Regex(
-        "(اقرأ\\s+الملف|افحص\\s+(الملف|المشروع)|حلل\\s+(الملف|المشروع)|راجع\\s+(الملف|المشروع)|" +
-            "عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|اكتب\\s+الملف|أنشئ|انشئ|ابنِ|ارفع|ادفع|commit|push|build|install|execute|read\\s+file|write\\s+file)"
-    )
-    if (explicitAction.containsMatchIn(text)) return true
+    if (ACTION_REQUEST.containsMatchIn(text)) return true
+    val capability = CAPABILITY_QUESTION.containsMatchIn(text)
+    if (chatMode == ChatMode.CODE && !capability && PROJECT_REFERENCE.containsMatchIn(text)) return true
     val question = text.endsWith("؟") || text.endsWith("?") ||
         Regex("^(هل|ما|ماذا|كيف|لماذا|اشرح|وضح|لخص|ما رأيك|what|how|why|explain|can you)\\b").containsMatchIn(text)
     return !question
@@ -955,7 +979,7 @@ fun LionApp() {
         } else {
             emptySet<ToolGroup>()
         }
-        val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask)
+        val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask, chatMode)
         loadingChats[chatId] = true
         toolStatus[chatId] = ""
         ActiveChat.id = chatId
@@ -1124,7 +1148,7 @@ fun LionApp() {
                                 timeoutMs = (deadline - System.currentTimeMillis()).coerceAtLeast(30_000L),
                                 session = session,
                                 chatMode = chatMode,
-                                forceExecution = shouldForceExecution(chatMode, kind, session.hasWork()) || DevTask.matches(toolText),
+                                forceExecution = shouldForceExecution(chatMode, kind, session.hasWork(), prompt) || DevTask.matches(toolText),
                                 providerLabel = if (OperationsRoom.enabled(prefs, chatMode)) "غرفة العمليات" else SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,

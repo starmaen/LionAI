@@ -108,4 +108,24 @@ class DevTaskTest {
         org.junit.Assert.assertFalse(DevTask.matches("ما هي عاصمة فرنسا؟"))
         org.junit.Assert.assertFalse(DevTask.matches("اكمل"))
     }
+    @Test fun developerModeUsesToolsOnDemandForProjectQuestions() {
+        // سؤال عن مشروع/خطأ فعلي في «المطوّر» يقرأ الواقع بالأدوات قبل أن يجيب.
+        assertTrue(shouldUseAgentForPrompt("لماذا فشل البناء؟", false, ChatMode.CODE))
+        assertTrue(shouldUseAgentForPrompt("ما سبب الخطأ في LionApp.kt؟", false, ChatMode.CODE))
+        assertTrue(shouldUseAgentForPrompt("كيف أصلح الاختبار في app/src/test؟", false, ChatMode.CODE))
+        // أسئلة المفاهيم والقدرة تبقى سريعة بلا أدوات.
+        assertFalse(shouldUseAgentForPrompt("اشرح ما هي غرفة العمليات", false, ChatMode.CODE))
+        assertFalse(shouldUseAgentForPrompt("هل تستطيع قراءة ملف؟", false, ChatMode.CODE))
+        // الوضع العام لا يتغير.
+        assertFalse(shouldUseAgentForPrompt("لماذا فشل البناء؟", false, ChatMode.GENERAL))
+    }
+
+    @Test fun developerModeForcesToolsOnlyForActionsNotForQuestions() {
+        assertTrue(shouldForceExecution(ChatMode.CODE, TaskKind.FAST, false, "أصلح الخطأ في المشروع"))
+        assertFalse(shouldForceExecution(ChatMode.CODE, TaskKind.FAST, false, "لماذا فشل البناء؟"))
+        assertTrue(shouldForceExecution(ChatMode.CODE, TaskKind.FAST, true, "لماذا فشل البناء؟"))
+        assertTrue(shouldForceExecution(ChatMode.CODE, TaskKind.DEV, false, "ما الوضع؟"))
+        assertFalse(shouldForceExecution(ChatMode.GENERAL, TaskKind.FAST, false, "أصلح الخطأ"))
+    }
+
 }
