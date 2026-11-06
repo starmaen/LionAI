@@ -84,7 +84,15 @@ object RoutePolicy {
         if (WebChatRuntime.handles(route.provider)) return listOf(route.copy(via = Channel.WEB))
         if (route.provider == LOCAL_PROXY) return listOf(Route(LOCAL_PROXY, "", Channel.LOCAL))
         if (route.provider == CUSTOM) return listOf(route.copy(via = Channel.DIRECT))
-        return channels(prefs, route.provider).mapNotNull { via ->
+        // اليدوي: القناة المباشرة لمزودك تبقى أولاً دائماً. كان ترتيب «الأسلم أولاً» يُقدّم الخادم
+        // المحلي/الخارجي بعد فشلين متتاليين (وهو أمر شائع في مهام المطوّر الطويلة)، فيُجيب عبرهما
+        // مزود غير الذي اخترته. القنوات الأخرى تبقى احتياطاً بعد فشل المباشر فقط.
+        val vias = channels(prefs, route.provider).let { list ->
+            if (isManual(prefs) && Channel.DIRECT in list) {
+                listOf(Channel.DIRECT) + list.filter { it != Channel.DIRECT }
+            } else list
+        }
+        return vias.mapNotNull { via ->
             when (via) {
                 Channel.GATEWAY -> route.copy(via = Channel.GATEWAY)
                     .takeIf { WebGateway.shouldRoute(route.provider) }
