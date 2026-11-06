@@ -254,6 +254,11 @@ class AgentSession(val chatId: String) {
             if (completed) "الحالة: ✅ اكتملت آخر مهمة؛ الرسالة الحالية غالباً متابعة أو تعديل أو مهمة جديدة، فابنِ على الملفات المتغيرة أدناه.\n"
             else "الحالة: ⏸ لم تكتمل؛ أكمل من آخر نقطة.\n"
         )
+        builder.append("إذن الكتابة: ")
+            .append(
+                if (continuity.writeGranted) "ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ نفّذ الأداة مباشرة.\n"
+                else "غير ممنوح. اطلب موافقة صريحة قبل أي تعديل، وبعد الموافقة نفّذ مباشرة بلا تكرار الطلب.\n"
+            )
         if (providers.isNotEmpty()) {
             builder.append("المزودات التي جُرّبت بالترتيب: ").append(providers.joinToString(" ← ")).append('\n')
         }

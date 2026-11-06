@@ -45,6 +45,19 @@ object ToolAgent {
         RegexOption.IGNORE_CASE
     )
     private val DONE_WORDS = Regex("(✅|اكتمل|اكتملت|نجح|تم إنشاء|تم تنفيذ|تم رفع|تم التعديل|تم الحفظ|جاهز للتنزيل|completed|done\\b)", RegexOption.IGNORE_CASE)
+    /** طلب إذن وصل رغم أن الإذن ممنوح: نمنع حلقة "أعطني الصلاحية" بدل إيقاف المهمة. */
+    private val PERMISSION_ASK = Regex(
+        "(صلاحي|صلاحية|اذن|إذن|permission|authorization|authorize|grant|allow|تسمح|اسمح).{0,40}" +
+            "(كتاب|انشا|إنشاء|تعديل|write|create|modify|tool|أداة|اداة|ملف|مجلد|كود|note)|" +
+            "(كتاب|انشا|إنشاء|تعديل|write|create|modify|ملف|مجلد|كود).{0,40}(صلاحي|صلاحية|اذن|إذن|permission|allow)",
+        RegexOption.IGNORE_CASE
+    )
+    private val DESTRUCTIVE_ASK = Regex(
+        "(حذف|delete|remove|دفع|push|نشر|deploy|ارسال|إرسال|send|تثبيت|install|drop|truncate)",
+        RegexOption.IGNORE_CASE
+    )
+    internal fun isPermissionAsk(text: String): Boolean =
+        PERMISSION_ASK.containsMatchIn(text) && !DESTRUCTIVE_ASK.containsMatchIn(text)
 
     /**
      * رد قصير يعد بالعمل ("سأكمل…") دون استدعاء أداة ولا نتيجة. في مهمة تنفيذية هذا ليس جواباً:
@@ -205,8 +218,9 @@ object ToolAgent {
             val core = coreGroups(effectiveGroups)
             system = buildSystem(core)
         }
-        system += if (memory.writeGranted) "\nالمستخدم أجاز التنفيذ في نطاق طلبه الحالي فقط. لا تنفذ أعمالاً غير مرتبطة به."
-            else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها."
+        system += if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
+            "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
+            else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها مرة واحدة فقط."
         val toolContext = ToolContext(
             context,
             prefs,
@@ -228,6 +242,7 @@ object ToolAgent {
         var repeated = 0
         var nudges = 0
         var promiseNudges = 0
+        var permissionNudges = 0
         var gateNudges = 0
         var lastGateOk = true
         var lastGateText = ""
@@ -346,6 +361,18 @@ object ToolAgent {
                 memory.checkpoint(historyBuffer, current)
                 CheckpointStore.save(prefs, it)
             }
+            // حماية من الحلقة: طلب إذن الكتابة بعد منحه لا يحتاج سؤال المستخدم مرة أخرى.
+            if (memory.writeGranted && permissionNudges < 2 && isPermissionAsk(reply)) {
+                permissionNudges++
+                session?.recordNote("النموذج طلب إذناً ممنوحاً بالفعل؛ دُفع للتنفيذ ($permissionNudges/2)")
+                publish("✅ الإذن ممنوح — أطلب من $label التنفيذ مباشرة ($permissionNudges/2)")
+                historyBuffer.add(ChatTurn("user", current))
+                historyBuffer.add(ChatTurn("assistant", reply))
+                current = "✅ إذن الكتابة ممنوح صراحةً من المستخدم لهذه المهمة. لا تطلب الإذن مجدداً ولا تشرح أنك لا تملكه. " +
+                    "استدعِ الآن الأداة المطلوبة بصيغة [[TOOL]]{\"name\":\"...\",\"args\":{...}}[[/TOOL]] وتابع حتى تكتمل المهمة. " +
+                    "إن كان ينقصك قرار آخر غير الإذن فاذكره صراحةً."
+                continue
+            }
             // سؤال صريح من النموذج = إيقاف مؤقت بانتظار المستخدم مع حفظ السياق.
             val explicitAsk = (ASK.find(reply) ?: ASK_ALT.find(reply))
                 ?.groupValues?.get(1)?.trim()
@@ -409,6 +436,16 @@ object ToolAgent {
                             false, "بوابة الجودة رفضت الإنهاء"
                         )
                     }
+                }
+                // طلب إذن كتابة لم يُمنح بعد: اعرضه كسؤال قرار صريح واحفظ الجلسة،
+                // حتى تصل موافقة المستخدم إلى نفس الحالة بدل أن يُغلق الدور كأن المهمة اكتملت.
+                if (!memory.writeGranted && isPermissionAsk(reply)) {
+                    val question = reply.trim()
+                    session?.askQuestion(question)
+                    memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
+                    session?.let { CheckpointStore.save(prefs, it) }
+                    onProgress?.invoke("💬 بانتظار قرارك بشأن الإذن")
+                    return Result(formatUserAsk(question), used, complete = false, responded = memory.responded)
                 }
                 // مهمة تنفيذية بلا أي أداة = غالباً النموذج اكتفى بالكلام. ندفعه للتنفيذ مرتين قبل القبول.
                 if (forceExecution && used.isEmpty() && nudges < 2 && groups.isNotEmpty() &&
@@ -497,7 +534,10 @@ object ToolAgent {
                 val cacheable = call.name in setOf("github_read_file", "github_list_tree", "github_list_dir", "file_read", "read_file", "file_read_many", "file_tree", "file_list", "list_dir")
                 val cached = if (cacheable && !call.args.optBoolean("refresh", false)) memory.cachedRead(fingerprint) else null
                 val result = when {
-                    mutating && (!memory.writeGranted || !toolContext.allowWrite) -> ToolResult(call.name, "⛔ لم أنفذ التعديل: لا يوجد إذن صريح صالح لهذه المهمة.", false)
+                    mutating && !toolContext.allowWrite ->
+                        ToolResult(call.name, "⛔ الكتابة معطّلة من الإعدادات. فعّل «السماح للذكاء بالكتابة» ثم أعد المحاولة.", false)
+                    mutating && !memory.writeGranted ->
+                        ToolResult(call.name, "⛔ لم أنفذ التعديل: لا يوجد إذن صريح صالح لهذه المهمة.", false)
                     receipt != null -> ToolResult(call.name,
                         if (receipt.optString("state") == "done") "نتيجة محفوظة؛ لم أكرر التنفيذ:\n" + receipt.optString("output")
                         else "⛔ نتيجة محاولة سابقة غير مؤكدة. افحص الحالة الفعلية أولاً؛ لن أكرر عملية تعديل تلقائياً.",

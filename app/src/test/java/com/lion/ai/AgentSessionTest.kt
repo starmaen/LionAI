@@ -79,6 +79,34 @@ class AgentSessionTest {
     }
 
     @Test
+    fun permissionStateIsInjectedIntoResumeContext() {
+        val session = AgentSession("chat_permission")
+        session.beginTurn("أنشئ ملف notes.txt")
+        session.recordTool("file_tree", true, "شجرة")
+        assertTrue(session.continuity.writeGranted)
+        assertTrue(session.contextBlock().contains("إذن الكتابة: ممنوح"))
+        assertTrue(session.contextBlock().contains("لا تطلب الإذن مجدداً"))
+    }
+
+    @Test
+    fun answeringAPermissionQuestionGrantsWriteForTheSameTask() {
+        val session = AgentSession("chat_approval")
+        session.beginTurn("هل يمكنك إنشاء مجلد youtube-translator؟")
+        session.recordTool("file_list", true, "ملفات")
+        assertFalse(session.continuity.writeGranted)
+        session.beginTurn("✅ موافق، تابع")
+        assertTrue(session.continuity.writeGranted)
+    }
+
+    @Test
+    fun grantedPermissionAskIsRecognizedForLoopGuard() {
+        assertTrue(ToolAgent.isPermissionAsk("أحتاج صلاحية الكتابة لأكمل إنشاء الملف"))
+        assertTrue(ToolAgent.isPermissionAsk("I need permission to write the file"))
+        assertFalse(ToolAgent.isPermissionAsk("هل تأذن بحذف الملف؟"))
+        assertFalse(ToolAgent.isPermissionAsk("أي خيار تفضل؟"))
+    }
+
+    @Test
     fun clearRemovesSession() {
         val session = AgentSessions.of("chat_clear")
         session.start("افحص المشروع", "Groq")

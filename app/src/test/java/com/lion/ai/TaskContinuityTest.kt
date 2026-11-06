@@ -23,6 +23,41 @@ class TaskContinuityTest {
         val m=TaskContinuity();m.begin("اقرأ الملف",false);m.begin("أكمل",true)
         assertTrue(m.resume);assertFalse(m.writeGranted)
     }
+    @Test fun writingAFileIsAWriteRequestButWritingProseIsNot() {
+        listOf("اكتب ملف Main.kt", "أنشئ ملف notes.txt", "write file notes.txt", "اكتب الكود", "أضف مجلد youtube-translator").forEach {
+            assertTrue(it, WriteIntent.permits(it))
+        }
+        listOf("اكتب ملخصا", "write an explanation", "اكتب لي فقرة").forEach {
+            assertFalse(it, WriteIntent.permits(it))
+        }
+    }
+    @Test fun explicitApprovalAfterAPermissionQuestionGrantsWrites() {
+        val m=TaskContinuity()
+        m.begin("هل يمكنك إنشاء مجلد youtube-translator؟", false)
+        assertFalse(m.writeGranted)
+        m.begin("✅ موافق، تابع", true, answering = true)
+        assertTrue(m.writeGranted)
+    }
+    @Test fun approvalAloneWithoutAnUnfinishedTaskDoesNotGrantWrites() {
+        val m=TaskContinuity()
+        m.begin("موافق", false)
+        assertFalse(m.writeGranted)
+    }
+    @Test fun approvalWithDecisionCardNotesStillGrantsWrites() {
+        val m=TaskContinuity()
+        m.begin("أصلح الملف", false)
+        m.begin("✅ موافق، تابع\nملاحظات: نفّذ في مجلد notes", true, answering = true)
+        assertTrue(m.writeGranted)
+    }
+    @Test fun explicitDenialRevokesButCasualNegationDoesNot() {
+        val granted=TaskContinuity();granted.begin("أصلح الملف",false)
+        granted.begin("لا مشكلة، أكمل",true,answering=true)
+        assertTrue(granted.writeGranted)
+        granted.begin("⛔ لا تنفّذ أي تعديل",true,answering=true)
+        assertFalse(granted.writeGranted)
+        assertTrue(WriteIntent.isDenial("⛔ لا تنفّذ"))
+        assertFalse(WriteIntent.isDenial("لا مشكلة، أكمل"))
+    }
     @Test fun continuationRetainsPermissionOnlyForUnfinishedTask() {
         val m=TaskContinuity();m.begin("أصلح الخطأ",false);m.begin("أكمل",true)
         assertTrue(m.writeGranted)

@@ -778,6 +778,9 @@ object AiTools {
         if (isMutation(call) && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ لم تُنفذ العملية: يلزم طلب تعديل/تنفيذ صريح من المستخدم، إضافة إلى السماح بالكتابة في الإعدادات.", false)
         }
+        if (isMutation(call) && !ctx.writeAuthorized) {
+            return ToolResult(call.name, "⛔ لم تُنفذ العملية: لا يوجد إذن صريح صالح لهذه المهمة.", false)
+        }
         if (def.write && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
         }

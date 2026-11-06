@@ -8,6 +8,30 @@ import java.security.MessageDigest
 object WriteIntent {
     private fun clean(s: String) = s.lowercase().replace(Regex("[\\u064B-\\u065F\\u0670]"), "")
         .replace('أ','ا').replace('إ','ا').replace('آ','ا').trim()
+
+    /** أول سطر فقط: بطاقة القرار تضيف الملاحظات في سطر منفصل، فلا تُغيّر معنى الاختيار. */
+    private fun head(s: String): String = clean(s).lineSequence().firstOrNull().orEmpty()
+        .replace(Regex("^[^\\p{L}\\p{N}]+"), "")
+        .trim(' ', '.', '!', '؟', '?', '،', ',')
+
+    private val DENIAL = Regex(
+        "(?:^|[\\s،,.!?؛;])(?:لا|دون|بدون)\\s+(?:تعدل|تعديل|تغير|تغيير|تكتب|كتابه|كتابة|تحذف|حذف|تنفذ|تنفيذ|تلمس|تعمل|ترفع|رفع|تدفع|دفع)(?![\\p{L}\\p{N}])|" +
+            "(?:^|[\\s،,.!?؛;])(?:do not|don't|never)\\s+(?:edit|modify|write|create|delete|change|run|execute|push)|" +
+            "(?:افحص|فحص|اقرا|اقرأ|read|inspect).{0,40}فقط|فقط.{0,40}(?:افحص|فحص|اقرا|اقرأ|read|inspect)|" +
+            "read.only|للقراءه فقط|للقراءة فقط",
+        RegexOption.IGNORE_CASE
+    )
+    private val APPROVAL = Regex(
+        "^(?:نعم|اجل|موافق|موافقه|موافقة|اوافق|الموافقه|الموافقة|allow|allowed|approve|approved|yes|yep|ok|okay|go ahead)(?![\\p{L}\\p{N}])",
+        RegexOption.IGNORE_CASE
+    )
+    private val FILE_TARGET = Regex(
+        "(ملف|ملفات|مجلد|مجلدات|مسار|مسارات|كود|سكربت|سكريبت|برنامج|داله|دالة|كلاس|class|تطبيق|مشروع|مستودع|ريبو|مكتبه|مكتبة|اختبار|اختبارات|" +
+            "file|files|folder|folders|directory|path|script|code|program|function|class|app|project|repo|repository|test|" +
+            "\\.(?:kt|kts|java|py|js|ts|tsx|json|xml|ya?ml|txt|md|html|css|sh|gradle|toml|ini|csv|sql)\\b|```)",
+        RegexOption.IGNORE_CASE
+    )
+
     fun isContinuation(s: String): Boolean = clean(s).trim(' ', '.', '!', '؟') in
         setOf("اكمل", "كمل", "تابع", "استكمل", "واصل", "continue", "resume", "اكمل من حيث توقفت")
     fun isNewTask(s: String): Boolean {
@@ -19,13 +43,23 @@ object WriteIntent {
             t == "new task" || t.startsWith("new task ") ||
             t == "new chat" || t.startsWith("new chat ")
     }
+    /** موافقة صريحة على طلب إذن سابق، وليست مجرد استئناف ("أكمل" لا يمنح كتابة). */
+    fun isApproval(s: String): Boolean = APPROVAL.containsMatchIn(head(s))
+    /** رفض صريح: لا يُفعّل بمجرد ورود "لا" داخل جملة مثل "لا مشكلة". */
+    fun isDenial(s: String): Boolean {
+        val t = clean(s)
+        if (DENIAL.containsMatchIn(t)) return true
+        return head(s) in setOf("لا", "كلا", "الغاء", "cancel", "stop", "no", "reject", "denied", "deny")
+    }
     fun permits(s: String): Boolean {
         val t = clean(s)
-        if (Regex("(لا|دون|بدون)\\s+(تعدل|تعديل|تغير|تغيير|تكتب|كتابة|تحذف|حذف)|do not|don't|read.only|فقط.*(افحص|اقرا)|(?:افحص|اقرا).*فقط").containsMatchIn(t)) return false
-        if (Regex("^(?:(?:اريد|please)\\s+)?(?:اكتب|write)\\s+", RegexOption.IGNORE_CASE).containsMatchIn(t) &&
-            !Regex("في\\s+(?:الملف|ملف)|داخل\\s+(?:الملف|ملف)|to\\s+(?:the\\s+)?file", RegexOption.IGNORE_CASE).containsMatchIn(t)) return false
+        if (isDenial(t)) return false
+        if (isApproval(t)) return false
+        // "اكتب" وحدها قد تعني صياغة نص. لا نمنح كتابة إلا عندما يكون الهدف ملفاً/كوداً.
+        if (Regex("^(?:(?:صديقي|اخي|رجاء|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(?:اكتب|write)\\s+", RegexOption.IGNORE_CASE).containsMatchIn(t) &&
+            !FILE_TARGET.containsMatchIn(t)) return false
         // Anchored imperative only. Questions, quoted examples and historical instructions do not grant rights.
-        return Regex("^(?:(?:صديقي|اخي|رجاء|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(اصلح|اصلاح|عدل|تعديل|غير|انشئ|انشاء|اكتب|اضف|احذف|ارفع|نفذ|ارسل|fix|repair|edit|modify|create|write|add|delete|implement|send|push|deploy)(?:\\s|$)").containsMatchIn(t)
+        return Regex("^(?:(?:صديقي|اخي|رجاء|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(اصلح|اصلاح|عدل|تعديل|غير|انشئ|انشاء|اصنع|صنع|اكتب|اضف|احذف|ارفع|نفذ|انفذ|ارسل|ارسل|برمج|طور|حول|ترجم|شغل|ثبت|صمم|اعمل|حسن|fix|repair|edit|modify|create|write|add|delete|implement|send|push|deploy|build|make|generate|refactor)(?:\\s|$)").containsMatchIn(t)
     }
 }
 
@@ -48,8 +82,14 @@ class TaskContinuity {
 
     fun begin(userRequest: String, unfinished: Boolean, answering: Boolean = false) {
         resume = unfinished && (WriteIntent.isContinuation(userRequest) || answering)
-        val revoked = Regex("لا\\s+|بدون|دون|do not|don't", RegexOption.IGNORE_CASE).containsMatchIn(userRequest)
-        writeGranted = !revoked && (WriteIntent.permits(userRequest) || (resume && writeGranted))
+        val approved = WriteIntent.isApproval(userRequest) && (resume || answering || writeGranted)
+        writeGranted = when {
+            WriteIntent.isDenial(userRequest) -> false
+            WriteIntent.permits(userRequest) -> true
+            approved -> true
+            resume -> writeGranted
+            else -> false
+        }
         responded = false
         if (!resume) {
             receipts.keys().asSequence().toList().forEach { receipts.remove(it) }
