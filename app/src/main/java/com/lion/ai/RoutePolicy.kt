@@ -130,19 +130,13 @@ object RoutePolicy {
         if (isManual(prefs)) {
             // Keep LastRoute so a later return to auto stays on the working provider.
             // Do not let central ranking replace the user's pick.
-            // اليدوي: مزودك المختار أولاً عبر القنوات التي فعّلتها (مباشر/خارجي/محلي).
-            // لا يبدّل العقل المركزي مزودك إلا إذا فعّلت «مساعدة العقل المركزي».
-            val assist = assistEnabled(prefs)
+            // اليدوي: مزودك المختار فقط عبر القنوات التي فعّلتها (مباشر/خارجي — لا محلي).
+            // لا يبدّل العقل المركزي مزودك أبداً في الوضع اليدوي، حتى مع «مساعدة العقل المركزي».
+            // المساعدة في اليدوي = إعادة المحاولة عبر قنوات أخرى لنفس المزود فقط.
             // إن أغلق المستخدم كل القنوات نبقي المباشر مفعّلاً حتى لا تتعطل المحادثة.
-            val chain = channelVariants(prefs, chosen).ifEmpty { listOf(chosen.copy(via = Channel.DIRECT)) }
-            val rescue = if (assist) {
-                CentralBrain.rescueRoutes(prefs, kind, listOf(chosen), image = false)
-                    .map { it.copy(via = Channel.DIRECT) }
-                    .filterNot { route -> chain.any { it.provider == route.provider } }
-            } else {
-                emptyList()
-            }
-            return (chain + rescue)
+            // allowLocal = false: في اليدوي لا نضيف LOCAL_PROXY لأنه يستخدم مزوداً خلفياً مختلفاً.
+            val chain = channelVariants(prefs, chosen, allowLocal = false).ifEmpty { listOf(chosen.copy(via = Channel.DIRECT)) }
+            return chain
                 .distinctBy { it.provider + "|" + it.via }
                 .take(8)
         }
