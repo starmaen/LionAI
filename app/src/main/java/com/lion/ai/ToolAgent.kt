@@ -79,6 +79,13 @@ object ToolAgent {
         return groups.filterTo(linkedSetOf()) { it in required }.ifEmpty { setOf(ToolGroup.META) }
     }
 
+    /**
+     * رسالة سؤال/قدرة (لا طلب تنفيذ) وليست استئنافاً لمهمة: تُجاب مباشرة.
+     * لا بطاقة قرار/إذن، ولا دفع النموذج لاستدعاء أداة. البطاقة تبقى للمهام التنفيذية فقط.
+     */
+    internal fun answerOnly(userRequest: String, resume: Boolean): Boolean =
+        !resume && UserIntent.classify(userRequest) != UserIntent.Kind.REQUEST
+
     internal fun formatUserAsk(question: String): String =
         question.trim().let { "$it\n\n— 💬 أنتظر ردك لأكمل المهمة من هذه النقطة (لن أفقد ما تم إنجازه)." }
 
@@ -247,6 +254,7 @@ object ToolAgent {
         var lastGateOk = true
         var lastGateText = ""
         val deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
+        val answerOnly = answerOnly(userRequest, memory.resume)
 
         val maxSteps = stepBudget(chatMode, groups.isNotEmpty() || forceExecution)
         // سجل العمل الحي: يظهر في الواجهة (✅ منجز / ❌ فشل / خطوة جارية) ويُلخَّص في تقرير نهائي ثابت لا يعتمد على النموذج.
@@ -376,6 +384,11 @@ object ToolAgent {
             // سؤال صريح من النموذج = إيقاف مؤقت بانتظار المستخدم مع حفظ السياق.
             val explicitAsk = (ASK.find(reply) ?: ASK_ALT.find(reply))
                 ?.groupValues?.get(1)?.trim()
+            if (!explicitAsk.isNullOrBlank() && answerOnly) {
+                // سؤال معرفي/قدرة: السؤال جزء من الجواب النصي، لا بطاقة قرار.
+                val plain = reply.replace(ASK, "\$1").replace(ASK_ALT, "\$1").replace(TOOL_BLOCK, "").trim()
+                return finish(plain.ifBlank { explicitAsk }, true)
+            }
             if (!explicitAsk.isNullOrBlank()) {
                 session?.askQuestion(explicitAsk)
                 memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
@@ -390,7 +403,7 @@ object ToolAgent {
             }
 
             val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
-            if (calls.isEmpty() && forceExecution && isIntentOnly(reply)) {
+            if (calls.isEmpty() && forceExecution && !answerOnly && isIntentOnly(reply)) {
                 if (promiseNudges < 3 && System.currentTimeMillis() + 45_000 < deadline) {
                     promiseNudges++
                     session?.recordNote("المزود اكتفى بوعد بلا تنفيذ؛ دُفع للتنفيذ ($promiseNudges/3)")
@@ -439,7 +452,7 @@ object ToolAgent {
                 }
                 // طلب إذن كتابة لم يُمنح بعد: اعرضه كسؤال قرار صريح واحفظ الجلسة،
                 // حتى تصل موافقة المستخدم إلى نفس الحالة بدل أن يُغلق الدور كأن المهمة اكتملت.
-                if (!memory.writeGranted && isPermissionAsk(reply)) {
+                if (!answerOnly && !memory.writeGranted && isPermissionAsk(reply)) {
                     val question = reply.trim()
                     session?.askQuestion(question)
                     memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
@@ -448,7 +461,7 @@ object ToolAgent {
                     return Result(formatUserAsk(question), used, complete = false, responded = memory.responded)
                 }
                 // مهمة تنفيذية بلا أي أداة = غالباً النموذج اكتفى بالكلام. ندفعه للتنفيذ مرتين قبل القبول.
-                if (forceExecution && used.isEmpty() && nudges < 2 && groups.isNotEmpty() &&
+                if (forceExecution && !answerOnly && used.isEmpty() && nudges < 2 && groups.isNotEmpty() &&
                     System.currentTimeMillis() + 45_000 < deadline
                 ) {
                     val trimmed = reply.trim()

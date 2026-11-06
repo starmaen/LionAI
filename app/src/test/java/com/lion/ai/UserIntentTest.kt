@@ -32,3 +32,18 @@ class UserIntentTest {
         assertFalse(ModeGuard.looksLikeCodingRequest("هل بامكانك انشاء مجلدات وملفات وضغطها وقراءة ملف pdf", TaskKind.GENERAL))
     }
 }
+
+class CardGateTest {
+    @Test fun questionsNeverOpenTheDecisionCardButTasksStillCan() {
+        // أسئلة وقدرات: جواب مباشر، لا بطاقة قرار/إذن ولا دفع لاستدعاء أداة.
+        assertTrue(ToolAgent.answerOnly("هل بامكانك انشاء مجلدات وملفات وضغطها وقراءة ملف pdf", false))
+        assertTrue(ToolAgent.answerOnly("ما هي عاصمة فرنسا", false))
+        assertTrue(ToolAgent.answerOnly("لماذا فشل البناء؟", false))
+        // أوامر تنفيذية: البطاقة تعمل كما هي.
+        assertFalse(ToolAgent.answerOnly("أنشئ ملف notes.txt", false))
+        assertFalse(ToolAgent.answerOnly("هل يمكنك إصلاح الملف Main.kt", false))
+        // استئناف مهمة قائمة (مثل «نعم» أو «نفذ» بعد سؤال) لا يُعامل كسؤال أبداً.
+        assertFalse(ToolAgent.answerOnly("ما رأيك؟", true))
+        assertFalse(ToolAgent.answerOnly("نفذ", false))
+    }
+}
