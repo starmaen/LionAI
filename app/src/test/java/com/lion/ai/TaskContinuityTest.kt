@@ -140,4 +140,15 @@ class TaskContinuityTest {
         val m=TaskContinuity();m.checkpoint(listOf(ChatTurn("user","x".repeat(190000)),ChatTurn("user","latest")),"next")
         assertTrue(m.trimmed);assertEquals("latest",m.history.single().content);assertEquals("next",m.current)
     }
+    @Test fun executeCommandIsABlanketGrantButBareContinueIsNot() {
+        listOf("نفذ", "نفّذ", "أكمل التنفيذ", "اكمل التنفيذ الآن", "كمل التنفيذ", "تابع التنفيذ", "تمام نفذ").forEach {
+            assertTrue(it, WriteIntent.isExecute(it))
+            assertTrue(it, WriteIntent.isContinuation(it))
+        }
+        listOf("أكمل", "هل أنفذ الخطة؟", "لا تنفذ شيئا", "اشرح كيف نفذ الأمر").forEach {
+            assertFalse(it, WriteIntent.isExecute(it))
+        }
+        val m = TaskContinuity(); m.begin("اقرأ الملف", false); m.begin("أكمل التنفيذ", true)
+        assertTrue(m.resume); assertTrue(m.writeGranted)
+    }
 }

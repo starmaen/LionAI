@@ -930,7 +930,13 @@ fun LionApp() {
         // وبنوع المهمة، فيراعي الكفاءة والاتصال معاً.
         val plan = RoutePolicy.appPlan(prefs, kind, mode, chatId, chatMode)
         val auto = !manualMode
-        val historyContext = history.takeLast(8).joinToString("\n") { it.content.take(2000) }
+        // عزل السياق: في «عام» لا يُستخدم سجل الحوار لكشف الأدوات إلا عند الاستئناف/أمر «نفذ»،
+        // وإلا فتحت رسالة برمجية قديمة أدوات الملفات والصدفة لكل رد لاحق («شكراً» مثلاً).
+        val carryHistory = chatMode == ChatMode.CODE || resumingTask ||
+            WriteIntent.isContinuation(prompt)
+        val historyContext = if (carryHistory) {
+            history.takeLast(8).joinToString("\n") { it.content.take(2000) }
+        } else ""
         val toolText = (if (historyContext.isBlank()) prompt else prompt + "\n" + historyContext) +
             if (resumingTask) "\n" + previousSession.lastTask else ""
         val modeProfile = ContextProfiles.of(chatMode, prefs, toolText)

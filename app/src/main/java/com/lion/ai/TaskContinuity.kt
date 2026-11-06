@@ -33,7 +33,21 @@ object WriteIntent {
         RegexOption.IGNORE_CASE
     )
 
-    fun isContinuation(s: String): Boolean = clean(s).trim(' ', '.', '!', '؟') in
+    /**
+     * أمر تنفيذ صريح = إذن شامل للمهمة: «نفذ» / «أكمل التنفيذ» (وصيغهما). الرسالة كلها يجب أن تكون
+     * الأمر (مع مجاملات/ظروف قصيرة)، فلا تُمنح الكتابة من جملة طويلة تذكر الكلمة عرضاً.
+     * «أكمل» وحدها تبقى استئنافاً فقط ولا تمنح كتابة.
+     */
+    private val EXECUTE = Regex(
+        "^(?:(?:تمام|حسنا|طيب|ok|okay|please|رجاء|من فضلك|لو سمحت|الان)\\s+)*" +
+            "(?:(?:نفذ|انفذ|نفذها|نفذه)(?:\\s+(?:الان|فورا|كل شيء|كل شي|الكل|الخطه|الخطة|المطلوب|ما سبق))*|" +
+            "(?:اكمل|كمل|تابع|استكمل|واصل)\\s+(?:ال)?تنفيذ(?:\\s+(?:الان|فورا|من حيث توقفت))*|" +
+            "execute|proceed|go ahead|continue execution)$",
+        RegexOption.IGNORE_CASE
+    )
+    fun isExecute(s: String): Boolean = !isDenial(s) && EXECUTE.matches(head(s))
+
+    fun isContinuation(s: String): Boolean = isExecute(s) || clean(s).trim(' ', '.', '!', '؟') in
         setOf("اكمل", "كمل", "تابع", "استكمل", "واصل", "continue", "resume", "اكمل من حيث توقفت")
     fun isNewTask(s: String): Boolean {
         val t = clean(s).replace('ة', 'ه').trim(' ', '.', '!', '؟', '?')
@@ -119,6 +133,7 @@ class TaskContinuity {
             (resume || answering || writeGranted || persistedWrite)
         writeGranted = when {
             WriteIntent.isDenial(userRequest) -> false
+            WriteIntent.isExecute(userRequest) -> true
             WriteIntent.permits(userRequest) -> true
             approved -> true
             resume -> writeGranted || persistedWrite
