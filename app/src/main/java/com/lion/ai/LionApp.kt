@@ -1900,6 +1900,25 @@ fun LionApp() {
                     (prefs.getString("model_${info.id}", "") ?: "").ifBlank { info.defaultModel }
                 }
             },
+            modelsFor = { info ->
+                // مواقع الويب والوكيل المحلي وLion Chat بلا قائمة موديلات: صف واحد يختارها مباشرة.
+                if (WebChatRuntime.handles(info.id) || WebChatRuntime.isWeb(info.id) ||
+                    info.id == RoutePolicy.LOCAL_PROXY || info.group == ProviderGroup.LION
+                ) emptyList() else ModelCatalog.options(info, ModelCatalog.cached(prefs, info.id))
+            },
+            onChooseModel = { info, model ->
+                // اختيار فردي مباشر: الموديل والمزود معاً من الصندوق نفسه، وبلا تفعيل التلقائي.
+                prefs.edit()
+                    .putString("model_${info.id}", model)
+                    .putString("provider", info.id)
+                    .putBoolean("auto_route", false)
+                    .apply()
+                runCatching { LlmClient.reloadOverrides(prefs) }
+                selectedProvider = info.id
+                autoRoute = false
+                showModelSheet = false
+                syncActiveTab()
+            },
             onDismiss = { showModelSheet = false },
             onChooseAuto = {
                 // التلقائي = العقل المركزي يدير المزودات مباشرة. لا نغيّر مزودك
