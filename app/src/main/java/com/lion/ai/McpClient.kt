@@ -3,7 +3,12 @@ package com.lion.ai
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -18,16 +23,16 @@ data class McpServer(
 
 class McpException(message: String) : Exception(message)
 
-/**
- * عميل MCP مبسّط فوق Streamable HTTP (JSON-RPC 2.0 + SSE).
- *
- * يسمح بربط خوادم مثل filesystem/shell/git/android-build/session-mesh خلف واجهة
- * واحدة، فيستفيد منها أي مزود يدعم بروتوكول الأدوات النصي في Lion AI.
- */
+private class McpSessionExpiredException : Exception()
+
 object McpClient {
+    private const val PROTOCOL_VERSION = "2025-06-18"
+    private const val MAX_TOOL_PAGES = 20
+
     private val ids = AtomicLong(1)
     private val sessions = ConcurrentHashMap<String, String>()
     private val initialized = ConcurrentHashMap.newKeySet<String>()
+    private val negotiated = ConcurrentHashMap<String, String>()
 
     fun servers(prefs: SharedPreferences): List<McpServer> {
         val raw = prefs.getString(McpConfig.KEY, "") ?: return emptyList()
@@ -53,6 +58,7 @@ object McpClient {
         val current = servers(prefs).filterNot { it.id == server.id }.toMutableList()
         current.add(server)
         saveServers(prefs, current)
+        resetState(server.id)
         return current
     }
 
@@ -61,9 +67,14 @@ object McpClient {
         val filtered = current.filterNot { it.id == id }
         if (filtered.size == current.size) return false
         saveServers(prefs, filtered)
+        resetState(id)
+        return true
+    }
+
+    private fun resetState(id: String) {
         sessions.remove(id)
         initialized.remove(id)
-        return true
+        negotiated.remove(id)
     }
 
     private fun saveServers(prefs: SharedPreferences, list: List<McpServer>) {
@@ -78,7 +89,7 @@ object McpClient {
                     .put("enabled", server.enabled)
             )
         }
-        prefs.edit().putString(McpConfig.KEY, array.toString()).apply()
+        prefs.edit().putString(McpConfig.KEY, array.toString()).commit()
     }
 
     fun find(prefs: SharedPreferences, idOrName: String): McpServer? {
@@ -94,13 +105,17 @@ object McpClient {
             server,
             "initialize",
             JSONObject()
-                .put("protocolVersion", "2024-11-05")
+                .put("protocolVersion", PROTOCOL_VERSION)
                 .put("capabilities", JSONObject())
                 .put(
                     "clientInfo",
                     JSONObject().put("name", "LionAI").put("version", "1.6")
                 )
         )
+        response.optJSONObject("result")
+            ?.optString("protocolVersion", "")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { negotiated[server.id] = it }
         notify(server, "notifications/initialized", JSONObject())
         initialized.add(server.id)
         return response
@@ -110,10 +125,23 @@ object McpClient {
         val server = find(prefs, serverRef) ?: throw McpException("خادم MCP غير معروف: $serverRef")
         ensureEnabled(server)
         initialize(server)
-        val response = rpc(server, "tools/list", JSONObject())
-        return response.optJSONObject("result")?.optJSONArray("tools")
-            ?: response.optJSONArray("tools")
-            ?: JSONArray()
+        val all = JSONArray()
+        var cursor: String? = null
+        var pages = 0
+        do {
+            val params = JSONObject()
+            if (!cursor.isNullOrBlank()) params.put("cursor", cursor)
+            val response = rpc(server, "tools/list", params)
+            val result = response.optJSONObject("result") ?: response
+            val page = result.optJSONArray("tools")
+            if (page != null) {
+                for (i in 0 until page.length()) all.put(page.get(i))
+            }
+            cursor = if (result.isNull("nextCursor")) null
+            else result.optString("nextCursor", "").takeIf { it.isNotBlank() }
+            pages++
+        } while (cursor != null && pages < MAX_TOOL_PAGES)
+        return all
     }
 
     fun callTool(
@@ -148,19 +176,65 @@ object McpClient {
 
     private fun ensureEnabled(server: McpServer) {
         if (!server.enabled) throw McpException("خادم ${server.name} معطّل")
-        if (!server.url.startsWith("http://") && !server.url.startsWith("https://")) {
+        val url = server.url.trim()
+        val isHttp = url.startsWith("http://")
+        val isHttps = url.startsWith("https://")
+        if (!isHttp && !isHttps) {
             throw McpException("رابط MCP يجب أن يبدأ بـ http:// أو https://")
+        }
+        if (isHttp && server.token.isNotBlank()) {
+            val host = runCatching { URL(url).host }.getOrDefault("")
+            if (!isPrivateHost(host)) {
+                throw McpException(
+                    "لا يُرسل التوكن عبر http:// إلى مضيف عام (${server.name}). استخدم https:// أو مضيفاً محلياً."
+                )
+            }
         }
     }
 
-    private fun rpc(server: McpServer, method: String, params: JSONObject): JSONObject {
+    private fun isPrivateHost(host: String): Boolean {
+        val h = host.lowercase()
+        if (h == "localhost" || h == "::1" || h == "[::1]" || h.endsWith(".local")) return true
+        val parts = h.split('.').mapNotNull { it.toIntOrNull() }
+        if (parts.size != 4) return false
+        return parts[0] == 10 ||
+            parts[0] == 127 ||
+            (parts[0] == 192 && parts[1] == 168) ||
+            (parts[0] == 172 && parts[1] in 16..31) ||
+            (parts[0] == 100 && parts[1] in 64..127)
+    }
+
+    private fun rpc(
+        server: McpServer,
+        method: String,
+        params: JSONObject,
+        retryOnExpiry: Boolean = true
+    ): JSONObject {
         val id = ids.getAndIncrement()
         val payload = JSONObject()
             .put("jsonrpc", "2.0")
             .put("id", id)
             .put("method", method)
             .put("params", params)
-        return post(server, payload, id)
+        val response = try {
+            post(server, payload, id)
+        } catch (e: McpSessionExpiredException) {
+            if (!retryOnExpiry || method == "initialize") {
+                throw McpException("انتهت جلسة MCP مع ${server.name} ولم تنجح إعادة الاتصال")
+            }
+            resetState(server.id)
+            initialize(server)
+            return rpc(server, method, params, retryOnExpiry = false)
+        }
+        throwIfError(server, method, response)
+        return response
+    }
+
+    private fun throwIfError(server: McpServer, method: String, response: JSONObject) {
+        val error = response.optJSONObject("error") ?: return
+        val code = error.optInt("code", 0)
+        val message = error.optString("message", "خطأ غير معروف")
+        throw McpException("خادم ${server.name} رفض $method (JSON-RPC $code): $message")
     }
 
     private fun notify(server: McpServer, method: String, params: JSONObject) {
@@ -172,6 +246,8 @@ object McpClient {
     }
 
     private fun post(server: McpServer, payload: JSONObject, expectedId: Long?): JSONObject {
+        val method = payload.optString("method")
+        val sentSession = sessions[server.id]
         val connection = (URL(server.url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
@@ -179,11 +255,13 @@ object McpClient {
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json, text/event-stream")
-            setRequestProperty("MCP-Protocol-Version", "2024-11-05")
+            if (method != "initialize") {
+                setRequestProperty("MCP-Protocol-Version", negotiated[server.id] ?: PROTOCOL_VERSION)
+            }
             if (server.token.isNotBlank()) {
                 setRequestProperty("Authorization", "Bearer ${server.token}")
             }
-            sessions[server.id]?.let { setRequestProperty("Mcp-Session-Id", it) }
+            if (sentSession != null) setRequestProperty("Mcp-Session-Id", sentSession)
         }
         return try {
             connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
@@ -191,51 +269,73 @@ object McpClient {
             connection.getHeaderField("Mcp-Session-Id")?.takeIf { it.isNotBlank() }?.let {
                 sessions[server.id] = it
             }
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (code !in 200..299) {
-                throw McpException("HTTP $code من ${server.name}: ${body.take(500)}")
+                val body = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                if (code == 404 && sentSession != null && method != "initialize") {
+                    throw McpSessionExpiredException()
+                }
+                val hint = if (code == 401 || code == 403) " — تحقق من التوكن/الصلاحيات" else ""
+                throw McpException("HTTP $code من ${server.name}$hint: ${body.take(500)}")
             }
             if (expectedId == null) return JSONObject().put("ok", true)
-            if (body.isBlank()) {
-                throw McpException("رد فارغ من ${server.name} على ${payload.optString("method")}")
-            }
             val contentType = connection.contentType.orEmpty().lowercase()
-            val json = if (contentType.contains("text/event-stream") || body.trimStart().startsWith("event:") ||
-                body.lineSequence().any { it.startsWith("data:")
-            }) {
-                parseSse(body, expectedId)
+            if (contentType.contains("text/event-stream")) {
+                readSseResponse(connection.inputStream, expectedId, server.name, method)
             } else {
-                runCatching { JSONObject(body) }.getOrElse {
-                    parseSse(body, expectedId)
-                }
+                val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                parseBody(body, expectedId, server.name, method)
             }
-            json
+        } catch (e: SocketTimeoutException) {
+            throw McpException("انتهت مهلة الاتصال بخادم ${server.name} أثناء $method")
         } finally {
             connection.disconnect()
         }
     }
 
-    private fun parseSse(body: String, expectedId: Long): JSONObject {
-        val events = mutableListOf<String>()
-        val current = StringBuilder()
-        body.lineSequence().forEach { line ->
+    private fun parseBody(body: String, expectedId: Long, serverName: String, method: String): JSONObject {
+        val trimmed = body.trim()
+        if (trimmed.isEmpty()) throw McpException("رد فارغ من $serverName على $method")
+        if (trimmed.startsWith("{")) {
+            runCatching { JSONObject(trimmed) }.getOrNull()?.let { return it }
+        }
+        return readSseResponse(
+            ByteArrayInputStream(trimmed.toByteArray(Charsets.UTF_8)),
+            expectedId,
+            serverName,
+            method
+        )
+    }
+
+    private fun readSseResponse(
+        stream: InputStream,
+        expectedId: Long,
+        serverName: String,
+        method: String
+    ): JSONObject {
+        val reader = BufferedReader(InputStreamReader(stream, Charsets.UTF_8))
+        val data = StringBuilder()
+        var line = reader.readLine()
+        while (line != null) {
             if (line.startsWith("data:")) {
-                current.append(line.removePrefix("data:").trim()).append('\n')
-            } else if (line.isBlank() && current.isNotEmpty()) {
-                events.add(current.toString().trim())
-                current.clear()
+                data.append(line.removePrefix("data:").trimStart()).append('\n')
+            } else if (line.isBlank()) {
+                matchEvent(data.toString(), expectedId)?.let { return it }
+                data.setLength(0)
             }
+            line = reader.readLine()
         }
-        if (current.isNotEmpty()) events.add(current.toString().trim())
-        events.asReversed().forEach { event ->
-            runCatching {
-                val json = JSONObject(event)
-                if (json.optLong("id", -1L) == expectedId || json.has("result") || json.has("error")) json
-                else null
-            }.getOrNull()?.let { return it }
-        }
-        throw McpException("لم أجد رد JSON-RPC المطابق في stream خادم MCP")
+        matchEvent(data.toString(), expectedId)?.let { return it }
+        throw McpException("لم أجد رد JSON-RPC المطابق في stream خادم $serverName ($method)")
+    }
+
+    private fun matchEvent(raw: String, expectedId: Long): JSONObject? {
+        val text = raw.trim()
+        if (text.isEmpty()) return null
+        val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
+        if (json.has("method")) return null
+        if (!json.has("result") && !json.has("error")) return null
+        if (!json.isNull("id") && json.optLong("id", -1L) != expectedId) return null
+        return json
     }
 
     private fun extractText(result: JSONObject): String {
