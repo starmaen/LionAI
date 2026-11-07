@@ -461,8 +461,11 @@ object AiTools {
         if (control.containsMatchIn(t) || ToolGroup.CODE in groups) groups.add(ToolGroup.CONTROL)
         val memory = Regex("(ذاكره|ذاكرة المشروع|checkpoint_save|checkpoint_resume)")
         if (memory.containsMatchIn(t)) groups.add(ToolGroup.MEMORY)
-        val mcp = Regex("(\\\\bmcp\\\\b|خوادم mcp|model context protocol)")
+        val mcp = Regex("(mcp|model context protocol|خوادم mcp|خادم mcp)")
         if (mcp.containsMatchIn(t)) groups.add(ToolGroup.MCP)
+        if (ToolGroup.MCP !in groups && (wantsTools || devAction.containsMatchIn(t)) &&
+            McpClient.servers(prefs).isNotEmpty()
+        ) groups.add(ToolGroup.MCP)
         if (groups.isNotEmpty() || wantsTools) groups.add(ToolGroup.META)
         return groups
     }
