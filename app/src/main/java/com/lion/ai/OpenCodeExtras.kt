@@ -170,6 +170,31 @@ fun OpenCodeExtrasCard() {
             "أدوات إضافية لـ OpenCode. أمر محلي مثل: npx -y @modelcontextprotocol/server-filesystem /workspace — أو رابط https لخادم بعيد.",
             color = XMUTED, fontSize = 11.sp
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(
+                enabled = !busy,
+                onClick = { applyConfig { OpenCodeConfig.normalizeMcp(it) } },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
+            ) { Text("🛠 إصلاح المسارات والمهلة", color = XGOLD, fontSize = 11.sp) }
+            Button(
+                enabled = !busy,
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        status = "⏳ اختبار أوامر MCP المحلية داخل البيئة (حتى 40ث لكل خادم)…"
+                        status = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val specs = OpenCodeConfig.localMcpSpecs(OpenCodeConfig.normalizeMcp(config))
+                                if (specs.isEmpty()) "لا توجد خوادم محلية للاختبار."
+                                else specs.joinToString("\n\n") { OpenCodeLocal.probeLocalMcp(context, it) }
+                            }.getOrElse { "❌ ${it.message ?: it.javaClass.simpleName}" }
+                        }
+                        busy = false
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
+            ) { Text("🧪 اختبار الأوامر", color = XGOLD, fontSize = 11.sp) }
+        }
         OpenCodeConfig.mcpList(config).forEach { m ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

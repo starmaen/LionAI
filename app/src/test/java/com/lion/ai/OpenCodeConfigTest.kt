@@ -85,4 +85,25 @@ class OpenCodeConfigTest {
         assertThrows(IllegalArgumentException::class.java) { OpenCodeConfig.addProvider(JSONObject(), "p", "P", "https://a.b/v1", "", " ") }
         assertThrows(IllegalArgumentException::class.java) { OpenCodeConfig.addProvider(JSONObject(), "p", "P", "ftp://a.b", "", "m") }
     }
+
+    @Test fun `host phone paths become guest paths and local mcp gets a long timeout`() {
+        val cfg = OpenCodeConfig.addMcp(
+            JSONObject(), "memory",
+            "/data/user/0/com.lion.ai/files//workspace/tools/node/bin/node /workspace/x.js",
+            "MEMORY_FILE_PATH=/data/user/0/com.lion.ai/files/workspace/m.jsonl"
+        )
+        val e = cfg.getJSONObject("mcp").getJSONObject("memory")
+        assertEquals("/workspace/tools/node/bin/node", e.getJSONArray("command").getString(0))
+        assertEquals("/workspace/m.jsonl", e.getJSONObject("environment").getString("MEMORY_FILE_PATH"))
+        assertEquals(OpenCodeConfig.LOCAL_MCP_TIMEOUT_MS, e.getInt("timeout"))
+    }
+
+    @Test fun `normalize repairs old entries without timeout`() {
+        val old = JSONObject().put("mcp", JSONObject().put("m", JSONObject()
+            .put("type", "local").put("enabled", true)
+            .put("command", org.json.JSONArray(listOf("/data/user/0/com.lion.ai/files//workspace/tools/node/bin/node", "a.js")))))
+        val fixed = OpenCodeConfig.normalizeMcp(old).getJSONObject("mcp").getJSONObject("m")
+        assertEquals("/workspace/tools/node/bin/node", fixed.getJSONArray("command").getString(0))
+        assertEquals(OpenCodeConfig.LOCAL_MCP_TIMEOUT_MS, fixed.getInt("timeout"))
+    }
 }

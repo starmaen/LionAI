@@ -108,7 +108,8 @@ object OpenCodeLocal {
     /** حالة كل خادم MCP كما يراها OpenCode فعلاً (GET /mcp): متصل أو فشل مع السبب. */
     fun mcpStatus(): Map<String, String> {
         start()
-        val root = request("/mcp", "GET").second
+        // GET /mcp ينتظر اتصال كل الخوادم (npx تحت proot بطيء)، فالمهلة الافتراضية 15ث تعطي «فشل» كاذباً.
+        val root = request("/mcp", "GET", readMs = 120_000).second
         return root.keys().asSequence().associateWith { name ->
             val entry = root.optJSONObject(name)
             formatMcpStatus(entry?.optString("status").orEmpty(), entry?.optString("error").orEmpty())
@@ -186,11 +187,32 @@ object OpenCodeLocal {
         return "⚠️ لم يُرجع OpenCode نصًا. قد ينتظر إذنًا أو يكون النموذج غير متصل؛ افتح Terminal وراجع opencode auth login والسجل."
     }
 
-    private fun request(path: String, method: String, body: JSONObject? = null): Pair<Int, JSONObject> {
+    /** يختبر أمر MCP محلي داخل proot فعلياً (initialize عبر stdio) ويعرض سبب الفشل الحقيقي. */
+    fun probeLocalMcp(context: android.content.Context, spec: OpenCodeConfig.LocalMcpSpec): String {
+        fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
+        val exe = spec.command.firstOrNull() ?: return "❌ أمر فارغ"
+        val init = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"lion-probe\",\"version\":\"1\"}}}"
+        val envPrefix = spec.env.entries.joinToString(" ") { it.key + "=" + q(it.value) }
+        val cmd = spec.command.joinToString(" ") { q(it) }
+        val script = "if ! command -v ${q(exe)} >/dev/null 2>&1 && [ ! -x ${q(exe)} ]; then echo 'NOT_FOUND: ' ${q(exe)}; exit 127; fi; " +
+            "rm -f /tmp/mcp-probe.err; " +
+            "(printf '%s\\n' ${q(init)}; sleep 40) | $envPrefix timeout 45 $cmd 2>/tmp/mcp-probe.err | " +
+            "{ IFS= read -r -t 40 line; if [ -n \"\$line\" ]; then echo \"OK stdout: \$line\" | head -c 400; else echo 'NO_RESPONSE within 40s'; fi; }; " +
+            "echo; echo '--- stderr ---'; head -c 800 /tmp/mcp-probe.err"
+        val r = LinuxEnv.run(context, script, 100)
+        val verdict = when {
+            r.output.contains("NOT_FOUND") -> "❌ الملف التنفيذي غير موجود داخل البيئة"
+            r.output.contains("OK stdout") && r.output.contains("\"result\"") -> "✅ الخادم يعمل ويردّ على initialize"
+            else -> "❌ لا رد صالح"
+        }
+        return "${spec.name}: $verdict\n" + r.output.trim().takeLast(900)
+    }
+
+    private fun request(path: String, method: String, body: JSONObject? = null, readMs: Int = if (body == null) 15_000 else 180_000): Pair<Int, JSONObject> {
         val connection = (URL(BASE + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 5000
-            readTimeout = if (body == null) 15_000 else 180_000
+            readTimeout = readMs
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "application/json")
             doOutput = body != null

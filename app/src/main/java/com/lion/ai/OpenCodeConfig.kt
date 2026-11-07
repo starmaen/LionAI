@@ -14,6 +14,18 @@ object OpenCodeConfig {
     private const val SCHEMA = "https://opencode.ai/config.json"
     private val NAME = Regex("^[a-z0-9][a-z0-9_-]{0,39}$")
 
+    /** OpenCode يبدأ MCP المحلي بـ 5ث فقط افتراضياً، وهذا لا يكفي لـ npx/node تحت proot. */
+    const val LOCAL_MCP_TIMEOUT_MS = 90_000
+    const val REMOTE_MCP_TIMEOUT_MS = 30_000
+
+    /**
+     * داخل proot لا يوجد إلا /workspace؛ مسار الهاتف الحقيقي (/data/user/0/<pkg>/files/workspace)
+     * غير موجود هناك فيفشل تشغيل الخادم بصمت. نحوّله إلى مسار البيئة.
+     */
+    private val HOST_WORKSPACE = Regex("(?:/d)?/data/(?:user/\\d+|data)/[A-Za-z0-9_.]+/files/+workspace")
+
+    internal fun guestPath(text: String): String = HOST_WORKSPACE.replace(text, "/workspace")
+
     data class McpEntry(val name: String, val type: String, val target: String, val enabled: Boolean)
     data class AgentEntry(val name: String, val description: String)
     data class ProviderEntry(val id: String, val name: String, val baseUrl: String, val models: List<String>, val hasKey: Boolean)
@@ -34,13 +46,13 @@ object OpenCodeConfig {
         require(clean.isNotBlank()) { "أدخل الأمر أو الرابط" }
         val entry = JSONObject().put("enabled", true)
         if (clean.startsWith("http://") || clean.startsWith("https://")) {
-            entry.put("type", "remote").put("url", clean)
+            entry.put("type", "remote").put("url", clean).put("timeout", REMOTE_MCP_TIMEOUT_MS)
             val headers = parsePairs(extras, ':', '=')
             if (headers.length() > 0) entry.put("headers", headers)
         } else {
-            val parts = clean.split(Regex("\\s+")).filter { it.isNotBlank() }
-            entry.put("type", "local").put("command", JSONArray(parts))
-            val env = parsePairs(extras, '=', ':')
+            val parts = clean.split(Regex("\\s+")).filter { it.isNotBlank() }.map(::guestPath)
+            entry.put("type", "local").put("command", JSONArray(parts)).put("timeout", LOCAL_MCP_TIMEOUT_MS)
+            val env = parsePairs(guestPath(extras), '=', ':')
             if (env.length() > 0) entry.put("environment", env)
         }
         return withSection(config, "mcp") { it.put(id, entry) }
@@ -57,6 +69,44 @@ object OpenCodeConfig {
             out.put(key, line.substring(at + 1).trim())
         }
         return out
+    }
+
+    /** يصلح الإدخالات القديمة: مسارات الهاتف → /workspace، وإضافة مهلة تشغيل كافية إن غابت. */
+    fun normalizeMcp(config: JSONObject): JSONObject {
+        val out = copyOf(config)
+        val mcp = out.optJSONObject("mcp") ?: return out
+        mcp.keys().asSequence().toList().forEach { name ->
+            val e = mcp.optJSONObject(name) ?: return@forEach
+            e.optJSONArray("command")?.let { cmd ->
+                val fixed = JSONArray()
+                for (i in 0 until cmd.length()) fixed.put(guestPath(cmd.optString(i)))
+                e.put("command", fixed)
+            }
+            e.optJSONObject("environment")?.let { env ->
+                env.keys().asSequence().toList().forEach { k -> env.put(k, guestPath(env.optString(k))) }
+            }
+            if (!e.has("timeout")) {
+                e.put("timeout", if (e.optString("type", "local") == "remote") REMOTE_MCP_TIMEOUT_MS else LOCAL_MCP_TIMEOUT_MS)
+            }
+        }
+        return out
+    }
+
+    data class LocalMcpSpec(val name: String, val command: List<String>, val env: Map<String, String>)
+
+    fun localMcpSpecs(config: JSONObject): List<LocalMcpSpec> {
+        val mcp = config.optJSONObject("mcp") ?: return emptyList()
+        return mcp.keys().asSequence().sorted().mapNotNull { key ->
+            val e = mcp.optJSONObject(key) ?: return@mapNotNull null
+            if (e.optString("type", "local") == "remote") return@mapNotNull null
+            val cmd = e.optJSONArray("command") ?: return@mapNotNull null
+            val env = e.optJSONObject("environment")
+            LocalMcpSpec(
+                key,
+                (0 until cmd.length()).map { cmd.optString(it) },
+                env?.keys()?.asSequence()?.associateWith { env.optString(it) }.orEmpty()
+            )
+        }.toList()
     }
 
     fun removeMcp(config: JSONObject, name: String): JSONObject = withoutKey(config, "mcp", name.trim().lowercase())
@@ -168,7 +218,7 @@ object OpenCodeConfig {
     fun applyAndVerify(context: Context, mutate: (JSONObject) -> JSONObject): String {
         val f = file(context)
         val previous = if (f.exists()) f.readText() else null
-        val next = mutate(load(context))
+        val next = normalizeMcp(mutate(load(context)))
         f.parentFile?.mkdirs()
         f.writeText(next.toString(2))
         OpenCodeLocal.stop()
