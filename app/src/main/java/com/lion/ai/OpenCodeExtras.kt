@@ -48,6 +48,7 @@ fun OpenCodeExtrasCard() {
     var status by remember { mutableStateOf("") }
     var config by remember { mutableStateOf(JSONObject()) }
     var rules by remember { mutableStateOf("") }
+    var mcpStatuses by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var mcpName by remember { mutableStateOf("") }
     var mcpTarget by remember { mutableStateOf("") }
     var agentName by remember { mutableStateOf("") }
@@ -72,6 +73,7 @@ fun OpenCodeExtrasCard() {
                     .getOrElse { "❌ ${it.message ?: it.javaClass.simpleName}" }
             }
             config = withContext(Dispatchers.IO) { runCatching { OpenCodeConfig.load(context) }.getOrDefault(JSONObject()) }
+            mcpStatuses = withContext(Dispatchers.IO) { runCatching { OpenCodeLocal.mcpStatus() }.getOrDefault(emptyMap()) }
             busy = false
         }
     }
@@ -109,7 +111,22 @@ fun OpenCodeExtrasCard() {
 
         // 2) خوادم MCP
         Spacer(Modifier.height(6.dp))
-        Text("🔌 خوادم MCP", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🔌 خوادم MCP", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(
+                enabled = !busy,
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        status = "⏳ فحص حالة الخوادم (قد يشغّل OpenCode إن كان متوقفاً)…"
+                        val result = withContext(Dispatchers.IO) { runCatching { OpenCodeLocal.mcpStatus() } }
+                        result.onSuccess { mcpStatuses = it; status = if (it.isEmpty()) "لا توجد خوادم MCP مسجّلة في OpenCode." else "" }
+                        result.onFailure { status = "❌ ${it.message ?: it.javaClass.simpleName}" }
+                        busy = false
+                    }
+                }
+            ) { Text("🔍 فحص الحالة", color = XGOLD, fontSize = 11.sp) }
+        }
         Text(
             "أدوات إضافية لـ OpenCode. أمر محلي مثل: npx -y @modelcontextprotocol/server-filesystem /workspace — أو رابط https لخادم بعيد.",
             color = XMUTED, fontSize = 11.sp
@@ -119,6 +136,9 @@ fun OpenCodeExtrasCard() {
                 Column(Modifier.weight(1f)) {
                     Text(m.name + " · " + (if (m.type == "remote") "بعيد" else "محلي"), color = Color.White, fontSize = 12.sp)
                     Text(m.target, color = XMUTED, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 2)
+                    mcpStatuses[m.name]?.let { st ->
+                        Text(st, color = if (st.startsWith("✅")) Color(0xFF7CC47C) else if (st.startsWith("❌")) Color(0xFFFF9A9A) else XMUTED, fontSize = 11.sp)
+                    }
                 }
                 TextButton(enabled = !busy, onClick = { applyConfig { OpenCodeConfig.removeMcp(it, m.name) } }) {
                     Text("حذف", color = Color(0xFFFF9A9A), fontSize = 11.sp)

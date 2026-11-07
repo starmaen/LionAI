@@ -21,4 +21,11 @@ class OpenCodeLocalTest {
         assert(local.keyless)
         assert(local.defaultModel.contains('/'))
     }
+
+    @Test fun `mcp status is formatted with reason for failures`() {
+        assertEquals("✅ متصل", OpenCodeLocal.formatMcpStatus("connected", ""))
+        assertEquals("⏸ معطّل", OpenCodeLocal.formatMcpStatus("disabled", ""))
+        assertEquals("❌ فشل: Executable not found", OpenCodeLocal.formatMcpStatus("failed", "Executable not found"))
+        assertEquals("❌ فشل", OpenCodeLocal.formatMcpStatus("failed", ""))
+    }
 }

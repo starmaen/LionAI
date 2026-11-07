@@ -97,6 +97,24 @@ object OpenCodeLocal {
             if (providers.isNotEmpty()) ":\n" + providers.joinToString("، ") else ""
     }
 
+    internal fun formatMcpStatus(status: String, error: String): String = when (status) {
+        "connected" -> "✅ متصل"
+        "failed" -> "❌ فشل" + if (error.isNotBlank()) ": " + error.take(160) else ""
+        "disabled" -> "⏸ معطّل"
+        "needs_auth", "needs_client_registration" -> "🔑 يحتاج مصادقة"
+        else -> status.ifBlank { "؟" }
+    }
+
+    /** حالة كل خادم MCP كما يراها OpenCode فعلاً (GET /mcp): متصل أو فشل مع السبب. */
+    fun mcpStatus(): Map<String, String> {
+        start()
+        val root = request("/mcp", "GET").second
+        return root.keys().asSequence().associateWith { name ->
+            val entry = root.optJSONObject(name)
+            formatMcpStatus(entry?.optString("status").orEmpty(), entry?.optString("error").orEmpty())
+        }
+    }
+
     fun listModels(): List<String> {
         start()
         val root = request("/config/providers", "GET").second
