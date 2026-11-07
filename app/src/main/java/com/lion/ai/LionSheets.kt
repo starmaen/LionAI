@@ -5,7 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
@@ -65,6 +69,12 @@ internal fun ModelPickerSheet(
 ) {
     val gold = Color(0xFFFFB800)
     val muted = Color(0xFF9A9A9A)
+    val sheetContext = LocalContext.current
+    val sheetPrefs = remember { SecurePrefs.get(sheetContext) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var showAdd by remember { mutableStateOf(false) }
+    var deleteId by remember { mutableStateOf<String?>(null) }
+    val refreshTick = refresh // قراءة تُعيد بناء القائمة بعد إضافة/حذف منصة
     val families = PROVIDERS
         .filter { it.supportsAppChat && enabled(it.id) }
         .groupBy { platformKey(it) }
@@ -83,6 +93,9 @@ internal fun ModelPickerSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 12.dp)
         ) {
+            if (showAdd) {
+                AddPlatformDialog(prefs = sheetPrefs, onDismiss = { showAdd = false }, onAdded = { refresh++ })
+            }
             Text(
                 "اختر المنصة والموديل",
                 color = gold,
@@ -217,10 +230,30 @@ internal fun ModelPickerSheet(
                                 }
                             }
                         }
+                        if (key.startsWith(UserPlatforms.PREFIX)) {
+                            if (deleteId == key) {
+                                Row {
+                                    TextButton(onClick = {
+                                        UserPlatforms.remove(sheetPrefs, key)
+                                        runCatching { LlmClient.reloadOverrides(sheetPrefs) }
+                                        deleteId = null
+                                        refresh++
+                                    }) { Text("تأكيد حذف المنصة", color = Color(0xFFFF9A9A), fontSize = 12.sp) }
+                                    TextButton(onClick = { deleteId = null }) { Text("إلغاء", color = muted, fontSize = 12.sp) }
+                                }
+                            } else {
+                                TextButton(onClick = { deleteId = key }) { Text("🗑️ حذف هذه المنصة", color = Color(0xFFFF9A9A), fontSize = 12.sp) }
+                            }
+                        }
                         Spacer(Modifier.height(6.dp))
                     }
                 }
             }
+            Button(
+                onClick = { showAdd = true },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6D00))
+            ) { Text("➕ إضافة منصة أو مزود", color = Color.White) }
             HorizontalDivider(color = Color(0xFF2A2A2A), modifier = Modifier.padding(top = 8.dp))
             TextButton(
                 onClick = onOpenSettings,

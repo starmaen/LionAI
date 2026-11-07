@@ -39,4 +39,18 @@ class UserPlatformsTest {
         assertThrows(IllegalArgumentException::class.java) { UserPlatforms.add(prefs, "Y", "http://evil.example.com/v1", "", "") }
         assertThrows(IllegalArgumentException::class.java) { UserPlatforms.add(prefs, "", "https://a.b", "", "") }
     }
+
+    @Test fun `blank key marks the platform keyless and survives serialization`() {
+        val prefs = FakePrefs()
+        UserPlatforms.add(prefs, "Local Ollama", "http://192.168.1.5:11434/v1", "", "llama3")
+        val e = UserPlatforms.list(prefs).single()
+        assertTrue(e.keyless)
+        assertTrue(UserPlatforms.toInfo(e).keyless)
+    }
+
+    @Test fun `model ids parse from openai style and plain array responses`() {
+        assertEquals(listOf("a", "b"), UserPlatforms.parseModelIds("""{"data":[{"id":"b"},{"id":"a"},{"id":"a"}]}"""))
+        assertEquals(listOf("x", "y"), UserPlatforms.parseModelIds("""["y","x"]"""))
+        assertTrue(UserPlatforms.parseModelIds("""{"object":"list"}""").isEmpty())
+    }
 }
