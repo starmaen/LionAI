@@ -237,7 +237,16 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
                 idsOf(getJson("$base/models", headers).optJSONArray("data"), "id")
             }
 
-            else -> emptyList()
+            else -> if (provider.startsWith(UserPlatforms.PREFIX)) {
+                val info = providerInfo(provider)
+                val base = endpoint(provider, info.endpoint)
+                val key = apiKey.ifBlank {
+                    ContextHolder.peek()?.let { SecurePrefs.get(it).getString("api_key_$provider", "") }.orEmpty()
+                }
+                val found = UserPlatforms.fetchModels(base, key)
+                ContextHolder.peek()?.let { UserPlatforms.storeModels(SecurePrefs.get(it), provider, found) }
+                found
+            } else emptyList()
         }
         return ModelRank.sorted(ids.distinct()).take(200)
     }

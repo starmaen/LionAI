@@ -30,6 +30,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -163,6 +164,14 @@ fun ProviderCard(
     var testStatus by remember { mutableStateOf("") }
     var testing by remember { mutableStateOf(false) }
     val id = info.id
+
+    // منصة أُضيفت بعد بناء الخرائط: حمّل مفتاحها وموديلها وعنوانها من prefs بدل مفتاح فارغ.
+    LaunchedEffect(id) {
+        if (!keys.containsKey(id)) keys[id] = prefs.getString("api_key_$id", "") ?: ""
+        if (!models.containsKey(id)) models[id] = prefs.getString("model_$id", "") ?: ""
+        if (!endpoints.containsKey(id)) endpoints[id] = prefs.getString("endpoint_$id", "") ?: ""
+        if (!modelCache.containsKey(id)) modelCache[id] = ModelCatalog.cached(prefs, id)
+    }
     val hasKey = keys[id].orEmpty().isNotBlank()
     val shape = RoundedCornerShape(10.dp)
 
@@ -250,9 +259,9 @@ fun ProviderCard(
 
                 fun testProvider() {
                     data class Outcome(val list: List<String>, val model: String, val reply: String)
-                    val key = keys[id].orEmpty()
+                    val key = keys[id].orEmpty().ifBlank { prefs.getString("api_key_$id", "") ?: "" }
                     val account = accountId
-                    val isServer = info.custom || id == "local_proxy"
+                    val isServer = info.custom || id == "local_proxy" || id.startsWith(UserPlatforms.PREFIX)
                     // نحفظ العنوان الوسيط/المخصص الحالي مؤقتاً ليشمله الاختبار
                     LlmClient.endpointOverrides =
                         LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
@@ -278,6 +287,7 @@ fun ProviderCard(
                             if (value.list.isNotEmpty()) {
                                 modelCache[id] = value.list
                                 ModelCatalog.saveCache(prefs, id, value.list)
+                                if (id.startsWith(UserPlatforms.PREFIX)) UserPlatforms.storeModels(prefs, id, value.list)
                             }
                             testStatus = when {
                                 LlmClient.isErrorReply(value.reply) -> "❌ فشل اختبار $id: " + value.reply
@@ -390,7 +400,7 @@ Spacer(Modifier.height(8.dp))
                         } else {
                             refreshing = true
                             modelStatus = "⏳ جارٍ جلب القائمة..."
-                            val key = keys[id].orEmpty().trim()
+                            val key = keys[id].orEmpty().trim().ifBlank { (prefs.getString("api_key_$id", "") ?: "").trim() }
                             val account = accountId.trim()
                             LlmClient.endpointOverrides =
                                 LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
@@ -403,6 +413,7 @@ Spacer(Modifier.height(8.dp))
                                     val ranked = if (id == "apinex") list else ModelRank.sorted(list)
                                     modelCache[id] = ranked
                                     ModelCatalog.saveCache(prefs, id, ranked)
+                                    if (id.startsWith(UserPlatforms.PREFIX)) UserPlatforms.storeModels(prefs, id, ranked)
                                     modelStatus = "✅ تم جلب ${ranked.size} موديل — الأقوى: " +
                                         (ModelRank.strongest(ranked) ?: "—") + ". افتح القائمة ▼."
                                 } else {
