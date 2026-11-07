@@ -37,7 +37,8 @@ data class ProviderInfo(
         }
 }
 
-val PROVIDERS = listOf(
+/** المزودون المدمجون الثابتون. القائمة الفعلية [PROVIDERS] تضيف إليها منصات المستخدم. */
+val BUILTIN_PROVIDERS = listOf(
     ProviderInfo(
         id = "lion_chat",
         label = "🦁 Lion Chat",
@@ -1024,6 +1025,10 @@ val PROVIDERS = listOf(
         webviewUrl = "https://app.runwayml.com"
     )
 )
+
+/** المدمجون + المنصات التي أضافها المستخدم (UserPlatforms)، تُقرأ ديناميكياً عند كل وصول. */
+val PROVIDERS: List<ProviderInfo>
+    get() = BUILTIN_PROVIDERS + UserPlatforms.infos()
 
 /** هل المزود مفعّل؟ الافتراضي مفعّل حتى لا يتغير سلوك الإصدارات السابقة. */
 fun providerEnabled(prefs: SharedPreferences, id: String): Boolean =

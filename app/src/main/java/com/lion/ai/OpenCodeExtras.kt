@@ -49,6 +49,11 @@ fun OpenCodeExtrasCard() {
     var config by remember { mutableStateOf(JSONObject()) }
     var rules by remember { mutableStateOf("") }
     var mcpStatuses by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var provId by remember { mutableStateOf("") }
+    var provName by remember { mutableStateOf("") }
+    var provUrl by remember { mutableStateOf("") }
+    var provKey by remember { mutableStateOf("") }
+    var provModels by remember { mutableStateOf("") }
     var mcpName by remember { mutableStateOf("") }
     var mcpTarget by remember { mutableStateOf("") }
     var mcpExtras by remember { mutableStateOf("") }
@@ -109,6 +114,39 @@ fun OpenCodeExtrasCard() {
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
         ) { Text("🔄 إعادة تشغيل ومزامنة المنصات", color = XGOLD, fontSize = 12.sp) }
+
+        // منصات مخصصة لـ OpenCode (تبقى كلها معاً ويظهر موديلاتها في المنتقي)
+        Spacer(Modifier.height(6.dp))
+        Text("➕ منصات مخصصة لـ OpenCode", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Text(
+            "أضف أي منصة متوافقة مع OpenAI بمفتاحها وموديلاتها دون حذف ما سبق؛ تظهر موديلاتها في قائمة الاختيار تحت OpenCode.",
+            color = XMUTED, fontSize = 11.sp
+        )
+        OpenCodeConfig.providerList(config).forEach { p ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.name + " (" + p.id + ")" + if (p.hasKey) " 🔑" else "", color = Color.White, fontSize = 12.sp)
+                    Text(p.baseUrl + " · " + p.models.size + " موديل", color = XMUTED, fontSize = 10.sp, maxLines = 2)
+                }
+                TextButton(enabled = !busy, onClick = { applyConfig { OpenCodeConfig.removeProvider(it, p.id) } }) {
+                    Text("حذف", color = Color(0xFFFF9A9A), fontSize = 11.sp)
+                }
+            }
+        }
+        OutlinedTextField(provId, { provId = it.trim() }, singleLine = true, label = { Text("معرّف المنصة (إنجليزي صغير)") }, colors = colors, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(provName, { provName = it }, singleLine = true, label = { Text("الاسم الظاهر") }, colors = colors, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(provUrl, { provUrl = it.trim() }, singleLine = true, label = { Text("Base URL (مثل https://api.x.com/v1)") }, colors = colors, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(provKey, { provKey = it }, singleLine = true, label = { Text("المفتاح (يُحفظ في إعداد OpenCode داخل التطبيق)") }, colors = colors, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(provModels, { provModels = it }, label = { Text("الموديلات مفصولة بفواصل") }, colors = colors, modifier = Modifier.fillMaxWidth())
+        Button(
+            enabled = !busy && provId.isNotBlank() && provUrl.isNotBlank() && provModels.isNotBlank(),
+            onClick = {
+                val a = provId; val b = provName; val c = provUrl; val d = provKey; val e = provModels
+                applyConfig { OpenCodeConfig.addProvider(it, a, b, c, d, e) }
+                provId = ""; provName = ""; provUrl = ""; provKey = ""; provModels = ""
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6D00))
+        ) { Text("إضافة منصة", color = Color.White) }
 
         // 2) خوادم MCP
         Spacer(Modifier.height(6.dp))

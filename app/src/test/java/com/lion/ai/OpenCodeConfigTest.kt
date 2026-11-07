@@ -66,4 +66,23 @@ class OpenCodeConfigTest {
             OpenCodeConfig.addMcp(JSONObject(), "x", "https://a.b", "nocolonhere")
         }
     }
+
+    @Test fun `custom provider is written in opencode format and can be removed`() {
+        var cfg = OpenCodeConfig.addProvider(JSONObject(), "myplat", "My Platform", "https://api.x.com/v1/chat/completions/", "sk-1", "m-a, m-b ,m-a")
+        cfg = OpenCodeConfig.addProvider(cfg, "other", "Other", "https://o.y/v1", "", "z")
+        val p = cfg.getJSONObject("provider").getJSONObject("myplat")
+        assertEquals("@ai-sdk/openai-compatible", p.getString("npm"))
+        assertEquals("https://api.x.com/v1", p.getJSONObject("options").getString("baseURL"))
+        assertEquals("sk-1", p.getJSONObject("options").getString("apiKey"))
+        assertEquals(listOf("m-a", "m-b"), OpenCodeConfig.providerList(cfg).first { it.id == "myplat" }.models.sorted())
+        assertFalse(cfg.getJSONObject("provider").getJSONObject("other").getJSONObject("options").has("apiKey"))
+        assertEquals(2, OpenCodeConfig.providerList(cfg).size)
+        val after = OpenCodeConfig.removeProvider(cfg, "myplat")
+        assertEquals(listOf("other"), OpenCodeConfig.providerList(after).map { it.id })
+    }
+
+    @Test fun `custom provider requires models and https url`() {
+        assertThrows(IllegalArgumentException::class.java) { OpenCodeConfig.addProvider(JSONObject(), "p", "P", "https://a.b/v1", "", " ") }
+        assertThrows(IllegalArgumentException::class.java) { OpenCodeConfig.addProvider(JSONObject(), "p", "P", "ftp://a.b", "", "m") }
+    }
 }

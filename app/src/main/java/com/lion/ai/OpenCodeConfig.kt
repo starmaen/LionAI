@@ -16,6 +16,7 @@ object OpenCodeConfig {
 
     data class McpEntry(val name: String, val type: String, val target: String, val enabled: Boolean)
     data class AgentEntry(val name: String, val description: String)
+    data class ProviderEntry(val id: String, val name: String, val baseUrl: String, val models: List<String>, val hasKey: Boolean)
 
     fun validName(name: String): Boolean = NAME.matches(name.trim().lowercase())
 
@@ -70,6 +71,41 @@ object OpenCodeConfig {
                 if (cmd == null) "" else (0 until cmd.length()).joinToString(" ") { cmd.optString(it) }
             }
             McpEntry(key, type, target, e.optBoolean("enabled", true))
+        }.toList()
+    }
+
+    /** منصة OpenAI-Compatible مخصصة داخل OpenCode (قسم provider في opencode.json). */
+    fun addProvider(config: JSONObject, id: String, name: String, baseUrl: String, apiKey: String, models: String): JSONObject {
+        val pid = id.trim().lowercase()
+        require(validName(pid)) { "المعرّف: أحرف إنجليزية صغيرة وأرقام و - _ فقط" }
+        var url = baseUrl.trim().trimEnd('/').removeSuffix("/chat/completions").trimEnd('/')
+        require(url.startsWith("https://") || url.startsWith("http://")) { "الرابط يجب أن يبدأ بـ https://" }
+        val list = models.split(',', '\n', '،').map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        require(list.isNotEmpty()) { "اكتب موديلاً واحداً على الأقل (مفصولة بفواصل)" }
+        val options = JSONObject().put("baseURL", url)
+        if (apiKey.isNotBlank()) options.put("apiKey", apiKey.trim())
+        val modelsJson = JSONObject()
+        list.forEach { modelsJson.put(it, JSONObject().put("name", it)) }
+        val entry = JSONObject()
+            .put("npm", "@ai-sdk/openai-compatible")
+            .put("name", name.trim().ifBlank { pid })
+            .put("options", options)
+            .put("models", modelsJson)
+        return withSection(config, "provider") { it.put(pid, entry) }
+    }
+
+    fun removeProvider(config: JSONObject, id: String): JSONObject = withoutKey(config, "provider", id.trim().lowercase())
+
+    fun providerList(config: JSONObject): List<ProviderEntry> {
+        val providers = config.optJSONObject("provider") ?: return emptyList()
+        return providers.keys().asSequence().sorted().map { key ->
+            val e = providers.optJSONObject(key) ?: JSONObject()
+            val opts = e.optJSONObject("options")
+            ProviderEntry(
+                key, e.optString("name", key), opts?.optString("baseURL").orEmpty(),
+                e.optJSONObject("models")?.keys()?.asSequence()?.toList().orEmpty(),
+                opts?.optString("apiKey").orEmpty().isNotBlank()
+            )
         }.toList()
     }
 
