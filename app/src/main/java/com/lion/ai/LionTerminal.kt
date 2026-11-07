@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,7 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +69,7 @@ internal fun cleanTerminalChunk(raw: String): String =
 @Composable
 fun LionTerminal() {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var output by remember { mutableStateOf("🦁 Lion Terminal — Alpine /workspace\n") }
     var input by remember { mutableStateOf("") }
@@ -156,12 +160,14 @@ fun LionTerminal() {
                 .border(1.dp, LION_GOLD.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
                 .padding(10.dp)
         ) {
-            Text(
-                output,
-                color = TERM_TEXT,
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
-                modifier = Modifier.verticalScroll(scroll)
-            )
+            // SelectionContainer: ضغطة مطوّلة تحدّد وتنسخ جزءاً من الناتج.
+            SelectionContainer(Modifier.verticalScroll(scroll)) {
+                Text(
+                    output,
+                    color = TERM_TEXT,
+                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp)
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -195,6 +201,12 @@ fun LionTerminal() {
             }
             TextButton(onClick = { output = "🦁 Lion Terminal — Alpine /workspace\n" }) {
                 Text("🧹 مسح", color = LION_GOLD, fontSize = 12.sp)
+            }
+            TextButton(onClick = { clipboard.setText(AnnotatedString(output)) }) {
+                Text("📋 نسخ الكل", color = LION_GOLD, fontSize = 12.sp)
+            }
+            TextButton(onClick = { clipboard.setText(AnnotatedString(output.lines().takeLast(40).joinToString("\n"))) }) {
+                Text("📋 آخر 40 سطراً", color = LION_GOLD, fontSize = 12.sp)
             }
         }
     }
