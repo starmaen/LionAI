@@ -49,4 +49,21 @@ class OpenCodeConfigTest {
         assertEquals("reviewer", OpenCodeConfig.agentList(cfg).single().name)
         assertEquals("https://opencode.ai/config.json", cfg.getString("\$schema"))
     }
+
+    @Test fun `remote server gets headers and local server gets environment`() {
+        var cfg = OpenCodeConfig.addMcp(JSONObject(), "docs", "https://example.com/mcp", "Authorization: Bearer abc:123\nX-Key=zzz")
+        cfg = OpenCodeConfig.addMcp(cfg, "mem", "npx -y server-memory", "MEMORY_FILE_PATH=/workspace/memory.jsonl")
+        val docs = cfg.getJSONObject("mcp").getJSONObject("docs")
+        assertEquals("Bearer abc:123", docs.getJSONObject("headers").getString("Authorization"))
+        assertEquals("zzz", docs.getJSONObject("headers").getString("X-Key"))
+        val mem = cfg.getJSONObject("mcp").getJSONObject("mem")
+        assertEquals("/workspace/memory.jsonl", mem.getJSONObject("environment").getString("MEMORY_FILE_PATH"))
+        assertFalse(mem.has("headers"))
+    }
+
+    @Test fun `malformed extras line is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            OpenCodeConfig.addMcp(JSONObject(), "x", "https://a.b", "nocolonhere")
+        }
+    }
 }

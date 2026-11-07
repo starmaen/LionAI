@@ -21,8 +21,12 @@ object OpenCodeConfig {
 
     // ───────────── دوال نقية ─────────────
 
-    /** رابط http(s) = خادم بعيد، وإلا أمر محلي يُقسَّم على المسافات. */
-    fun addMcp(config: JSONObject, name: String, target: String): JSONObject {
+    /**
+     * رابط http(s) = خادم بعيد، وإلا أمر محلي يُقسَّم على المسافات.
+     * extras اختياري: سطر لكل عنصر. للبعيد ترويسات «Authorization: Bearer xxx»،
+     * وللمحلي متغيرات بيئة «KEY=قيمة» (تُكتب في environment فلا حاجة لحيلة env داخل الأمر).
+     */
+    fun addMcp(config: JSONObject, name: String, target: String, extras: String = ""): JSONObject {
         val id = name.trim().lowercase()
         require(validName(id)) { "اسم غير صالح: أحرف إنجليزية صغيرة وأرقام و - _ فقط" }
         val clean = target.trim()
@@ -30,11 +34,28 @@ object OpenCodeConfig {
         val entry = JSONObject().put("enabled", true)
         if (clean.startsWith("http://") || clean.startsWith("https://")) {
             entry.put("type", "remote").put("url", clean)
+            val headers = parsePairs(extras, ':', '=')
+            if (headers.length() > 0) entry.put("headers", headers)
         } else {
             val parts = clean.split(Regex("\\s+")).filter { it.isNotBlank() }
             entry.put("type", "local").put("command", JSONArray(parts))
+            val env = parsePairs(extras, '=', ':')
+            if (env.length() > 0) entry.put("environment", env)
         }
         return withSection(config, "mcp") { it.put(id, entry) }
+    }
+
+    /** يحوّل أسطراً «مفتاح<فاصل>قيمة» إلى JSON؛ الفاصل الأول المطابق هو المعتمد. */
+    internal fun parsePairs(text: String, primary: Char, secondary: Char): JSONObject {
+        val out = JSONObject()
+        text.lines().map { it.trim() }.filter { it.isNotBlank() }.forEach { line ->
+            val at = line.indexOf(primary).takeIf { it > 0 } ?: line.indexOf(secondary)
+            require(at > 0) { "سطر غير صالح (استخدم مفتاح$primary قيمة): $line" }
+            val key = line.substring(0, at).trim()
+            require(key.isNotBlank()) { "اسم فارغ في السطر: $line" }
+            out.put(key, line.substring(at + 1).trim())
+        }
+        return out
     }
 
     fun removeMcp(config: JSONObject, name: String): JSONObject = withoutKey(config, "mcp", name.trim().lowercase())

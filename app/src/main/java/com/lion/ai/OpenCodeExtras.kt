@@ -51,6 +51,7 @@ fun OpenCodeExtrasCard() {
     var mcpStatuses by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var mcpName by remember { mutableStateOf("") }
     var mcpTarget by remember { mutableStateOf("") }
+    var mcpExtras by remember { mutableStateOf("") }
     var agentName by remember { mutableStateOf("") }
     var agentDesc by remember { mutableStateOf("") }
     var agentPrompt by remember { mutableStateOf("") }
@@ -147,12 +148,17 @@ fun OpenCodeExtrasCard() {
         }
         OutlinedTextField(mcpName, { mcpName = it.trim() }, singleLine = true, label = { Text("اسم الخادم (إنجليزي صغير)") }, colors = colors, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(mcpTarget, { mcpTarget = it }, singleLine = true, label = { Text("الأمر أو الرابط") }, colors = colors, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            mcpExtras, { mcpExtras = it }, colors = colors, maxLines = 4,
+            label = { Text("اختياري: للرابط ترويسة (Authorization: Bearer xxx) — للأمر متغير (KEY=قيمة)، سطر لكل واحد") },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 70.dp)
+        )
         Button(
             enabled = !busy && mcpName.isNotBlank() && mcpTarget.isNotBlank(),
             onClick = {
-                val n = mcpName; val t = mcpTarget
-                applyConfig { OpenCodeConfig.addMcp(it, n, t) }
-                mcpName = ""; mcpTarget = ""
+                val n = mcpName; val t = mcpTarget; val x = mcpExtras
+                applyConfig { OpenCodeConfig.addMcp(it, n, t, x) }
+                mcpName = ""; mcpTarget = ""; mcpExtras = ""
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6D00))
         ) { Text("إضافة MCP", color = Color.White) }
