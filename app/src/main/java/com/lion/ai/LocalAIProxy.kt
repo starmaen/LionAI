@@ -158,7 +158,7 @@ object LocalAIProxy {
 
             val response: String = when {
                 method == "POST" && path.startsWith("/v1/chat/completions") ->
-                    processChatCompletion(body, prefs, chatModeHeader, chatIdHeader)
+                    processChatCompletion(body, prefs, chatModeHeader, chatIdHeader.ifBlank { "proxy_session" })
                 method == "GET" && path.startsWith("/v1/models") -> {
                     val provider = backendProvider(prefs)
                     val model = (prefs.getString("model_$provider", "") ?: "").trim()
@@ -422,7 +422,7 @@ object LocalAIProxy {
             val pinned = ProviderStick.get(prefs, chatId)
             // Once the backend has answered, do not let a later tool step silently change it.
             // A transport failure pauses the task; an explicit settings change releases the pin.
-            val routes = if (pinned != null) planned.filter { it.provider == pinned } else planned
+            val routes = if (pinned != null) planned.filter { it.provider == pinned } + planned.filter { it.provider != pinned } else planned
             val manual = RoutePolicy.isManual(prefs)
             // اليدوي: المزود المختار يأخذ مهلة المهمة كاملة، وبعدها وقت إضافي للبدائل.
             val codingTask = chatMode == ChatMode.CODE || taskKind == TaskKind.DEV
@@ -477,7 +477,7 @@ object LocalAIProxy {
                     reply += "\n\n(جرّبت بالترتيب: " + tried.distinct().joinToString("، ") + ")"
                 }
                 if (RoutePolicy.isManual(prefs)) {
-                    reply += "\n\n🔒 الوضع اليدوي: تعذّر مزودك المختار ثم جرّبت بدائل تلقائياً. " +
+                    reply += "\n\n🔒 الوضع اليدوي: تعذّر مزودك المختار ولم يُبدَّل تلقائياً. " +
                         "تحقق من المفتاح/الموديل أو اختر مزوداً آخر."
                 }
             }
