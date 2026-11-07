@@ -183,8 +183,31 @@ object OpenCodeLocal {
         }
         val answer = texts.joinToString("\n").trim()
         if (answer.isNotBlank()) return answer
+        // OpenCode يضع خطأ المزود الحقيقي في info.error (مع أجزاء فارغة) فلا نُخفيه خلف رسالة عامة.
+        response.optJSONObject("info")?.optJSONObject("error")?.let { return describeProviderError(it, model) }
         if (tools.isNotEmpty()) return "نفّذ OpenCode أدواته:\n" + tools.joinToString("\n")
         return "⚠️ لم يُرجع OpenCode نصًا. قد ينتظر إذنًا أو يكون النموذج غير متصل؛ افتح Terminal وراجع opencode auth login والسجل."
+    }
+
+    internal fun describeProviderError(error: JSONObject, model: String): String {
+        val name = error.optString("name").ifBlank { "ProviderError" }
+        val data = error.optJSONObject("data")
+        val message = data?.optString("message").orEmpty()
+        val status = data?.optInt("statusCode", 0) ?: 0
+        val body = data?.optString("responseBody").orEmpty()
+        val raw = (message + " " + body).take(600)
+        val hint = when {
+            raw.contains("tool", ignoreCase = true) && (raw.contains("support", ignoreCase = true) || raw.contains("endpoint", ignoreCase = true)) ->
+                "\n💡 الموديل لا يدعم استدعاء الأدوات (OpenCode يرسلها دائماً). اختر موديلاً يدعمها."
+            raw.contains("data policy", ignoreCase = true) || raw.contains("privacy", ignoreCase = true) ->
+                "\n💡 فعّل خيار مشاركة البيانات للموديلات المجانية في openrouter.ai/settings/privacy."
+            status == 401 || name.contains("Auth", ignoreCase = true) -> "\n💡 المفتاح غير صالح أو غير مربوط بهذا المزود."
+            status == 402 -> "\n💡 الرصيد غير كافٍ."
+            status == 429 -> "\n💡 تجاوزت حد الطلبات (الموديلات المجانية محدودة). انتظر قليلاً."
+            else -> ""
+        }
+        val code = if (status > 0) " ($status)" else ""
+        return "⚠️ $name$code — $model\n${message.ifBlank { body }.take(400)}$hint"
     }
 
     /** يختبر أمر MCP محلي داخل proot فعلياً (initialize عبر stdio) ويعرض سبب الفشل الحقيقي. */
