@@ -218,6 +218,16 @@
       }
       return;
     }
+    // Preferred: let the browser insert the text as a real edit (beforeinput + input), which React-controlled
+    // composers register in their state (otherwise the send button stays disabled with text in the box).
+    try {
+      if (typeof document.execCommand === 'function') {
+        input.focus({preventScroll: true});
+        input.select();
+        if (document.execCommand('insertText', false, value) &&
+            input.value.replace(/\r\n/g, '\n') === String(value).replace(/\r\n/g, '\n')) return;
+      }
+    } catch (e) {}
     const proto = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
     try { if (input._valueTracker) input._valueTracker.setValue(''); } catch (e) {}
