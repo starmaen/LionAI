@@ -270,7 +270,7 @@ fun Bubble(
                 if (message.replyTo?.isNotBlank() == true) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "↩ رد على رد سابق",
+                        "رد على رسالة سابقة",
                         color = Color(0xFF64B5F6),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
@@ -290,7 +290,7 @@ fun Bubble(
                             contentPadding = PaddingValues(0.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("🔗 $url", color = Color(0xFF64B5F6), fontSize = 11.sp, maxLines = 1)
+                            Text(url.removePrefix("https://").removePrefix("http://").removePrefix("www."), color = Color(0xFF64B5F6), fontSize = 11.sp, maxLines = 1)
                         }
                     }
                 }
@@ -376,7 +376,7 @@ fun Bubble(
                 }
                 if (!message.isUser && message.sources.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text("🌐 المصادر", color = Color(0xFFFFB800), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("المصادر", color = Color(0xFFFFB800), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     message.sources.forEachIndexed { sourceIndex, source ->
                         val host = runCatching { Uri.parse(source.url).host }.getOrNull()
                             ?.removePrefix("www.") ?: ""
@@ -405,11 +405,15 @@ fun Bubble(
                         }
                     }
                 }
-                if (!message.isUser && message.via != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("🧠 " + message.via, color = Color(0xFF7A7A7A), fontSize = 10.sp)
-                }
                 val pending = message.pending
+                if (message.isUser) {
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        ActionIcon(Icons.Filled.ContentCopy, "نسخ") {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Lion AI", message.text))
+                        }
+                    }
+                }
                 if (pending != null) {
                     Spacer(Modifier.height(8.dp))
                     pending.candidates.forEach { r ->

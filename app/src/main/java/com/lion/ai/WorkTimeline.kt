@@ -17,7 +17,7 @@ internal fun toolDisplayName(tool: String): String = when (tool) {
 
 /** يبني العرض من السجل الدائم أولاً، ثم يضيف العملية الجارية فقط؛ لا يكرر آخر النتائج. */
 internal fun buildWorkVisuals(lines: List<String>, steps: List<AgentStep>): List<WorkVisual> {
-    val items = steps.takeLast(5).map { step ->
+    val items = steps.filterNot { it.tool == "provider" }.filter { it.tool != "note" || it.summary.contains("بانتظار رد") }.takeLast(5).map { step ->
         val permission = step.summary.contains("بانتظار رد") || step.summary.contains("إذن") || step.summary.contains("موافقة")
         WorkVisual(
             toolDisplayName(step.tool),

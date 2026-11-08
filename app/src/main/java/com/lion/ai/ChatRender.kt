@@ -49,6 +49,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -133,39 +135,85 @@ private fun mdInline(line: String): AnnotatedString = buildAnnotatedString {
 /** نص Markdown خفيف: عناوين، قوائم، **غامق**، `كود مضمّن`. */
 @Composable
 internal fun MdText(text: String, color: Color, size: Int = 15) {
+    val lineH = (size * 1.65f).sp
+    val dir = TextStyle(textDirection = TextDirection.Content)
+    val lines = text.lines()
     Column {
-        text.lines().forEach { raw ->
-            val line = raw.trimEnd()
+        var i = 0
+        while (i < lines.size) {
+            val trimmed = lines[i].trim()
+            val numbered = MD_NUMBERED.find(trimmed)
             when {
-                line.isBlank() -> Spacer(Modifier.height(6.dp))
-                line.trim() == "---" -> Spacer(Modifier.height(4.dp))
-                line.trimStart().startsWith("#") -> {
-                    val level = line.trimStart().takeWhile { it == '#' }.length.coerceIn(1, 3)
-                    val body = line.trimStart().drop(level).trim()
+                trimmed.isBlank() -> { Spacer(Modifier.height(8.dp)); i++ }
+                trimmed == "---" -> { Spacer(Modifier.height(4.dp)); i++ }
+                isMdTableRow(trimmed) -> {
+                    val rows = mutableListOf<List<String>>()
+                    while (i < lines.size && isMdTableRow(lines[i].trim())) {
+                        val cells = lines[i].trim().trim('|').split('|').map { it.trim() }
+                        val separator = cells.all { c -> c.isNotEmpty() && c.all { ch -> ch == '-' || ch == ':' } }
+                        if (!separator) rows.add(cells)
+                        i++
+                    }
+                    MdTable(rows, color, size)
+                }
+                trimmed.startsWith("#") -> {
+                    val level = trimmed.takeWhile { it == '#' }.length.coerceIn(1, 3)
+                    val body = trimmed.drop(level).trim()
+                    val headSize = size + 4 - level
                     Text(
-                        mdInline(body),
-                        color = color,
-                        fontSize = (size + 4 - level).sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = (size + 9).sp,
-                        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                        mdInline(body), color = color, fontSize = headSize.sp,
+                        fontWeight = FontWeight.Bold, lineHeight = (headSize * 1.5f).sp, style = dir,
+                        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
+                    )
+                    i++
+                }
+                trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("• ") -> {
+                    Row(Modifier.padding(start = 4.dp, top = 2.dp)) {
+                        Text("•", color = Color(0xFF9A9A9A), fontSize = size.sp, lineHeight = lineH, modifier = Modifier.width(18.dp))
+                        Text(mdInline(trimmed.drop(2).trim()), color = color, fontSize = size.sp, lineHeight = lineH, style = dir, modifier = Modifier.weight(1f))
+                    }
+                    i++
+                }
+                numbered != null -> {
+                    Row(Modifier.padding(start = 4.dp, top = 2.dp)) {
+                        Text(numbered.groupValues[1] + ".", color = Color(0xFF9A9A9A), fontSize = size.sp, lineHeight = lineH, modifier = Modifier.width(26.dp))
+                        Text(mdInline(numbered.groupValues[2]), color = color, fontSize = size.sp, lineHeight = lineH, style = dir, modifier = Modifier.weight(1f))
+                    }
+                    i++
+                }
+                else -> {
+                    Text(mdInline(trimmed), color = color, fontSize = size.sp, lineHeight = lineH, style = dir)
+                    i++
+                }
+            }
+        }
+    }
+}
+
+private val MD_NUMBERED = Regex("^(\\d{1,2})[.)]\\s+(.+)$")
+
+private fun isMdTableRow(s: String): Boolean = s.startsWith("|") && s.count { it == '|' } >= 2
+
+@Composable
+private fun MdTable(rows: List<List<String>>, color: Color, size: Int) {
+    if (rows.isEmpty()) return
+    val cols = rows.maxOf { it.size }
+    Column(
+        Modifier
+            .padding(vertical = 6.dp)
+            .border(1.dp, Color(0xFF2E2E2E), RoundedCornerShape(8.dp))
+            .horizontalScroll(rememberScrollState())
+    ) {
+        rows.forEachIndexed { r, cells ->
+            Row(Modifier.background(if (r == 0) Color(0xFF1E1E1E) else Color.Transparent)) {
+                for (c in 0 until cols) {
+                    Text(
+                        mdInline(cells.getOrElse(c) { "" }), color = color, fontSize = (size - 2).sp,
+                        fontWeight = if (r == 0) FontWeight.Bold else FontWeight.Normal,
+                        style = TextStyle(textDirection = TextDirection.Content),
+                        modifier = Modifier.width(130.dp).padding(horizontal = 10.dp, vertical = 8.dp)
                     )
                 }
-                line.trimStart().startsWith("- ") || line.trimStart().startsWith("* ") -> {
-                    Text(
-                        mdInline("• " + line.trimStart().drop(2)),
-                        color = color,
-                        fontSize = size.sp,
-                        lineHeight = (size + 9).sp,
-                        modifier = Modifier.padding(start = 6.dp)
-                    )
-                }
-                else -> Text(
-                    mdInline(line),
-                    color = color,
-                    fontSize = size.sp,
-                    lineHeight = (size + 9).sp
-                )
             }
         }
     }
@@ -340,7 +388,7 @@ internal fun AskCard(body: String, options: List<String>, enabled: Boolean, onSe
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
     ) {
         Column(Modifier.padding(14.dp)) {
-            Text("🦁 يحتاج العمل قرارك للمتابعة", color = Color(0xFFFFB800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("يحتاج العمل قرارك للمتابعة", color = Color(0xFFFFB800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             if (body.isNotBlank()) MdText(body, Color(0xFFE9E9E9))
             Spacer(Modifier.height(8.dp))
@@ -401,7 +449,7 @@ internal fun MessageContent(
 ) {
     val askAt = if (!isUser) text.indexOf(ASK_MARK) else -1
     val shown = if (askAt >= 0) text.substring(0, askAt).trim() else text
-    val segs = remember(shown) { parseSegments(shown) }
+    val segs = remember(shown) { shown.split("[[SPLIT]]").flatMap { parseSegments(it.trim()) } }
     val color = if (isUser) Color(0xFFF2F2F2) else Color(0xFFE9E9E9)
     Column {
         segs.forEach { seg ->

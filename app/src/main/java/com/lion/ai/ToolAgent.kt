@@ -266,10 +266,42 @@ object ToolAgent {
         var okMutations = 0
         var okCount = 0
         var failCount = 0
+        fun statusReport(complete: Boolean, why: String): String {
+            val neutral = why.isBlank() || why.contains("المزود")
+            val status = when {
+                complete -> "مكتملة"
+                neutral -> "غير مكتملة، وتُستأنف من النقطة نفسها"
+                else -> "غير مكتملة: $why"
+            }
+            val sb = StringBuilder("\n\n**ملخص العمل**\n")
+            sb.append("- الحالة: ").append(status).append('\n')
+            sb.append("- الخطوات المنفذة: ").append(okCount + failCount)
+            if (failCount > 0) sb.append(" (نجح ").append(okCount).append("، تعذّر ").append(failCount).append(")")
+            sb.append('\n')
+            if (readFiles.isNotEmpty()) {
+                sb.append("- ملفات قُرئت: ").append(readFiles.take(6).joinToString("، "))
+                if (readFiles.size > 6) sb.append(" و").append(readFiles.size - 6).append(" أخرى")
+                sb.append('\n')
+            }
+            if (writtenFiles.isNotEmpty()) {
+                sb.append("- ملفات عُدّلت أو أُنشئت: ").append(writtenFiles.take(8).joinToString("، "))
+                if (writtenFiles.size > 8) sb.append(" و").append(writtenFiles.size - 8).append(" أخرى")
+                sb.append('\n')
+            }
+            if (failedSteps.isNotEmpty()) {
+                sb.append("- خطوات تعذّرت: ").append(failedSteps.takeLast(3).joinToString("، ")).append('\n')
+            }
+            return sb.toString().trimEnd()
+        }
+        fun askWithReport(question: String): String {
+            val interim = if (used.isEmpty()) "" else
+                statusReport(false, "بانتظار قرارك").trim().replace("**ملخص العمل**", "**تقرير مرحلي**") + "\n\n[[SPLIT]]\n\n"
+            return interim + formatUserAsk(question)
+        }
         fun publish(active: String?) {
             onProgress?.invoke((workLog.takeLast(5) + listOfNotNull(active?.let { "⏳ $it" })).joinToString("\n"))
         }
-        fun statusReport(complete: Boolean, why: String): String {
+        fun legacyStatusReport(complete: Boolean, why: String): String {
             val sb = StringBuilder("\n\n——\n📋 تقرير التنفيذ\n")
             if (complete) {
                 sb.append("• الحالة: ✅ اكتملت المهمة\n")
@@ -309,14 +341,14 @@ object ToolAgent {
                 session.recordNote("قاطع المستخدم العمل؛ حُفظت نقطة التوقف لأجيب ثم أتابع")
                 CheckpointStore.save(prefs, session)
                 return finish(
-                    "⏸ توقفت عند نقطة آمنة وحُفظ ما أنجزته. أستمع لملاحظتك الآن، ثم أتابع من النقطة نفسها.",
+                    "توقفت عند نقطة آمنة وحُفظ ما أنجزته. أستمع لملاحظتك الآن، ثم أتابع من النقطة نفسها.",
                     false, "قاطع المستخدم"
                 )
             }
             if (System.currentTimeMillis() > deadline) {
                 session?.recordNote("انتهى وقت التنفيذ قبل اكتمال المهمة")
                 return finish(
-                    "⚠️ انتهى وقت تنفيذ الأدوات قبل اكتمال المهمة. آخر ملاحظات:\n\n" + current.take(3000),
+                    "انتهى وقت التنفيذ قبل اكتمال المهمة. حُفظ ما أُنجز ويمكن المتابعة من النقطة نفسها.",
                     false, "انتهى الوقت المسموح"
                 )
             }
@@ -355,10 +387,9 @@ object ToolAgent {
             )
             if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
                 session?.providerFailed(label, reply)
-                val progress = session?.contextBlock(2200).orEmpty()
                 return finish(
-                    reply + "\n\n♻️ حُفظ التقدم. أرسل أي رد وسأستأنف من النقطة نفسها." +
-                        if (progress.isBlank()) "" else "\n\n" + progress,
+                    reply.trim().removePrefix("⚠️").trim() +
+                        "\n\nحُفظ ما أُنجز. أرسل أي رد لأتابع من النقطة نفسها.",
                     false, "تعذّر المزود الحالي"
                 )
             }
@@ -395,7 +426,7 @@ object ToolAgent {
                 session?.let { CheckpointStore.save(prefs, it) }
                 onProgress?.invoke("💬 بانتظار ردك")
                 return Result(
-                    formatUserAsk(explicitAsk),
+                    askWithReport(explicitAsk),
                     used,
                     complete = false,
                     responded = memory.responded
@@ -445,7 +476,7 @@ object ToolAgent {
                     }
                     if (!report.ok) {
                         return finish(
-                            reply + "\n\n⛔ لم أعلن الاكتمال لأن البوابة رفضت:\n" + report.text(),
+                            reply + "\n\nلم أعلن الاكتمال لأن البوابة رفضت:\n" + report.text(),
                             false, "بوابة الجودة رفضت الإنهاء"
                         )
                     }
@@ -458,7 +489,7 @@ object ToolAgent {
                     memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
                     session?.let { CheckpointStore.save(prefs, it) }
                     onProgress?.invoke("💬 بانتظار قرارك بشأن الإذن")
-                    return Result(formatUserAsk(question), used, complete = false, responded = memory.responded)
+                    return Result(askWithReport(question), used, complete = false, responded = memory.responded)
                 }
                 // مهمة تنفيذية بلا أي أداة = غالباً النموذج اكتفى بالكلام. ندفعه للتنفيذ مرتين قبل القبول.
                 if (forceExecution && !answerOnly && used.isEmpty() && nudges < 2 && groups.isNotEmpty() &&
@@ -470,7 +501,7 @@ object ToolAgent {
                         memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
                         session?.let { CheckpointStore.save(prefs, it) }
                         return Result(
-                            formatUserAsk(trimmed),
+                            askWithReport(trimmed),
                             used,
                             complete = false,
                             responded = memory.responded
@@ -487,19 +518,19 @@ object ToolAgent {
                     continue
                 }
                 if (memory.hasUncertainMutation()) {
-                    return finish("⏸ توجد عملية تعديل سابقة غير مؤكدة النتيجة. يجب التحقق من حالتها قبل إعلان الاكتمال أو إعادة تنفيذها.", false, "نتيجة تعديل غير مؤكدة")
+                    return finish("توجد عملية تعديل سابقة غير مؤكدة النتيجة. يجب التحقق من حالتها قبل إعلان الاكتمال أو إعادة تنفيذها.", false, "نتيجة تعديل غير مؤكدة")
                 }
                 if (AnswerGuard.claimsCompletedAction(reply) && okMutations == 0 && !memory.hasConfirmedMutation()) {
-                    return finish("⛔ رفضت إعلان تعديل أو رفع بلا نتيجة أداة تؤكده. لم أعتبر المهمة مكتملة.", false, "لا دليل على تنفيذ التعديل")
+                    return finish("رفضت إعلان تعديل أو رفع بلا نتيجة أداة تؤكده. لم أعتبر المهمة مكتملة.", false, "لا دليل على تنفيذ التعديل")
                 }
-                val answer = withNextStepInvite(finalAnswer(reply, used), used.isNotEmpty())
+                val answer = finalAnswer(reply, used)
                 if (used.isNotEmpty()) session?.recordNote("اكتملت المهمة: " + answer.take(240))
                 if (used.isNotEmpty()) {
                     session?.markCompleted()
                     session?.let { CheckpointStore.save(prefs, it) }
                 }
                 return finish(
-                    answer + if (lastGateText.isNotBlank() && lastGateOk) "\n\n——\n✅ بوابة الجودة: " + lastGateText.lineSequence().firstOrNull().orEmpty() else "",
+                    answer + if (lastGateText.isNotBlank() && lastGateOk) "\n\nبوابة الجودة: " + lastGateText.lineSequence().firstOrNull().orEmpty() else "",
                     true
                 )
             }
@@ -514,8 +545,7 @@ object ToolAgent {
             if (repeated >= 2) {
                 session?.recordNote("توقفت الأدوات لتكرار نفس الاستدعاء دون تقدّم")
                 return finish(
-                    "⚠️ توقفت لأن الأداة تكرّرت بنفس المدخلات ثلاث مرات دون تقدّم.\nآخر نتيجة:\n\n" +
-                        current.take(3000),
+                    "توقفت لأن الأداة تكرّرت بنفس المدخلات دون تقدّم. حُفظ ما أُنجز، وأحتاج توجيهاً مختلفاً للمتابعة.",
                     false, "تكرار نفس الاستدعاء دون تقدّم"
                 )
             }
@@ -620,9 +650,7 @@ object ToolAgent {
 
         session?.recordNote("توقف مؤقت بعد عمل طويل")
         return finish(
-            "⏸ توقفت مؤقتاً بعد عمل طويل حتى لا تُفقد النتائج.\n" +
-                "آخر نتيجة أدوات:\n\n" + current.take(3000) +
-                "\n\nأرسل أي رد أو قرار وسأواصل من هنا تلقائياً.",
+            "توقف العمل مؤقتاً بعد مرحلة طويلة حتى لا تُفقد النتائج. أرسل أي رد لأواصل من النقطة نفسها.",
             false, "توقف مؤقت بعد عمل طويل"
         )
     }
@@ -643,6 +671,6 @@ object ToolAgent {
             .replace(ASK_ALT, "")
             .trim()
         if (used.isEmpty()) return clean.ifBlank { "لم أجد حاجة لاستخدام أدوات." }
-        return clean.ifBlank { "✅ اكتملت العملية." }
+        return clean.ifBlank { "اكتملت العملية." }
     }
 }

@@ -13,8 +13,8 @@ class WorkTimelineTest {
         )
         val visuals = buildWorkVisuals(emptyList(), steps)
         assertEquals(WorkVisualState.SUCCESS, visuals[0].state)
-        assertEquals(WorkVisualState.PROVIDER, visuals[1].state)
-        assertEquals(WorkVisualState.PERMISSION, visuals[2].state)
+        assertEquals(WorkVisualState.PERMISSION, visuals[1].state)
+        assertEquals(2, visuals.size)
     }
 
     @Test
