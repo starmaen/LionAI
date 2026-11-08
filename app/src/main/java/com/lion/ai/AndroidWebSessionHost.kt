@@ -104,7 +104,8 @@ internal class AndroidWebSessionHost(
         var lastDiag: String = "",
         var tapped: Boolean = false,
         var enterTried: Boolean = false,
-        var lastTextAt: Long = 0L
+        var lastTextAt: Long = 0L,
+        var hiddenTicks: Int = 0
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -217,6 +218,8 @@ internal class AndroidWebSessionHost(
         container.removeAllViews()
         (view.parent as? FrameLayout)?.removeView(view)
         container.addView(view, FrameLayout.LayoutParams(-1, -1))
+        view.onResume()
+        view.resumeTimers()
     }
     private fun reportLoad(adapter: WebSiteAdapter, text: String) {
         prefs.edit().putString("web_session_load_${adapter.id}", text)
@@ -506,6 +509,18 @@ internal class AndroidWebSessionHost(
                         p.submitted = false
                         fail(p, "يوجد نص في حقل الموقع. لم أستبدله. امسحه أو أرسله يدويًا ثم أعد المحاولة.")
                         return@evaluateJavascript
+                    }
+                    "page_hidden" -> {
+                        // Just re-attached or backgrounded: wake the renderer and wait for visibility, don't type blind.
+                        p.hiddenTicks++
+                        p.view.onResume()
+                        p.view.resumeTimers()
+                        p.view.requestLayout()
+                        status(p, "الصفحة ما زالت مخفية؛ أنتظر ظهورها قبل الكتابة")
+                        if (p.hiddenTicks > 40) {
+                            fail(p, "بقيت صفحة الموقع مخفية فلم أكتب فيها. افتح الجلسة من الإعدادات ثم أعد المحاولة.")
+                            return@evaluateJavascript
+                        }
                     }
                     "site_error" -> {
                         fail(p, "أعاد الموقع رسالة خطأ بدل الجواب: ${result.optString("text")}")

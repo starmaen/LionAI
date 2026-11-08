@@ -366,6 +366,8 @@
       if (!input) return result('needs_input');
       if (state && state.token === token) return result(state.sent ? 'sent' : state.clicked ? 'clicked' : 'prepared');
       if (find(C.stop)) return result('site_busy');
+      // A hidden document cannot focus or register edits (just re-attached WebView): let the host wake it and retry.
+      if (document.visibilityState === 'hidden') return result('page_hidden');
       // App Send owns the composer: leftover test drafts and previous unsent
       // prompts must be replaced, otherwise the message never leaves the app.
       const wanted = expectedText();
