@@ -43,7 +43,9 @@ object WebSiteAdapters {
         val complete: String = "",
         val fallback: Boolean = true,
         val joinAnswers: Boolean = false,
-        val settleMs: Int = 0
+        val settleMs: Int = 0,
+        /** true = use only this site's answer selector, not the generic assistant-role ones. */
+        val exclusiveAnswer: Boolean = false
     )
 
     /** Site extras are UNIONED with the generic selectors so a narrow site rule cannot disable the shared bridge. */
@@ -95,7 +97,9 @@ object WebSiteAdapters {
         "deepseek_web" to Spec(
             hosts = setOf("chat.deepseek.com", "deepseek.com"),
             input = "textarea#chat-input, textarea[placeholder], .ds-scroll-area textarea",
-            answer = "div.ds-markdown, .ds-markdown"
+            // Real page report: the send control is a div[role=button] (circle, filled), not a <button>.
+            send = "div.ds-button--primary.ds-button--filled.ds-button--circle[role='button']",
+            answer = "div.ds-markdown:not([class*='think'] *), .ds-markdown:not([class*='think'] *)"
         ),
         "chatgpt_web" to Spec(
             hosts = setOf("chatgpt.com", "chat.openai.com"),
@@ -104,13 +108,22 @@ object WebSiteAdapters {
         ),
         "mistral_web" to Spec(
             hosts = setOf("chat.mistral.ai", "mistral.ai"),
-            input = "textarea, [contenteditable='true'][role='textbox']",
-            answer = "[data-message-role='assistant']"
+            input = "div.ProseMirror[contenteditable='true'], textarea, [contenteditable='true'][role='textbox']",
+            // Real page report: assistant turns are [data-message-author-role=assistant]; the reply text is
+            // .markdown-container-style inside it. The whole turn also holds reasoning/tool chrome, so
+            // match only the text container and never fall back to page-text diffs.
+            answer = "[data-message-author-role='assistant'] .markdown-container-style",
+            exclusiveAnswer = true,
+            fallback = false,
+            settleMs = 3000
         ),
         "qwen_web" to Spec(
             hosts = setOf("chat.qwen.ai", "qwen.ai"),
-            input = "textarea, [contenteditable='true']",
-            answer = ".chat-assistant-message, [class*='assistant']"
+            input = "textarea.message-input-textarea, textarea, [contenteditable='true']",
+            send = "button.send-button",
+            // Unverified (the report had no replies yet): common Qwen reply containers, plus the old guesses.
+            answer = ".qwen-markdown, .response-message-content, .chat-response-message, .chat-assistant-message, [class*='assistant']",
+            settleMs = 3000
         ),
         "perplexity_web" to Spec(
             hosts = setOf("www.perplexity.ai", "perplexity.ai"),
@@ -191,7 +204,7 @@ object WebSiteAdapters {
             info.id, url, hostsOf(url, spec.hosts),
             union(spec.input, INPUT),
             union(spec.send, SEND),
-            union(spec.answer, ANSWER),
+            if (spec.exclusiveAnswer) spec.answer else union(spec.answer, ANSWER),
             union(spec.stop, STOP),
             union(spec.complete, COMPLETE),
             spec.fallback, spec.joinAnswers, spec.settleMs
