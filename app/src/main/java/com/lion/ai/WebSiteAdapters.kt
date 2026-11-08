@@ -10,7 +10,11 @@ data class WebSiteAdapter(
     val input: String, val send: String, val answer: String,
     val stop: String, val complete: String,
     /** false = never guess the reply from page-text diffs (it would capture reasoning/thinking text). */
-    val fallback: Boolean = true
+    val fallback: Boolean = true,
+    /** true = the reply may be split across several answer nodes: join all new ones in page order. */
+    val joinAnswers: Boolean = false,
+    /** How long the reply text must stay unchanged before it counts as finished (0 = default 2s). */
+    val settleMs: Int = 0
 ) {
     fun accepts(url: String): Boolean = runCatching {
         val uri = URI(url)
@@ -19,7 +23,7 @@ data class WebSiteAdapter(
 
     fun json(): JSONObject = JSONObject().put("id", id).put("hosts", org.json.JSONArray(hosts.toList()))
         .put("input", input).put("send", send).put("answer", answer)
-        .put("stop", stop).put("complete", complete).put("fallback", fallback)
+        .put("stop", stop).put("complete", complete).put("fallback", fallback).put("joinAnswers", joinAnswers).put("settleMs", settleMs)
 }
 
 object WebSiteAdapters {
@@ -37,7 +41,9 @@ object WebSiteAdapters {
         val answer: String = "",
         val stop: String = "",
         val complete: String = "",
-        val fallback: Boolean = true
+        val fallback: Boolean = true,
+        val joinAnswers: Boolean = false,
+        val settleMs: Int = 0
     )
 
     /** Site extras are UNIONED with the generic selectors so a narrow site rule cannot disable the shared bridge. */
@@ -72,7 +78,12 @@ object WebSiteAdapters {
         "github_copilot_web" to Spec(
             hosts = setOf("github.com", "copilot.github.com"),
             input = "#copilot-chat-textarea, textarea[name='copilot-chat']",
-            answer = "[data-testid='copilot-chat-message-assistant']"
+            // Verified on a real page report: replies are div.markdown-body blocks (a reply can span several).
+            answer = "div.markdown-body.copilot-chat-compact-tables, [data-testid='copilot-chat-message-assistant']",
+            stop = "button:has(svg.octicon-square-fill), button:has(svg.octicon-stop)",
+            fallback = false,
+            joinAnswers = true,
+            settleMs = 6000
         ),
         "claude_web" to Spec(
             url = "https://claude.ai/new",
@@ -183,7 +194,7 @@ object WebSiteAdapters {
             union(spec.answer, ANSWER),
             union(spec.stop, STOP),
             union(spec.complete, COMPLETE),
-            spec.fallback
+            spec.fallback, spec.joinAnswers, spec.settleMs
         )
     }
     fun get(id: String, prefs: SharedPreferences? = null): WebSiteAdapter? {

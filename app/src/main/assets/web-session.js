@@ -94,7 +94,18 @@
       if (t && baselineText.indexOf(t) === -1) unseen.push(list[i]);
     }
     if (!unseen.length) return {node: null, value: ''};
-    const node = listReversed(list) ? unseen[0] : unseen[unseen.length - 1];
+    const reversed = listReversed(list);
+    if (C.joinAnswers === true) {
+      // A reply may be split across several answer nodes: join every new one in reading order,
+      // skipping an echo of our own prompt.
+      const mine = collapsed(expectedText());
+      const parts = (reversed ? unseen.slice().reverse() : unseen)
+        .map(function (n) { return {n: n, t: answerText(n)}; })
+        .filter(function (x) { return x.t && collapsed(x.t) !== mine; });
+      if (!parts.length) return {node: null, value: ''};
+      return {node: parts[parts.length - 1].n, value: parts.map(function (x) { return x.t; }).join('\n\n')};
+    }
+    const node = reversed ? unseen[0] : unseen[unseen.length - 1];
     return {node: node, value: answerText(node)};
   }
   function answers() { return nodes(C.answer).filter(function (n) { return visible(n) && !isUserTurn(n); }); }
@@ -436,11 +447,12 @@
       const completeNearby = !!parent && nodes(C.complete, parent).some(visible) &&
         nodes(C.answer, parent).length <= 1;
       const age = Date.now() - state.changed;
+      const settle = Number(C.settleMs) > 0 ? Number(C.settleMs) : 2000;
       // Return to the app as soon as a NEW answer stops growing. Copy/stop is
       // enough after 0.7s; otherwise 2s of stillness. Never wait 5s+ on a finished reply.
       const completed = !stopping && value.length > 0 && (
         (age >= 700 && (state.sawStop || completeInside || completeNearby)) ||
-        age >= 2000
+        age >= settle
       );
       return result(completed ? 'complete' : 'streaming',
         {text: value, observedStop: state.sawStop, viaFallback: viaFallback, diag: info});
