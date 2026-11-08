@@ -424,7 +424,7 @@
           return result(Date.now() - state.clickedAt > 45000 ? 'send_unconfirmed' : 'awaiting_ack', {diag: info});
         }
       }
-      if ((!isNew || !value) && fb.shown && fb.answer && state.baselineText.indexOf(fb.answer) === -1) {
+      if (C.fallback !== false && (!isNew || !value) && fb.shown && fb.answer && state.baselineText.indexOf(fb.answer) === -1) {
         value = fb.answer;
         isNew = true;
         viaFallback = true;

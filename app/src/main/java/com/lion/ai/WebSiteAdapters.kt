@@ -8,7 +8,9 @@ import org.json.JSONObject
 data class WebSiteAdapter(
     val id: String, val url: String, val hosts: Set<String>,
     val input: String, val send: String, val answer: String,
-    val stop: String, val complete: String
+    val stop: String, val complete: String,
+    /** false = never guess the reply from page-text diffs (it would capture reasoning/thinking text). */
+    val fallback: Boolean = true
 ) {
     fun accepts(url: String): Boolean = runCatching {
         val uri = URI(url)
@@ -17,7 +19,7 @@ data class WebSiteAdapter(
 
     fun json(): JSONObject = JSONObject().put("id", id).put("hosts", org.json.JSONArray(hosts.toList()))
         .put("input", input).put("send", send).put("answer", answer)
-        .put("stop", stop).put("complete", complete)
+        .put("stop", stop).put("complete", complete).put("fallback", fallback)
 }
 
 object WebSiteAdapters {
@@ -34,7 +36,8 @@ object WebSiteAdapters {
         val send: String = "",
         val answer: String = "",
         val stop: String = "",
-        val complete: String = ""
+        val complete: String = "",
+        val fallback: Boolean = true
     )
 
     /** Site extras are UNIONED with the generic selectors so a narrow site rule cannot disable the shared bridge. */
@@ -43,7 +46,10 @@ object WebSiteAdapters {
             url = "https://arena.ai/text/direct",
             hosts = setOf("arena.ai"),
             input = "textarea[name='message'], [data-testid*='prompt'], [data-testid*='composer']",
-            answer = ".prose, [class*='prose'], article .markdown, [class*='markdown']"
+            // Verified on a real page report: the final answer is div.prose OUTSIDE the .not-prose
+            // thinking widget and OUTSIDE the user's bubble (max-w-prose). Never match those.
+            answer = "div.prose:not(.not-prose *):not([class*='max-w-prose'] *)",
+            fallback = false
         ),
         "duckduckgo_web" to Spec(
             url = "https://duck.ai",
@@ -176,7 +182,8 @@ object WebSiteAdapters {
             union(spec.send, SEND),
             union(spec.answer, ANSWER),
             union(spec.stop, STOP),
-            union(spec.complete, COMPLETE)
+            union(spec.complete, COMPLETE),
+            spec.fallback
         )
     }
     fun get(id: String, prefs: SharedPreferences? = null): WebSiteAdapter? {
