@@ -21,9 +21,20 @@ class ContinuityRoutingTest {
         val p=prefs();ProviderStick.set(p,"chatA","openai","a")
         assertNull(ProviderStick.get(p,"chatB"))
     }
-    @Test fun explicitUserProviderChangeReleasesPin() {
+    @Test fun autoPinSurvivesProviderSettingChangeUntilProviderFails() {
+        // في التلقائي يثبت المزود الناجح حتى يفشل، ولا يتأثر بتغيير المزود المختار في الإعدادات.
         val p=prefs();ProviderStick.set(p,"chatA","openai","a")
         p.edit().putString("provider","deepseek").apply()
+        assertEquals("openai",ProviderStick.get(p,"chatA"))
+    }
+    @Test fun switchingToManualReleasesAutoPin() {
+        val p=prefs();ProviderStick.set(p,"chatA","openai","a")
+        p.edit().putBoolean("auto_route",false).apply()
+        assertNull(ProviderStick.get(p,"chatA"))
+    }
+    @Test fun manualModeNeverCreatesAPin() {
+        val p=prefs();p.edit().putBoolean("auto_route",false).apply()
+        ProviderStick.set(p,"chatA","openai","a")
         assertNull(ProviderStick.get(p,"chatA"))
     }
     @Test fun anExplicitModelSettingOverridesSavedModel() {
