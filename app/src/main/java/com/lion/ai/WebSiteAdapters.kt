@@ -14,7 +14,9 @@ data class WebSiteAdapter(
     /** true = the reply may be split across several answer nodes: join all new ones in page order. */
     val joinAnswers: Boolean = false,
     /** How long the reply text must stay unchanged before it counts as finished (0 = default 2s). */
-    val settleMs: Int = 0
+    val settleMs: Int = 0,
+    /** Selector of the site's own error message (shown instead of a reply); empty = none known. */
+    val error: String = ""
 ) {
     fun accepts(url: String): Boolean = runCatching {
         val uri = URI(url)
@@ -23,7 +25,7 @@ data class WebSiteAdapter(
 
     fun json(): JSONObject = JSONObject().put("id", id).put("hosts", org.json.JSONArray(hosts.toList()))
         .put("input", input).put("send", send).put("answer", answer)
-        .put("stop", stop).put("complete", complete).put("fallback", fallback).put("joinAnswers", joinAnswers).put("settleMs", settleMs)
+        .put("stop", stop).put("complete", complete).put("fallback", fallback).put("joinAnswers", joinAnswers).put("settleMs", settleMs).put("error", error)
 }
 
 object WebSiteAdapters {
@@ -45,7 +47,8 @@ object WebSiteAdapters {
         val joinAnswers: Boolean = false,
         val settleMs: Int = 0,
         /** true = use only this site's answer selector, not the generic assistant-role ones. */
-        val exclusiveAnswer: Boolean = false
+        val exclusiveAnswer: Boolean = false,
+        val error: String = ""
     )
 
     /** Site extras are UNIONED with the generic selectors so a narrow site rule cannot disable the shared bridge. */
@@ -56,7 +59,9 @@ object WebSiteAdapters {
             input = "textarea[name='message'], [data-testid*='prompt'], [data-testid*='composer']",
             // Verified on a real page report: the final answer is div.prose OUTSIDE the .not-prose
             // thinking widget and OUTSIDE the user's bubble (max-w-prose). Never match those.
-            answer = "div.prose:not(.not-prose *):not([class*='max-w-prose'] *)",
+            answer = "div.prose:not(.not-prose *):not([class*='max-w-prose'] *):not(.text-interactive-negative)",
+            // Real page report: Arena shows its own failures as div.prose.text-interactive-negative.
+            error = "div.prose.text-interactive-negative",
             fallback = false
         ),
         "duckduckgo_web" to Spec(
@@ -207,7 +212,7 @@ object WebSiteAdapters {
             if (spec.exclusiveAnswer) spec.answer else union(spec.answer, ANSWER),
             union(spec.stop, STOP),
             union(spec.complete, COMPLETE),
-            spec.fallback, spec.joinAnswers, spec.settleMs
+            spec.fallback, spec.joinAnswers, spec.settleMs, spec.error
         )
     }
     fun get(id: String, prefs: SharedPreferences? = null): WebSiteAdapter? {

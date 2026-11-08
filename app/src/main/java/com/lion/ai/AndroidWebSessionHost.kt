@@ -507,6 +507,10 @@ internal class AndroidWebSessionHost(
                         fail(p, "يوجد نص في حقل الموقع. لم أستبدله. امسحه أو أرسله يدويًا ثم أعد المحاولة.")
                         return@evaluateJavascript
                     }
+                    "site_error" -> {
+                        fail(p, "أعاد الموقع رسالة خطأ بدل الجواب: ${result.optString("text")}")
+                        return@evaluateJavascript
+                    }
                     "selector_error" -> {
                         fail(p, "محدد CSS غير صالح: ${result.optString("error")}")
                         return@evaluateJavascript

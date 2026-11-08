@@ -362,7 +362,8 @@
       const current = inputText(input);
       const old = answers();
       state = {token: token, baseline: old, baselineText: old.map(answerText), sent: false, clicked: false, clickedAt: 0, sawStop: false,
-        last: '', changed: Date.now(), clicks: 0, before: pageText(input), tapped: false};
+        last: '', changed: Date.now(), clicks: 0, before: pageText(input), tapped: false,
+        baselineErr: C.error ? nodes(C.error).slice() : []};
       window.__lionSessionRequest = state;
       if (current !== wanted) {
         writeInput(input, prompt);
@@ -425,6 +426,12 @@
       const stopping = explicitStop || (state.sent && genericStop());
       const info = 'a=' + list.length + ' new=' + (isNew ? 1 : 0) + ' shown=' + (fb.shown ? 1 : 0) +
         ' stop=' + (stopping ? 1 : 0) + ' len=' + (value || '').length;
+      if (C.error) {
+        // The site answered with its own error message instead of a reply: surface it, don't treat it as an answer.
+        const errs = nodes(C.error).filter(function (n) { return visible(n) && state.baselineErr.indexOf(n) === -1; })
+          .map(text).filter(Boolean);
+        if (errs.length && !(isNew && value)) return result('site_error', {text: errs[errs.length - 1].slice(0, 400), diag: info});
+      }
       if (!state.sent) {
         // Delivery proof: a genuinely new assistant text, a stop control this click
         // started, or our prompt posted in the page after the composer cleared.
