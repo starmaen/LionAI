@@ -265,6 +265,22 @@ internal class AndroidWebSessionHost(
             if (destroyed || pending != null) return@post
             val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
             val view = viewFor(adapter)
+            display(false, "${providerInfo(provider).shortName} • جارٍ تحميل الصفحة قبل التشخيص")
+            runInspection(provider, adapter, view, System.currentTimeMillis() + 30_000L)
+        }
+    }
+
+    /** Diagnose only after the page has really loaded; a fresh WebView is still about:blank. */
+    private fun runInspection(provider: String, adapter: WebSiteAdapter, view: WebView, deadline: Long) {
+        if (destroyed || pending != null) return
+        val phase = loads[view]?.phase
+        val settled = phase == WebPageLoad.Phase.READY || phase == WebPageLoad.Phase.REDIRECT ||
+            phase == WebPageLoad.Phase.FAILED
+        if (!settled && System.currentTimeMillis() < deadline) {
+            main.postDelayed({ runInspection(provider, adapter, view, deadline) }, 700)
+            return
+        }
+        run {
             val js = script.replace("__LION_CONFIG__", adapter.json().toString())
                 .replace("__LION_TOKEN__", JSONObject.quote("diagnostic"))
                 .replace("__LION_ACTION__", JSONObject.quote("diagnose"))
