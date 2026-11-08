@@ -264,6 +264,8 @@ internal class AndroidWebSessionHost(
         main.post {
             if (destroyed || pending != null) return@post
             val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
+            // امسح أي تقرير قديم حتى لا يُنسخ بالخطأ قبل اكتمال التقرير الجديد.
+            prefs.edit().remove("web_session_dom_$provider").apply()
             val view = viewFor(adapter)
             display(false, "${providerInfo(provider).shortName} • جارٍ تحميل الصفحة قبل التشخيص")
             runInspection(provider, adapter, view, System.currentTimeMillis() + 30_000L)
@@ -288,6 +290,7 @@ internal class AndroidWebSessionHost(
             view.evaluateJavascript(js) { raw ->
                 val text = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
                 val diagnostic = runCatching { JSONObject(text ?: "{}") }.getOrElse { JSONObject() }
+                diagnostic.put("reportVersion", 2).put("generatedAt", System.currentTimeMillis())
                 diagnostic.put("navigation", JSONObject().put("requestedOrigin", WebPageLoad.originOf(view.url.orEmpty()))
                     .put("phase", loads[view]?.phase?.name ?: "UNKNOWN")
                     .put("loadError", loads[view]?.error.orEmpty()))
