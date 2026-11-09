@@ -1166,7 +1166,7 @@ fun LionApp() {
                 // Web sessions are real chat pages: no app tools, no tool protocol.
                 // Never run the tool agent on them; otherwise the site receives the full
                 // tool spec plus extra "you used no tool" messages and the binding breaks.
-                var agentResult = if (agentRequested && !WebChatRuntime.handles(route.provider)) {
+                var agentResult = if (agentRequested && (!WebChatRuntime.handles(route.provider) || WebToolBridge.enabled(prefs))) {
                     withContext(Dispatchers.IO) {
                         runCatching {
                             ToolAgent.run(
@@ -1174,7 +1174,7 @@ fun LionApp() {
                                 prefs = prefs,
                                 prompt = llmPrompt,
                                 apiKey = keyOf(route.provider),
-                                provider = route.provider,
+                                provider = WebToolBridge.pin(prefs, route.provider),
                                 model = route.model,
                                 accountId = accountId(),
                                 history = requestHistory,
