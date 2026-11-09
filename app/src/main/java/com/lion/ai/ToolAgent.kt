@@ -197,7 +197,8 @@ object ToolAgent {
         session?.setMode(chatMode)
         session?.let { CheckpointStore.save(prefs, it) }
         val profile = ContextProfiles.of(chatMode, prefs, contextText)
-        val effectiveGroups = if (!profile.allowTools) emptySet() else {
+        val effectiveGroups = if (readOnly) groups.intersect(OperationsRoom.EVIDENCE_GROUPS)
+        else if (!profile.allowTools) emptySet() else {
             val base = groups.filter { it in profile.groups }
             // الخادم المحلي (custom) يملك الجهاز والملفات: زوّده بكل المجموعات لا بالمجموعة المرصودة للنص فقط.
             val extra = if (provider == "custom") ToolGroup.values().toList() else emptyList()

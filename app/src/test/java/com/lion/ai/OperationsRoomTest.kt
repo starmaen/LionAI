@@ -93,4 +93,16 @@ class OperationsRoomTest {
         assertTrue(OperationsRoom.critiquePrompt("س", good, "حقيقة موثقة").contains("حقيقة موثقة"))
         assertTrue(OperationsRoom.evidencePrompt("راجع الكود").contains("أدوات القراءة فقط"))
     }
+
+    @Test fun roomOwnsItsReadOnlyToolsRegardlessOfChatMode() {
+        val p = prefs()
+        val g = OperationsRoom.evidenceGroups(p)
+        assertTrue(ToolGroup.FILES in g && ToolGroup.WEB in g && ToolGroup.CODE in g)
+        assertFalse(ToolGroup.GITHUB in g) // لا توكن
+        assertTrue(g.none { it == ToolGroup.SHELL || it == ToolGroup.DATABASE || it == ToolGroup.COMMS })
+        p.edit().putString("github_token", "tok").apply()
+        assertTrue(ToolGroup.GITHUB in OperationsRoom.evidenceGroups(p))
+        p.edit().putBoolean("agent_tools", false).apply()
+        assertTrue(OperationsRoom.evidenceGroups(p).isEmpty())
+    }
 }

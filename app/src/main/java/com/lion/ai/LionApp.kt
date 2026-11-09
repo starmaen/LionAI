@@ -1080,7 +1080,6 @@ fun LionApp() {
                             onLog = { status -> toolStatus[chatId] = status },
                             userText = prompt,
                             context = context,
-                            toolGroups = toolGroups,
                             accountOf = { accountId() }
                         )
                     }.getOrDefault("")
@@ -1134,7 +1133,6 @@ fun LionApp() {
                             onLog = { status -> toolStatus[chatId] = status },
                             userText = prompt,
                             context = context,
-                            toolGroups = toolGroups,
                             accountOf = { accountId() }
                         )
                     }.getOrNull()
@@ -1142,6 +1140,7 @@ fun LionApp() {
                 if (ops != null && ops.ok) {
                     reply = ops.answer
                     used = ops.lead ?: routesToTry.firstOrNull()
+                    toolNames = ops.tools
                     opsDone = true
                 }
             }

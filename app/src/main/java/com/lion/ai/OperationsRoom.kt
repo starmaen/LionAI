@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit
  *
  * الاستمرارية بين الجولات تبقى على AgentSession؛ ولا نشغّل وكلاء أدوات متعددين على مساحة عمل واحدة.
  */
+internal data class Evidence(val text: String, val tools: List<String>)
+
 data class OpsCandidate(val route: Route, val reply: String, val ok: Boolean, val ms: Long)
 
 data class OpsResult(
@@ -32,7 +34,9 @@ data class OpsResult(
     val candidates: List<OpsCandidate>,
     val synthesizedBy: String?,
     /** مسار الرئيس الذي أصدر القرار (أو صاحب الإجابة الوحيدة)؛ للتسجيل الداخلي فقط. */
-    val lead: Route? = null
+    val lead: Route? = null,
+    /** أدوات القراءة التي استُخدمت فعلاً في جمع الأدلة (للعرض). */
+    val tools: List<String> = emptyList()
 ) {
     val ok: Boolean get() = answer.isNotBlank() && !OperationsRoom.isFailure(answer)
 }
@@ -52,6 +56,14 @@ object OperationsRoom {
     /** أدوات قراءة فقط تُعطى لأعضاء مرحلة الأدلة: آمنة للتوازي لأنها لا تكتب في مساحة العمل. */
     val EVIDENCE_GROUPS: Set<ToolGroup> =
         setOf(ToolGroup.GITHUB, ToolGroup.WEB, ToolGroup.FILES, ToolGroup.CODE, ToolGroup.UTIL)
+    /**
+     * أدوات القراءة المتاحة للغرفة فعلاً، مستقلة عن وضع المحادثة (في «عام/تعلّم» تكون مجموعات الأدوات فارغة
+     * فكانت مرحلة الأدلة تُتخطى بصمت). تحترم مفتاح الأدوات العام في الإعدادات، وGitHub لا يدخل بلا توكن.
+     */
+    fun evidenceGroups(prefs: SharedPreferences): Set<ToolGroup> =
+        if (!AiTools.agentEnabled(prefs)) emptySet()
+        else EVIDENCE_GROUPS.filter { it != ToolGroup.GITHUB || AiTools.githubReady(prefs) }.toSet()
+
     private const val EVIDENCE_MS = 110_000L
     private const val MAX_EVIDENCE_AGENTS = 2
     private const val MAX_EVIDENCE_CHARS = 8000
@@ -153,7 +165,6 @@ object OperationsRoom {
         /** نص المستخدم الأصلي (لتقرير الحاجة للأدلة) وأدوات القراءة المتاحة. */
         userText: String = message,
         context: Context? = null,
-        toolGroups: Set<ToolGroup> = emptySet(),
         accountOf: () -> String = { "" },
         agent: Boolean = false
     ): OpsResult {
@@ -164,10 +175,21 @@ object OperationsRoom {
         }
         // مرحلة الأدلة: أعضاء API يستخدمون أدوات القراءة وحدها ليتحققوا من الوقائع بدل التخمين؛
         // الخلاصة تُمرَّر لكل المشاركين (ومنهم مواقع الويب التي لا تملك أدوات).
-        val evidence = if (context != null && wantsEvidence(userText, agent) &&
-            toolGroups.intersect(EVIDENCE_GROUPS).isNotEmpty() && apiRoutes.isNotEmpty()
-        ) gatherEvidence(prefs, context, userText, history, systemPrompt, chatId, chatMode, toolGroups, apiRoutes, keyOf, accountOf, onLog)
-        else ""
+        val groups = evidenceGroups(prefs)
+        val needEvidence = wantsEvidence(userText, agent)
+        val gathered = if (context != null && needEvidence && groups.isNotEmpty() && apiRoutes.isNotEmpty())
+            gatherEvidence(prefs, context, userText, history, systemPrompt, chatId, chatMode, groups, apiRoutes, keyOf, accountOf, onLog)
+        else {
+            if (needEvidence) onLog(
+                "ℹ️ الاجتماع بلا أدلة: " + when {
+                    !AiTools.agentEnabled(prefs) -> "الأدوات معطّلة في الإعدادات"
+                    apiRoutes.isEmpty() -> "لا يوجد مزود API ضمن المشاركين لتشغيل الأدوات"
+                    else -> "لا أدوات قراءة متاحة"
+                }
+            )
+            Evidence("", emptyList())
+        }
+        val evidence = gathered.text
         val draftMessage = if (evidence.isBlank()) message else
             message + "\n\n=== أدلة موثقة جُمعت بأدوات القراءة (اعتمد عليها، ولا تجزم بغياب ما لم يرد فيها) ===\n" + evidence
         val rescue = CentralBrain.rescueRoutes(prefs, TaskKind.DEV, apiRoutes + webRoutes, image = false, limit = 4)
@@ -209,7 +231,7 @@ object OperationsRoom {
             apiPool.shutdownNow()
             webPool.shutdownNow()
         }
-        return decide(prefs, message, candidates, chatId, chatMode, keyOf, onLog, evidence)
+        return decide(prefs, message, candidates, chatId, chatMode, keyOf, onLog, evidence).copy(tools = gathered.tools)
     }
 
     /** المراجعة ثم القرار على المقترحات الواصلة. */
@@ -271,13 +293,12 @@ object OperationsRoom {
         onLog: (String) -> Unit = {},
         userText: String = message,
         context: Context? = null,
-        toolGroups: Set<ToolGroup> = emptySet(),
         accountOf: () -> String = { "" }
     ): String {
         val consultPrompt = "أعطِ خطة تنفيذ مختصرة ودقيقة (خطوات، ملفات متأثرة، مخاطر) للطلب التالي " +
             "دون تنفيذ ودون كود طويل:\n" + message.take(6000)
         val res = deliberate(prefs, consultPrompt, history.takeLast(6), systemPrompt, chatId, chatMode, keyOf, onLog,
-            userText, context, toolGroups, accountOf, agent = true)
+            userText, context, accountOf, agent = true)
         return if (!res.ok) "" else
             "\n\n=== 🧠 خطة غرفة العمليات (استرشد بها ونفّذ بأدواتك) ===\n" + res.answer.take(6000)
     }
@@ -294,11 +315,11 @@ object OperationsRoom {
      */
     private fun gatherEvidence(
         prefs: SharedPreferences, context: Context, userText: String, history: List<ChatTurn>,
-        systemPrompt: String, chatId: String, chatMode: ChatMode, toolGroups: Set<ToolGroup>,
+        systemPrompt: String, chatId: String, chatMode: ChatMode, groups: Set<ToolGroup>,
         apiRoutes: List<Route>, keyOf: (String) -> String, accountOf: () -> String, onLog: (String) -> Unit
-    ): String {
+    ): Evidence {
         val agents = apiRoutes.take(MAX_EVIDENCE_AGENTS)
-        if (agents.isEmpty()) return ""
+        if (agents.isEmpty()) return Evidence("", emptyList())
         onLog("🔎 جمع الأدلة بأدوات القراءة")
         val pool = Executors.newFixedThreadPool(agents.size)
         val deadline = System.currentTimeMillis() + EVIDENCE_MS + 10_000L
@@ -311,7 +332,7 @@ object OperationsRoom {
                                 context = context, prefs = prefs, prompt = evidencePrompt(userText),
                                 apiKey = keyOf(r.provider), provider = r.provider, model = r.model,
                                 accountId = accountOf(), history = history.takeLast(4),
-                                baseSystemPrompt = systemPrompt, groups = toolGroups.intersect(EVIDENCE_GROUPS),
+                                baseSystemPrompt = systemPrompt, groups = groups.intersect(EVIDENCE_GROUPS),
                                 timeoutMs = EVIDENCE_MS, providerLabel = BRAND, chatMode = chatMode,
                                 forceExecution = false, userRequest = userText, readOnly = true
                             )
@@ -320,13 +341,18 @@ object OperationsRoom {
                 })
             }
             val facts = mutableListOf<String>()
+            val used = mutableListOf<String>()
             for ((_, f) in futures) {
                 val left = (deadline - System.currentTimeMillis()).coerceAtLeast(1_000L)
                 val res = runCatching { f.get(left, TimeUnit.MILLISECONDS) }.getOrElse { f.cancel(true); null }
-                if (res != null && res.usedTools && !isFailure(res.answer)) facts += res.answer.trim()
+                if (res != null && res.usedTools && !isFailure(res.answer)) {
+                    facts += res.answer.trim()
+                    used += res.tools
+                }
             }
-            if (facts.isEmpty()) onLog("ℹ️ لم تُجمع أدلة بالأدوات؛ يستمر الاجتماع بلا أدلة")
-            return facts.distinct().joinToString("\n\n---\n\n").take(MAX_EVIDENCE_CHARS)
+            if (facts.isEmpty()) onLog("ℹ️ لم تستخدم الأدوات فعلاً؛ يستمر الاجتماع بلا أدلة")
+            else onLog("📚 جُمعت أدلة بـ ${used.size} استدعاء أداة")
+            return Evidence(facts.distinct().joinToString("\n\n---\n\n").take(MAX_EVIDENCE_CHARS), used.distinct())
         } finally {
             pool.shutdownNow()
         }
