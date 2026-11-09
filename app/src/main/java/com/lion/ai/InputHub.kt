@@ -45,6 +45,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +58,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -756,6 +759,15 @@ internal fun LionComposer(
     val file = attachment
     val image = imageAttachment
     val hasDraft = input.isNotBlank() || file != null || image != null
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun dismissKeyboard() {
+        keyboard?.hide()
+        focusManager.clearFocus()
+    }
+    // أي طلب يبدأ (أياً كان المزود): أنزل لوحة المفاتيح وأفرغ التركيز ليظهر الرد كاملاً.
+    // لا تعود إلا عند لمس صندوق الكتابة.
+    LaunchedEffect(loading) { if (loading) dismissKeyboard() }
 
     Surface(
         color = Color(0xFF101010),
@@ -885,9 +897,9 @@ internal fun LionComposer(
                             FilledIconButton(
                                 onClick = {
                                     when {
-                                        loading && hasDraft -> onFollowUp()
+                                        loading && hasDraft -> { dismissKeyboard(); onFollowUp() }
                                         loading -> onStop()
-                                        else -> onSend()
+                                        else -> { dismissKeyboard(); onSend() }
                                     }
                                 },
                                 enabled = loading || canSend,
