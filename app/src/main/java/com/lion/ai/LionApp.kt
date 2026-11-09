@@ -1077,7 +1077,11 @@ fun LionApp() {
                             chatId = chatId,
                             chatMode = chatMode,
                             keyOf = { keyOf(it) },
-                            onLog = { status -> toolStatus[chatId] = status }
+                            onLog = { status -> toolStatus[chatId] = status },
+                            userText = prompt,
+                            context = context,
+                            toolGroups = toolGroups,
+                            accountOf = { accountId() }
                         )
                     }.getOrDefault("")
                 }
@@ -1127,7 +1131,11 @@ fun LionApp() {
                             chatId = chatId,
                             chatMode = chatMode,
                             keyOf = { keyOf(it) },
-                            onLog = { status -> toolStatus[chatId] = status }
+                            onLog = { status -> toolStatus[chatId] = status },
+                            userText = prompt,
+                            context = context,
+                            toolGroups = toolGroups,
+                            accountOf = { accountId() }
                         )
                     }.getOrNull()
                 }

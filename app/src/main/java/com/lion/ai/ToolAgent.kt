@@ -187,7 +187,9 @@ object ToolAgent {
         chatMode: ChatMode = ChatMode.CODE,
         forceExecution: Boolean = true,
         via: String = Channel.AUTO,
-        userRequest: String = prompt
+        userRequest: String = prompt,
+        /** قراءة فقط: مجموعات القراءة وحدها، وكل أداة تعديل/تنفيذ مرفوضة مهما قال النص. يُستخدم لجمع الأدلة في غرفة العمليات. */
+        readOnly: Boolean = false
     ): Result {
         val memory = session?.continuity ?: TaskContinuity().also { it.begin(userRequest, false) }
         val label = providerLabel.ifBlank { providerInfo(provider).shortName }
@@ -199,7 +201,7 @@ object ToolAgent {
             val base = groups.filter { it in profile.groups }
             // الخادم المحلي (custom) يملك الجهاز والملفات: زوّده بكل المجموعات لا بالمجموعة المرصودة للنص فقط.
             val extra = if (provider == "custom") ToolGroup.values().toList() else emptyList()
-            (base + extra).toSet()
+            (base + extra).toSet().let { g -> if (readOnly) g.intersect(OperationsRoom.EVIDENCE_GROUPS) else g }
         }
         // الخادم المحلي يوجّه الطلب لمزود قد لا يدعم أدوات OpenAI ولا يمرّرها،
         // فنستخدم بروتوكول الأدوات النصي معه لتبقى أدوات التطوير تعمل في وضع البرمجة.
@@ -225,20 +227,22 @@ object ToolAgent {
             val core = coreGroups(effectiveGroups)
             system = buildSystem(core)
         }
-        system += if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
+        system += if (readOnly) "\nوضع جمع الأدلة (قراءة فقط): استخدم أدوات القراءة للتحقق من الوقائع، ولا تكتب ولا تعدّل ولا تنفّذ أي شيء." +
+            " لا تسأل المستخدم. أخرج حقائق موثقة بمصدرها (مسار الملف أو الرابط) وصرّح بما لم تستطع التحقق منه."
+        else if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
             "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
             else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها مرة واحدة فقط."
         val toolContext = ToolContext(
             context,
             prefs,
-            profile.allowWrite,
+            profile.allowWrite && !readOnly,
             chatId = session?.chatId.orEmpty(),
             mode = chatMode,
             provider = provider,
             model = model,
             apiKey = apiKey,
             accountId = accountId,
-            writeAuthorized = memory.writeGranted
+            writeAuthorized = memory.writeGranted && !readOnly
         )
         val used = mutableListOf<String>()
         val historyBuffer = (if (memory.history.isNotEmpty()) memory.history else history).toMutableList()

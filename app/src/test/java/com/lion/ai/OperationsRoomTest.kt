@@ -75,4 +75,22 @@ class OperationsRoomTest {
         assertTrue(OperationsRoom.apiMembers(p).contains("gemini"))
         assertTrue(OperationsRoom.apiMembers(p).none { WebChatRuntime.handles(it) })
     }
+
+    @Test fun evidencePhaseIsReadOnlyAndOnlyWhenTheTaskNeedsFacts() {
+        val forbidden = setOf(ToolGroup.SHELL, ToolGroup.DATABASE, ToolGroup.FIREBASE, ToolGroup.COMMS, ToolGroup.CONNECTORS, ToolGroup.MCP)
+        assertTrue(OperationsRoom.EVIDENCE_GROUPS.none { it in forbidden })
+        assertTrue(ToolGroup.FILES in OperationsRoom.EVIDENCE_GROUPS && ToolGroup.GITHUB in OperationsRoom.EVIDENCE_GROUPS)
+        assertTrue(OperationsRoom.wantsEvidence("راجع مستودع github.com/x/y وقيّم نقاط الضعف", false))
+        assertTrue(OperationsRoom.wantsEvidence("ابنِ لي تطبيقاً", true))
+        assertFalse(OperationsRoom.wantsEvidence("اقترح اسماً جميلاً لمتجر زهور", false))
+    }
+
+    @Test fun promptsCarryEvidenceAndForbidUnverifiedAbsenceClaims() {
+        val good = listOf(OpsCandidate(Route("gemini", "m"), "حل أ", true, 1), OpsCandidate(Route("openai", "m"), "حل ب", true, 1))
+        val d = OperationsRoom.decisionPrompt("قيّم المشروع", good, "", "app/src/test فيه 43 ملف اختبار")
+        assertTrue(d.contains("43 ملف اختبار"))
+        assertTrue(d.contains("ولا تجزم بوجود أو غياب"))
+        assertTrue(OperationsRoom.critiquePrompt("س", good, "حقيقة موثقة").contains("حقيقة موثقة"))
+        assertTrue(OperationsRoom.evidencePrompt("راجع الكود").contains("أدوات القراءة فقط"))
+    }
 }

@@ -1,6 +1,8 @@
 package com.lion.ai
 
+import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -46,6 +48,22 @@ object OperationsRoom {
     private const val PHASE_CAP_MS = 220_000L
     private const val CRITIQUE_MS = 60_000
     private const val DECISION_MS = 120_000
+
+    /** أدوات قراءة فقط تُعطى لأعضاء مرحلة الأدلة: آمنة للتوازي لأنها لا تكتب في مساحة العمل. */
+    val EVIDENCE_GROUPS: Set<ToolGroup> =
+        setOf(ToolGroup.GITHUB, ToolGroup.WEB, ToolGroup.FILES, ToolGroup.CODE, ToolGroup.UTIL)
+    private const val EVIDENCE_MS = 110_000L
+    private const val MAX_EVIDENCE_AGENTS = 2
+    private const val MAX_EVIDENCE_CHARS = 8000
+
+    private val NEEDS_EVIDENCE = Regex(
+        "(github|مستودع|ريبو|repo|ملف|ملفات|كود المصدر|الكود|المشروع|مشروع|رابط|http|\\.kt|\\.js|\\.py|\\.ts|" +
+            "راجع|افحص|حلل|قيّم|قيم|تقييم|نقاط ضعف|مشاكل|أخطاء|analy[sz]e|review|audit|inspect)"
+    )
+
+    /** هل يحتاج الطلب أدلة حقيقية من الأدوات؟ طلبات التنفيذ بالأدوات تحتاجها دائماً. */
+    fun wantsEvidence(userText: String, agent: Boolean): Boolean =
+        agent || NEEDS_EVIDENCE.containsMatchIn(userText.lowercase())
 
     /** مزودات الويب المتقدمة التي تُستخدم تلقائياً إن لم يحدد المستخدم مشاركين (بشرط نجاح جلستها سابقاً). */
     val PREFERRED_WEB = listOf("mistral_web", "github_copilot_web", "arena", "deepseek_web")
@@ -131,13 +149,27 @@ object OperationsRoom {
         chatId: String,
         chatMode: ChatMode,
         keyOf: (String) -> String,
-        onLog: (String) -> Unit = {}
+        onLog: (String) -> Unit = {},
+        /** نص المستخدم الأصلي (لتقرير الحاجة للأدلة) وأدوات القراءة المتاحة. */
+        userText: String = message,
+        context: Context? = null,
+        toolGroups: Set<ToolGroup> = emptySet(),
+        accountOf: () -> String = { "" },
+        agent: Boolean = false
     ): OpsResult {
         val apiRoutes = apiMembers(prefs).map { routeOf(prefs, it) }
         val webRoutes = webMembers(prefs).map { routeOf(prefs, it) }
         if (apiRoutes.isEmpty() && webRoutes.isEmpty()) {
             return OpsResult("⚠️ لا يوجد مشاركون متاحون لغرفة العمليات الآن.", emptyList(), null)
         }
+        // مرحلة الأدلة: أعضاء API يستخدمون أدوات القراءة وحدها ليتحققوا من الوقائع بدل التخمين؛
+        // الخلاصة تُمرَّر لكل المشاركين (ومنهم مواقع الويب التي لا تملك أدوات).
+        val evidence = if (context != null && wantsEvidence(userText, agent) &&
+            toolGroups.intersect(EVIDENCE_GROUPS).isNotEmpty() && apiRoutes.isNotEmpty()
+        ) gatherEvidence(prefs, context, userText, history, systemPrompt, chatId, chatMode, toolGroups, apiRoutes, keyOf, accountOf, onLog)
+        else ""
+        val draftMessage = if (evidence.isBlank()) message else
+            message + "\n\n=== أدلة موثقة جُمعت بأدوات القراءة (اعتمد عليها، ولا تجزم بغياب ما لم يرد فيها) ===\n" + evidence
         val rescue = CentralBrain.rescueRoutes(prefs, TaskKind.DEV, apiRoutes + webRoutes, image = false, limit = 4)
             .filterNot { WebChatRuntime.handles(it.provider) }.toMutableList()
         val candidates = mutableListOf<OpsCandidate>()
@@ -149,12 +181,12 @@ object OperationsRoom {
             val futures = mutableListOf<Pair<Route, Future<OpsCandidate>>>()
             apiRoutes.forEach { r ->
                 futures += r to apiPool.submit(Callable {
-                    ask(r, message, history, systemPrompt, chatId, chatMode, keyOf, API_DRAFT_MS)
+                    ask(r, draftMessage, history, systemPrompt, chatId, chatMode, keyOf, API_DRAFT_MS)
                 })
             }
             webRoutes.forEach { r ->
                 futures += r to webPool.submit(Callable {
-                    ask(r, message, history, systemPrompt, chatId, chatMode, keyOf, WEB_DRAFT_MS)
+                    ask(r, draftMessage, history, systemPrompt, chatId, chatMode, keyOf, WEB_DRAFT_MS)
                 })
             }
             for ((route, f) in futures) {
@@ -169,7 +201,7 @@ object OperationsRoom {
             while (candidates.none { it.ok } && rescue.isNotEmpty() && System.currentTimeMillis() < deadline) {
                 val next = rescue.removeAt(0)
                 onLog("🔁 مشارك بديل")
-                val c = ask(next, message, history, systemPrompt, chatId, chatMode, keyOf, API_DRAFT_MS)
+                val c = ask(next, draftMessage, history, systemPrompt, chatId, chatMode, keyOf, API_DRAFT_MS)
                 candidates += c
                 SmartRouter.record(c.route, c.ok, c.ms)
             }
@@ -177,7 +209,7 @@ object OperationsRoom {
             apiPool.shutdownNow()
             webPool.shutdownNow()
         }
-        return decide(prefs, message, candidates, chatId, chatMode, keyOf, onLog)
+        return decide(prefs, message, candidates, chatId, chatMode, keyOf, onLog, evidence)
     }
 
     /** المراجعة ثم القرار على المقترحات الواصلة. */
@@ -188,7 +220,8 @@ object OperationsRoom {
         chatId: String,
         chatMode: ChatMode,
         keyOf: (String) -> String,
-        onLog: (String) -> Unit
+        onLog: (String) -> Unit,
+        evidence: String = ""
     ): OpsResult {
         val good = candidates.filter { it.ok }
         if (good.isEmpty()) {
@@ -208,14 +241,14 @@ object OperationsRoom {
         var critique = ""
         if (critic != null) {
             onLog("🔎 مراجعة المقترحات")
-            val c = ask(critic.route, critiquePrompt(message, good), emptyList(), CRITIC_SYSTEM, chatId, chatMode, keyOf, CRITIQUE_MS)
+            val c = ask(critic.route, critiquePrompt(message, good, evidence), emptyList(), CRITIC_SYSTEM, chatId, chatMode, keyOf, CRITIQUE_MS)
             SmartRouter.record(c.route, c.ok, c.ms)
             if (c.ok) critique = c.reply.take(3000)
         }
 
         onLog("🧩 إصدار القرار")
         val decision = ask(
-            chair.route, decisionPrompt(message, good, critique), emptyList(), CHAIR_SYSTEM,
+            chair.route, decisionPrompt(message, good, critique, evidence), emptyList(), CHAIR_SYSTEM,
             chatId, chatMode, keyOf, DECISION_MS
         )
         SmartRouter.record(decision.route, decision.ok, decision.ms)
@@ -235,11 +268,16 @@ object OperationsRoom {
         chatId: String,
         chatMode: ChatMode,
         keyOf: (String) -> String,
-        onLog: (String) -> Unit = {}
+        onLog: (String) -> Unit = {},
+        userText: String = message,
+        context: Context? = null,
+        toolGroups: Set<ToolGroup> = emptySet(),
+        accountOf: () -> String = { "" }
     ): String {
         val consultPrompt = "أعطِ خطة تنفيذ مختصرة ودقيقة (خطوات، ملفات متأثرة، مخاطر) للطلب التالي " +
             "دون تنفيذ ودون كود طويل:\n" + message.take(6000)
-        val res = deliberate(prefs, consultPrompt, history.takeLast(6), systemPrompt, chatId, chatMode, keyOf, onLog)
+        val res = deliberate(prefs, consultPrompt, history.takeLast(6), systemPrompt, chatId, chatMode, keyOf, onLog,
+            userText, context, toolGroups, accountOf, agent = true)
         return if (!res.ok) "" else
             "\n\n=== 🧠 خطة غرفة العمليات (استرشد بها ونفّذ بأدواتك) ===\n" + res.answer.take(6000)
     }
@@ -249,6 +287,55 @@ object OperationsRoom {
             "لا تذكر المقترحات ولا المشاركين ولا الاجتماع ولا أسماء أي مزود أو نموذج."
     private const val CRITIC_SYSTEM =
         "أنت مراجع صارم في Lion AI. تحدّد الأخطاء والثغرات والمخاطر وما يجب أخذه من كل مقترح. بإيجاز ودقة."
+
+    /**
+     * عضوان من API يشغّلان وكيل أدوات بصلاحية قراءة فقط بالتوازي (لا كتابة ولا تنفيذ ⇒ لا تعارض على مساحة العمل).
+     * لا تُحسب الخلاصة دليلاً إلا إذا استُخدمت أداة فعلاً؛ وإلا فهي تخمين لا تُمرَّر.
+     */
+    private fun gatherEvidence(
+        prefs: SharedPreferences, context: Context, userText: String, history: List<ChatTurn>,
+        systemPrompt: String, chatId: String, chatMode: ChatMode, toolGroups: Set<ToolGroup>,
+        apiRoutes: List<Route>, keyOf: (String) -> String, accountOf: () -> String, onLog: (String) -> Unit
+    ): String {
+        val agents = apiRoutes.take(MAX_EVIDENCE_AGENTS)
+        if (agents.isEmpty()) return ""
+        onLog("🔎 جمع الأدلة بأدوات القراءة")
+        val pool = Executors.newFixedThreadPool(agents.size)
+        val deadline = System.currentTimeMillis() + EVIDENCE_MS + 10_000L
+        try {
+            val futures = agents.map { r ->
+                r to pool.submit(Callable {
+                    runCatching {
+                        runBlocking {
+                            ToolAgent.run(
+                                context = context, prefs = prefs, prompt = evidencePrompt(userText),
+                                apiKey = keyOf(r.provider), provider = r.provider, model = r.model,
+                                accountId = accountOf(), history = history.takeLast(4),
+                                baseSystemPrompt = systemPrompt, groups = toolGroups.intersect(EVIDENCE_GROUPS),
+                                timeoutMs = EVIDENCE_MS, providerLabel = BRAND, chatMode = chatMode,
+                                forceExecution = false, userRequest = userText, readOnly = true
+                            )
+                        }
+                    }.getOrNull()
+                })
+            }
+            val facts = mutableListOf<String>()
+            for ((_, f) in futures) {
+                val left = (deadline - System.currentTimeMillis()).coerceAtLeast(1_000L)
+                val res = runCatching { f.get(left, TimeUnit.MILLISECONDS) }.getOrElse { f.cancel(true); null }
+                if (res != null && res.usedTools && !isFailure(res.answer)) facts += res.answer.trim()
+            }
+            if (facts.isEmpty()) onLog("ℹ️ لم تُجمع أدلة بالأدوات؛ يستمر الاجتماع بلا أدلة")
+            return facts.distinct().joinToString("\n\n---\n\n").take(MAX_EVIDENCE_CHARS)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    fun evidencePrompt(userText: String): String =
+        "اجمع الحقائق اللازمة لهذه المهمة باستخدام أدوات القراءة فقط (اقرأ الملفات والمستودع والويب عند الحاجة). " +
+            "اكتب قائمة حقائق موثقة، لكل حقيقة مصدرها (مسار الملف أو الرابط)، وصرّح بما لم تتحقق منه. " +
+            "لا تحل المهمة ولا تقترح حلولاً ولا تعدّل شيئاً.\n\nالمهمة:\n" + userText.take(6000)
 
     private fun ask(
         route: Route, message: String, history: List<ChatTurn>, systemPrompt: String,
@@ -271,20 +358,23 @@ object OperationsRoom {
         return OpsCandidate(route, reply, !isFailure(reply), System.currentTimeMillis() - t0)
     }
 
-    fun critiquePrompt(question: String, good: List<OpsCandidate>): String = buildString {
+    fun critiquePrompt(question: String, good: List<OpsCandidate>, evidence: String = ""): String = buildString {
         append("سؤال المستخدم:\n").append(question.take(4000)).append("\n\n")
+        if (evidence.isNotBlank()) append("الأدلة الموثقة:\n").append(evidence.take(MAX_EVIDENCE_CHARS)).append("\n\n")
         good.forEachIndexed { i, c -> append("--- مقترح ${i + 1} ---\n").append(c.reply.take(5000)).append('\n') }
         append("\nانقد المقترحات: ما الصحيح؟ ما الخطأ أو الناقص؟ ما المخاطر؟ وما أفضل ما في كل مقترح؟ ")
         append("اكتب نقاطاً قصيرة دقيقة.")
     }
 
-    fun decisionPrompt(question: String, good: List<OpsCandidate>, critique: String): String = buildString {
+    fun decisionPrompt(question: String, good: List<OpsCandidate>, critique: String, evidence: String = ""): String = buildString {
         append("سؤال المستخدم:\n").append(question.take(4000)).append("\n\n")
+        if (evidence.isNotBlank()) append("الأدلة الموثقة (جُمعت بأدوات القراءة):\n").append(evidence.take(MAX_EVIDENCE_CHARS)).append("\n\n")
         append("المقترحات:\n")
         good.forEachIndexed { i, c -> append("--- مقترح ${i + 1} ---\n").append(c.reply.take(6000)).append('\n') }
         if (critique.isNotBlank()) append("\nملاحظات المراجعة:\n").append(critique).append('\n')
         append("\nقيّم المقترحات (الصحة والاكتمال والمخاطر)، اعتمد الأفضل وخذ من غيره ما يفيد، وصحّح التعارضات، ")
         append("ثم أصدر الحل النهائي المعتمد كاملاً. احتفظ بالأكواد كاملة. لا تدّعِ تنفيذاً لم يحدث. ")
+        append("ميّز بين ما هو مؤكد بالأدلة وما هو استنتاج، ولا تجزم بوجود أو غياب شيء لم يُعرض في الأدلة أو المقترحات. ")
         append("لا تذكر المقترحات ولا المراجعة ولا الاجتماع ولا أسماء المزودات أو النماذج؛ اكتب الجواب النهائي فقط.")
     }
 }
