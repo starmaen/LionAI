@@ -97,7 +97,7 @@ object AiTools {
         Def("github_get_repo", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "بيانات مستودع"),
         Def("github_repo_overview", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "نظرة شاملة: بيانات + لغات + README + شجرة + آخر commits"),
         Def("github_create_repo", ToolGroup.GITHUB, """{"name":"repo","description":"","private":true}""", "إنشاء مستودع جديد", true),
-        Def("github_list_tree", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main"}""", "شجرة الملفات كاملة"),
+        Def("github_list_tree", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","prefix":"app/src/test","count_suffix":"Test.kt","max_entries":300}""", "شجرة الملفات (prefix لتضييق المجلد، وcount_suffix يعيد عدداً محسوباً بدقة؛ لا تعدّ بنفسك)"),
         Def("github_list_dir", ToolGroup.GITHUB, """{"repo":"owner/name","path":"","branch":""}""", "محتويات مجلد"),
         Def("github_read_file", ToolGroup.GITHUB, """{"repo":"owner/name","path":"README.md","branch":""}""", "قراءة ملف"),
         Def("github_write_file", ToolGroup.GITHUB, """{"repo":"owner/name","path":"file.txt","content":"...","message":"...","branch":""}""", "إنشاء أو تعديل ملف (commit)", true),
@@ -157,7 +157,7 @@ object AiTools {
         Def("file_append", ToolGroup.FILES, """{"path":"notes.txt","content":"..."}""", "إضافة نص إلى نهاية ملف", true),
         Def("file_move", ToolGroup.FILES, """{"from":"old.txt","to":"new.txt","overwrite":false}""", "نقل/إعادة تسمية ملف أو مجلد", true),
         Def("file_copy", ToolGroup.FILES, """{"from":"a.kt","to":"b.kt","overwrite":false}""", "نسخ ملف أو مجلد", true),
-        Def("file_tree", ToolGroup.FILES, """{"path":"","max_files":300}""", "شجرة ملفات المشروع كاملة", ),
+        Def("file_tree", ToolGroup.FILES, """{"path":"","max_files":300,"count_suffix":".kt"}""", "شجرة ملفات المشروع (count_suffix يعيد عدداً محسوباً بدقة؛ لا تعدّ بنفسك)", ),
         Def("file_checksum", ToolGroup.FILES, """{"path":"app.apk","algorithm":"sha256"}""", "بصمة MD5/SHA1/SHA256 لملف"),
         Def("file_verify", ToolGroup.FILES, """{"path":"","algorithm":"sha256","baseline":"integrity-baseline.json","max_files":5000}""", "فحص سلامة المشروع: بصمات كل الملفات، الفارغة، المكررة، والمقارنة بخط أساس"),
         Def("file_integrity_save", ToolGroup.FILES, """{"path":"","output":"integrity-baseline.json","algorithm":"sha256"}""", "حفظ خط أساس لبصمات ملفات المشروع للتحقق لاحقاً", true),
@@ -781,6 +781,20 @@ object AiTools {
         call.name in setOf("web_download", "db_query", "file_present") ||
         (call.name == "web_api" && call.args.optString("method", "GET").uppercase() !in setOf("GET", "HEAD", "OPTIONS"))
 
+    /** ذيل محسوب بالكود لقوائم الملفات: المجموع، التنبيه إلى الاقتطاع، وعدّ دقيق بلاحقة. */
+    internal fun treeFooter(entries: List<Pair<String, Boolean>>, shown: Int, suffix: String): String {
+        val files = entries.count { !it.second }
+        val dirs = entries.count { it.second }
+        val sb = StringBuilder("\n\n— المجموع: $files ملف، $dirs مجلد")
+        if (shown < entries.size) sb.append(" (عُرض $shown فقط من ${entries.size}؛ ضيّق path/prefix أو ارفع الحد)")
+        val sfx = suffix.trim()
+        if (sfx.isNotEmpty()) {
+            sb.append("\n— عدد الملفات المنتهية بـ «$sfx»: ${entries.count { !it.second && it.first.endsWith(sfx) }}")
+                .append(" (محسوب على كل النتائج لا على المعروض)")
+        }
+        return sb.toString()
+    }
+
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
         if (isMutation(call) && !ctx.allowWrite) {
@@ -895,8 +909,14 @@ object AiTools {
             }
             "github_list_tree" -> {
                 val (owner, repo) = repoOf(ctx, args)
-                val entries = GitHubClient.listTree(token, owner, repo, args.optString("branch"), int(args, "max_entries", 300))
-                entries.joinToString("\n") { (if (it.type == "dir") "📁 " else "📄 ") + it.path + if (it.size > 0) " (${it.size})" else "" }
+                // الشجرة كلها مرتبة أبجدياً: كان أخذ أول 300 فقط يقتطع المجلدات المتأخرة بصمت. نرشّح بـprefix ثم نقتطع للعرض فقط.
+                val prefix = args.optString("prefix").trim().trimStart('/')
+                val all = GitHubClient.listTree(token, owner, repo, args.optString("branch"), 5000)
+                    .filter { prefix.isEmpty() || it.path.startsWith(prefix) }
+                val shown = all.take(int(args, "max_entries", 300).coerceIn(1, 2000))
+                if (all.isEmpty()) "لا نتائج" + (if (prefix.isNotEmpty()) " تحت «$prefix»." else ".")
+                else shown.joinToString("\n") { (if (it.type == "dir") "📁 " else "📄 ") + it.path + if (it.size > 0) " (${it.size})" else "" } +
+                    treeFooter(all.map { it.path to (it.type == "dir") }, shown.size, args.optString("count_suffix"))
             }
             "github_list_dir" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -1496,9 +1516,12 @@ object AiTools {
                 "✅ نُسخ إلى ${entry.path}"
             }
             "file_tree" -> {
-                val entries = FileTools.walk(ctx.context, args.optString("path"), int(args, "max_files", 300).coerceIn(1, 5000))
-                if (entries.isEmpty()) "المجلد فارغ."
-                else entries.joinToString("\n") { (if (it.directory) "📁 " else "📄 ") + it.path + if (!it.directory) " (${it.size})" else "" }
+                // نمشي كل الملفات لنحسب الأعداد بدقة، ونعرض منها فقط max_files (فلا يخمّن النموذج العدد).
+                val all = FileTools.walk(ctx.context, args.optString("path"), 5000)
+                val shown = all.take(int(args, "max_files", 300).coerceIn(1, 5000))
+                if (all.isEmpty()) "المجلد فارغ."
+                else shown.joinToString("\n") { (if (it.directory) "📁 " else "📄 ") + it.path + if (!it.directory) " (${it.size})" else "" } +
+                    treeFooter(all.map { it.path to it.directory }, shown.size, args.optString("count_suffix"))
             }
             "file_checksum" -> {
                 val path = req(args, "path")

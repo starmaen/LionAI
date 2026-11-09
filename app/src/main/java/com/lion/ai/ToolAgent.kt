@@ -255,6 +255,7 @@ object ToolAgent {
         var nudges = 0
         var promiseNudges = 0
         var permissionNudges = 0
+        var repairNudges = 0
         var gateNudges = 0
         var lastGateOk = true
         var lastGateText = ""
@@ -441,6 +442,21 @@ object ToolAgent {
             }
 
             val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
+            // كتلة [[TOOL]] وصلت لكن لم تُحلَّل (JSON معطوب أو اسم أداة غير معروف): لا ننهي المهمة بصمت،
+            // نطلب إعادة الكتلة نفسها بصيغة صحيحة (مرتان كحد أقصى).
+            if (calls.isEmpty() && reply.contains("[[TOOL") && repairNudges < 2 &&
+                System.currentTimeMillis() + 45_000 < deadline
+            ) {
+                repairNudges++
+                session?.recordNote("كتلة أداة غير صالحة؛ طُلب إصلاحها ($repairNudges/2)")
+                publish("🛠️ كتلة الأداة غير صالحة — أطلب إعادتها ($repairNudges/2)")
+                historyBuffer.add(ChatTurn("user", current))
+                historyBuffer.add(ChatTurn("assistant", reply))
+                current = "ردّك السابق احتوى كتلة [[TOOL]] غير صالحة: إما JSON معطوب أو اسم أداة غير معروف. " +
+                    "أعد إرسال الكتلة نفسها فقط بصيغة صحيحة: [[TOOL]]{\"name\":\"اسم_أداة_من_القائمة\",\"args\":{...}}[[/TOOL]] " +
+                    "بعلامات اقتباس مزدوجة عادية ودون أي نص داخلها. إن لم تكن متأكداً من الاسم استدعِ tools_schema."
+                continue
+            }
             if (calls.isEmpty() && forceExecution && !answerOnly && isIntentOnly(reply)) {
                 if (promiseNudges < 3 && System.currentTimeMillis() + 45_000 < deadline) {
                     promiseNudges++
