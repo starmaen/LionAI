@@ -54,5 +54,5 @@ object WebSessionTransport {
      * Web composers are already a live conversation. Dumping system+history into the
      * input prevents Send and never returns a real site answer to the app.
      */
-    fun prompt(system: String, history: List<ChatTurn>, message: String): String = message.trim()
+    fun prompt(system: String, history: List<ChatTurn>, message: String): String = WebToolBridge.shape(system, message)
 }
