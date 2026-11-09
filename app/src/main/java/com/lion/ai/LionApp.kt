@@ -1064,8 +1064,9 @@ fun LionApp() {
                 baseLlmPrompt + "\n\n=== بيانات Google Drive من الرابط في رسالة المستخدم ===\n" + driveContext
             val llmPromptBase = if (githubContext.isBlank()) withDrive else
                 withDrive + "\n\n" + githubContext
-            // غرفة العمليات (برمجة + تلقائي فقط): استشارة متوازية ثم منفّذ واحد بالأدوات.
-            val opsBrief = if (agentRequested && OperationsRoom.enabled(prefs, chatMode)) {
+            // غرفة العمليات (الخيار الثالث): تلقائي + مفعّلة من الإعدادات + مهمة معقدة فقط.
+            val opsActive = OperationsRoom.active(prefs, prompt, kind, chatMode, agentRequested)
+            val opsBrief = if (agentRequested && opsActive) {
                 withContext(Dispatchers.IO) {
                     runCatching {
                         OperationsRoom.brief(
@@ -1074,6 +1075,7 @@ fun LionApp() {
                             history = history.takeLast(6),
                             systemPrompt = systemPrompt,
                             chatId = chatId,
+                            chatMode = chatMode,
                             keyOf = { keyOf(it) },
                             onLog = { status -> toolStatus[chatId] = status }
                         )
@@ -1112,7 +1114,30 @@ fun LionApp() {
             val routesToTry = RoutePolicy.mergeAttempts(plan, rescueRoutes, stickProvider)
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
             val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
-            for (route in routesToTry) {
+            // غرفة العمليات بلا أدوات: مقترحات (API والويب) ثم مراجعة ثم قرار واحد. إن فشلت تُكمل الحلقة العادية.
+            var opsDone = false
+            if (opsActive && !agentRequested && image == null) {
+                val ops = withContext(Dispatchers.IO) {
+                    runCatching {
+                        OperationsRoom.deliberate(
+                            prefs = prefs,
+                            message = llmPrompt,
+                            history = requestHistory,
+                            systemPrompt = systemPrompt,
+                            chatId = chatId,
+                            chatMode = chatMode,
+                            keyOf = { keyOf(it) },
+                            onLog = { status -> toolStatus[chatId] = status }
+                        )
+                    }.getOrNull()
+                }
+                if (ops != null && ops.ok) {
+                    reply = ops.answer
+                    used = ops.lead ?: routesToTry.firstOrNull()
+                    opsDone = true
+                }
+            }
+            for (route in (if (opsDone) emptyList() else routesToTry)) {
                 if (System.currentTimeMillis() > deadline) break
                 val started = System.currentTimeMillis()
                 val pinned = route.provider == chosenProvider || route.provider == stickProvider
@@ -1153,7 +1178,7 @@ fun LionApp() {
                                 session = session,
                                 chatMode = chatMode,
                                 forceExecution = shouldForceExecution(chatMode, kind, session.hasWork(), prompt) || DevTask.matches(toolText),
-                                providerLabel = if (OperationsRoom.enabled(prefs, chatMode)) "غرفة العمليات" else SmartRouter.label(route, kind),
+                                providerLabel = if (opsActive) OperationsRoom.BRAND else SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,
                                 onProgress = { status -> toolStatus[chatId] = status }
@@ -1271,7 +1296,7 @@ fun LionApp() {
             }
             // العقل المركزي يدقّق الإجابات غير الموثوقة أو المعرفية غير المدعومة بمصادر.
             val answeredBy = used
-            if (prefs.getBoolean("central_cross_provider_review", false) && toolGroups.isEmpty() &&
+            if (!opsDone && prefs.getBoolean("central_cross_provider_review", false) && toolGroups.isEmpty() &&
                 answeredBy != null && image == null && !prompt.contains("محتوى الملف (") &&
                 System.currentTimeMillis() < deadline - 6_000
             ) {
@@ -1360,7 +1385,7 @@ fun LionApp() {
                 reply += "\n\n(جرّبت بالترتيب: " + failed.joinToString("، ") + ")"
             }
             var consensusPercent = -1
-            if (central && used != null && kind == TaskKind.FACTUAL &&
+            if (central && !opsDone && used != null && kind == TaskKind.FACTUAL &&
                 prefs.getBoolean("consensus", false) &&
                 image == null && !prompt.contains("محتوى الملف (")
             ) {

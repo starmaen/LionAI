@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -30,63 +31,78 @@ import androidx.compose.ui.unit.sp
  */
 @Composable
 fun OperationsRoomCard(prefs: SharedPreferences) {
-    val enabled = true  // يتبع خيار «تلقائي» الرئيسي؛ هنا اختيار المزودات الأساسية فقط (اختياري).
-    var core by remember {
-        mutableStateOf(
-            (prefs.getString(OperationsRoom.PREF_CORE, "") ?: "")
-                .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-        )
+    var on by remember { mutableStateOf(prefs.getBoolean(OperationsRoom.PREF_ENABLED, false)) }
+    var chosen by remember {
+        mutableStateOf((prefs.getString(OperationsRoom.PREF_CORE, "") ?: "").split(',').map { it.trim() }.filter { it.isNotEmpty() })
     }
-    // مزودات API التي يملك المستخدم لها مفتاحاً أو لا تحتاج مفتاحاً.
-    val candidates = remember {
-        PROVIDERS.filter { info ->
-            info.group == ProviderGroup.API &&
-                (info.keyless || !prefs.getString("api_key_${info.id}", "").isNullOrBlank())
+    val apiAvail = remember(on) { PROVIDERS.map { it.id }.filter { !WebChatRuntime.handles(it) && SmartRouter.available(prefs, it) } }
+    val webAvail = remember(on) { PROVIDERS.map { it.id }.filter { WebChatRuntime.isWeb(it) && SmartRouter.available(prefs, it) } }
+    fun save(list: List<String>) {
+        chosen = list
+        prefs.edit().putString(OperationsRoom.PREF_CORE, list.joinToString(",")).apply()
+    }
+    fun toggle(id: String, limit: Int, sameKind: (String) -> Boolean) {
+        val cur = chosen.toMutableList()
+        if (id in cur) cur.remove(id)
+        else {
+            if (cur.count(sameKind) >= limit) cur.remove(cur.first(sameKind)) // الأقدم يخرج، فلا يبقى الاختيار عالقاً
+            cur.add(id)
         }
+        save(cur)
     }
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF1E1E1E), RoundedCornerShape(14.dp))
-            .padding(10.dp)
+        Modifier.fillMaxWidth().background(Color(0xFF151515), RoundedCornerShape(10.dp)).padding(10.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()) {
-            Text("🧠 غرفة العمليات (وضع البرمجة)", color = Color(0xFFFFB800), fontSize = 13.sp)
-        }
-        Text(
-            "تعمل تلقائياً في وضع المطوّر عند اختيار «🧠 تلقائي»: تُستشار المزودات بالتوازي ثم تعود إجابة واحدة. " +
-                "اترك الاختيار فارغاً ليختار العقل المركزي الأفضل المتاح، وفي «✋ يدوي» يعمل مزودك فقط.",
-            color = Color(0xFFB0B0B0), fontSize = 11.sp
-        )
-        if (enabled) {
-            Spacer(Modifier.height(6.dp))
-            Text("المزودات الأساسية (حتى 3):", color = Color(0xFFE0E0E0), fontSize = 12.sp)
-            if (candidates.isEmpty()) {
-                Text("أضف مفتاح مزود واحداً على الأقل أولاً.", color = Color(0xFFB0B0B0), fontSize = 11.sp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = on,
+                onCheckedChange = { on = it; prefs.edit().putBoolean(OperationsRoom.PREF_ENABLED, it).apply() }
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text("🧠 غرفة العمليات المركزية", color = Color(0xFFFFB800), fontSize = 14.sp)
+                Text(
+                    "خيار ثالث للمهام المعقدة فقط. عند تفعيله يتحول «التلقائي» إلى اجتماع بين عدة مزودات " +
+                        "(API والمواقع) ينتهي بقرار واحد معتمد، ويظهر تحت النتيجة «${OperationsRoom.BRAND}» فقط. " +
+                        "المهام العادية تبقى على التلقائي المعتاد. لا يعمل في الوضع اليدوي.",
+                    color = Color(0xFFB0B0B0), fontSize = 11.sp
+                )
             }
-            candidates.forEach { info ->
-                val on = info.id in core
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val next = when {
-                                on -> core - info.id
-                                core.size >= 3 -> core
-                                else -> core + info.id
-                            }
-                            core = next
-                            prefs.edit().putString(OperationsRoom.PREF_CORE, next.joinToString(",")).apply()
-                        }
-                        .padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(info.shortName, color = if (on) Color(0xFFFFB800) else Color(0xFFE0E0E0), fontSize = 12.sp)
-                    Text(if (on) "✅" else "⬜", fontSize = 14.sp)
+        }
+        if (on) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "المشاركون (اختياري؛ بلا اختيار تُستخدم أفضل المتاحة ومواقع Mistral وGitHub Copilot وArena وDeepSeek التي نجحت جلساتها):",
+                color = Color(0xFF9A9A9A), fontSize = 10.sp
+            )
+            Spacer(Modifier.height(6.dp))
+            Text("مزودات API (حتى ${OperationsRoom.MAX_API})", color = Color(0xFFCCCCCC), fontSize = 11.sp)
+            if (apiAvail.isEmpty()) Text("لا توجد مزودات API جاهزة بعد.", color = Color(0xFF8A8A8A), fontSize = 10.sp)
+            apiAvail.forEach { id ->
+                MemberRow(providerInfo(id).shortName, id in chosen) {
+                    toggle(id, OperationsRoom.MAX_API) { it in apiAvail }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("مواقع الويب (حتى ${OperationsRoom.MAX_WEB}، تُستشار بالتتابع)", color = Color(0xFFCCCCCC), fontSize = 11.sp)
+            if (webAvail.isEmpty()) Text("فعّل المواقع من إعدادات Lion Chat أولاً.", color = Color(0xFF8A8A8A), fontSize = 10.sp)
+            webAvail.forEach { id ->
+                MemberRow(providerInfo(id).shortName, id in chosen) {
+                    toggle(id, OperationsRoom.MAX_WEB) { it in webAvail }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MemberRow(name: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(if (selected) "☑" else "☐", color = Color(0xFFFFB800), fontSize = 14.sp)
+        Text(name, color = Color(0xFFE0E0E0), fontSize = 12.sp)
     }
 }
