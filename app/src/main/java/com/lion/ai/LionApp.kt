@@ -1110,6 +1110,8 @@ fun LionApp() {
             val failed = mutableListOf<String>()
             // اليدوي: مزودك المختار يأخذ مهلة المهمة كاملة، ثم وقت إضافي للبدائل (لا تبديل صامت بسبب بطء المزود).
             val executionBudget = when {
+                // كل خطوة أداة عبر صفحة ويب رحلة كاملة (30–120 ثانية)، فتحتاج مهلة أطول من مزود API.
+                agentRequested && answeringViaWeb -> 600_000L
                 agentRequested -> 240_000L // أربع دقائق للمهمة التنفيذية بدل خمس عشرة؛ الاستئناف محفوظ.
                 image != null -> 150_000L   // الصورة تُرسل لنموذج رؤية مباشرة، بلا دورة أدوات.
                 else -> SmartRouter.timeoutMs(kind)

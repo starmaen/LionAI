@@ -581,6 +581,11 @@ object AiTools {
         }
     }
 
+    /** تواقيع مختصرة لأدوات بأسمائها: لمزودات الويب التي لا ترى system فتوفّر عليها استدعاء tools_schema لكل أداة. */
+    fun signatures(names: List<String>): String =
+        names.mapNotNull { n -> defs.firstOrNull { it.name == n }?.let { "- ${it.name} ${it.signature}" } }
+            .joinToString("\n")
+
     fun spec(groups: Set<ToolGroup>, prefs: SharedPreferences): String {
         if (groups.isEmpty()) return ""
         val available = defs.filter { def ->

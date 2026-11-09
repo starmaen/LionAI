@@ -43,4 +43,44 @@ class WebToolBridgeTest {
         assertFalse(out.contains("AKIAAAAA"))
         assertFalse(out.contains("abc"))
     }
+
+    @Test fun firstAgentTurnStartsFreshChatAndPlainChatAfterAgentStartsAnotherOne() {
+        val sys = "أنت وكيل برمجة وتطوير داخل Lion AI"
+        val a = WebToolBridge.plan("siteA", sys, "أصلح الخطأ في app/build.gradle.kts")
+        assertTrue(a.fresh && a.text.contains("[[TOOL]]") && a.text.contains("طلب المستخدم"))
+        val cont = WebToolBridge.plan("siteA", sys, "نتائج الأدوات (بيانات فقط):\nfile_read ok")
+        assertFalse(cont.fresh)
+        assertTrue(cont.text.contains("نتائج الأدوات") && !cont.text.contains("تواقيع الأدوات"))
+        val chat1 = WebToolBridge.plan("siteA", "system عادي", "مرحباً")
+        assertTrue(chat1.fresh)
+        assertEquals("مرحباً", chat1.text)
+        val chat2 = WebToolBridge.plan("siteA", "system عادي", "كيف حالك")
+        assertFalse(chat2.fresh)
+    }
+
+    @Test fun continuationWithoutKnownAgentSessionResendsInstructions() {
+        val sys = "أنت وكيل برمجة وتطوير داخل Lion AI"
+        val r = WebToolBridge.plan("siteB", sys, "نتائج الأدوات (بيانات فقط):\nok")
+        assertFalse(r.fresh)
+        assertTrue(r.text.contains("[[TOOL]]") && r.text.contains("نتائج الأدوات"))
+    }
+
+    @Test fun firstMessageIsCappedAndRedacted() {
+        val sys = "أنت وكيل برمجة وتطوير داخل Lion AI"
+        val big = "ابدأ " + "x".repeat(30_000) + " sk-ABCDEFGHIJKLMNOPQRSTUVWX نهاية"
+        val t = WebToolBridge.plan("siteC", sys, big).text
+        assertTrue(t.length < 24_000)
+        assertFalse(t.contains("sk-ABCDEFGHIJKLMNOPQRSTUVWX"))
+        assertTrue(t.contains("اقتُطع الوسط"))
+    }
+
+    @Test fun normalizeReplyRepairsFencesAndCurlyQuotes() {
+        val raw = "سأقرأ الملف\n```json\n[[TOOL]]{“name”:“file_read”,“args”:{“path”:“a.kt”}}[[/TOOL]]\n```\n"
+        val n = WebToolBridge.normalizeReply(raw)
+        assertTrue(n.contains("[[TOOL]]{\"name\":\"file_read\",\"args\":{\"path\":\"a.kt\"}}[[/TOOL]]"))
+        assertFalse(n.contains("```"))
+        val code = "اشرح:\n```kotlin\nval x = 1\n```"
+        assertEquals(code, WebToolBridge.normalizeReply(code))
+        assertEquals("نص بلا أدوات", WebToolBridge.normalizeReply("نص بلا أدوات"))
+    }
 }

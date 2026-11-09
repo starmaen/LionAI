@@ -376,7 +376,7 @@ object ToolAgent {
                 )
             } else null
             val nativeCalls = toolTurn?.calls.orEmpty()
-            val reply = toolTurn?.text ?: LlmClient.ask(
+            val rawReply = toolTurn?.text ?: LlmClient.ask(
                 message = current,
                 apiKey = apiKey,
                 provider = provider,
@@ -390,6 +390,8 @@ object ToolAgent {
                 via = via,
                 chatId = session?.chatId.orEmpty()
             )
+            // ما تعيده صفحات الويب قد يُعدَّل في العرض (أسوار كود/اقتباسات منحنية): نُرجعه لصيغة المحلّل.
+            val reply = if (WebChatRuntime.handles(provider)) WebToolBridge.normalizeReply(rawReply) else rawReply
             if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
                 session?.providerFailed(label, reply)
                 return finish(

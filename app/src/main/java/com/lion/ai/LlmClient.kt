@@ -245,8 +245,7 @@ object LlmClient {
             val prefs = WebChatRuntime.prefs() ?: return "⚠️ افتح إعدادات جلسات الويب أولاً."
             if (!WebChatRuntime.available(prefs, provider)) return "⚠️ فعّل جلسات الويب والموقع المطلوب من Lion Chat."
             if (image != null) return "⚠️ إرسال الصور آلياً إلى الصفحات غير مدعوم؛ افتح الصفحة لرفع الصورة يدوياً."
-            val prompt = WebSessionTransport.prompt(systemPrompt, normalize(history), message)
-            if (prompt.length > 60_000) return "⚠️ سياق المحادثة أكبر من حد النقل الآمن للصفحة (60000 حرف). اختصره أو ابدأ محادثة جديدة."
+            if (message.length > 60_000) return "⚠️ سياق المحادثة أكبر من حد النقل الآمن للصفحة (60000 حرف). اختصره أو ابدأ محادثة جديدة."
             // A named site is only that site. The hub may rank verified members.
             // Individual فحص and in-app Send to Arena/Claude/… must never fan out.
             val members = if (provider == WebChatRuntime.HUB) WebChatRuntime.members(prefs)
@@ -261,7 +260,9 @@ object LlmClient {
                 val remaining = (deadline - System.currentTimeMillis()).coerceAtMost(180_000).toInt()
                 if (remaining <= 0 || Thread.currentThread().isInterrupted) break
                 val started = System.currentTimeMillis()
-                val result = WebSessionTransport.exchange(route.provider, prompt, remaining)
+                // حدود المحادثة في الصفحة (وكيل ↔ دردشة عادية) وتشكيل رسالة الوكيل لكل موقع على حدة.
+                val shaped = WebToolBridge.plan(route.provider, systemPrompt, message)
+                val result = WebSessionTransport.exchange(route.provider, shaped.text, remaining, shaped.fresh)
                 SmartRouter.record(route, result.success, System.currentTimeMillis() - started)
                 prefs.edit().putBoolean("web_session_verified_${route.provider}", result.success).apply()
                 if (result.success && result.text.isNotBlank() && !isErrorReply(result.text)) {

@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Pure request broker. The Android host owns WebViews; workers only wait on request-scoped results. */
 object WebSessionTransport {
-    data class Request(val token: String, val provider: String, val prompt: String, val timeoutMs: Int)
+    data class Request(val token: String, val provider: String, val prompt: String, val timeoutMs: Int, val fresh: Boolean = false)
     data class Reply(val text: String, val success: Boolean, val submitted: Boolean = false)
     interface Host {
         fun start(request: Request, done: (Reply) -> Unit)
@@ -24,7 +24,7 @@ object WebSessionTransport {
     fun open(provider: String) { host?.open(provider) }
     fun inspect(provider: String) { host?.inspect(provider) }
 
-    fun exchange(provider: String, prompt: String, timeoutMs: Int): Reply {
+    fun exchange(provider: String, prompt: String, timeoutMs: Int, fresh: Boolean = false): Reply {
         val current = host ?: return Reply("⚠️ افتح التطبيق لتشغيل جلسة الويب.", false)
         if (current.isUiThread()) return Reply("⚠️ لا يمكن انتظار الويب على خيط الواجهة.", false)
         val token = UUID.randomUUID().toString()
@@ -33,7 +33,7 @@ object WebSessionTransport {
         val latch = CountDownLatch(1)
         val timeout = timeoutMs.coerceIn(1000, 180_000)
         return try {
-            current.start(Request(token, provider, prompt, timeout)) { reply ->
+            current.start(Request(token, provider, prompt, timeout, fresh)) { reply ->
                 if (active.get() == token && result.compareAndSet(null, reply)) latch.countDown()
             }
             if (!latch.await(timeout.toLong() + 1000L, TimeUnit.MILLISECONDS)) {

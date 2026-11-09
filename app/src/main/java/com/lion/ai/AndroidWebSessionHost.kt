@@ -317,7 +317,7 @@ internal class AndroidWebSessionHost(
                 return@post
             }
             val view = viewFor(adapter)
-            if (chatIds[adapter.id] != ActiveChat.id || loads[view]?.phase == WebPageLoad.Phase.FAILED) {
+            if (request.fresh || chatIds[adapter.id] != ActiveChat.id || loads[view]?.phase == WebPageLoad.Phase.FAILED) {
                 // Re-enter the site's initial chat route for each LionAI conversation.
                 loads[view]?.start(adapter.url)
                 view.loadUrl(adapter.url)
