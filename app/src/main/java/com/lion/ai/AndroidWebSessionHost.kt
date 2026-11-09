@@ -10,6 +10,7 @@ import android.webkit.WebResourceResponse
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -52,8 +53,12 @@ internal class AndroidWebSessionHost(
     /** Allow programmatic editor focus without creating an IME connection behind chat. */
     private class SessionWebView(activity: ComponentActivity) : WebView(activity) {
         var manualInput = false
+        /** آخر لمسة مستخدم حقيقية (لمسات التطبيق الاصطناعية بلا مصدر شاشة لمس). */
+        @Volatile var userTouchAt = 0L
+        private fun imeAllowed() = manualInput && SystemClock.uptimeMillis() - userTouchAt < 20_000L
+        override fun onCheckIsTextEditor(): Boolean = imeAllowed() && super.onCheckIsTextEditor()
         override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? =
-            if (manualInput) super.onCreateInputConnection(outAttrs) else null
+            if (imeAllowed()) super.onCreateInputConnection(outAttrs) else null
     }
 
     fun setInteractive(value: Boolean) {
@@ -88,6 +93,16 @@ internal class AndroidWebSessionHost(
         setInteractive(interactive)
         if (!interactive && wasFocused && restore?.isAttachedToWindow == true) restore.requestFocus()
     }
+    /** إخفاء صريح: بعض المواقع تعيد التركيز لحقلها بعد الإرسال فتظهر لوحة المفاتيح فوق الرد. */
+    private fun hideKeyboardIfBackground() {
+        if (interactive) return
+        runCatching {
+            val imm = activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as android.view.inputmethod.InputMethodManager
+            imm.hideSoftInputFromWindow(container.windowToken ?: activity.window.decorView.windowToken, 0)
+        }
+    }
+
     private data class Pending(
         val request: WebSessionTransport.Request,
         val adapter: WebSiteAdapter,
@@ -141,7 +156,13 @@ internal class AndroidWebSessionHost(
         view.isFocusable = interactive
         view.isFocusableInTouchMode = interactive
         view.isClickable = interactive
-        view.setOnTouchListener { v, _ -> !(interactive || v === inputLease) }
+        view.setOnTouchListener { v, ev ->
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN && interactive &&
+                ev.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) {
+                (v as? SessionWebView)?.userTouchAt = SystemClock.uptimeMillis()
+            }
+            !(interactive || v === inputLease)
+        }
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -344,6 +365,7 @@ internal class AndroidWebSessionHost(
         if (pending !== p) return
         pending = null
         releaseEditorFocus()
+        hideKeyboardIfBackground()
         status(p, if (reply.success) "✅ استُقبل رد جديد من صفحة الموقع" else reply.text)
         if (reply.success) {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", true).apply()
