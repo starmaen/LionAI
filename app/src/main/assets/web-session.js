@@ -304,7 +304,8 @@
     const after = inserted.slice(m.end).trim();
     const prior = inserted.slice(0, m.start).trim();
     // Newest-first lists (Arena flex-col-reverse) put the reply BEFORE the user turn.
-    let answer = after.length >= prior.length ? after : prior;
+    // الجواب هو ما بعد رسالتنا. نأخذ ما قبلها فقط للصفحات الأحدث-أولاً (newestFirst)؛ وإلا التقطنا بقايا الدور السابق.
+    let answer = (C.newestFirst === true && prior.length > after.length) ? prior : after;
     if (collapsed(answer) === collapsed(expectedText())) answer = '';
     return {shown: true, answer: answer};
   }

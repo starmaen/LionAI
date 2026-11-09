@@ -232,6 +232,7 @@ test('fallback: reads the text the page added after our message when selectors m
 }));
 test('fallback reads a reply placed before the user turn (newest-first DOM)',()=>withPage(p=>{
   p.config.answer = '.no-such-selector';
+  p.config.newestFirst = true;
   p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
   p.w.document.querySelector('#messages').innerHTML =
     '<div class="x">The capital is Damascus.</div><div class="u">' + FALLBACK_PROMPT + '</div>';
@@ -242,6 +243,16 @@ test('fallback reads a reply placed before the user turn (newest-first DOM)',()=
   const done = p.run('poll', FALLBACK_PROMPT);
   assert.equal(done.status, 'complete');
   assert.equal(done.text, 'The capital is Damascus.');
+}));
+test('fallback never returns leftovers of the previous turn when the new reply is still short',()=>withPage(p=>{
+  p.config.answer = '.no-such-selector';
+  p.run('prepare', FALLBACK_PROMPT); p.run('submit', FALLBACK_PROMPT);
+  // الدور السابق أُعيد رسمه (طويل) قبل رسالتنا؛ الرد الجديد ما زال قصيراً بعدها.
+  p.w.document.querySelector('#messages').innerHTML =
+    '<div class="x">Previous long reasoning and an older tool block that must not be returned.</div>' +
+    '<div class="u">' + FALLBACK_PROMPT + '</div><div class="x">New</div>';
+  const r = p.run('poll', FALLBACK_PROMPT);
+  assert.equal(r.text, 'New');
 }));
 test('flex-col-reverse list returns the newest reply not the oldest',()=>withPage(p=>{
   const box = p.w.document.querySelector('#messages');

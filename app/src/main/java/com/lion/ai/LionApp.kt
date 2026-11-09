@@ -1002,7 +1002,10 @@ fun LionApp() {
             }
             // المصادر والروابط (يوتيوب/أنغامي/يوتيوب ميوزيك) ميزة مستقلة يحكمها إعدادها،
             // وتبقى تعمل في الوضع اليدوي أيضاً ولا يلغيها العقل المركزي.
-            val sources = if (CentralBrain.shouldSearch(prefs, kind, chatMode, prompt, central)) {
+            // مواقع الويب محادثات حيّة ببحثها الخاص: لا نحقن فيها مقتطفات بحث التطبيق ولا سياقاً خارجياً،
+            // وإلا ظهرت في صفحتها كجزء من رسالتك وتداخلت مع الجواب (مقتطفات لا علاقة لها بسؤال تقني).
+            val answeringViaWeb = plan.firstOrNull()?.let { WebChatRuntime.handles(it.provider) } == true
+            val sources = if (!answeringViaWeb && CentralBrain.shouldSearch(prefs, kind, chatMode, prompt, central)) {
                 withContext(Dispatchers.IO) {
                     runCatching { WebGrounding.search(prompt) }.getOrDefault(emptyList<WebSource>())
                 }
@@ -1086,6 +1089,8 @@ fun LionApp() {
                 }
             } else ""
             val llmPrompt = llmPromptBase + opsBrief
+            /** ما يُرسل لمزود ويب: رسالة المستخدم (مع نص مرفقه) فقط. */
+            val llmPromptWeb = prompt + opsBrief
             // العقل المركزي يضمن أن لكل مجال مزوداً بديلاً جاهزاً عند فشل المسار الأساسي.
             // في اليدوي: لا يتدخل العقل المركزي إلا إذا فعّل المستخدم «مساعدة العقل المركزي».
             val rescueRoutes = if ((manualMode && RoutePolicy.assistEnabled(prefs)) ||
@@ -1172,7 +1177,7 @@ fun LionApp() {
                             ToolAgent.run(
                                 context = context,
                                 prefs = prefs,
-                                prompt = llmPrompt,
+                                prompt = if (WebChatRuntime.handles(route.provider)) llmPromptWeb else llmPrompt,
                                 apiKey = keyOf(route.provider),
                                 provider = WebToolBridge.pin(prefs, route.provider),
                                 model = route.model,
@@ -1198,7 +1203,7 @@ fun LionApp() {
                 // No tool-less retry: it would discard execution state and can invent completion.
                 val r = agentResult?.answer ?: withContext(Dispatchers.IO) {
                     LlmClient.ask(
-                        message = llmPrompt,
+                        message = if (WebChatRuntime.handles(route.provider)) llmPromptWeb else llmPrompt,
                         apiKey = keyOf(route.provider),
                         provider = route.provider,
                         history = requestHistory,
@@ -1405,7 +1410,7 @@ fun LionApp() {
                         val started = System.currentTimeMillis()
                         val secondReply = withContext(Dispatchers.IO) {
                             LlmClient.ask(
-                                message = llmPrompt,
+                                message = if (WebChatRuntime.handles(secondRoute.provider)) llmPromptWeb else llmPrompt,
                                 apiKey = keyOf(secondRoute.provider),
                                 provider = secondRoute.provider,
                                 history = history,

@@ -104,7 +104,12 @@ object WebSiteAdapters {
             input = "textarea#chat-input, textarea[placeholder], .ds-scroll-area textarea",
             // Real page report: the send control is a div[role=button] (circle, filled), not a <button>.
             send = "div.ds-button--primary.ds-button--filled.ds-button--circle[role='button']",
-            answer = "div.ds-markdown:not([class*='think'] *), .ds-markdown:not([class*='think'] *)"
+            // الجواب النهائي فقط: لا كتلة التفكير ولا رسالة المستخدم ولا ما سبقها من الحوار (تقرير المستخدم أظهر
+            // التقاط التفكير + الدور السابق + رسالته). بلا التقاط احتياطي بنص الصفحة الذي يخلط الأدوار.
+            answer = "div.ds-markdown:not([class*='think'] *):not([class*='think'])",
+            exclusiveAnswer = true,
+            fallback = false,
+            settleMs = 4000
         ),
         "chatgpt_web" to Spec(
             hosts = setOf("chatgpt.com", "chat.openai.com"),
