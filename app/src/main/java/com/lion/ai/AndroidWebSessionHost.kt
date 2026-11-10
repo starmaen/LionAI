@@ -91,7 +91,12 @@ internal class AndroidWebSessionHost(
         inputLease = null
         previousFocus = null
         setInteractive(interactive)
-        if (!interactive && wasFocused && restore?.isAttachedToWindow == true) restore.requestFocus()
+        if (!interactive && wasFocused && restore?.isAttachedToWindow == true) {
+            restore.requestFocus()
+            // استعادة التركيز لصندوق الكتابة تفتح لوحة المفاتيح من تلقاء نفسها؛ نخفيها صراحةً
+            // لأن التركيز كان مأخوذاً لجلسة الويب لا بطلب من المستخدم.
+            hideKeyboardIfBackground()
+        }
     }
     /** إخفاء صريح: بعض المواقع تعيد التركيز لحقلها بعد الإرسال فتظهر لوحة المفاتيح فوق الرد. */
     private fun hideKeyboardIfBackground() {
@@ -120,7 +125,8 @@ internal class AndroidWebSessionHost(
         var tapped: Boolean = false,
         var enterTried: Boolean = false,
         var lastTextAt: Long = 0L,
-        var hiddenTicks: Int = 0
+        var hiddenTicks: Int = 0,
+        var busyTicks: Int = 0
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -312,6 +318,7 @@ internal class AndroidWebSessionHost(
                 .replace("__LION_TOKEN__", JSONObject.quote("diagnostic"))
                 .replace("__LION_ACTION__", JSONObject.quote("diagnose"))
                 .replace("__LION_PROMPT__", JSONObject.quote(""))
+                .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
             view.evaluateJavascript(js) { raw ->
                 val text = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
                 val diagnostic = runCatching { JSONObject(text ?: "{}") }.getOrElse { JSONObject() }
@@ -350,7 +357,14 @@ internal class AndroidWebSessionHost(
             }
             // صفحة جديدة لا تعرف شيئاً: نُلحق سياق المحادثة. صفحة قائمة: ما فاتها فقط (أدوار أجابها غيرها).
             val recap = if (reloaded) request.recapFull else request.recapDelta
-            val effective = if (recap.isBlank()) request else request.copy(prompt = recap + "\n\n" + request.prompt)
+            // بعد إعادة التحميل فقد الموقع بروتوكول الأدوات: نعيد الترويسة مع رسائل الاستكمال
+            // وإلا توقفت الأدوات عند أول خطوة بعد التحديث. ونُقيّد حجم الرسالة المجمّعة كي لا
+            // يرفضها حقل الموقع أو يُفعّل حدود المعدل بعد رسالتين.
+            val shapedPrompt = if (reloaded) WebToolBridge.rehydrate(request.prompt) else request.prompt
+            val recapCapped = if (recap.length + shapedPrompt.length > 30_000)
+                recap.take(12_000) + "\n…[اقتُطع جزء من ملخص السياق]…\n" else recap
+            val effective = if (recapCapped.isBlank()) request.copy(prompt = shapedPrompt)
+                else request.copy(prompt = recapCapped + "\n\n" + shapedPrompt)
             val p = Pending(effective, adapter, view, done, System.currentTimeMillis() + request.timeoutMs)
             pending = p
             status(p, "جارٍ تجهيز جلسة الموقع؛ لا حاجة لمفتاح API")
@@ -435,6 +449,7 @@ internal class AndroidWebSessionHost(
             .replace("__LION_TOKEN__", JSONObject.quote(p.request.token))
             .replace("__LION_ACTION__", JSONObject.quote(p.stage))
             .replace("__LION_PROMPT__", JSONObject.quote(p.request.prompt))
+            .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
         if (p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
             acquireEditorFocus(p.view)
         }
@@ -497,9 +512,15 @@ internal class AndroidWebSessionHost(
                         return@evaluateJavascript
                     }
                     "site_busy" -> {
+                        // الموقع ما زال يولّد ردًا سابقًا: ننتظر انتهاءه بدل إنهاء الخطوة فوراً،
+                        // وإلا تقطعت سلسلة أدوات الوكيل بعد أول تبادلين.
                         p.submitted = false
-                        fail(p, "الموقع يولّد ردًا لطلب سابق. أوقفه أو انتظر انتهاؤه داخل الجلسة قبل إرسال طلب جديد.")
-                        return@evaluateJavascript
+                        p.busyTicks++
+                        if (p.busyTicks > 100) {
+                            fail(p, "بقي الموقع يولّد ردًا سابقًا لأكثر من 25 ثانية. أوقفه من الجلسة ثم أعد المحاولة؛ لم تُرسل الرسالة.")
+                            return@evaluateJavascript
+                        }
+                        status(p, "الموقع يولّد ردًا سابقًا؛ ننتظر انتهاءه قبل كتابة رسالتك")
                     }
                     "sent" -> {
                         p.submitted = true

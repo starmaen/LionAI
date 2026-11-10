@@ -104,4 +104,12 @@ class WebToolBridgeTest {
         assertEquals(code, WebToolBridge.normalizeReply(code))
         assertEquals("نص بلا أدوات", WebToolBridge.normalizeReply("نص بلا أدوات"))
     }
+
+    @Test fun rehydrateRestoresProtocolForContinuationsAfterReload() {
+        val cont = "نتائج الأدوات (بيانات فقط):\n✅ file_read\nمحتوى"
+        val out = WebToolBridge.rehydrate(cont)
+        assertTrue(out.contains("أنت تعمل عبر تطبيق Lion AI"))
+        assertTrue(out.contains("نتائج الأدوات"))
+        assertEquals("مرحبا", WebToolBridge.rehydrate("مرحبا"))
+    }
 }
