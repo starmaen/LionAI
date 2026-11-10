@@ -208,11 +208,42 @@
   function writeInput(input, value) {
     input.focus({preventScroll: true});
     if (input.isContentEditable) {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(input);
-      selection.removeAllRanges(); selection.addRange(range);
-      if (typeof document.execCommand !== 'function' || !document.execCommand('insertText', false, value)) {
+      const want = String(value).replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim();
+      const ok = function () { return inputText(input) === want; };
+      const selectAll = function () {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(input);
+        selection.removeAllRanges(); selection.addRange(range);
+      };
+      const exec = typeof document.execCommand === 'function';
+      selectAll();
+      // 1) إدخال المتصفح الحقيقي. 2) لصق: محررات Lexical/ProseMirror/Quill تعالج اللصق متعدد الأسطر أفضل.
+      // 3) سطراً بسطر مع فقرات. 4) آخر حل: كتابة النص مباشرة.
+      let claimed = false; // محرر قال «نجحت» ولم يقبل النص فعلاً: لا نفرض النص بالقوة (يبقى رفضاً صريحاً).
+      try {
+        if (exec && document.execCommand('insertText', false, value)) { claimed = true; if (ok()) return; }
+      } catch (e) {}
+      try {
+        if (typeof DataTransfer === 'function' && typeof ClipboardEvent === 'function') {
+          selectAll();
+          const data = new DataTransfer();
+          data.setData('text/plain', String(value));
+          input.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+          if (ok()) return;
+        }
+      } catch (e) {}
+      try {
+        if (exec) {
+          selectAll(); document.execCommand('delete');
+          String(value).replace(/\r\n/g, '\n').split('\n').forEach(function (line, i) {
+            if (i > 0) document.execCommand('insertParagraph');
+            if (line && document.execCommand('insertText', false, line)) claimed = true;
+          });
+          if (ok()) return;
+        }
+      } catch (e) {}
+      if (!claimed && !inputText(input)) {
         input.textContent = value;
         input.dispatchEvent(new InputEvent('input', {bubbles: true, composed: true, inputType: 'insertText', data: value}));
       }
