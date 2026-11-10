@@ -259,7 +259,7 @@ object ToolAgent {
         var gateNudges = 0
         var lastGateOk = true
         var lastGateText = ""
-        val deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
+        var deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
         val answerOnly = answerOnly(userRequest, memory.resume)
 
         val maxSteps = stepBudget(chatMode, groups.isNotEmpty() || forceExecution)
@@ -296,6 +296,12 @@ object ToolAgent {
             }
             if (failedSteps.isNotEmpty()) {
                 sb.append("- خطوات تعذّرت: ").append(failedSteps.takeLast(3).joinToString("، ")).append('\n')
+            }
+            // سجل الخطوات يبقى في الشات بعد انتهاء المهمة (كان يظهر مؤقتاً أثناء العمل ثم يختفي) ومعه سبب كل فشل.
+            if (workLog.isNotEmpty()) {
+                sb.append("- سجل الخطوات:\n")
+                if (workLog.size > 30) sb.append("- … (").append(workLog.size - 30).append(" خطوات أقدم)\n")
+                workLog.takeLast(30).forEach { sb.append("- ").append(it.take(170)).append('\n') }
             }
             return sb.toString().trimEnd()
         }
@@ -586,6 +592,11 @@ object ToolAgent {
                 val desc = call.name.removePrefix("github_").replace('_', ' ') + if (target.isBlank()) "" else " ← $target"
                 publish("🛠️ $desc")
                 used.add(call.name.removePrefix("github_"))
+                // انتظار بناء CI يحتاج وقتاً أطول من ميزانية الأدوات العادية (وإلا قال «انتهى الوقت» والبناء ما زال يعمل).
+                if (call.name == "github_wait_run") {
+                    val waitMs = call.args.optLong("timeout_sec", 420L).coerceIn(30L, 900L) * 1000L
+                    deadline = maxOf(deadline, System.currentTimeMillis() + waitMs + 120_000L)
+                }
                 val identityArgs = org.json.JSONObject(call.args.toString())
                 identityArgs.remove("refresh")
                 if (call.name in setOf("github_write_file", "github_delete_file", "github_commit_files", "github_push_workspace")) {
@@ -620,7 +631,10 @@ object ToolAgent {
                     else -> AiTools.execute(toolContext, call).also { if (cacheable && it.ok) memory.recordRead(fingerprint, it.output) }
                 }
                 session?.let { CheckpointStore.save(prefs, it) }
-                workLog.add((if (result.ok) "✅ " else "❌ ") + desc)
+                workLog.add(
+                    if (result.ok) "✅ $desc"
+                    else "❌ $desc — " + result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty().take(110)
+                )
                 if (result.ok && call.name == "file_present") {
                     FileDelivery.paths(result.output).forEach { presented.add(it) }
                 }
