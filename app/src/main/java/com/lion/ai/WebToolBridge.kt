@@ -106,30 +106,61 @@ object WebToolBridge {
 
     data class Shaped(val text: String, val fresh: Boolean)
 
-    private val modes = java.util.concurrent.ConcurrentHashMap<String, String>() // الموقع → agent | chat
+    /** حالة صفحة الموقع الحيّة: لأي محادثة تتبع، وماذا رأت. صفحة واحدة لكل موقع. */
+    private class PageState(val chatId: String) {
+        @Volatile var mode: String = "none"          // none | chat | agent
+        @Volatile var protocolSent: Boolean = false  // هل رأت الصفحة بروتوكول الأدوات الكامل
+    }
+    private val pages = java.util.concurrent.ConcurrentHashMap<String, PageState>()
+
+    private fun pageOf(provider: String, chatId: String): PageState {
+        val current = pages[provider]
+        if (current != null && current.chatId == chatId) return current
+        // محادثة مختلفة: المضيف يعيد تحميل الصفحة وحده (chatIds != ActiveChat.id)، فالحالة جديدة.
+        return PageState(chatId).also { pages[provider] = it }
+    }
+
+    /** استدعِها عند إتلاف WebView موقع ما أو إعادة تحميله قسراً. */
+    fun resetPage(provider: String) { pages.remove(provider) }
+
+    private const val CHAT_NOTE =
+        "(ملاحظة من التطبيق: هذه رسالة دردشة عادية في نفس المحادثة. لا تستخدم أي كتلة [[TOOL]] " +
+            "ولا أدوات، أجب نصاً مباشراً وتابع من سياق ما سبق.)\n\n"
+
+    private fun followUp(msg: String): String =
+        "طلب جديد من المستخدم في نفس المحادثة. بروتوكول [[TOOL]] وتواقيع الأدوات التي أرسلتها لك " +
+            "في أول المحادثة ما زالت سارية: لتنفيذ أداة اكتب [[TOOL]]{\"name\":\"...\",\"args\":{...}}[[/TOOL]] " +
+            "وانتظر النتيجة.\n\n— — —\n" + capFirst(redact(msg))
 
     /**
-     * كـshape لكن مع حدود المحادثة: الصفحة تحفظ الحوار، فلو بقيت في «وضع الوكيل» أخرجت كتل [[TOOL]]
-     * حتى في دردشة عادية لاحقة (وتظهر خاماً في الشات). لذا:
-     *  - أول جولة وكيل ⇒ محادثة جديدة نظيفة في الصفحة.
-     *  - أول دردشة عادية بعد وكيل ⇒ محادثة جديدة أيضاً.
-     *  - استكمال وكيل لا تعرف الصفحة أنه جارٍ (إعادة تشغيل) ⇒ نعيد إرسال التعليمات.
+     * لا نُعيد تحميل الصفحة أبداً هنا: الصفحة تحفظ الحوار، وإعادة التحميل هي ما كان يقطع السياق.
+     *  - أول رسالة وكيل في الصفحة ⇒ البروتوكول الكامل.
+     *  - طلب وكيل لاحق ⇒ طلب مختصر داخل نفس المحادثة.
+     *  - دردشة عادية بعد وكيل ⇒ ملاحظة قصيرة تمنع كتل [[TOOL]] دون فقد السياق.
      */
-    fun plan(provider: String, system: String, message: String): Shaped {
+    fun plan(provider: String, system: String, message: String, chatId: String = ActiveChat.id): Shaped {
         val msg = message.trim()
+        val page = pageOf(provider, chatId)
         if (!system.contains(AGENT_MARK)) {
-            val fresh = modes[provider] == "agent"
-            modes[provider] = "chat"
-            return Shaped(msg, fresh)
+            val wasAgent = page.mode == "agent"
+            page.mode = "chat"
+            return Shaped(if (wasAgent) CHAT_NOTE + msg else msg, false)
         }
         if (CONTINUATIONS.any { msg.startsWith(it) }) {
-            val known = modes[provider] == "agent"
-            modes[provider] = "agent"
+            val known = page.protocolSent
+            page.mode = "agent"
+            page.protocolSent = true
             val body = capTurn(redact(msg)) + NEXT
-            return Shaped(if (known) body else header() + "\n\n— — —\nتابع المهمة (سياق المحادثة السابقة غير متاح لديك):\n" + body, false)
+            return Shaped(
+                if (known) body
+                else header() + "\n\n— — —\nتابع المهمة (سياق المحادثة السابقة غير متاح لديك):\n" + body,
+                false
+            )
         }
-        modes[provider] = "agent"
-        return Shaped(first(msg), true)
+        val seen = page.protocolSent
+        page.mode = "agent"
+        page.protocolSent = true
+        return Shaped(if (seen) followUp(msg) else first(msg), false)
     }
 
     private val FENCE = Regex("```[A-Za-z0-9_-]*[ \\t]*\\r?\\n?([\\s\\S]*?)```")

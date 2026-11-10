@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -721,6 +723,62 @@ private fun ProviderRow(
     }
 }
 
+private val ClaudeCard = Color(0xFF2B2B2A)
+private val ClaudeBorder = Color(0xFF3D3D3B)
+private val ClaudeText = Color(0xFFD9D8D4)
+private val ClaudeMuted = Color(0xFF8E8D89)
+private val ClaudeAccent = Color(0xFFC96442)
+
+/** فقاعة خيارات الدردشة: تظهر صغيرة، وبالضغط عليها تنفتح القائمة (الوضع + تلقائي/يدوي). */
+@Composable
+private fun ChatOptionsBubble(
+    mode: ChatMode,
+    autoRoute: Boolean,
+    channelSummary: String,
+    onOpenMode: () -> Unit,
+    onToggleAuto: () -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Surface(
+            color = Color(0xFF383837),
+            shape = RoundedCornerShape(50),
+            modifier = Modifier.clickable { open = true }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("💬", fontSize = 13.sp)
+                Spacer(Modifier.width(4.dp))
+                Text(mode.short, color = ClaudeText, fontSize = 12.sp, maxLines = 1)
+                Icon(Icons.Filled.ArrowDropDown, null, tint = ClaudeMuted, modifier = Modifier.size(14.dp))
+            }
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.background(ClaudeCard, RoundedCornerShape(14.dp))
+        ) {
+            DropdownMenuItem(
+                text = { Text("💬 وضع الدردشة: ${mode.short}", color = Color.White, fontSize = 13.sp) },
+                onClick = { open = false; onOpenMode() }
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        (if (autoRoute) "🧠 تلقائي" else "✋ يدوي") +
+                            (if (channelSummary.isNotBlank()) " · $channelSummary" else ""),
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
+                },
+                onClick = { open = false; onToggleAuto() }
+            )
+        }
+    }
+}
+
 /**
  * صندوق الكتابة الجديد: حقل واسع، زر إرسال/إيقاف مربع، اسم المزود العامل
  * مع أيقونة مصدره، وصف الأزرار الناعمة للمجموعات أسفله.
@@ -842,13 +900,13 @@ internal fun LionComposer(
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Surface(
-                    color = Color(0xFF111111),
+                    color = ClaudeCard,
                     shape = RoundedCornerShape(26.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(
                             1.dp,
-                            if (input.isNotBlank()) Gold.copy(alpha = 0.60f) else Color(0xFF2A2A2A),
+                            ClaudeBorder,
                             RoundedCornerShape(26.dp)
                         )
                 ) {
@@ -877,118 +935,83 @@ internal fun LionComposer(
                                     value = input,
                                     onValueChange = onInputChange,
                                     textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                                    cursorBrush = SolidColor(Gold),
+                                    cursorBrush = SolidColor(ClaudeAccent),
                                     maxLines = 5,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
                         Spacer(Modifier.size(2.dp))
-                        // الإرسال والميكروفون في الصف السفلي بمحاذاة اسم المزود.
+                        // نمط كلود: + وفقاعة الدردشة يساراً، والموديل والميكروفون والإرسال يميناً.
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 4.dp, end = 2.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // الزر نفسه: إرسال في السكون، وإيقاف أثناء التوليد،
-                            // وإيقاف + إرسال المداخلة إن كتب المستخدم شيئاً أثناء الرد.
+                            IconButton(onClick = onAttachFile, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Filled.Add, "إرفاق ملف", tint = ClaudeText, modifier = Modifier.size(22.dp))
+                            }
+                            ChatOptionsBubble(mode, autoRoute, channelSummary, onOpenMode, onToggleAuto)
+                            Spacer(Modifier.weight(1f))
+                            Row(
+                                modifier = Modifier
+                                    .clickable(onClick = onChooseModel)
+                                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    providerLabel,
+                                    color = ClaudeText,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 90.dp)
+                                )
+                                if (providerModel.isNotBlank()) {
+                                    Text(
+                                        " " + providerModel,
+                                        color = ClaudeMuted,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 80.dp)
+                                    )
+                                }
+                                Icon(
+                                    Icons.Filled.ArrowDropDown,
+                                    "اختيار الموديل",
+                                    tint = ClaudeMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(onClick = onVoice, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Filled.Mic, "مكرفون المساعد", tint = ClaudeText, modifier = Modifier.size(20.dp))
+                            }
                             val sending = loading && hasDraft
                             FilledIconButton(
                                 onClick = {
                                     when {
-                                        loading && hasDraft -> { dismissKeyboard(); onFollowUp() }
+                                        loading && hasDraft -> onFollowUp()
                                         loading -> onStop()
-                                        else -> { dismissKeyboard(); onSend() }
+                                        else -> onSend()
                                     }
                                 },
                                 enabled = loading || canSend,
-                                modifier = Modifier.size(40.dp),
-                                shape = CircleShape,
+                                modifier = Modifier.size(38.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = when {
-                                        sending -> Color(0xFF4C8DFF)
-                                        loading -> Color(0xFF3A1F1F)
-                                        else -> Gold
-                                    },
-                                    contentColor = when {
-                                        sending -> Color.White
-                                        loading -> Color(0xFFFF7A7A)
-                                        else -> Color(0xFF0D0D0D)
-                                    },
-                                    disabledContainerColor = Color(0xFF2A2A2A),
-                                    disabledContentColor = Color(0xFF6E6E6E)
+                                    containerColor = if (sending || !loading) ClaudeAccent else Color(0xFF4A2A22),
+                                    contentColor = Color.White,
+                                    disabledContainerColor = Color(0xFF3D3D3B),
+                                    disabledContentColor = Color(0xFF7A7A76)
                                 )
                             ) {
                                 Icon(
-                                    if (loading && !hasDraft) Icons.Filled.Stop
-                                    else Icons.AutoMirrored.Filled.Send,
+                                    if (loading && !hasDraft) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
                                     contentDescription = when {
                                         sending -> "إيقاف الرد الحالي وإرسال مداخلتي"
                                         loading -> "إيقاف"
                                         else -> "إرسال"
                                     },
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(Modifier.width(4.dp))
-                            IconButton(onClick = onVoice, modifier = Modifier.size(34.dp)) {
-                                Icon(
-                                    Icons.Filled.Mic,
-                                    "مكرفون المساعد",
-                                    tint = Color(0xFFD0D0D0),
-                                    modifier = Modifier.size(19.dp)
-                                )
-                            }
-                            Spacer(Modifier.weight(1f))
-                            Surface(
-                                color = Color(0xFF1E1E1E),
-                                shape = RoundedCornerShape(50),
-                                modifier = Modifier
-                                    .border(1.dp, Color(0xFF333333), RoundedCornerShape(50))
-                                    .clickable(onClick = onChooseModel)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (providerKind != null) {
-                                        Text(providerKind.icon, fontSize = 9.sp)
-                                        Spacer(Modifier.width(3.dp))
-                                    }
-                                    Text(
-                                        providerLabel,
-                                        color = Gold,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 60.dp)
-                                    )
-                                    if (providerModel.isNotBlank()) {
-                                        Text(
-                                            " · " + providerModel,
-                                            color = Color(0xFF9A9A9A),
-                                            fontSize = 9.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.widthIn(max = 96.dp)
-                                        )
-                                    }
-                                    Icon(
-                                        Icons.Filled.ArrowDropDown,
-                                        "اختيار الموديل",
-                                        tint = Gold,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(2.dp))
-                            IconButton(onClick = onAttachFile, modifier = Modifier.size(30.dp)) {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    "إرفاق ملف",
-                                    tint = Color(0xFFD0D0D0),
                                     modifier = Modifier.size(19.dp)
                                 )
                             }
@@ -1012,18 +1035,6 @@ internal fun LionComposer(
                 )
             }
 
-            Spacer(Modifier.size(6.dp))
-            HubChipsRow(
-                mode = mode,
-                autoRoute = autoRoute,
-                currentKind = providerKind,
-                loading = loading,
-                channelSummary = channelSummary,
-                onOpenMode = onOpenMode,
-                onToggleAuto = onToggleAuto,
-                onOpenCategory = onOpenCategory,
-                onOpenSettings = onOpenSettings
-            )
         }
     }
 }
