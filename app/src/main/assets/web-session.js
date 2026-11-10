@@ -6,8 +6,6 @@
   const token = __LION_TOKEN__;
   const action = __LION_ACTION__;
   const prompt = __LION_PROMPT__;
-  // true = المستخدم يتعامل مع الصفحة بنفسه الآن (الجلسة مفتوحة)؛ false = التطبيق يقود الصفحة آلياً.
-  const interactive = __LION_INTERACTIVE__;
   function result(status, extra) { return JSON.stringify(Object.assign({status: status, token: token}, extra || {})); }
   const pageInfo = {
     actualOrigin: location.href === 'about:blank' ? 'about:blank' :
@@ -205,7 +203,6 @@
     try { el.dispatchEvent(new KeyboardEvent('keydown', opts)); } catch (e) {}
     try { el.dispatchEvent(new KeyboardEvent('keypress', opts)); } catch (e) {}
     try { el.dispatchEvent(new KeyboardEvent('keyup', opts)); } catch (e) {}
-    if (!interactive) { try { el.blur(); } catch (e) {} }
     return true;
   }
   function writeInput(input, value) {
@@ -419,9 +416,6 @@
           return result('input_rejected', {focused: document.activeElement === input, editable: input.isContentEditable === true});
         }
       }
-      // التطبيق يقود الصفحة: نفقد حقل الإدخال تركيزه بعد كتابة النص كي لا يفتح
-      // تركيز الموقع لوحة مفاتيح أندرويد بلا لمسة من المستخدم.
-      if (!interactive) { try { input.blur(); } catch (e) {} }
       return result('prepared', rectOf(input));
     }
     if (!state || state.token !== token) return result('lost');

@@ -56,9 +56,6 @@ object WebToolBridge {
         لمخطط أي أداة استدعِ tools_schema، ولبقية المجموعات استدعِ tools_groups.
     """.trimIndent()
 
-    /** علامة وجود ترويسة البروتوكول داخل نص الرسالة المُرسلة للموقع. */
-    const val HEADER_MARK = "لتنفيذ أداة اكتب في ردك"
-
     const val NEXT =
         "\n\nتابع: أرسل كتلة [[TOOL]]{\"name\":\"...\",\"args\":{...}}[[/TOOL]] لخطوتك التالية، " +
             "أو الإجابة النهائية بالعربية إن اكتملت المهمة. " +
@@ -147,25 +144,11 @@ object WebToolBridge {
         known.keys.removeAll { it.startsWith("$provider|") }
     }
 
-    /**
-     * بعد إعادة تحميل الصفحة فقد الموقع بروتوكول الأدوات الذي رآه في أول رسالة.
-     * لو وصلته رسالة استكمال (نتائج أدوات) بلا ترويسة فلن يصدر كتل [[TOOL]] بعد الآن
-     * وتتوقف أدوات الجسر عند أول خطوة بعد التحديث. هنا نعيد الترويسة الكاملة مع
-     * رسالة الاستكمال، وملخص السياق يلحقه المضيف (AndroidWebSessionHost) في الرسالة نفسها.
-     */
-    fun rehydrate(prompt: String): String {
-        val msg = prompt.trim()
-        if (msg.contains(HEADER_MARK)) return prompt
-        val isAgentTurn = CONTINUATIONS.any { msg.startsWith(it) } || msg.contains("[[TOOL]]")
-        if (!isAgentTurn) return prompt
-        return header() + "\n\n— — —\nتابع المهمة (أُعيد تحميل الصفحة؛ سياق ما سبق مرفق في الملخص أدناه):\n" + msg
-    }
-
     // كم دوراً من سجل التطبيق صار «معروفاً» لصفحة الموقع في هذه المحادثة (key = موقع|محادثة).
     private val known = java.util.concurrent.ConcurrentHashMap<String, Int>()
-    private const val RECAP_TURNS = 6
-    private const val RECAP_PER_TURN = 900
-    private const val RECAP_MAX = 4_500
+    private const val RECAP_TURNS = 8
+    private const val RECAP_PER_TURN = 1_200
+    private const val RECAP_MAX = 6_000
 
     private fun recapOf(turns: List<ChatTurn>): String {
         if (turns.isEmpty()) return ""
