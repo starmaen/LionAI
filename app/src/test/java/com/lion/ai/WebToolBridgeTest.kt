@@ -67,11 +67,13 @@ class WebToolBridgeTest {
         val (full, delta) = WebToolBridge.recaps("siteR", "c1", hist)
         assertTrue(full.contains("المستخدم: نص الدور 1") && full.contains("المساعد: نص الدور 6"))
         assertEquals("", delta) // صفحة لم نرها بعد: المضيف سيعيد تحميلها فيستعمل full
+        // markSeen يُنادى بحجم السجل قبل التبادل: الصفحة رأت السجل كله + سؤالها وردّها (+2).
         WebToolBridge.markSeen("siteR", "c1", hist.size)
-        val more = hist + listOf(ChatTurn("user", "سؤال أجابه موقع آخر"), ChatTurn("assistant", "جواب الموقع الآخر"))
+        val afterExchange = hist + listOf(ChatTurn("user", "سؤال رأته الصفحة"), ChatTurn("assistant", "جواب رأته الصفحة"))
+        val more = afterExchange + listOf(ChatTurn("user", "سؤال أجابه موقع آخر"), ChatTurn("assistant", "جواب الموقع الآخر"))
         val (_, d2) = WebToolBridge.recaps("siteR", "c1", more)
         assertTrue(d2.contains("سؤال أجابه موقع آخر") && d2.contains("جواب الموقع الآخر") && !d2.contains("نص الدور 1"))
-        val (_, d3) = WebToolBridge.recaps("siteR", "c1", hist + listOf(ChatTurn("user", "x"), ChatTurn("assistant", "y")).take(0))
+        val (_, d3) = WebToolBridge.recaps("siteR", "c1", afterExchange)
         assertEquals("", d3)
         WebToolBridge.resetPage("siteR")
         assertEquals("", WebToolBridge.recaps("siteR", "c1", more).second)
