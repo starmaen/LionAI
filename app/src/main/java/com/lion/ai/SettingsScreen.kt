@@ -138,7 +138,10 @@ fun SettingsScreen(
     onSave: () -> Unit,
     onOpenGitHub: () -> Unit = {},
     onOpenDevTools: () -> Unit = {},
-    onOpenConnectors: () -> Unit = {}
+    onOpenConnectors: () -> Unit = {},
+    quickModeLabel: String = "",
+    onOpenMode: () -> Unit = {},
+    onOpenMedia: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     val ctx = LocalContext.current
@@ -312,6 +315,26 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(16.dp))
+
+            // ما كان شريطاً تحت صندوق الكتابة صار هنا: وضع المحادثة والميديا. (التوجيه تلقائي/يدوي أدناه.)
+            SettingsSection(
+                title = "🎛️ الأوضاع والوسائط",
+                subtitle = "نُقلت من تحت صندوق الكتابة لتبقى واجهة المحادثة نظيفة",
+                initiallyExpanded = true
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { persist(); onOpenMode() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
+                    ) { Text("💬 وضع المحادثة: $quickModeLabel", color = Color(0xFFE0E0E0), fontSize = 12.sp) }
+                    Button(
+                        onClick = { persist(); onOpenMedia() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
+                    ) { Text("🎨 ميديا", color = Color(0xFFE0E0E0), fontSize = 12.sp) }
+                }
+            }
 
             LionChatSettingsCard(prefs = prefs, onActivate = { id ->
                 provider = id

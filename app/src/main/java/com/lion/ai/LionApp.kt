@@ -1879,6 +1879,15 @@ fun LionApp() {
                 selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
                 syncActiveTab()
             },
+            quickModeLabel = currentMode.short,
+            onOpenMode = {
+                showSettings = false
+                showModePicker = true
+            },
+            onOpenMedia = {
+                showSettings = false
+                hubCategory = HubCategory.MEDIA
+            },
             onOpenGitHub = {
                 showSettings = false
                 showGitHub = true

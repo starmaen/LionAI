@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
@@ -61,6 +62,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -841,33 +844,34 @@ internal fun LionComposer(
             }
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                val boxShape = RoundedCornerShape(28.dp)
                 Surface(
-                    color = Color(0xFF111111),
-                    shape = RoundedCornerShape(26.dp),
+                    color = Color(0xFF1B1B1A),
+                    shape = boxShape,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
                         .border(
                             1.dp,
-                            if (input.isNotBlank()) Gold.copy(alpha = 0.60f) else Color(0xFF2A2A2A),
-                            RoundedCornerShape(26.dp)
+                            if (input.isNotBlank()) Color(0xFF5A5340) else Color(0xFF2E2D2B),
+                            boxShape
                         )
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
-                        // حقل النص وحده في الأعلى، باتجاه RTL صحيح حتى يعمل المؤشر
-                        // والمسح والإكمال من آخر النص كما في أي حقل عربي طبيعي.
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp)) {
+                        // حقل النص بالأعلى، باتجاه RTL صحيح حتى يعمل المؤشر والمسح من آخر النص.
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 42.dp)
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.CenterStart
+                                    .heightIn(min = 54.dp)
+                                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.TopStart
                             ) {
                                 if (input.isEmpty()) {
                                     Text(
-                                        "اكتب رسالتك...",
-                                        color = Color(0xFF6E6E6E),
-                                        fontSize = 14.sp,
+                                        "اكتب رسالتك…",
+                                        color = Color(0xFF7C7A76),
+                                        fontSize = 16.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.fillMaxWidth()
@@ -876,23 +880,19 @@ internal fun LionComposer(
                                 BasicTextField(
                                     value = input,
                                     onValueChange = onInputChange,
-                                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                                    textStyle = TextStyle(color = Color(0xFFECE9E4), fontSize = 16.sp, lineHeight = 24.sp),
                                     cursorBrush = SolidColor(Gold),
-                                    maxLines = 5,
+                                    maxLines = 6,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
-                        Spacer(Modifier.size(2.dp))
-                        // الإرسال والميكروفون في الصف السفلي بمحاذاة اسم المزود.
+                        Spacer(Modifier.height(4.dp))
+                        // الصف السفلي كما في Claude: سهم الإرسال + المايكروفون يساراً، واختيار المزود + «+» يميناً. لا شيء غيرها.
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 4.dp, end = 2.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // الزر نفسه: إرسال في السكون، وإيقاف أثناء التوليد،
-                            // وإيقاف + إرسال المداخلة إن كتب المستخدم شيئاً أثناء الرد.
                             val sending = loading && hasDraft
                             FilledIconButton(
                                 onClick = {
@@ -903,127 +903,97 @@ internal fun LionComposer(
                                     }
                                 },
                                 enabled = loading || canSend,
-                                modifier = Modifier.size(40.dp),
+                                modifier = Modifier.size(42.dp),
                                 shape = CircleShape,
                                 colors = IconButtonDefaults.filledIconButtonColors(
                                     containerColor = when {
                                         sending -> Color(0xFF4C8DFF)
-                                        loading -> Color(0xFF3A1F1F)
+                                        loading -> Color(0xFF3A2A28)
                                         else -> Gold
                                     },
                                     contentColor = when {
                                         sending -> Color.White
-                                        loading -> Color(0xFFFF7A7A)
-                                        else -> Color(0xFF0D0D0D)
+                                        loading -> Color(0xFFFF8A80)
+                                        else -> Color(0xFF1A1A1A)
                                     },
-                                    disabledContainerColor = Color(0xFF2A2A2A),
-                                    disabledContentColor = Color(0xFF6E6E6E)
+                                    disabledContainerColor = Color(0xFF2A2927),
+                                    disabledContentColor = Color(0xFF6B6965)
                                 )
                             ) {
                                 Icon(
-                                    if (loading && !hasDraft) Icons.Filled.Stop
-                                    else Icons.AutoMirrored.Filled.Send,
+                                    if (loading && !hasDraft) Icons.Filled.Stop else Icons.Filled.ArrowUpward,
                                     contentDescription = when {
                                         sending -> "إيقاف الرد الحالي وإرسال مداخلتي"
                                         loading -> "إيقاف"
                                         else -> "إرسال"
                                     },
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
-                            Spacer(Modifier.width(4.dp))
-                            IconButton(onClick = onVoice, modifier = Modifier.size(34.dp)) {
-                                Icon(
-                                    Icons.Filled.Mic,
-                                    "مكرفون المساعد",
-                                    tint = Color(0xFFD0D0D0),
-                                    modifier = Modifier.size(19.dp)
-                                )
+                            Spacer(Modifier.width(8.dp))
+                            SoftCircleButton(onClick = onVoice, description = "مكرفون المساعد") {
+                                Icon(Icons.Filled.Mic, null, tint = Color(0xFFCFCCC6), modifier = Modifier.size(20.dp))
                             }
                             Spacer(Modifier.weight(1f))
                             Surface(
-                                color = Color(0xFF1E1E1E),
+                                color = Color(0xFF262624),
                                 shape = RoundedCornerShape(50),
-                                modifier = Modifier
-                                    .border(1.dp, Color(0xFF333333), RoundedCornerShape(50))
-                                    .clickable(onClick = onChooseModel)
+                                modifier = Modifier.clickable(onClick = onChooseModel)
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (providerKind != null) {
-                                        Text(providerKind.icon, fontSize = 9.sp)
-                                        Spacer(Modifier.width(3.dp))
-                                    }
                                     Text(
                                         providerLabel,
-                                        color = Gold,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFE3E0DA),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 60.dp)
+                                        modifier = Modifier.widthIn(max = 90.dp)
                                     )
                                     if (providerModel.isNotBlank()) {
                                         Text(
                                             " · " + providerModel,
-                                            color = Color(0xFF9A9A9A),
-                                            fontSize = 9.sp,
+                                            color = Color(0xFF8E8B85),
+                                            fontSize = 12.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.widthIn(max = 96.dp)
+                                            modifier = Modifier.widthIn(max = 100.dp)
                                         )
                                     }
                                     Icon(
                                         Icons.Filled.ArrowDropDown,
-                                        "اختيار الموديل",
-                                        tint = Gold,
-                                        modifier = Modifier.size(13.dp)
+                                        "اختيار المزود",
+                                        tint = Color(0xFF8E8B85),
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
-                            Spacer(Modifier.width(2.dp))
-                            IconButton(onClick = onAttachFile, modifier = Modifier.size(30.dp)) {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    "إرفاق ملف",
-                                    tint = Color(0xFFD0D0D0),
-                                    modifier = Modifier.size(19.dp)
-                                )
+                            Spacer(Modifier.width(8.dp))
+                            SoftCircleButton(onClick = onAttachFile, description = "إرفاق صورة أو ملف") {
+                                Icon(Icons.Filled.Add, null, tint = Color(0xFFCFCCC6), modifier = Modifier.size(22.dp))
                             }
                         }
                     }
                 }
             }
-
-            if (loading) {
-                Text(
-                    if (hasDraft) {
-                        "⚡ اضغط ↗ لإيقاف الرد الحالي وإرسال مداخلتك (اعتراض · معلومة · تصحيح)"
-                    } else {
-                        "⏹ اضغط لإيقاف الرد الحالي، أو اكتب مداخلتك ثم اضغط ↗"
-                    },
-                    color = Color(0xFF4C8DFF),
-                    fontSize = 9.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-            }
-
-            Spacer(Modifier.size(6.dp))
-            HubChipsRow(
-                mode = mode,
-                autoRoute = autoRoute,
-                currentKind = providerKind,
-                loading = loading,
-                channelSummary = channelSummary,
-                onOpenMode = onOpenMode,
-                onToggleAuto = onToggleAuto,
-                onOpenCategory = onOpenCategory,
-                onOpenSettings = onOpenSettings
-            )
         }
+    }
+}
+
+/** زر دائري ناعم بلا حدود (مايكروفون، «+») كما في Claude. */
+@Composable
+private fun SoftCircleButton(onClick: () -> Unit, description: String, content: @Composable () -> Unit) {
+    Surface(
+        color = Color(0xFF262624),
+        shape = CircleShape,
+        modifier = Modifier
+            .size(42.dp)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = description }
+    ) {
+        Box(contentAlignment = Alignment.Center) { content() }
     }
 }
