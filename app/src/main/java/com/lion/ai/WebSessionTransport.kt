@@ -44,8 +44,8 @@ object WebSessionTransport {
                 if (active.get() == token && result.compareAndSet(null, reply)) latch.countDown()
             }
             if (!latch.await(timeout.toLong() + 1000L, TimeUnit.MILLISECONDS)) {
-                Reply("⚠️ انتهت مهلة جلسة الويب؛ قد تكون الرسالة أُرسلت. افحص الصفحة قبل إعادة المحاولة.", false, true)
-            } else result.get() ?: Reply("⚠️ انتهت الجلسة دون رد.", false)
+                Reply("⚠️ تأخر رد الصفحة عن المهلة؛ الجلسة لم تُنهَ وقد تكون الرسالة أُرسلت. افحص الصفحة قبل إعادة المحاولة.", false, true)
+            } else result.get() ?: Reply("⚠️ لم يصل رد من الصفحة؛ الجلسة لم تُنهَ. أعد المحاولة أو افتح الجلسة للتحقق.", false)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             Reply("⚠️ أُلغي الانتظار؛ قد يستمر الموقع في توليد الرد.", false, true)

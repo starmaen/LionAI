@@ -55,7 +55,7 @@ class WebToolBridgeTest {
         // الدردشة العادية بعد الوكيل: نفس المحادثة (لا فقدان سياق) مع ملاحظة بإيقاف كتل الأدوات مرة واحدة.
         val chat1 = WebToolBridge.plan("siteA", "system عادي", "مرحباً")
         assertFalse(chat1.fresh)
-        assertTrue(chat1.text.contains("انتهت جلسة الأدوات") && chat1.text.endsWith("مرحباً"))
+        assertTrue(chat1.text.contains("رسالة دردشة عادية") && chat1.text.endsWith("مرحباً"))
         val chat2 = WebToolBridge.plan("siteA", "system عادي", "كيف حالك")
         assertFalse(chat2.fresh)
         assertEquals("كيف حالك", chat2.text)
