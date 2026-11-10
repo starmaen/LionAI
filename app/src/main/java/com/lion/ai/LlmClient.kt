@@ -262,7 +262,12 @@ object LlmClient {
                 val started = System.currentTimeMillis()
                 // حدود المحادثة في الصفحة (وكيل ↔ دردشة عادية) وتشكيل رسالة الوكيل لكل موقع على حدة.
                 val shaped = WebToolBridge.plan(route.provider, systemPrompt, message)
-                val result = WebSessionTransport.exchange(route.provider, shaped.text, remaining, shaped.fresh)
+                val chatKey = ActiveChat.id
+                val (recapFull, recapDelta) = WebToolBridge.recaps(route.provider, chatKey, history)
+                val result = WebSessionTransport.exchange(
+                    route.provider, shaped.text, remaining, shaped.fresh, recapFull, recapDelta
+                )
+                if (result.success) WebToolBridge.markSeen(route.provider, chatKey, history.size)
                 SmartRouter.record(route, result.success, System.currentTimeMillis() - started)
                 prefs.edit().putBoolean("web_session_verified_${route.provider}", result.success).apply()
                 if (result.success && result.text.isNotBlank() && !isErrorReply(result.text)) {

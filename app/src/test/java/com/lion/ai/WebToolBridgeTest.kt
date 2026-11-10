@@ -44,18 +44,37 @@ class WebToolBridgeTest {
         assertFalse(out.contains("abc"))
     }
 
-    @Test fun firstAgentTurnStartsFreshChatAndPlainChatAfterAgentStartsAnotherOne() {
+    @Test fun switchingBetweenAgentAndChatNeverStartsANewPageConversation() {
         val sys = "أنت وكيل برمجة وتطوير داخل Lion AI"
         val a = WebToolBridge.plan("siteA", sys, "أصلح الخطأ في app/build.gradle.kts")
-        assertTrue(a.fresh && a.text.contains("[[TOOL]]") && a.text.contains("طلب المستخدم"))
+        assertFalse(a.fresh)
+        assertTrue(a.text.contains("[[TOOL]]") && a.text.contains("طلب المستخدم"))
         val cont = WebToolBridge.plan("siteA", sys, "نتائج الأدوات (بيانات فقط):\nfile_read ok")
         assertFalse(cont.fresh)
         assertTrue(cont.text.contains("نتائج الأدوات") && !cont.text.contains("تواقيع الأدوات"))
+        // الدردشة العادية بعد الوكيل: نفس المحادثة (لا فقدان سياق) مع ملاحظة بإيقاف كتل الأدوات مرة واحدة.
         val chat1 = WebToolBridge.plan("siteA", "system عادي", "مرحباً")
-        assertTrue(chat1.fresh)
-        assertEquals("مرحباً", chat1.text)
+        assertFalse(chat1.fresh)
+        assertTrue(chat1.text.contains("انتهت جلسة الأدوات") && chat1.text.endsWith("مرحباً"))
         val chat2 = WebToolBridge.plan("siteA", "system عادي", "كيف حالك")
         assertFalse(chat2.fresh)
+        assertEquals("كيف حالك", chat2.text)
+    }
+
+    @Test fun recapsCarryContextOnlyWhereThePageLacksIt() {
+        val hist = (1..6).map { ChatTurn(if (it % 2 == 1) "user" else "assistant", "نص الدور $it") }
+        WebToolBridge.resetPage("siteR")
+        val (full, delta) = WebToolBridge.recaps("siteR", "c1", hist)
+        assertTrue(full.contains("المستخدم: نص الدور 1") && full.contains("المساعد: نص الدور 6"))
+        assertEquals("", delta) // صفحة لم نرها بعد: المضيف سيعيد تحميلها فيستعمل full
+        WebToolBridge.markSeen("siteR", "c1", hist.size)
+        val more = hist + listOf(ChatTurn("user", "سؤال أجابه موقع آخر"), ChatTurn("assistant", "جواب الموقع الآخر"))
+        val (_, d2) = WebToolBridge.recaps("siteR", "c1", more)
+        assertTrue(d2.contains("سؤال أجابه موقع آخر") && d2.contains("جواب الموقع الآخر") && !d2.contains("نص الدور 1"))
+        val (_, d3) = WebToolBridge.recaps("siteR", "c1", hist + listOf(ChatTurn("user", "x"), ChatTurn("assistant", "y")).take(0))
+        assertEquals("", d3)
+        WebToolBridge.resetPage("siteR")
+        assertEquals("", WebToolBridge.recaps("siteR", "c1", more).second)
     }
 
     @Test fun continuationWithoutKnownAgentSessionResendsInstructions() {

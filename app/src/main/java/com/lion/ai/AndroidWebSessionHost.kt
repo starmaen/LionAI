@@ -151,6 +151,7 @@ internal class AndroidWebSessionHost(
             entry.value.destroy()
             loads.remove(entry.value)
             chatIds.remove(entry.key)
+            WebToolBridge.resetPage(entry.key)
         }
         val view = SessionWebView(activity).apply { manualInput = interactive }
         view.isFocusable = interactive
@@ -338,13 +339,19 @@ internal class AndroidWebSessionHost(
                 return@post
             }
             val view = viewFor(adapter)
+            var reloaded = false
             if (request.fresh || chatIds[adapter.id] != ActiveChat.id || loads[view]?.phase == WebPageLoad.Phase.FAILED) {
                 // Re-enter the site's initial chat route for each LionAI conversation.
                 loads[view]?.start(adapter.url)
                 view.loadUrl(adapter.url)
                 chatIds[adapter.id] = ActiveChat.id
+                reloaded = true
+                WebToolBridge.resetPage(adapter.id)
             }
-            val p = Pending(request, adapter, view, done, System.currentTimeMillis() + request.timeoutMs)
+            // صفحة جديدة لا تعرف شيئاً: نُلحق سياق المحادثة. صفحة قائمة: ما فاتها فقط (أدوار أجابها غيرها).
+            val recap = if (reloaded) request.recapFull else request.recapDelta
+            val effective = if (recap.isBlank()) request else request.copy(prompt = recap + "\n\n" + request.prompt)
+            val p = Pending(effective, adapter, view, done, System.currentTimeMillis() + request.timeoutMs)
             pending = p
             status(p, "جارٍ تجهيز جلسة الموقع؛ لا حاجة لمفتاح API")
             display(false, "${providerInfo(request.provider).shortName} • اتصال بصفحة الويب")
