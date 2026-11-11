@@ -68,7 +68,7 @@ class WebMirrorFilter(private val maxSignatures: Int = 400) {
         if (sig.isEmpty()) return
         synchronized(this) {
             if (!seenSet.add(sig)) return
-            seen.addLast(sig)
+            seen.add(sig)
             if (seenSet.size > maxSignatures) {
                 val oldest = seen.poll()
                 if (oldest != null) seenSet.remove(oldest)

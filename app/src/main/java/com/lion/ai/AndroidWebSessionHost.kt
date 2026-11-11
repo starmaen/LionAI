@@ -436,8 +436,8 @@ internal class AndroidWebSessionHost(
             pending = p
             // ربط كامل مع الشات: النص الحرفي الذي ستكتبه الصفحة يُبث فوراً، وبصمته محفوظة
             // كي لا ينعكس دور المستخدم في الصفحة كأنه رسالة جديدة.
-            mirrorFor(request.provider, p.chatId).markOwn(effective)
-            WebSessionMirror.outbound(p.chatId, request.provider, effective)
+            mirrorFor(request.provider, p.chatId).markOwn(effective.prompt)
+            WebSessionMirror.outbound(p.chatId, request.provider, effective.prompt)
             status(p, "جارٍ تجهيز جلسة الموقع؛ لا حاجة لمفتاح API")
             WebSessionMirror.stage(p.chatId, request.provider, "📡 اتصال بصفحة ${providerInfo(request.provider).shortName}")
             display(false, "${providerInfo(request.provider).shortName} • اتصال بصفحة الويب")
