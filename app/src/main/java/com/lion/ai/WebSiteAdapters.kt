@@ -83,7 +83,8 @@ object WebSiteAdapters {
         ),
         "copilot_web" to Spec(
             url = "https://copilot.microsoft.com/",
-            hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft"),
+            // تقرير المستخدم: copilot.microsoft.com يحوّل الآن إلى copilot.com (نطاق مايكروسوفت نفسه).
+            hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com"),
             input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
             send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i]",
             // رد Copilot فقط (لا رسالة المستخدم data-content='user-message').

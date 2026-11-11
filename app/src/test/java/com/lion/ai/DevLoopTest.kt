@@ -34,6 +34,14 @@ class DevLoopTest {
         assertTrue(profile.groups.contains(ToolGroup.CONTROL))
         assertTrue(profile.groups.contains(ToolGroup.MEMORY))
     }
+    @Test fun codeProfileCarriesBuildFixLoopAndReportFormat() {
+        val prefs = FakePrefs()
+        prefs.edit().putBoolean("agent_tools", true).putBoolean("tools_everywhere", true).apply()
+        val suffix = ContextProfiles.of(ChatMode.CODE, prefs, "أصلح Main.kt").promptSuffix
+        assertTrue(suffix.contains("أول سطر خطأ"))
+        assertTrue(suffix.contains("المراجعة"))
+        assertTrue(suffix.contains("ما لم تتحقق منه"))
+    }
     @Test fun compressedSystemKeepsTheWholeDevelopmentCore() {
         val input = ToolGroup.values().toSet()
         val core = ToolAgent.coreGroups(input)

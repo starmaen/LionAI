@@ -298,13 +298,19 @@ internal class AndroidWebSessionHost(
     }
 
     /** Diagnose only after the page has really loaded; a fresh WebView is still about:blank. */
-    private fun runInspection(provider: String, adapter: WebSiteAdapter, view: WebView, deadline: Long) {
+    private fun runInspection(provider: String, adapter: WebSiteAdapter, view: WebView, deadline: Long, settledAt: Long = 0L) {
         if (destroyed || pending != null) return
         val phase = loads[view]?.phase
         val settled = phase == WebPageLoad.Phase.READY || phase == WebPageLoad.Phase.REDIRECT ||
             phase == WebPageLoad.Phase.FAILED
         if (!settled && System.currentTimeMillis() < deadline) {
             main.postDelayed({ runInspection(provider, adapter, view, deadline) }, 700)
+            return
+        }
+        // تطبيقات الصفحة الواحدة (Gemini) ترسم حقل الكتابة بعد اكتمال التحميل؛ ننتظر حتى 8 ثوانٍ كي لا يخرج التقرير فارغاً.
+        val first = if (settledAt == 0L) System.currentTimeMillis() else settledAt
+        if (phase == WebPageLoad.Phase.READY && System.currentTimeMillis() - first < 8_000L) {
+            main.postDelayed({ runInspection(provider, adapter, view, deadline, first) }, 700)
             return
         }
         run {
@@ -400,7 +406,10 @@ internal class AndroidWebSessionHost(
                 return
             }
             val message = when (p.lastStatus) {
-                "needs_input", "origin", "loading" -> "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
+                "needs_input", "origin", "loading" ->
+                    if (p.adapter.id == "gemini_web")
+                        "Gemini يعرض هنا صفحة عامة بلا دردشة (يتطلب حساب Google، وجوجل تقيّد تسجيل الدخول داخل WebView). استخدم مزود «Google Gemini (API)» المجاني من AI Studio بدلاً منه."
+                    else "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
                 "awaiting_ack", "clicked" -> "نُقر الإرسال لكن الموقع لم يؤكد استقبال الرسالة. لم أعِد الإرسال." +
                     (if (p.lastDiag.isNotBlank()) " [" + p.lastDiag + "]" else "")

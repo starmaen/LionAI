@@ -84,6 +84,7 @@ class WebChatRuntimeTest {
         }
         assertTrue(requireNotNull(WebSiteAdapters.get("gemini_web")).accepts("https://gemini.google.com/app"))
         assertTrue(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://copilot.microsoft.com/chats"))
+        assertTrue(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://copilot.com/"))
         assertFalse(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://www.bing.com/"))
     }
 }

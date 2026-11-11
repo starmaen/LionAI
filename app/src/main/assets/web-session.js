@@ -382,6 +382,9 @@
       const title = (document.title || '').toLowerCase();
       if (/sign in|log in|login|تسجيل الدخول|connexion|anmelden/.test(title)) return true;
       if (location.pathname && /\/(login|signin|sign-in|log-in|auth|accounts)\b/i.test(location.pathname)) return true;
+      // صفحة Gemini العامة (بلا دردشة): رابط «Sign in» ظاهر ولا حقل كتابة.
+      if (location.hostname === 'gemini.google.com' && !findInput() &&
+          nodes('a[href*="accounts.google.com"]').some(visible)) return true;
       return !!find('input[type="password"]');
     }
     const input = findInput();
