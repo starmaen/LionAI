@@ -155,6 +155,11 @@ object WebSiteAdapters {
             input = "textarea[class*='GrowingTextArea'], [class*='ChatMessageInputContents'] textarea, textarea",
             answer = "[class*='Message_botMessageBubble'], [class*='botMessage']"
         ),
+        "kimi_web" to Spec(
+            hosts = setOf("www.kimi.com", "kimi.com", "kimi.moonshot.cn", "kimi.moonshot.ai"),
+            input = "textarea, .chat-input textarea, [contenteditable='true']",
+            answer = ".segment-assistant .markdown, .segment-assistant"
+        ),
         "meta_web" to Spec(
             hosts = setOf("www.meta.ai", "meta.ai"),
             input = "[contenteditable='true'][role='textbox'], textarea",
@@ -176,10 +181,20 @@ object WebSiteAdapters {
             input = "#search-input-textarea, textarea",
             answer = "[data-testid='youchat-answer']"
         ),
+        "phind_web" to Spec(
+            hosts = setOf("www.phind.com", "phind.com"),
+            input = "textarea, [contenteditable='true']",
+            answer = "[data-testid='assistant-message']"
+        ),
         "aistudio_web" to Spec(
             hosts = setOf("aistudio.google.com", "makersuite.google.com"),
             input = "ms-autosize-textarea textarea, textarea",
             answer = "ms-chat-turn[data-role='model'], ms-model-turn, .model-response"
+        ),
+        "blackbox_web" to Spec(
+            hosts = setOf("www.blackbox.ai", "blackbox.ai"),
+            input = "textarea, [contenteditable='true']",
+            answer = "[data-message-role='assistant']"
         )
     )
 

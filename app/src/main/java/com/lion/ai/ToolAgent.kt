@@ -47,9 +47,19 @@ object ToolAgent {
     private val DONE_WORDS = Regex("(✅|اكتمل|اكتملت|نجح|تم إنشاء|تم تنفيذ|تم رفع|تم التعديل|تم الحفظ|جاهز للتنزيل|completed|done\\b)", RegexOption.IGNORE_CASE)
     /** طلب إذن وصل رغم أن الإذن ممنوح: نمنع حلقة "أعطني الصلاحية" بدل إيقاف المهمة. */
     private val PERMISSION_ASK = Regex(
-        "(صلاحي|صلاحية|اذن|إذن|permission|authorization|authorize|grant|allow|تسمح|اسمح).{0,40}" +
-            "(كتاب|انشا|إنشاء|تعديل|write|create|modify|tool|أداة|اداة|ملف|مجلد|كود|note)|" +
-            "(كتاب|انشا|إنشاء|تعديل|write|create|modify|ملف|مجلد|كود).{0,40}(صلاحي|صلاحية|اذن|إذن|permission|allow)",
+        "(صلاحي|صلاحية|أذونات|اذونات|أذون|اذون|إذن|اذن|تصريح|مصرح|مسموح|permission|authorization|authorize|grant|allow|تسمح|اسمح).{0,60}" +
+            "(كتاب|انشا|إنشاء|تعديل|تنفيذ|رفع|تشغيل|write|create|modify|execute|run|push|tool|أداة|اداة|ملف|مجلد|كود|note|command|أمر)|" +
+            "(كتاب|انشا|إنشاء|تعديل|تنفيذ|رفع|تشغيل|write|create|modify|execute|run|push|ملف|مجلد|كود).{0,60}(صلاحي|صلاحية|أذونات|اذونات|أذون|اذون|إذن|اذن|permission|allow)",
+        RegexOption.IGNORE_CASE
+    )
+    /** صيغ تصف غياب الإذن دون ذكره بصيغة إيجابية: "لا يوجد أذونات لتنفيذ…". */
+    private val NO_PERMISSION = Regex(
+        "(لا يوجد|لا أملك|لا املك|لست|غير مصرح|غير مسموح|don't have|do not have|not authorized|not permitted|no permission|no access|no valid).{0,60}" +
+            "(إذن|اذن|أذونات|اذونات|صلاحي|صلاحية|تصريح|permission|authorization|access).{0,60}" +
+            "(كتاب|انشا|إنشاء|تعديل|تنفيذ|رفع|تشغيل|write|create|modify|execute|run|push|command|أمر)|" +
+            "(لا يوجد|لا أملك|لا املك|لست|غير مصرح|غير مسموح|don't have|do not have|not authorized|not permitted|no permission|no access|no valid).{0,60}" +
+            "(كتاب|انشا|إنشاء|تعديل|تنفيذ|رفع|تشغيل|write|create|modify|execute|run|push|command|أمر).{0,60}" +
+            "(إذن|اذن|أذونات|اذونات|صلاحي|صلاحية|تصريح|permission|authorization|access)",
         RegexOption.IGNORE_CASE
     )
     private val DESTRUCTIVE_ASK = Regex(
@@ -57,7 +67,8 @@ object ToolAgent {
         RegexOption.IGNORE_CASE
     )
     internal fun isPermissionAsk(text: String): Boolean =
-        PERMISSION_ASK.containsMatchIn(text) && !DESTRUCTIVE_ASK.containsMatchIn(text)
+        (PERMISSION_ASK.containsMatchIn(text) || NO_PERMISSION.containsMatchIn(text)) &&
+            !DESTRUCTIVE_ASK.containsMatchIn(text)
 
     /**
      * رد قصير يعد بالعمل ("سأكمل…") دون استدعاء أداة ولا نتيجة. في مهمة تنفيذية هذا ليس جواباً:

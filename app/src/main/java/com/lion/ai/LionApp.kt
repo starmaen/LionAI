@@ -211,10 +211,6 @@ fun LionApp() {
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
     val toolStatus = remember { mutableStateMapOf<String, String>() }
-    /** البث الحي من صفحات مزودات الويب: chatId ← (المزود، النص الكامل أثناء تكوين الرد). */
-    val webStream = remember { mutableStateMapOf<String, Pair<String, String>>() }
-    /** النص الحرفي الكامل الذي كُتب في صفحة المزود خلال هذه الجولة: يُلحق بالرد النهائي كبطاقة قابلة للتوسيع. */
-    val webOutbound = remember { mutableStateMapOf<String, Pair<String, String>>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
     var currentMode by remember { mutableStateOf(ChatRepository.modeOf(prefs, currentChat)) }
     var showModePicker by remember { mutableStateOf(false) }
@@ -486,41 +482,6 @@ fun LionApp() {
         ChatRepository.save(prefs, chatId, list)
         refreshChats()
         return true
-    }
-
-    /**
-     * دور جديد انعكس من صفحة مزود الويب إلى الشات (تفاعل يدوي داخل الصفحة أو رد لم يمرّ هنا):
-     * يُضاف كرسالة عالية موسومة بصفحته، مع منع التكرار النهائي من جهة الشات أيضاً.
-     */
-    fun appendMirrorTurn(chatId: String, provider: String, role: String, text: String) {
-        val clean = text.trim()
-        if (clean.isBlank()) return
-        fun sig(s: String) = s.replace(Regex("\\s+"), " ").trim().take(600).lowercase()
-        val tail = (if (chatId == currentChat) messages else ChatRepository.load(prefs, chatId)).takeLast(20)
-        if (tail.any { sig(it.text) == sig(clean) }) return
-        val via = if (role == "user") "🌐 ${providerInfo(provider).shortName} · كُتبت داخل الصفحة"
-        else "🌐 ${providerInfo(provider).shortName} · رد الصفحة"
-        appendToChat(chatId, Message(clean, role == "user", via = via))
-    }
-
-    // ربط لحظي ثنائي الاتجاه بين شات التطبيق وصفحات مزودات الويب: كل حدث في الصفحة يصل الشات فوراً.
-    DisposableEffect(Unit) {
-        val listener = object : WebSessionMirror.Listener {
-            override fun onOutbound(chatId: String, provider: String, fullText: String) {
-                webOutbound[chatId] = provider to fullText
-            }
-            override fun onPartial(chatId: String, provider: String, fullText: String) {
-                if (loadingChats[chatId] == true) webStream[chatId] = provider to fullText
-            }
-            override fun onStage(chatId: String, provider: String, note: String) {
-                if (loadingChats[chatId] == true) toolStatus[chatId] = note
-            }
-            override fun onCapturedTurn(chatId: String, provider: String, role: String, text: String) {
-                appendMirrorTurn(chatId, provider, role, text)
-            }
-        }
-        WebSessionMirror.attach(listener)
-        onDispose { WebSessionMirror.detach(listener) }
     }
 
     fun keyOf(provider: String): String = prefs.getString("api_key_$provider", "") ?: ""
@@ -1023,7 +984,6 @@ fun LionApp() {
         val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask, chatMode)
         loadingChats[chatId] = true
         toolStatus[chatId] = ""
-        webStream.remove(chatId)
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
         if (!standalone) {
@@ -1552,8 +1512,6 @@ fun LionApp() {
             } else if (!session.hasWork()) {
                 AgentSessions.clear(prefs, chatId)
             }
-            // النص الحرفي الذي كُتب في صفحة مزود الويب خلال هذه الجولة: يُعرض كبطاقة قابلة للتوسيع على الرد.
-            val webOut = webOutbound[chatId]?.takeIf { WebChatRuntime.isWeb(it.first) }?.second
             val newMessage = Message(
                 reply,
                 false,
@@ -1562,15 +1520,11 @@ fun LionApp() {
                 anghamiUrl,
                 browserUrl,
                 via = via,
-                sources = if (used != null && chatMode != ChatMode.CODE) sources else emptyList(),
-                webOutbound = webOut
+                sources = if (used != null && chatMode != ChatMode.CODE) sources else emptyList()
             )
             val replaced = replaceIndex != null && replaceInChat(chatId, replaceIndex, newMessage)
             if (!replaced) appendToChat(chatId, newMessage)
             loadingChats[chatId] = false
-            // انتهت الجولة: مسح البث الحي والنص المرسل لئلا يظهران في ردٍ قادم.
-            webStream.remove(chatId)
-            webOutbound.remove(chatId)
             // مقاطعة مؤجلة: بعد أن حُفظت نقطة التوقف تُرسل ملاحظة المستخدم كرسالة تالية في المحادثة نفسها.
             AgentInterrupt.takeQueued(chatId)?.let { pending ->
                 if (chatId == currentChat) queuedAfterRun = pending
@@ -1592,7 +1546,6 @@ fun LionApp() {
         chatJobs.remove(id)?.cancel()
         loadingChats[id] = false
         toolStatus[id] = ""
-        webStream.remove(id)
     }
 
     fun sendMessage() {
@@ -2428,7 +2381,6 @@ fun LionApp() {
                     loading = loadingChats[currentChat] == true,
                     progress = toolStatus[currentChat],
                     sessionSteps = AgentSessions.peek(currentChat)?.timeline().orEmpty(),
-                    webStream = webStream[currentChat],
                     listState = listState,
                     context = context,
                     tts = tts,

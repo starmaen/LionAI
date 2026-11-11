@@ -21,7 +21,6 @@ object ChatStore {
             message.anghamiUrl?.let { item.put("angh", it) }
             message.browserUrl?.let { item.put("browser", it) }
             message.via?.let { item.put("via", it) }
-            message.webOutbound?.let { item.put("wout", it) }
             if (message.sources.isNotEmpty()) {
                 val sources = JSONArray()
                 message.sources.forEach { source ->
@@ -70,8 +69,7 @@ object ChatStore {
                     anghamiUrl = item.optString("angh", "").takeIf { it.isNotBlank() },
                     browserUrl = item.optString("browser", "").takeIf { it.isNotBlank() },
                     via = item.optString("via", "").takeIf { it.isNotBlank() },
-                    sources = sources,
-                    webOutbound = item.optString("wout", "").takeIf { it.isNotBlank() }
+                    sources = sources
                 )
             }
         } catch (e: Exception) {

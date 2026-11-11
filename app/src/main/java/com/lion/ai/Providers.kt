@@ -564,13 +564,13 @@ val BUILTIN_PROVIDERS = listOf(
         id = "copilot_web",
         label = "Microsoft Copilot (بدون مفتاح)",
         tagline = "مجاني — دردشة Copilot الرسمية من مايكروسوفت",
-        docsUrl = "https://copilot.cloud.microsoft/",
+        docsUrl = "https://copilot.microsoft.com",
         defaultModel = "default",
         shortName = "Copilot",
         modelHint = "دردشة Copilot الرسمية من مايكروسوفت، مجانية ولا تحتاج اشتراكاً.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://copilot.cloud.microsoft/"
+        webviewUrl = "https://copilot.microsoft.com"
     ),
     ProviderInfo(
         id = "github_copilot_web",
@@ -693,6 +693,18 @@ val BUILTIN_PROVIDERS = listOf(
         webviewUrl = "https://poe.com"
     ),
     ProviderInfo(
+        id = "kimi_web",
+        label = "Kimi (بدون مفتاح)",
+        tagline = "مجاني — مساعد Moonshot AI بنافذة سياق كبيرة",
+        docsUrl = "https://www.kimi.com",
+        defaultModel = "default",
+        shortName = "Kimi",
+        modelHint = "دردشة Kimi الرسمية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.kimi.com"
+    ),
+    ProviderInfo(
         id = "meta_web",
         label = "Meta AI (بدون مفتاح)",
         tagline = "مجاني — مساعد Meta داخل المتصفح",
@@ -741,6 +753,18 @@ val BUILTIN_PROVIDERS = listOf(
         webviewUrl = "https://you.com"
     ),
     ProviderInfo(
+        id = "phind_web",
+        label = "Phind (بدون مفتاح)",
+        tagline = "مجاني — مساعد برمجة وبحث تقني",
+        docsUrl = "https://www.phind.com",
+        defaultModel = "default",
+        shortName = "Phind",
+        modelHint = "مخصص للبرمجة والأسئلة التقنية؛ مجاني مع حدود.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.phind.com"
+    ),
+    ProviderInfo(
         id = "aistudio_web",
         label = "Google AI Studio (بدون مفتاح)",
         tagline = "مجاني — تجربة نماذج Gemini مباشرة",
@@ -750,7 +774,19 @@ val BUILTIN_PROVIDERS = listOf(
         modelHint = "واجهة Google AI Studio الرسمية؛ تحتاج تسجيل دخول بحساب جوجل.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://aistudio.google.com/prompts/new_chat"
+        webviewUrl = "https://aistudio.google.com"
+    ),
+    ProviderInfo(
+        id = "blackbox_web",
+        label = "Blackbox AI (بدون مفتاح)",
+        tagline = "مجاني — مساعد برمجة وأكواد",
+        docsUrl = "https://www.blackbox.ai",
+        defaultModel = "default",
+        shortName = "Blackbox",
+        modelHint = "مساعد برمجة؛ مجاني مع حدود استخدام.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://www.blackbox.ai"
     ),
 
     // ===== أدوات الصور والصوت والفيديو =====

@@ -6,8 +6,6 @@
   const token = __LION_TOKEN__;
   const action = __LION_ACTION__;
   const prompt = __LION_PROMPT__;
-  // true = المستخدم يتعامل مع الصفحة بنفسه الآن (الجلسة مفتوحة)؛ false = التطبيق يقود الصفحة آلياً.
-  const interactive = __LION_INTERACTIVE__;
   function result(status, extra) { return JSON.stringify(Object.assign({status: status, token: token}, extra || {})); }
   const pageInfo = {
     actualOrigin: location.href === 'about:blank' ? 'about:blank' :
@@ -205,7 +203,6 @@
     try { el.dispatchEvent(new KeyboardEvent('keydown', opts)); } catch (e) {}
     try { el.dispatchEvent(new KeyboardEvent('keypress', opts)); } catch (e) {}
     try { el.dispatchEvent(new KeyboardEvent('keyup', opts)); } catch (e) {}
-    if (!interactive) { try { el.blur(); } catch (e) {} }
     return true;
   }
   function writeInput(input, value) {
@@ -350,68 +347,6 @@
       return /^(stop|stop generating|stop response|stop generation|cancel generating|إيقاف|توقف|إيقاف التوليد)\b/i.test(label);
     });
   }
-  // ===== عكس محادثة الصفحة إلى شات التطبيق =====
-  // أدوار المستخدم عبر سمات الأدوار/أصناف الرسائل المعروفة فقط؛ لا تخمين بـ[class*='user']
-  // العام حتى لا تدخل صور رمزية أو عناصر واجهة كأنها رسائل.
-  function userNodes() {
-    const sel = "[data-message-author-role='user'], [data-message-role='user'], [data-role='user'], " +
-      "[data-testid='user-message'], .user-message, [class*='userMessageBubble'], [class*='user-bubble']";
-    const answerSet = new Set(answers());
-    return nodes(sel).filter(function (n) {
-      if (!visible(n) || n.tagName === 'INPUT' || n.tagName === 'TEXTAREA' || n.isContentEditable) return false;
-      if (answerSet.has(n)) return false;
-      // لا رسالة مستخدم داخل جواب مساعد ولا العكس.
-      for (const a of answerSet) {
-        if (a.contains(n) || n.contains(a)) return false;
-      }
-      return true;
-    });
-  }
-  // النص الكامل لدور المستخدم (بدون نص أزرار/قوائم الرد).
-  function userText(n) {
-    const clone = n.cloneNode(true);
-    clone.querySelectorAll('button, svg, script, style, [aria-hidden="true"], [role="toolbar"]').forEach(x => x.remove());
-    clone.querySelectorAll('p, div, li, h1, h2, h3, h4, br').forEach(x => {
-      if (x.tagName === 'BR') x.replaceWith(document.createTextNode('\n'));
-      else x.appendChild(document.createTextNode('\n'));
-    });
-    return (clone.textContent || '').trim();
-  }
-  function captureTurns() {
-    const items = [];
-    answers().forEach(function (n) { items.push({node: n, role: 'assistant'}); });
-    userNodes().forEach(function (n) { items.push({node: n, role: 'user'}); });
-    // ترتيب قراءة المستند الحقيقي بغض النظر عن طريقة جمع العقد.
-    items.sort(function (a, b) {
-      const cmp = a.node.compareDocumentPosition(b.node);
-      return (cmp & 4) ? -1 : 1; // b يتبع a ⇒ a أولاً
-    });
-    // إزالة العقد المتداخلة (الأب يحتوي ابناً بنفس الدور) لتفادي النص المكرر.
-    const kept = [];
-    for (const it of items) {
-      if (!kept.some(function (k) {
-        return k.role === it.role && (k.node.contains(it.node) || it.node.contains(k.node));
-      })) kept.push(it);
-    }
-    // أدوار متتالية من نفس النوع تنهار إلى دور واحد (الرد قد يُقسَّم على عقدة أو أكثر).
-    const turns = [];
-    kept.forEach(function (it) {
-      const value = (it.role === 'assistant' ? answerText(it.node) : userText(it.node)).trim();
-      if (!value) return;
-      const last = turns[turns.length - 1];
-      if (last && last.role === it.role) last.text += (last.text ? '\n\n' : '') + value;
-      else turns.push({role: it.role, text: value});
-    });
-    // أحدث الأدوار أهمية: آخر 40 دوراً وسقف 60000 حرف من الجهة الأحدث.
-    let sliced = turns.slice(-40);
-    let total = 0, cut = 0;
-    for (let i = sliced.length - 1; i >= 0; i--) {
-      total += sliced[i].text.length;
-      if (total > 60000) { cut = i + 1; break; }
-    }
-    if (cut) sliced = sliced.slice(cut);
-    return sliced.map(function (t) { return {role: t.role, text: t.text.slice(0, 15000)}; });
-  }
   try {
     if (action === 'diagnose') {
       function describe(n) {
@@ -442,10 +377,6 @@
         buttons: nodes('button, [role="button"]').filter(visible).slice(-40).map(describe),
         responses: nodes('[data-message-role], [data-message-author-role], [data-role="assistant"], [class*="assistant"], [class*="markdown"], [class*="prose"], [class*="response"], model-response').filter(visible).slice(-20).map(describe)
       });
-    }
-    if (action === 'capture') {
-      // عكس محادثة الصفحة كاملة إلى التطبيق: قراءة بلا كتابة ولا نقر ولا تغيير حالة.
-      return result('captured', {turns: captureTurns(), generating: genericStop() || !!find(C.stop)});
     }
     function looksLikeLogin() {
       const title = (document.title || '').toLowerCase();
@@ -485,9 +416,6 @@
           return result('input_rejected', {focused: document.activeElement === input, editable: input.isContentEditable === true});
         }
       }
-      // التطبيق يقود الصفحة: نفقد حقل الإدخال تركيزه بعد كتابة النص كي لا يفتح
-      // تركيز الموقع لوحة مفاتيح أندرويد بلا لمسة من المستخدم.
-      if (!interactive) { try { input.blur(); } catch (e) {} }
       return result('prepared', rectOf(input));
     }
     if (!state || state.token !== token) return result('lost');

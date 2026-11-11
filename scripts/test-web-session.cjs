@@ -15,8 +15,7 @@ function page(url = 'https://claude.ai/') {
   function run(action, prompt='hello', token='token1') {
     return JSON.parse(w.eval(source.replace('__LION_CONFIG__', JSON.stringify(config))
       .replace('__LION_TOKEN__', JSON.stringify(token)).replace('__LION_ACTION__', JSON.stringify(action))
-      .replace('__LION_PROMPT__', JSON.stringify(prompt))
-      .replace('__LION_INTERACTIVE__', 'false')));
+      .replace('__LION_PROMPT__', JSON.stringify(prompt))));
   }
   function answer(value, copy = false) {
     const n = w.document.createElement('article'); n.className='assistant'; n.textContent=value;
@@ -330,76 +329,3 @@ test('fallback never completes while a generic stop button is visible',()=>withP
   p.w.document.body.append(b);
   p.advance(30000); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
 }));
-
-test('capture mirrors the whole page conversation in reading order with full text',()=>withPage(p=>{
-  const box = p.w.document.querySelector('#messages');
-  const u1 = p.w.document.createElement('div'); u1.className='user-message'; u1.textContent='question one';
-  const a1 = p.w.document.createElement('article'); a1.className='assistant'; a1.textContent='answer one';
-  const u2 = p.w.document.createElement('div'); u2.className='user-message'; u2.textContent='manual follow-up typed on the page';
-  const a2 = p.w.document.createElement('article'); a2.className='assistant'; a2.textContent='answer two';
-  box.append(u1, a1, u2, a2);
-  const r = p.run('capture');
-  assert.equal(r.status, 'captured');
-  assert.deepEqual(r.turns, [
-    {role: 'user', text: 'question one'},
-    {role: 'assistant', text: 'answer one'},
-    {role: 'user', text: 'manual follow-up typed on the page'},
-    {role: 'assistant', text: 'answer two'}
-  ]);
-  assert.equal(typeof r.generating, 'boolean');
-  assert.equal(p.clicks(), 0);
-}));
-test('capture collapses consecutive assistant nodes into one turn (split replies)',()=>withPage(p=>{
-  const box = p.w.document.querySelector('#messages');
-  const a1 = p.w.document.createElement('article'); a1.className='assistant'; a1.textContent='part one';
-  const a2 = p.w.document.createElement('article'); a2.className='assistant'; a2.textContent='part two';
-  box.append(a1, a2);
-  const r = p.run('capture');
-  assert.deepEqual(r.turns, [{role: 'assistant', text: 'part one\n\npart two'}]);
-}));
-test('capture preserves code fences inside answers and strips control buttons',()=>withPage(p=>{
-  const box = p.w.document.querySelector('#messages');
-  const n = p.answer('Code:', true);
-  n.innerHTML = '<p>Code:</p><pre><code class="language-python">print(1)</code></pre><button class="copy">Copy code</button>';
-  const r = p.run('capture');
-  assert.equal(r.turns.length, 1);
-  assert.ok(r.turns[0].text.includes('```python\nprint(1)\n```'));
-  assert.ok(!r.turns[0].text.includes('Copy code'));
-}));
-test('capture never treats the composer as a turn and never mutates the page',()=>withPage(p=>{
-  p.w.document.querySelector('#input').value='draft that must stay untouched';
-  const before = p.w.document.querySelector('#messages').innerHTML;
-  const r = p.run('capture');
-  assert.deepEqual(r.turns, []);
-  assert.equal(p.w.document.querySelector('#input').value,'draft that must stay untouched');
-  assert.equal(p.w.document.querySelector('#messages').innerHTML, before);
-  assert.equal(p.clicks(), 0);
-}));
-test('capture ignores user chrome nested inside an assistant answer',()=>withPage(p=>{
-  const box = p.w.document.querySelector('#messages');
-  const a = p.w.document.createElement('article'); a.className='assistant';
-  const nested = p.w.document.createElement('span'); nested.setAttribute('data-message-role','user');
-  nested.textContent='chrome inside the answer must not become a user turn';
-  a.textContent='real answer '; a.append(nested);
-  const u = p.w.document.createElement('div'); u.className='user-message'; u.textContent='real user message';
-  box.append(a, u);
-  const r = p.run('capture');
-  assert.deepEqual(r.turns, [
-    {role: 'assistant', text: 'real answer chrome inside the answer must not become a user turn'},
-    {role: 'user', text: 'real user message'}
-  ]);
-}));
-test('capture works while a request token is held in another state and never sends',()=>withPage(p=>{
-  p.run('prepare'); p.run('submit');
-  const box = p.w.document.querySelector('#messages');
-  const u = p.w.document.createElement('div'); u.className='user-message'; u.textContent='hello';
-  const a = p.w.document.createElement('article'); a.className='assistant'; a.textContent='reply';
-  box.append(u, a);
-  const r = p.run('capture');
-  assert.equal(r.status, 'captured');
-  assert.deepEqual(r.turns.map(t=>t.role), ['user','assistant']);
-  assert.equal(p.clicks(), 1); // لم يتغير عدد النقرات: العكس قراءة فقط
-}));
-test('unknown origin still refuses capture before touching the DOM',()=>withPage(p=>{
-  assert.equal(p.run('capture').status, 'origin');
-},'https://claude.ai.evil.example/'));

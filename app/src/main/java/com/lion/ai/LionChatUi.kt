@@ -33,43 +33,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-/** فقاعة البث الحي: نص الرد وهو يتكوّن داخل صفحة مزود الويب، كاملاً بلا قصّ، في الشات نفسه. */
-@Composable
-private fun WebStreamBubble(provider: String, text: String) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = Color(0xFF10161A),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🌐 $provider",
-                    color = Color(0xFF83B8C6), fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
-                TypingDots()
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text,
-                color = Color(0xFFE9E9E9), fontSize = 15.sp, lineHeight = 24.sp,
-                style = TextStyle(textDirection = TextDirection.Content)
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "يُكتب الآن داخل الصفحة… سيثبّت الرد الكامل هنا عند اكتماله (${text.length} حرفاً)",
-                color = Color(0xFF617076), fontSize = 10.sp
-            )
-        }
-    }
-}
 
 @Composable
 private fun TypingDots() {
@@ -163,7 +129,6 @@ internal fun LionMessageList(
     loading: Boolean,
     progress: String? = null,
     sessionSteps: List<AgentStep> = emptyList(),
-    webStream: Pair<String, String>? = null,
     listState: LazyListState,
     context: Context,
     tts: TextToSpeech?,
@@ -188,19 +153,8 @@ internal fun LionMessageList(
         }
         if (loading) {
             item {
-                // الرد الذي يتكوّن الآن داخل صفحة مزود الويب يظهر حياً بالنص الكامل في الشات.
                 val lines = (progress ?: "").split("\n").filter { it.isNotBlank() }
-                if (webStream != null && webStream.second.isNotBlank()) {
-                    WebStreamBubble(
-                        provider = providerInfo(webStream.first).shortName,
-                        text = webStream.second
-                    )
-                    if (lines.isNotEmpty()) WorkLog(lines, sessionSteps)
-                } else if (lines.isEmpty() && sessionSteps.isEmpty()) {
-                    TypingDots()
-                } else {
-                    WorkLog(lines, sessionSteps)
-                }
+                if (lines.isEmpty() && sessionSteps.isEmpty()) TypingDots() else WorkLog(lines, sessionSteps)
             }
         }
     }

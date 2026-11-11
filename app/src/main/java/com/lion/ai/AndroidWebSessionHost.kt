@@ -14,9 +14,6 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewTreeObserver
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.webkit.CookieManager
@@ -53,47 +50,6 @@ internal class AndroidWebSessionHost(
     private var inputLease: WebView? = null
     private var previousFocus: View? = null
 
-    /** انعكاس محادثة الصفحة إلى الشات: فلتر بصمات لكل (موقع|محادثة) + دورة عكس دورية للجلسة المفتوحة. */
-    private val mirrors = mutableMapOf<String, WebMirrorFilter>()
-    private val captureTick = object : Runnable {
-        override fun run() {
-            if (destroyed || !interactive) return
-            if (pending == null) captureCurrent()
-            main.postDelayed(this, 3_500L)
-        }
-    }
-
-    private fun mirrorFor(provider: String, chatId: String): WebMirrorFilter =
-        mirrors.getOrPut("$provider|$chatId") { WebMirrorFilter() }
-
-    private fun setCaptureLoop(on: Boolean) {
-        if (on) main.postDelayed(captureTick, 3_000L) else main.removeCallbacks(captureTick)
-    }
-
-    /** هل كانت لوحة المفاتيح ظاهرة (بطلب المستخدم) قبل أن تأخذ الجلسة التركيز؟ */
-    private var imeShownBeforeLease = false
-    private var leaseReleasedAt = 0L
-
-    private fun imeVisible(): Boolean = runCatching {
-        ViewCompat.getRootWindowInsets(activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
-    }.getOrDefault(false)
-
-    /**
-     * حارس لوحة المفاتيح: صفحات الويب تعيد التركيز لحقلها أثناء الإرسال/الاستلام فتظهر اللوحة وتغطي الشاشة
-     * دون لمس المستخدم. نُخفيها فقط عندما (1) يكون التركيز لدى WebView الخلفية وليس حقل التطبيق، أو
-     * (2) خلال ثوانٍ من انتهاء الطلب إن لم تكن ظاهرة قبله. حقل الكتابة في التطبيق لا يتأثر.
-     */
-    private val imeGuard = ViewTreeObserver.OnGlobalLayoutListener {
-        if (destroyed || interactive || !imeVisible()) return@OnGlobalLayoutListener
-        val webFocused = activity.currentFocus is SessionWebView
-        val justReleased = !imeShownBeforeLease && SystemClock.uptimeMillis() - leaseReleasedAt < 3_000L
-        if (webFocused || (pending != null && inputLease != null) || justReleased) hideKeyboardIfBackground()
-    }
-
-    init {
-        runCatching { activity.window.decorView.viewTreeObserver.addOnGlobalLayoutListener(imeGuard) }
-    }
-
     /** Allow programmatic editor focus without creating an IME connection behind chat. */
     private class SessionWebView(activity: ComponentActivity) : WebView(activity) {
         var manualInput = false
@@ -106,9 +62,7 @@ internal class AndroidWebSessionHost(
     }
 
     fun setInteractive(value: Boolean) {
-        val was = interactive
         interactive = value
-        if (was != value) setCaptureLoop(value)
         container.descendantFocusability = if (value || inputLease != null)
             ViewGroup.FOCUS_AFTER_DESCENDANTS else ViewGroup.FOCUS_BLOCK_DESCENDANTS
         pool.values.forEach { view ->
@@ -125,7 +79,6 @@ internal class AndroidWebSessionHost(
     private fun acquireEditorFocus(view: WebView) {
         if (interactive || inputLease === view) return
         previousFocus = activity.currentFocus
-        imeShownBeforeLease = imeVisible()
         inputLease = view
         setInteractive(false)
         view.requestFocus()
@@ -137,14 +90,8 @@ internal class AndroidWebSessionHost(
         val wasFocused = leased.hasFocus()
         inputLease = null
         previousFocus = null
-        leaseReleasedAt = SystemClock.uptimeMillis()
         setInteractive(interactive)
-        if (!interactive && wasFocused && restore?.isAttachedToWindow == true) {
-            restore.requestFocus()
-            // استعادة التركيز لصندوق الكتابة تفتح لوحة المفاتيح من تلقاء نفسها؛ نخفيها صراحةً
-            // لأن التركيز كان مأخوذاً لجلسة الويب لا بطلب من المستخدم.
-            hideKeyboardIfBackground()
-        }
+        if (!interactive && wasFocused && restore?.isAttachedToWindow == true) restore.requestFocus()
     }
     /** إخفاء صريح: بعض المواقع تعيد التركيز لحقلها بعد الإرسال فتظهر لوحة المفاتيح فوق الرد. */
     private fun hideKeyboardIfBackground() {
@@ -173,8 +120,7 @@ internal class AndroidWebSessionHost(
         var tapped: Boolean = false,
         var enterTried: Boolean = false,
         var lastTextAt: Long = 0L,
-        var hiddenTicks: Int = 0,
-        var busyTicks: Int = 0
+        var hiddenTicks: Int = 0
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -205,7 +151,6 @@ internal class AndroidWebSessionHost(
             entry.value.destroy()
             loads.remove(entry.value)
             chatIds.remove(entry.key)
-            mirrors.keys.removeAll { it.startsWith(entry.key + "|") }
             WebToolBridge.resetPage(entry.key)
         }
         val view = SessionWebView(activity).apply { manualInput = interactive }
@@ -338,8 +283,6 @@ internal class AndroidWebSessionHost(
             val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
             viewFor(adapter)
             display(true, "${providerInfo(provider).shortName} • سجّل الدخول هنا عند الحاجة")
-            // فور فتح الجلسة: انعكس ما هو موجود في الصفحة من محادثة سابقة إلى الشات.
-            scheduleCapture(adapter, ActiveChat.id, 4_000L)
         }
     }
     override fun inspect(provider: String) {
@@ -369,7 +312,6 @@ internal class AndroidWebSessionHost(
                 .replace("__LION_TOKEN__", JSONObject.quote("diagnostic"))
                 .replace("__LION_ACTION__", JSONObject.quote("diagnose"))
                 .replace("__LION_PROMPT__", JSONObject.quote(""))
-                .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
             view.evaluateJavascript(js) { raw ->
                 val text = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
                 val diagnostic = runCatching { JSONObject(text ?: "{}") }.getOrElse { JSONObject() }
@@ -385,32 +327,16 @@ internal class AndroidWebSessionHost(
             }
         }
     }
-    /** طلبات وصلت أثناء انشغال الجلسة: تنتظر دورها بدل الرفض الفوري (سبب «تعمل أحياناً ولا تعمل أحياناً»). */
-    private val queued = ArrayDeque<Pair<WebSessionTransport.Request, (WebSessionTransport.Reply) -> Unit>>()
-
     override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
-        main.post { launch(request, done) }
-    }
-
-    private fun launch(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
-        run {
-            if (destroyed) {
-                done(WebSessionTransport.Reply("⚠️ جلسة الويب غير متاحة.", false))
-                return@run
-            }
-            val busy = pending
-            if (busy != null) {
-                // طلب عالق تجاوز مهلته بأكثر من 10 ثوانٍ: ننهيه ليبدأ هذا الطلب.
-                if (System.currentTimeMillis() > busy.deadline + 10_000L) fail(busy, "انتهت مهلة الطلب السابق العالق.")
-                else {
-                    queued.addLast(request to done)
-                    return@run
-                }
+        main.post {
+            if (destroyed || pending != null) {
+                done(WebSessionTransport.Reply("⚠️ جلسة الويب غير متاحة أو مشغولة.", false))
+                return@post
             }
             val adapter = WebSiteAdapters.get(request.provider, prefs)
             if (adapter == null) {
                 done(WebSessionTransport.Reply("⚠️ لا يوجد موصّل لهذا الموقع.", false))
-                return@run
+                return@post
             }
             val view = viewFor(adapter)
             var reloaded = false
@@ -424,22 +350,10 @@ internal class AndroidWebSessionHost(
             }
             // صفحة جديدة لا تعرف شيئاً: نُلحق سياق المحادثة. صفحة قائمة: ما فاتها فقط (أدوار أجابها غيرها).
             val recap = if (reloaded) request.recapFull else request.recapDelta
-            // بعد إعادة التحميل فقد الموقع بروتوكول الأدوات: نعيد الترويسة مع رسائل الاستكمال
-            // وإلا توقفت الأدوات عند أول خطوة بعد التحديث. ونُقيّد حجم الرسالة المجمّعة كي لا
-            // يرفضها حقل الموقع أو يُفعّل حدود المعدل بعد رسالتين.
-            val shapedPrompt = if (reloaded) WebToolBridge.rehydrate(request.prompt) else request.prompt
-            val recapCapped = if (recap.length + shapedPrompt.length > 30_000)
-                recap.take(12_000) + "\n…[اقتُطع جزء من ملخص السياق]…\n" else recap
-            val effective = if (recapCapped.isBlank()) request.copy(prompt = shapedPrompt)
-                else request.copy(prompt = recapCapped + "\n\n" + shapedPrompt)
+            val effective = if (recap.isBlank()) request else request.copy(prompt = recap + "\n\n" + request.prompt)
             val p = Pending(effective, adapter, view, done, System.currentTimeMillis() + request.timeoutMs)
             pending = p
-            // ربط كامل مع الشات: النص الحرفي الذي ستكتبه الصفحة يُبث فوراً، وبصمته محفوظة
-            // كي لا ينعكس دور المستخدم في الصفحة كأنه رسالة جديدة.
-            mirrorFor(request.provider, p.chatId).markOwn(effective.prompt)
-            WebSessionMirror.outbound(p.chatId, request.provider, effective.prompt)
             status(p, "جارٍ تجهيز جلسة الموقع؛ لا حاجة لمفتاح API")
-            WebSessionMirror.stage(p.chatId, request.provider, "📡 اتصال بصفحة ${providerInfo(request.provider).shortName}")
             display(false, "${providerInfo(request.provider).shortName} • اتصال بصفحة الويب")
             tick(p)
         }
@@ -463,16 +377,12 @@ internal class AndroidWebSessionHost(
         if (reply.success) {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", true).apply()
             display(false, "${providerInfo(p.adapter.id).shortName} • وصل الرد من الصفحة")
-            // بصمة الرد كي لا ينعكس من الصفحة مكرراً، ثم استخراج أي أدوار جديدة ظهرت بعد الاكتمال.
-            mirrorFor(p.adapter.id, p.chatId).markOwn(reply.text)
-            scheduleCapture(p.adapter, p.chatId, 1_200L)
         } else {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", false).apply()
             display(false, reply.text)
         }
         CookieManager.getInstance().flush()
         p.done(reply)
-        main.post { if (!destroyed && pending == null) queued.removeFirstOrNull()?.let { launch(it.first, it.second) } }
     }
     private fun tick(p: Pending) {
         if (pending !== p || destroyed) return
@@ -525,7 +435,6 @@ internal class AndroidWebSessionHost(
             .replace("__LION_TOKEN__", JSONObject.quote(p.request.token))
             .replace("__LION_ACTION__", JSONObject.quote(p.stage))
             .replace("__LION_PROMPT__", JSONObject.quote(p.request.prompt))
-            .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
         if (p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
             acquireEditorFocus(p.view)
         }
@@ -588,15 +497,9 @@ internal class AndroidWebSessionHost(
                         return@evaluateJavascript
                     }
                     "site_busy" -> {
-                        // الموقع ما زال يولّد ردًا سابقًا: ننتظر انتهاءه بدل إنهاء الخطوة فوراً،
-                        // وإلا تقطعت سلسلة أدوات الوكيل بعد أول تبادلين.
                         p.submitted = false
-                        p.busyTicks++
-                        if (p.busyTicks > 100) {
-                            fail(p, "بقي الموقع يولّد ردًا سابقًا لأكثر من 25 ثانية. أوقفه من الجلسة ثم أعد المحاولة؛ لم تُرسل الرسالة.")
-                            return@evaluateJavascript
-                        }
-                        status(p, "الموقع يولّد ردًا سابقًا؛ ننتظر انتهاءه قبل كتابة رسالتك")
+                        fail(p, "الموقع يولّد ردًا لطلب سابق. أوقفه أو انتظر انتهاؤه داخل الجلسة قبل إرسال طلب جديد.")
+                        return@evaluateJavascript
                     }
                     "sent" -> {
                         p.submitted = true
@@ -611,17 +514,14 @@ internal class AndroidWebSessionHost(
                                 p.lastText = streamed
                                 p.lastTextAt = System.currentTimeMillis()
                             }
-                            // انعكاس حيّ في شات التطبيق بالنص الكامل بلا أي قصّ: كل تفاعل الصفحة يظهر أولاً بأول.
-                            WebSessionMirror.partial(p.chatId, p.adapter.id, streamed)
-                            status(p, "يكتب الرد داخل الصفحة… (${streamed.length} حرفاً)")
+                            // Live-return: the in-app chat shows this while the page finishes.
+                            status(p, streamed.take(3500))
                         }
                     }
                     "complete" -> {
                         val text = result.optString("text").trim()
-                        if (text.isNotBlank()) {
-                            WebSessionMirror.partial(p.chatId, p.adapter.id, text)
-                            finish(p, WebSessionTransport.Reply(text, true, true))
-                        } else fail(p, "عاد جواب فارغ.")
+                        if (text.isNotBlank()) finish(p, WebSessionTransport.Reply(text, true, true))
+                        else fail(p, "عاد جواب فارغ.")
                         return@evaluateJavascript
                     }
                     "input_rejected" -> {
@@ -673,80 +573,15 @@ internal class AndroidWebSessionHost(
             main.postDelayed({ tick(p) }, delayMs)
         }
     }
-    /** استخراج محادثة الصفحة بعد جاهزيتها؛ إعادة محاولة حتى deadline إن لم تكتمل أحمال الصفحة. */
-    private fun scheduleCapture(adapter: WebSiteAdapter, chatId: String, delayMs: Long) {
-        if (destroyed || chatId.isBlank()) return
-        val view = pool[adapter.id] ?: return
-        main.postAtTime(
-            { runCapture(adapter, view, chatId, System.currentTimeMillis() + 12_000L) },
-            SystemClock.uptimeMillis() + delayMs
-        )
-    }
-
-    private fun runCapture(adapter: WebSiteAdapter, view: WebView, chatId: String, deadline: Long) {
-        if (destroyed || chatId.isBlank() || pending != null) return
-        if (pool[adapter.id] !== view) return
-        val load = loads[view]
-        if (load?.phase != WebPageLoad.Phase.READY) {
-            if (System.currentTimeMillis() < deadline && load?.phase != WebPageLoad.Phase.FAILED) {
-                main.postDelayed({ runCapture(adapter, view, chatId, deadline) }, 900)
-            }
-            return
-        }
-        if (!adapter.accepts(view.url.orEmpty())) return
-        val js = script.replace("__LION_CONFIG__", adapter.json().toString())
-            .replace("__LION_TOKEN__", JSONObject.quote("capture"))
-            .replace("__LION_ACTION__", JSONObject.quote("capture"))
-            .replace("__LION_PROMPT__", JSONObject.quote(""))
-            .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
-        view.evaluateJavascript(js) { raw ->
-            if (destroyed || pending != null) return@evaluateJavascript
-            val decoded = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
-            val obj = runCatching { JSONObject(decoded ?: "{}") }.getOrNull() ?: return@evaluateJavascript
-            if (obj.optString("status") != "captured") return@evaluateJavascript
-            val turns = obj.optJSONArray("turns") ?: return@evaluateJavascript
-            val mirror = mirrorFor(adapter.id, chatId)
-            var delivered = 0
-            for (i in 0 until turns.length()) {
-                val t = turns.optJSONObject(i) ?: continue
-                val role = t.optString("role")
-                val text = t.optString("text").trim()
-                if ((role != "user" && role != "assistant") || text.isBlank()) continue
-                // ما كتبه التطبيق في الصفحة (رسالة أو رد مكتمل) معلوم مسبقاً؛ الجديد فقط ينعكس للشات.
-                if (mirror.admit(text)) {
-                    WebSessionMirror.capturedTurn(chatId, adapter.id, role, text)
-                    delivered++
-                }
-            }
-            if (delivered > 0 && interactive) {
-                display(false, "${providerInfo(adapter.id).shortName} • انعكست $delivered رسالة جديدة من الصفحة إلى الشات")
-            }
-        }
-    }
-
-    /** زر «ما في الصفحة» والعكس الدوري للجلسة المفتوحة: يعكس آخر تفاعل في الصفحة إلى الشات. */
-    fun captureCurrent() {
-        val id = displayedProvider ?: return
-        val adapter = WebSiteAdapters.get(id, prefs) ?: return
-        val view = pool[id] ?: return
-        val chatId = chatIds[id]?.takeIf { it.isNotBlank() } ?: ActiveChat.id
-        if (pending != null) return
-        runCapture(adapter, view, chatId, System.currentTimeMillis() + 12_000L)
-    }
-
     override fun cancel(token: String) {
         main.post {
-            queued.removeAll { it.first.token == token }
             pending?.takeIf { it.request.token == token }?.let { fail(it, "أُلغي الطلب.") }
         }
     }
     fun cancelCurrent() { pending?.let { fail(it, "أُلغي الانتظار. يمكنك إيقاف التوليد من الصفحة.") } }
     fun destroy() {
         destroyed = true
-        setCaptureLoop(false)
-        runCatching { activity.window.decorView.viewTreeObserver.removeOnGlobalLayoutListener(imeGuard) }
         pending?.let { fail(it, "أُغلقت واجهة التطبيق.") }
-        while (queued.isNotEmpty()) queued.removeFirst().second(WebSessionTransport.Reply("⚠️ أُغلقت واجهة التطبيق.", false))
         main.removeCallbacksAndMessages(null)
         container.removeAllViews()
         pool.values.forEach { it.stopLoading(); it.destroy() }
