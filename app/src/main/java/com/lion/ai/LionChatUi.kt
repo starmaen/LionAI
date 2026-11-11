@@ -128,6 +128,8 @@ internal fun LionMessageList(
     currentChat: String,
     loading: Boolean,
     progress: String? = null,
+    /** نص الرد وهو يتكوّن داخل صفحة الويب (بث حي). */
+    livePartial: String? = null,
     sessionSteps: List<AgentStep> = emptyList(),
     listState: LazyListState,
     context: Context,
@@ -152,9 +154,21 @@ internal fun LionMessageList(
             )
         }
         if (loading) {
-            item {
+            val live = livePartial.orEmpty()
+            if (live.isNotBlank()) {
+                item(key = "$currentChat:live") {
+                    Bubble(
+                        Message(live, false, via = "🔴 مباشر من صفحة الموقع"),
+                        context, tts, messages.size, onPendingChoice, false, {}, {},
+                        askEnabled = false, onAskReply = onAskReply
+                    )
+                }
+            }
+            item(key = "$currentChat:progress") {
                 val lines = (progress ?: "").split("\n").filter { it.isNotBlank() }
-                if (lines.isEmpty() && sessionSteps.isEmpty()) TypingDots() else WorkLog(lines, sessionSteps)
+                if (lines.isEmpty() && sessionSteps.isEmpty()) {
+                    if (live.isBlank()) TypingDots()
+                } else WorkLog(lines, sessionSteps)
             }
         }
     }

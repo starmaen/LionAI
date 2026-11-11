@@ -120,7 +120,11 @@ internal class AndroidWebSessionHost(
         var tapped: Boolean = false,
         var enterTried: Boolean = false,
         var lastTextAt: Long = 0L,
-        var hiddenTicks: Int = 0
+        var hiddenTicks: Int = 0,
+        /** تأكيد الاكتمال: لحظة أول «complete» بنص ثابت (يمنع إقفال الرد وسط توقف مؤقت للموقع). */
+        var completeSeenAt: Long = 0L,
+        var completeText: String = "",
+        var outboundSent: Boolean = false
     )
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
@@ -364,11 +368,20 @@ internal class AndroidWebSessionHost(
             tick(p)
         }
     }
+    private var lastStreamNoteAt = 0L
+    /** ملاحظة قصيرة أثناء البث: النص الكامل يذهب عبر WebSessionMirror لا عبر القرص المشفّر. */
+    private fun streamNote(p: Pending, chars: Int) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastStreamNoteAt < 1500L) return
+        lastStreamNoteAt = now
+        status(p, "✍️ يصل الرد مباشرة من الصفحة ($chars حرفاً)")
+    }
     private fun status(p: Pending, text: String) {
         prefs.edit().putString("web_session_status_${p.adapter.id}", text)
             .putLong("web_session_checked_${p.adapter.id}", System.currentTimeMillis())
             .putString("web_session_event_chat", p.chatId)
             .putString("web_session_event", "${providerInfo(p.adapter.id).shortName} • $text").apply()
+        WebSessionMirror.stage(p.chatId, p.adapter.id, "${providerInfo(p.adapter.id).shortName} • $text")
     }
     private fun fail(p: Pending, message: String) {
         finish(p, WebSessionTransport.Reply("⚠️ $message" +
@@ -402,7 +415,9 @@ internal class AndroidWebSessionHost(
             if (p.submitted && p.lastText.isNotBlank() &&
                 p.lastStatus in setOf("streaming", "waiting", "sent", "complete")
             ) {
-                finish(p, WebSessionTransport.Reply(p.lastText.trim(), true, true))
+                val cut = if (p.lastStatus == "streaming")
+                    "\n\n⚠️ انتهت مهلة الانتظار والموقع ما زال يكتب؛ قد يكون الرد ناقصاً. افتح الجلسة لرؤية بقيته." else ""
+                finish(p, WebSessionTransport.Reply(p.lastText.trim() + cut, true, true))
                 return
             }
             val message = when (p.lastStatus) {
@@ -468,6 +483,10 @@ internal class AndroidWebSessionHost(
                     "prepared" -> {
                         p.stage = "locate"
                         status(p, "وصل النص إلى حقل الموقع؛ جارٍ الإرسال")
+                        if (!p.outboundSent) {
+                            p.outboundSent = true
+                            WebSessionMirror.outbound(p.chatId, p.adapter.id, p.request.prompt)
+                        }
                     }
                     "located" -> {
                         p.submitted = true
@@ -517,21 +536,42 @@ internal class AndroidWebSessionHost(
                         status(p, "أُرسلت الرسالة إلى الصفحة؛ بانتظار جواب جديد")
                     }
                     "streaming" -> {
+                        // الصفحة عادت للكتابة: أبطل أي تأكيد اكتمال سابق.
+                        p.completeSeenAt = 0L
+                        p.completeText = ""
                         val streamed = result.optString("text")
                         if (streamed.isNotBlank()) {
                             if (streamed != p.lastText) {
                                 p.lastText = streamed
                                 p.lastTextAt = System.currentTimeMillis()
+                                // بث حي: النص كاملاً كما في الصفحة، فقاعة تنمو لحظة بلحظة.
+                                WebSessionMirror.partial(p.chatId, p.adapter.id, streamed)
                             }
-                            // Live-return: the in-app chat shows this while the page finishes.
-                            status(p, streamed.take(3500))
+                            streamNote(p, streamed.length)
                         }
                     }
                     "complete" -> {
                         val text = result.optString("text").trim()
-                        if (text.isNotBlank()) finish(p, WebSessionTransport.Reply(text, true, true))
-                        else fail(p, "عاد جواب فارغ.")
-                        return@evaluateJavascript
+                        if (text.isBlank()) {
+                            fail(p, "عاد جواب فارغ.")
+                            return@evaluateJavascript
+                        }
+                        // مواقع بلا زر إيقاف/نسخ مقروء تُعدّ مكتملة بعد ثانيتين سكون؛ وقد تتوقف وسط
+                        // التفكير/البحث ثم تكمل. نمهل قبل الإقفال، وأي نمو يعيدنا للبث.
+                        // مع علامة إيقاف مؤكدة تكفي مهلة قصيرة فلا يتأخر الرد.
+                        val confirmed = result.optBoolean("observedStop", false)
+                        val grace = if (confirmed) 400L else 1800L
+                        val now = System.currentTimeMillis()
+                        if (p.completeText != text) { p.completeText = text; p.completeSeenAt = now }
+                        if (text != p.lastText) {
+                            p.lastText = text
+                            p.lastTextAt = now
+                            WebSessionMirror.partial(p.chatId, p.adapter.id, text)
+                        }
+                        if (now - p.completeSeenAt >= grace) {
+                            finish(p, WebSessionTransport.Reply(text, true, true))
+                            return@evaluateJavascript
+                        }
                     }
                     "input_rejected" -> {
                         p.submitted = false
