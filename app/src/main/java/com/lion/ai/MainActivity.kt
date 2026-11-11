@@ -139,7 +139,9 @@ data class Message(
     val via: String? = null,
     val sources: List<WebSource> = emptyList(),
     /** نص رد المزود الذي يرد عليه المستخدم هذا السؤال، للحفاظ على سياق المحادثة ونفس المزود. */
-    val replyTo: String? = null
+    val replyTo: String? = null,
+    /** النص الحرفي الكامل الذي كُتب في حقل صفحة مزود الويب لهذا الرد (سياق + رسالة)، قابل للعرض والنسخ. */
+    val webOutbound: String? = null
 )
 
 data class Contact(val name: String, val number: String, val normalized: String? = null)

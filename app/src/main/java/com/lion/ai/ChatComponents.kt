@@ -374,6 +374,15 @@ fun Bubble(
                         }
                     }
                 }
+                // مصدر الرد: المزود أو صفحة مزود الويب التي جاء منها فعلاً (الربط الكامل واضح للمستخدم).
+                if (!message.isUser && message.via?.isNotBlank() == true) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(message.via!!, color = Color(0xFF6F7F86), fontSize = 10.sp)
+                }
+                // النص الحرفي الكامل الذي كُتب في صفحة مزود الويب لهذا الرد.
+                if (!message.isUser && message.webOutbound?.isNotBlank() == true) {
+                    WebOutboundCard(context, message.webOutbound!!)
+                }
                 if (!message.isUser && message.sources.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text("المصادر", color = Color(0xFFFFB800), fontSize = 11.sp, fontWeight = FontWeight.Bold)

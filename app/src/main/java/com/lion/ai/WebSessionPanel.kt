@@ -68,6 +68,9 @@ fun WebSessionPanel(content: @Composable () -> Unit) {
             Surface(modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).zIndex(2f), color = Color(0xFF20180F)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text(label, color = Color(0xFFFF8A30), fontSize = 12.sp, maxLines = 2, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { host?.captureCurrent() }) {
+                        Text("📥 ما في الصفحة → الشات", color = Color(0xFF83B8C6), fontSize = 12.sp)
+                    }
                     TextButton(onClick = { host?.reloadCurrent() }) { Text("تحديث") }
                     TextButton(onClick = { closeSession() }) { Text("العودة للشات") }
                 }

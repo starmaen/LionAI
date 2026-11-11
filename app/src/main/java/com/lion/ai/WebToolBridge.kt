@@ -163,9 +163,11 @@ object WebToolBridge {
 
     // كم دوراً من سجل التطبيق صار «معروفاً» لصفحة الموقع في هذه المحادثة (key = موقع|محادثة).
     private val known = java.util.concurrent.ConcurrentHashMap<String, Int>()
-    private const val RECAP_TURNS = 6
-    private const val RECAP_PER_TURN = 900
-    private const val RECAP_MAX = 4_500
+    // ارتباط كامل بين شات التطبيق وصفحة المزود: الصفحة ترى أحدث الحوار بوصفه كاملاً لا ملخصاً
+    // (14 دوراً × 2600 حرف). حدّ 30000 في المضيف يبقى الحماية الأخيرة على حقل الموقع.
+    private const val RECAP_TURNS = 14
+    private const val RECAP_PER_TURN = 2_600
+    private const val RECAP_MAX = 14_000
 
     private fun recapOf(turns: List<ChatTurn>): String {
         if (turns.isEmpty()) return ""

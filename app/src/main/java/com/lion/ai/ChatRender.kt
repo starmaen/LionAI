@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -434,6 +435,44 @@ internal fun AskCard(body: String, options: List<String>, enabled: Boolean, onSe
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800), contentColor = Color(0xFF121212))
             ) { Text("متابعة", fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+/** بطاقة قابلة للتوسيع تعرض النص الحرفي الكامل الذي كُتب في حقل صفحة مزود الويب لهذا الرد. */
+@Composable
+internal fun WebOutboundCard(context: Context, text: String) {
+    var open by remember { mutableStateOf(false) }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF141A1F),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { open = !open },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "🡒 ما أُرسل حرفياً إلى صفحة المزود (${text.length} حرفاً)",
+                    color = Color(0xFF83B8C6), fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(if (open) "▲" else "▼", color = Color(0xFF83B8C6), fontSize = 10.sp)
+            }
+            if (open) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text,
+                    color = Color(0xFFB7C4C9), fontSize = 11.sp, lineHeight = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextButton(onClick = { copyToClipboard(context, "نص ما أُرسل للصفحة", text) },
+                    contentPadding = PaddingValues(0.dp)) {
+                    Text("📋 نسخ النص الكامل", color = Color(0xFF83B8C6), fontSize = 11.sp)
+                }
+            }
         }
     }
 }
