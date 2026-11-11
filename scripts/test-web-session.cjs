@@ -15,7 +15,8 @@ function page(url = 'https://claude.ai/') {
   function run(action, prompt='hello', token='token1') {
     return JSON.parse(w.eval(source.replace('__LION_CONFIG__', JSON.stringify(config))
       .replace('__LION_TOKEN__', JSON.stringify(token)).replace('__LION_ACTION__', JSON.stringify(action))
-      .replace('__LION_PROMPT__', JSON.stringify(prompt))));
+      .replace('__LION_PROMPT__', JSON.stringify(prompt))
+      .replace('__LION_INTERACTIVE__', 'false')));
   }
   function answer(value, copy = false) {
     const n = w.document.createElement('article'); n.className='assistant'; n.textContent=value;

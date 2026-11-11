@@ -7,7 +7,7 @@ const config={id:'arena',hosts:['arena.ai','www.arena.ai'],input:"textarea, [con
 const results=[];
 function script(action,prompt='مرحبا',token='audit') {
  return source.replace('__LION_CONFIG__',JSON.stringify(config)).replace('__LION_TOKEN__',JSON.stringify(token))
- .replace('__LION_ACTION__',JSON.stringify(action)).replace('__LION_PROMPT__',JSON.stringify(prompt));
+ .replace('__LION_ACTION__',JSON.stringify(action)).replace('__LION_PROMPT__',JSON.stringify(prompt)).replace('__LION_INTERACTIVE__','false');
 }
 const fixture=(editable=false,cover=false)=>`<!doctype html><html><body>
  ${editable?'<div id="editor" contenteditable="true" role="textbox" class="ProseMirror"></div>':'<textarea id="editor"></textarea>'}
