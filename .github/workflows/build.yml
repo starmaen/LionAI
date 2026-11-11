@@ -64,8 +64,20 @@ jobs:
     - name: Test browser session DOM bridge
       run: npm --prefix scripts test
 
-    - name: Install Playwright Chromium (cached)
-      run: npm exec --prefix scripts -- playwright install --with-deps chromium
+    - name: Install Playwright Chromium (cached, with retries)
+      run: |
+        for attempt in 1 2 3; do
+          echo "::group::Playwright install attempt $attempt"
+          if npm exec --prefix scripts -- playwright install --with-deps chromium; then
+            echo "::endgroup::"
+            exit 0
+          fi
+          echo "::endgroup::"
+          echo "Attempt $attempt failed (transient network/apt issue); retrying after backoff..." >&2
+          sleep $((attempt * 20))
+        done
+        echo "Playwright install failed after 3 attempts" >&2
+        exit 1
 
     - name: Test real Chromium editor and reply round trips (local fixtures)
       run: npm --prefix scripts run test:browser
