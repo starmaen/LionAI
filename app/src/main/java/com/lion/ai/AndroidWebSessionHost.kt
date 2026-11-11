@@ -43,9 +43,13 @@ internal class AndroidWebSessionHost(
     private val loads = mutableMapOf<WebView, WebPageLoad>()
     private var displayedProvider: String? = null
     private val script = activity.assets.open("web-session.js").bufferedReader().use { it.readText() }
-    private var pending: Pending? = null
+        private var pending: Pending? = null
     private var destroyed = false
     private var interactive = false
+    /** يمنع عكس ما أرسله التطبيق نفسه إلى الشات مرة أخرى (حلقة لا نهائية). */
+    private val mirrorFilter = WebMirrorFilter()
+    /** أول قراءة بعد فتح الجلسة تُبصم تاريخ الصفحة بدل بثّه كأنه جديد. */
+    private var turnsSeeded = false
 
     private var inputLease: WebView? = null
     private var previousFocus: View? = null
@@ -284,7 +288,8 @@ internal class AndroidWebSessionHost(
     override fun open(provider: String) {
         main.post {
             if (destroyed || pending != null) return@post
-            val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
+                        val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
+            turnsSeeded = false
             viewFor(adapter)
             display(true, "${providerInfo(provider).shortName} • سجّل الدخول هنا عند الحاجة")
         }
@@ -367,6 +372,26 @@ internal class AndroidWebSessionHost(
             display(false, "${providerInfo(request.provider).shortName} • اتصال بصفحة الويب")
             tick(p)
         }
+    }
+        /**
+     * يعكس أدوار الصفحة المرئية إلى الشات عبر الفلتر.
+     * أول قراءة تُبصم فقط (تاريخ الصفحة ليس جديداً)، وما بعدها يُبثّ إن لم يسبق إرساله.
+     */
+    private fun emitTurns(p: Pending, result: JSONObject?) {
+        val turns = result?.optJSONArray("turns") ?: return
+        val seed = !turnsSeeded
+        for (i in 0 until turns.length()) {
+            val item = turns.optJSONObject(i) ?: continue
+            val text = item.optString("text").trim()
+            if (text.isBlank()) continue
+            val role = item.optString("role", "assistant")
+            if (seed) {
+                mirrorFilter.markOwn(text)
+            } else if (mirrorFilter.admit(text)) {
+                WebSessionMirror.capturedTurn(p.chatId, p.adapter.id, role, text)
+            }
+        }
+        turnsSeeded = true
     }
     private var lastStreamNoteAt = 0L
     /** ملاحظة قصيرة أثناء البث: النص الكامل يذهب عبر WebSessionMirror لا عبر القرص المشفّر. */
@@ -483,8 +508,11 @@ internal class AndroidWebSessionHost(
                     "prepared" -> {
                         p.stage = "locate"
                         status(p, "وصل النص إلى حقل الموقع؛ جارٍ الإرسال")
-                        if (!p.outboundSent) {
+                                                if (!p.outboundSent) {
                             p.outboundSent = true
+                            // بصمة النص المُرسل (بالسياق وبدونه) كي لا يعود من الصفحة كدور جديد.
+                            mirrorFilter.markOwn(p.request.prompt)
+                            mirrorFilter.markOwn(p.request.prompt.substringAfterLast("\n\n"))
                             WebSessionMirror.outbound(p.chatId, p.adapter.id, p.request.prompt)
                         }
                     }
@@ -535,10 +563,11 @@ internal class AndroidWebSessionHost(
                         releaseEditorFocus()
                         status(p, "أُرسلت الرسالة إلى الصفحة؛ بانتظار جواب جديد")
                     }
-                    "streaming" -> {
+                                        "streaming" -> {
                         // الصفحة عادت للكتابة: أبطل أي تأكيد اكتمال سابق.
                         p.completeSeenAt = 0L
                         p.completeText = ""
+                        emitTurns(p, result)
                         val streamed = result.optString("text")
                         if (streamed.isNotBlank()) {
                             if (streamed != p.lastText) {
@@ -550,7 +579,8 @@ internal class AndroidWebSessionHost(
                             streamNote(p, streamed.length)
                         }
                     }
-                    "complete" -> {
+                                        "complete" -> {
+                        emitTurns(p, result)
                         val text = result.optString("text").trim()
                         if (text.isBlank()) {
                             fail(p, "عاد جواب فارغ.")

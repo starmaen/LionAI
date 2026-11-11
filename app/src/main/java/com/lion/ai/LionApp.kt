@@ -186,6 +186,14 @@ internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode:
     return ACTION_REQUEST.containsMatchIn(text) || DevTask.matches(text) || projectRef
 }
 
+/**
+ * حاوية معالج الأدوار الملتقطة من صفحات الويب.
+ * ليست Compose State عمداً: إسناد المعالج يحدث داخل التركيب، ولو كان State لأعاد التركيب بلا نهاية.
+ */
+internal class CapturedSink {
+    var handler: ((chatId: String, provider: String, role: String, text: String) -> Unit)? = null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LionApp() {
@@ -268,6 +276,9 @@ fun LionApp() {
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+            // حاوية تُعرَّف قبل المستمع لأن saveCurrent() تُعرَّف لاحقاً في هذا التركيب،
+    // وهي ليست Compose State كي لا يُطلق الإسناد إعادة تركيب لا نهائية.
+    val capturedSink = remember { CapturedSink() }
     // بث حي من صفحات الويب: النص يصل كاملاً ولحظياً إلى الشات بدل بطاقة تقدّم مقتطعة.
     DisposableEffect(Unit) {
         val mirror = object : WebSessionMirror.Listener {
@@ -281,7 +292,9 @@ fun LionApp() {
             override fun onStage(chatId: String, provider: String, note: String) {
                 if (loadingChats[chatId] == true) toolStatus[chatId] = note
             }
-            override fun onCapturedTurn(chatId: String, provider: String, role: String, text: String) = Unit
+                                    override fun onCapturedTurn(chatId: String, provider: String, role: String, text: String) {
+                capturedSink.handler?.invoke(chatId, provider, role, text)
+            }
         }
         WebSessionMirror.attach(mirror)
         onDispose { WebSessionMirror.detach(mirror) }
@@ -335,9 +348,25 @@ fun LionApp() {
         chatMetas = ChatRepository.all(prefs)
     }
 
-    fun saveCurrent() {
+                fun saveCurrent() {
         ChatRepository.save(prefs, currentChat, messages)
         refreshChats()
+    }
+
+    // أدوار صفحة الويب (بما فيها ما يكتبه المستخدم داخل الصفحة بنفسه) تظهر في الشات فوراً.
+    // الفلتر في المضيف يمنع عكس ما أرسله التطبيق، فلا تتكرر الرسالة ولا تنشأ حلقة.
+            capturedSink.handler = { chatId, provider, role, text ->
+        if (chatId == currentChat && text.isNotBlank()) {
+            val already = messages.lastOrNull()?.let { it.text.trim() == text.trim() && it.isUser == (role == "user") }
+            if (already != true) {
+                messages = messages + Message(
+                    text = text,
+                    isUser = role == "user",
+                    via = providerInfo(provider).shortName
+                )
+                saveCurrent()
+            }
+        }
     }
 
     fun syncActiveTab() {
