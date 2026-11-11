@@ -17,6 +17,8 @@ object WebProviderAdapter {
         WebProvider("qwen", "Qwen", "https://chat.qwen.ai", "🐼"),
         WebProvider("grok", "Grok", "https://grok.com", "❌"),
         WebProvider("huggingface", "HuggingChat", "https://huggingface.co/chat", "🤗"),
+        WebProvider("ptero_web", "Ptero", "https://ptero.pro/", "🦖"),
+        WebProvider("lumo_web", "Lumo", "https://lumo.proton.me/guest", "🌙"),
         WebProvider("kimi", "Kimi", "https://www.kimi.com", "🌙"),
         WebProvider("blackbox", "BlackBox AI", "https://www.blackbox.ai", "📦"),
         WebProvider("phind", "Phind", "https://www.phind.com", "🎯"),

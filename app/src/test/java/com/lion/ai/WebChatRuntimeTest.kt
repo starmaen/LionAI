@@ -73,4 +73,17 @@ class WebChatRuntimeTest {
             assertTrue(adapter.id, adapter.accepts("https://$host/"))
         }
     }
+    @Test fun pteroAndLumoAreBridgedLikeEveryOtherWebProvider() {
+        listOf("ptero_web" to "https://ptero.pro/", "lumo_web" to "https://lumo.proton.me/guest").forEach { (id, url) ->
+            assertTrue(id, PROVIDERS.any { it.id == id && it.group == ProviderGroup.WEB })
+            assertTrue(id, WebChatRuntime.isWeb(id))
+            val adapter = requireNotNull(WebSiteAdapters.get(id))
+            assertEquals(url, adapter.url)
+            assertTrue(adapter.accepts(url))
+            assertFalse(adapter.accepts("https://evil.example/"))
+        }
+        assertTrue(requireNotNull(WebSiteAdapters.get("gemini_web")).accepts("https://gemini.google.com/app"))
+        assertTrue(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://copilot.microsoft.com/chats"))
+        assertFalse(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://www.bing.com/"))
+    }
 }

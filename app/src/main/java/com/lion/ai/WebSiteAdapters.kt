@@ -71,16 +71,43 @@ object WebSiteAdapters {
             answer = "[class*='assistantMessage'], [data-testid='assistant-message']"
         ),
         "gemini_web" to Spec(
+            url = "https://gemini.google.com/app",
             hosts = setOf("gemini.google.com"),
-            input = "rich-textarea [contenteditable='true'], rich-textarea .ql-editor, .ql-editor[contenteditable='true']",
-            send = "button.send-button",
-            answer = "model-response message-content, model-response .markdown, message-content .markdown",
-            stop = "button.stop-button"
+            input = "rich-textarea .ql-editor[contenteditable='true'], rich-textarea [contenteditable='true'], .ql-editor[contenteditable='true'], div[role='textbox'][contenteditable='true'], textarea",
+            send = "button.send-button, button[aria-label='Send message'], button[aria-label*='Send'], button[mattooltip*='Send'], button:has(mat-icon[fonticon='send'])",
+            // الجواب فقط: لا رسالة المستخدم (user-query) ولا مسودات الرد.
+            answer = "model-response message-content .markdown, model-response .model-response-text, model-response message-content, [id^='model-response-message-content'], .response-container .markdown",
+            stop = "button.stop-button, button[aria-label='Stop response'], button[aria-label*='Stop'], button:has(mat-icon[fonticon='stop'])",
+            settleMs = 3000,
+            error = "error-message, .error-message, [data-test-id='error-message']"
         ),
         "copilot_web" to Spec(
+            url = "https://copilot.microsoft.com/",
             hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft"),
-            input = "#userInput, textarea[aria-label*='message'], textarea[aria-label*='Message']",
-            answer = "[data-content='ai-message'], [data-testid='copilot-response']"
+            input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
+            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i]",
+            // رد Copilot فقط (لا رسالة المستخدم data-content='user-message').
+            answer = "[data-content='ai-message'], [data-testid='ai-message'], div[data-testid='message-item'][data-author='ai'], [data-testid='copilot-response'], [class*='ai-message']",
+            stop = "button[data-testid='stop-button'], button[aria-label*='Stop' i], button[title*='Stop' i]",
+            settleMs = 3500,
+            error = "[data-testid='error-message'], [role='alert']"
+        ),
+        "ptero_web" to Spec(
+            url = "https://ptero.pro/",
+            hosts = setOf("ptero.pro", "www.ptero.pro"),
+            // غير مُتحقق منه على صفحة حقيقية: محددات عامة + التقاط احتياطي بنص الصفحة.
+            // استخدم «تقرير البنية» من إعدادات Lion Chat لضبطها إن لزم.
+            input = "textarea, [contenteditable='true']",
+            answer = "[class*='assistant'], [class*='bot-message'], [class*='ai-message'], [class*='message'][class*='ai'], .markdown, .markdown-body",
+            settleMs = 3000
+        ),
+        "lumo_web" to Spec(
+            url = "https://lumo.proton.me/guest",
+            hosts = setOf("lumo.proton.me"),
+            // غير مُتحقق منه على صفحة حقيقية (تطبيق JS): محددات عامة + التقاط احتياطي.
+            input = "[contenteditable='true'][role='textbox'], div[contenteditable='true'], textarea",
+            answer = "[class*='lumo-markdown'], [class*='assistant-msg'], [class*='assistant'], [data-testid*='assistant'], [class*='markdown']",
+            settleMs = 3500
         ),
         "github_copilot_web" to Spec(
             hosts = setOf("github.com", "copilot.github.com"),

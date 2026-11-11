@@ -573,6 +573,30 @@ val BUILTIN_PROVIDERS = listOf(
         webviewUrl = "https://copilot.microsoft.com"
     ),
     ProviderInfo(
+        id = "ptero_web",
+        label = "Ptero (بدون مفتاح)",
+        tagline = "مجاني بدون تسجيل — عدة نماذج (DeepSeek وQwen وGLM وMiniMax)",
+        docsUrl = "https://ptero.pro",
+        defaultModel = "default",
+        shortName = "Ptero",
+        modelHint = "دردشة مجانية كضيف؛ في أول فتح اقبل الشروط واختر اسماً من «فتح الجلسة» مرة واحدة ثم يعمل الإرسال تلقائياً.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://ptero.pro/"
+    ),
+    ProviderInfo(
+        id = "lumo_web",
+        label = "Lumo من Proton (بدون مفتاح)",
+        tagline = "مجاني كضيف — مساعد Proton الخاص",
+        docsUrl = "https://lumo.proton.me",
+        defaultModel = "default",
+        shortName = "Lumo",
+        modelHint = "وضع الضيف من Proton بلا حساب؛ قد يطلب قبول الشروط في أول فتح من «فتح الجلسة».",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://lumo.proton.me/guest"
+    ),
+    ProviderInfo(
         id = "github_copilot_web",
         label = "GitHub Copilot (بدون مفتاح)",
         tagline = "مجاني محدود — دردشة Copilot داخل GitHub",
