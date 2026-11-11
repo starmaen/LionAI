@@ -105,6 +105,8 @@ object LocalAIProxy {
         }
         if (candidate == "local_proxy" || candidate == "custom" || candidate.isBlank()) return "gemini"
         if (candidate in NON_CHAT_BACKENDS) return "gemini"
+        // مزود محذوف أو غير معروف (مثل صفحة ويب أُزيلت): لا نوجّه الخادم إلى معرّف ميت.
+        if (PROVIDERS.none { it.id == candidate } && !candidate.startsWith("imp_")) return "gemini"
         return candidate
     }
 

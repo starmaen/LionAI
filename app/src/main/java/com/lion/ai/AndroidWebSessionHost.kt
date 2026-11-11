@@ -408,7 +408,7 @@ internal class AndroidWebSessionHost(
             val message = when (p.lastStatus) {
                 "needs_input", "origin", "loading" ->
                     if (p.adapter.id == "gemini_web")
-                        "Gemini يعرض هنا صفحة عامة بلا دردشة (يتطلب حساب Google، وجوجل تقيّد تسجيل الدخول داخل WebView). استخدم مزود «Google Gemini (API)» المجاني من AI Studio بدلاً منه."
+                        "Gemini لم يفتح الدردشة في هذه الجلسة (وضع الضيف قد يعتمد على البلد أو على تسجيل الدخول، وجوجل تقيّد الدخول داخل WebView). استخدم مزود «Google Gemini (API)» المجاني من AI Studio بدلاً منه."
                     else "لم يظهر حقل الدردشة. أكمل تسجيل الدخول/التحقق يدوياً أو حدّث محدد حقل الإدخال."
                 "needs_send" -> "لم يُعثر على زر إرسال جاهز. حدّث محدد زر الإرسال."
                 "awaiting_ack", "clicked" -> "نُقر الإرسال لكن الموقع لم يؤكد استقبال الرسالة. لم أعِد الإرسال." +

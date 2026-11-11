@@ -63,7 +63,7 @@ class WebChatRuntimeTest {
         assertTrue(WebSiteAdapters.get("arena")!!.url.contains("/text/direct"))
         assertTrue(requireNotNull(WebSiteAdapters.get("duckduckgo_web")).accepts("https://duck.ai/"))
         assertTrue(requireNotNull(WebSiteAdapters.get("chatgpt_web")).accepts("https://chat.openai.com/"))
-        assertTrue(requireNotNull(WebSiteAdapters.get("kimi_web")).accepts("https://kimi.moonshot.cn/"))
+        assertTrue(requireNotNull(WebSiteAdapters.get("you_web")).accepts("https://you.com/?chatMode=default"))
         assertTrue(claude.send.contains("send-button") || claude.send.contains("aria-label"))
         WebSiteAdapters.all().forEach { adapter ->
             assertTrue(adapter.id, adapter.send.contains("aria-label") || adapter.send.contains("send-button"))
@@ -86,5 +86,20 @@ class WebChatRuntimeTest {
         assertTrue(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://copilot.microsoft.com/chats"))
         assertTrue(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://copilot.com/"))
         assertFalse(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://www.bing.com/"))
+    }
+    @Test fun removedWebProvidersAreGoneEverywhereAndDeadBackendFallsBack() {
+        val removed = listOf("hf_chat_web", "kimi_web", "phind_web", "blackbox_web", "pi_web")
+        removed.forEach { id ->
+            assertFalse(id, PROVIDERS.any { it.id == id })
+            assertFalse(id, WebSiteAdapters.all().any { it.id == id })
+            assertFalse(id, WebChatRuntime.isWeb(id))
+        }
+        val prefs = ready()
+        prefs.edit().putString("provider", "kimi_web").apply()
+        assertEquals("gemini", RoutePolicy.selectedProvider(prefs))
+        assertEquals("gemini", LocalAIProxy.backendProvider(prefs))
+        listOf("gemini_web", "copilot_web", "perplexity_web", "you_web", "ptero_web", "lumo_web").forEach {
+            assertTrue(it, WebChatRuntime.isWeb(it))
+        }
     }
 }

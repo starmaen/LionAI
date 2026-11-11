@@ -71,7 +71,7 @@ object WebSiteAdapters {
             answer = "[class*='assistantMessage'], [data-testid='assistant-message']"
         ),
         "gemini_web" to Spec(
-            url = "https://gemini.google.com/app",
+            url = "https://gemini.google.com/",
             hosts = setOf("gemini.google.com"),
             input = "rich-textarea .ql-editor[contenteditable='true'], rich-textarea [contenteditable='true'], .ql-editor[contenteditable='true'], div[role='textbox'][contenteditable='true'], textarea",
             send = "button.send-button, button[aria-label='Send message'], button[aria-label*='Send'], button[mattooltip*='Send'], button:has(mat-icon[fonticon='send'])",
@@ -82,7 +82,7 @@ object WebSiteAdapters {
             error = "error-message, .error-message, [data-test-id='error-message']"
         ),
         "copilot_web" to Spec(
-            url = "https://copilot.microsoft.com/",
+            url = "https://copilot.com/",
             // تقرير المستخدم: copilot.microsoft.com يحوّل الآن إلى copilot.com (نطاق مايكروسوفت نفسه).
             hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com"),
             input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
@@ -165,28 +165,23 @@ object WebSiteAdapters {
         ),
         "perplexity_web" to Spec(
             hosts = setOf("www.perplexity.ai", "perplexity.ai"),
-            input = "textarea[placeholder], #ask-input, textarea",
-            answer = "[data-testid='answer'], [data-testid='answer-text'], [class*='prose']"
+            // الحقل في Perplexity محرر contenteditable (#ask-input) لا textarea: نقدّمه ونُبقي textarea احتياطاً.
+            // غير مُتحقق منه على صفحة حقيقية؛ استخدم «تقرير البنية» إن لزم.
+            input = "#ask-input, div[contenteditable='true'][role='textbox'], textarea[placeholder]",
+            send = "button[data-testid='submit-button'], button[aria-label='Submit'], button[aria-label*='Submit' i]",
+            answer = "div[id^='markdown-content-'], [data-testid='answer'], [data-testid='answer-text']",
+            stop = "button[aria-label='Stop'], button[aria-label*='Stop' i]",
+            settleMs = 3000
         ),
         "grok_web" to Spec(
             hosts = setOf("grok.com", "grok.x.ai"),
             input = "textarea, [contenteditable='true'][role='textbox']",
             answer = ".response-content-markdown, [class*='response']"
         ),
-        "hf_chat_web" to Spec(
-            hosts = setOf("huggingface.co", "hf.co"),
-            input = "textarea, [contenteditable='true']",
-            answer = "[data-message-role='assistant']"
-        ),
         "poe_web" to Spec(
             hosts = setOf("poe.com"),
             input = "textarea[class*='GrowingTextArea'], [class*='ChatMessageInputContents'] textarea, textarea",
             answer = "[class*='Message_botMessageBubble'], [class*='botMessage']"
-        ),
-        "kimi_web" to Spec(
-            hosts = setOf("www.kimi.com", "kimi.com", "kimi.moonshot.cn", "kimi.moonshot.ai"),
-            input = "textarea, .chat-input textarea, [contenteditable='true']",
-            answer = ".segment-assistant .markdown, .segment-assistant"
         ),
         "meta_web" to Spec(
             hosts = setOf("www.meta.ai", "meta.ai"),
@@ -198,31 +193,16 @@ object WebSiteAdapters {
             input = "textarea, [contenteditable='true']",
             answer = ".chat-assistant-message"
         ),
-        "pi_web" to Spec(
-            url = "https://pi.ai/talk",
-            hosts = setOf("pi.ai"),
-            input = ".send-input, textarea, [contenteditable='true']",
-            answer = "[data-testid='assistant-message']"
-        ),
         "you_web" to Spec(
+            url = "https://you.com/?chatMode=default",
             hosts = setOf("you.com"),
             input = "#search-input-textarea, textarea",
             answer = "[data-testid='youchat-answer']"
-        ),
-        "phind_web" to Spec(
-            hosts = setOf("www.phind.com", "phind.com"),
-            input = "textarea, [contenteditable='true']",
-            answer = "[data-testid='assistant-message']"
         ),
         "aistudio_web" to Spec(
             hosts = setOf("aistudio.google.com", "makersuite.google.com"),
             input = "ms-autosize-textarea textarea, textarea",
             answer = "ms-chat-turn[data-role='model'], ms-model-turn, .model-response"
-        ),
-        "blackbox_web" to Spec(
-            hosts = setOf("www.blackbox.ai", "blackbox.ai"),
-            input = "textarea, [contenteditable='true']",
-            answer = "[data-message-role='assistant']"
         )
     )
 

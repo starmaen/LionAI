@@ -385,7 +385,7 @@ object SmartRouter {
     /** جلسات ويب لنماذج رائدة معروفة: تُحسب موثوقة في المهام عالية الدقة (لا Arena لأن نموذجها متغيّر). */
     private val TRUSTED_WEB = setOf(
         "chatgpt_web", "claude_web", "gemini_web", "deepseek_web", "copilot_web",
-        "perplexity_web", "grok_web", "aistudio_web", "qwen_web", "kimi_web"
+        "perplexity_web", "grok_web", "aistudio_web", "qwen_web"
     )
 
     fun isReliableModel(provider: String, model: String): Boolean {

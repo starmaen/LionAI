@@ -558,7 +558,7 @@ val BUILTIN_PROVIDERS = listOf(
         modelHint = "دردشة Gemini الرسمية؛ تحتاج تسجيل دخول بحساب جوجل داخل الصفحة.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://gemini.google.com/app"
+        webviewUrl = "https://gemini.google.com/"
     ),
     ProviderInfo(
         id = "copilot_web",
@@ -693,18 +693,6 @@ val BUILTIN_PROVIDERS = listOf(
         webviewUrl = "https://grok.com"
     ),
     ProviderInfo(
-        id = "hf_chat_web",
-        label = "HuggingFace Chat (بدون مفتاح)",
-        tagline = "مجاني — نماذج مفتوحة المصدر",
-        docsUrl = "https://huggingface.co/chat",
-        defaultModel = "default",
-        shortName = "HuggingFace",
-        modelHint = "منصة نماذج مفتوحة المصدر؛ قد تحتاج تسجيل دخول مجاني داخل الصفحة.",
-        models = listOf("default"),
-        keyless = true,
-        webviewUrl = "https://huggingface.co/chat"
-    ),
-    ProviderInfo(
         id = "poe_web",
         label = "Poe (بدون مفتاح)",
         tagline = "مجاني محدود — عدة نماذج في مكان واحد",
@@ -715,18 +703,6 @@ val BUILTIN_PROVIDERS = listOf(
         models = listOf("default"),
         keyless = true,
         webviewUrl = "https://poe.com"
-    ),
-    ProviderInfo(
-        id = "kimi_web",
-        label = "Kimi (بدون مفتاح)",
-        tagline = "مجاني — مساعد Moonshot AI بنافذة سياق كبيرة",
-        docsUrl = "https://www.kimi.com",
-        defaultModel = "default",
-        shortName = "Kimi",
-        modelHint = "دردشة Kimi الرسمية؛ قد تحتاج تسجيل دخول بسيط داخل الصفحة.",
-        models = listOf("default"),
-        keyless = true,
-        webviewUrl = "https://www.kimi.com"
     ),
     ProviderInfo(
         id = "meta_web",
@@ -753,40 +729,16 @@ val BUILTIN_PROVIDERS = listOf(
         webviewUrl = "https://chat.z.ai"
     ),
     ProviderInfo(
-        id = "pi_web",
-        label = "Pi (بدون مفتاح)",
-        tagline = "مجاني — مساعد محادثة ودود من Inflection",
-        docsUrl = "https://pi.ai",
-        defaultModel = "default",
-        shortName = "Pi",
-        modelHint = "دردشة Pi الرسمية؛ مناسبة للحوار والكتابة والتلخيص.",
-        models = listOf("default"),
-        keyless = true,
-        webviewUrl = "https://pi.ai"
-    ),
-    ProviderInfo(
         id = "you_web",
         label = "You.com (بدون مفتاح)",
         tagline = "مجاني محدود — بحث ومساعد ذكي",
         docsUrl = "https://you.com",
         defaultModel = "default",
         shortName = "You.com",
-        modelHint = "بحث ومساعد ذكي؛ مجاني مع حدود استخدام.",
+        modelHint = "بحث ومساعد ذكي؛ مجاني مع حدود استخدام. قد يطلب You.com تسجيل الدخول عند إرسال الرسالة؛ سجّل من «فتح الجلسة».",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://you.com"
-    ),
-    ProviderInfo(
-        id = "phind_web",
-        label = "Phind (بدون مفتاح)",
-        tagline = "مجاني — مساعد برمجة وبحث تقني",
-        docsUrl = "https://www.phind.com",
-        defaultModel = "default",
-        shortName = "Phind",
-        modelHint = "مخصص للبرمجة والأسئلة التقنية؛ مجاني مع حدود.",
-        models = listOf("default"),
-        keyless = true,
-        webviewUrl = "https://www.phind.com"
+        webviewUrl = "https://you.com/?chatMode=default"
     ),
     ProviderInfo(
         id = "aistudio_web",
@@ -799,18 +751,6 @@ val BUILTIN_PROVIDERS = listOf(
         models = listOf("default"),
         keyless = true,
         webviewUrl = "https://aistudio.google.com"
-    ),
-    ProviderInfo(
-        id = "blackbox_web",
-        label = "Blackbox AI (بدون مفتاح)",
-        tagline = "مجاني — مساعد برمجة وأكواد",
-        docsUrl = "https://www.blackbox.ai",
-        defaultModel = "default",
-        shortName = "Blackbox",
-        modelHint = "مساعد برمجة؛ مجاني مع حدود استخدام.",
-        models = listOf("default"),
-        keyless = true,
-        webviewUrl = "https://www.blackbox.ai"
     ),
 
     // ===== أدوات الصور والصوت والفيديو =====
