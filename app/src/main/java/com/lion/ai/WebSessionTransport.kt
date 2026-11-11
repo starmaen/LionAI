@@ -27,6 +27,8 @@ object WebSessionTransport {
     fun attached(): Boolean = host != null
     fun open(provider: String) { host?.open(provider) }
     fun inspect(provider: String) { host?.inspect(provider) }
+    /** زر «إيقاف» في الشات: يحرّر الطلب الجاري فلا تبقى الجلسة «مشغولة» حتى المهلة. */
+    fun cancelActive() { active.get()?.let { host?.cancel(it) } }
 
     fun exchange(
         provider: String, prompt: String, timeoutMs: Int, fresh: Boolean = false,

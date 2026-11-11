@@ -211,6 +211,8 @@ fun LionApp() {
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
     val toolStatus = remember { mutableStateMapOf<String, String>() }
+    /** الرد الجزئي القادم من صفحة الويب لكل محادثة (بث حي). */
+    val livePartial = remember { mutableStateMapOf<String, String>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
     var currentMode by remember { mutableStateOf(ChatRepository.modeOf(prefs, currentChat)) }
     var showModePicker by remember { mutableStateOf(false) }
@@ -265,6 +267,24 @@ fun LionApp() {
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    // بث حي من صفحات الويب: النص يصل كاملاً ولحظياً إلى الشات بدل بطاقة تقدّم مقتطعة.
+    DisposableEffect(Unit) {
+        val mirror = object : WebSessionMirror.Listener {
+            override fun onOutbound(chatId: String, provider: String, fullText: String) {
+                if (loadingChats[chatId] == true)
+                    toolStatus[chatId] = providerInfo(provider).shortName + " • 📤 أُرسل إلى الصفحة (" + fullText.length + " حرفاً)"
+            }
+            override fun onPartial(chatId: String, provider: String, fullText: String) {
+                if (loadingChats[chatId] == true) livePartial[chatId] = fullText
+            }
+            override fun onStage(chatId: String, provider: String, note: String) {
+                if (loadingChats[chatId] == true) toolStatus[chatId] = note
+            }
+            override fun onCapturedTurn(chatId: String, provider: String, role: String, text: String) = Unit
+        }
+        WebSessionMirror.attach(mirror)
+        onDispose { WebSessionMirror.detach(mirror) }
     }
     var tabs by remember {
         mutableStateOf(
@@ -984,6 +1004,7 @@ fun LionApp() {
         val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask, chatMode)
         loadingChats[chatId] = true
         toolStatus[chatId] = ""
+        livePartial.remove(chatId)
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
         if (!standalone) {
@@ -1504,6 +1525,7 @@ fun LionApp() {
                     (if (consensusPercent >= 0) " · 🧩 " + consensusPercent + "%" else "")
             }
             toolStatus.remove(chatId)
+            livePartial.remove(chatId)
             // الجلسة تبقى فقط إذا لم تُقبل إجابة مكتملة أو كان هناك سؤال معلّق؛ اكتمال المهمة يصفّرها.
             if (standalone) {
                 // سؤال مستقل: لا يُنهي ولا يمسح مهمة معلّقة.
@@ -1546,6 +1568,8 @@ fun LionApp() {
         chatJobs.remove(id)?.cancel()
         loadingChats[id] = false
         toolStatus[id] = ""
+        livePartial.remove(id)
+        WebSessionTransport.cancelActive()
     }
 
     fun sendMessage() {
@@ -2129,9 +2153,15 @@ fun LionApp() {
             sendMessage()
         }
     }
-    LaunchedEffect(messages.size, loadingChats[currentChat]) {
-        val count = messages.size + if (loadingChats[currentChat] == true) 1 else 0
-        if (count > 0) listState.animateScrollToItem(count - 1)
+    val liveLen = livePartial[currentChat]?.length ?: 0
+    LaunchedEffect(messages.size, loadingChats[currentChat], liveLen / 40) {
+        val loadingNow = loadingChats[currentChat] == true
+        val extra = if (!loadingNow) 0 else if (liveLen > 0) 2 else 1
+        val count = messages.size + extra
+        if (count > 0) {
+            // أثناء البث نتبع النص بلا حركة متراكمة؛ وبعده الحركة الهادئة المعتادة.
+            if (liveLen > 0) listState.scrollToItem(count - 1) else listState.animateScrollToItem(count - 1)
+        }
     }
 
     fun chooseMode(selected: ChatMode) {
@@ -2380,6 +2410,7 @@ fun LionApp() {
                     currentChat = currentChat,
                     loading = loadingChats[currentChat] == true,
                     progress = toolStatus[currentChat],
+                    livePartial = livePartial[currentChat],
                     sessionSteps = AgentSessions.peek(currentChat)?.timeline().orEmpty(),
                     listState = listState,
                     context = context,
