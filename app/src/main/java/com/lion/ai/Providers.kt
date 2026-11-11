@@ -552,25 +552,25 @@ val BUILTIN_PROVIDERS = listOf(
         id = "gemini_web",
         label = "Google Gemini (دردشة ويب)",
         tagline = "مجاني — دردشة Gemini الرسمية من جوجل",
-        docsUrl = "https://gemini.google.com/app",
+        docsUrl = "https://gemini.google/ae/overview/gemini-live/?hl=ar",
         defaultModel = "default",
         shortName = "Gemini Web",
         modelHint = "دردشة Gemini الرسمية؛ تحتاج تسجيل دخول بحساب جوجل داخل الصفحة.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://gemini.google.com/app"
+        webviewUrl = "https://gemini.google/ae/overview/gemini-live/?hl=ar"
     ),
     ProviderInfo(
         id = "copilot_web",
         label = "Microsoft Copilot (بدون مفتاح)",
         tagline = "مجاني — دردشة Copilot الرسمية من مايكروسوفت",
-        docsUrl = "https://copilot.cloud.microsoft/",
+        docsUrl = "https://copilot.microsoft.com/chats/iJE7RNHmG3AyBgbq8aUj8",
         defaultModel = "default",
         shortName = "Copilot",
         modelHint = "دردشة Copilot الرسمية من مايكروسوفت، مجانية ولا تحتاج اشتراكاً.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://copilot.cloud.microsoft/"
+        webviewUrl = "https://copilot.microsoft.com/chats/iJE7RNHmG3AyBgbq8aUj8"
     ),
     ProviderInfo(
         id = "github_copilot_web",
@@ -739,6 +739,18 @@ val BUILTIN_PROVIDERS = listOf(
         models = listOf("default"),
         keyless = true,
         webviewUrl = "https://you.com"
+    ),
+    ProviderInfo(
+        id = "chatly_web",
+        label = "Chatly (بدون مفتاح)",
+        tagline = "دردشة Chatly عبر صفحة الويب",
+        docsUrl = "https://chatlyai.app/agent/chat",
+        defaultModel = "default",
+        shortName = "Chatly",
+        modelHint = "دردشة Chatly؛ قد تحتاج تسجيل دخول داخل الصفحة.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://chatlyai.app/agent/chat"
     ),
     ProviderInfo(
         id = "aistudio_web",

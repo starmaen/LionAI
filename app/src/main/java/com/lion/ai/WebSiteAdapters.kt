@@ -176,6 +176,11 @@ object WebSiteAdapters {
             input = "#search-input-textarea, textarea",
             answer = "[data-testid='youchat-answer']"
         ),
+        "chatly_web" to Spec(
+            hosts = setOf("chatlyai.app", "www.chatlyai.app"),
+            input = "textarea, [contenteditable='true']",
+            answer = "[data-message-role='assistant'], [class*='assistant'], [class*='bot-message']"
+        ),
         "aistudio_web" to Spec(
             hosts = setOf("aistudio.google.com", "makersuite.google.com"),
             input = "ms-autosize-textarea textarea, textarea",
