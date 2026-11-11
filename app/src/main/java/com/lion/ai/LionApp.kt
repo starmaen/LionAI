@@ -679,20 +679,24 @@ fun LionApp() {
             scope.launch {
                 val savedPaths = mutableListOf<String>()
                 val results = withContext(Dispatchers.IO) {
-                    uris.take(8).map { uri ->
+                    uris.take(12).map { uri ->
                         Attachments.saveToWorkspace(context, uri)?.let { savedPaths.add(it) }
                         Attachments.read(context, uri)
                     }
                 }
                 val documents = results.mapNotNull { it.attachment }
-                val pickedImage = results.lastOrNull { it.image != null }?.image
+                val pickedImages = results.mapNotNull { it.image }
                 if (documents.isNotEmpty()) {
-                    attachment = Attachment(
+                    val added = Attachment(
                         documents.joinToString("، ") { it.name },
                         documents.joinToString("\n\n") { "=== ${it.name} ===\n${it.text}" } +
                             if (savedPaths.isNotEmpty()) "\n\n[الملفات الأصلية محفوظة في مساحة العمل: ${savedPaths.joinToString("، ")}]" else ""
                     )
+                    // الاختيار المتكرر يضيف إلى ما سبق بدل أن يستبدله.
+                    attachment = attachment?.let { old -> Attachment(old.name + "، " + added.name, old.text + "\n\n" + added.text) } ?: added
                 }
+                val pickedImage = if (pickedImages.isNotEmpty())
+                    ImageAttachment.merge(listOfNotNull(imageAttachment) + pickedImages) else null
                 if (pickedImage != null) imageAttachment = pickedImage
                 val errors = results.mapNotNull { it.error }
                 if (documents.isEmpty() && pickedImage == null && errors.isEmpty()) {
@@ -1647,11 +1651,14 @@ fun LionApp() {
             promotionRequest = text
             return
         }
-        if (!autoRoute && image != null && kind != TaskKind.IMAGE_EDIT &&
-            !LlmClient.supportsVision(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: "")
-        ) {
+        // دردشات الويب والموديلات بلا رؤية لا تستقبل الصور مباشرة: نحوّل الصور إلى نص بموديل رؤية (OCR + وصف).
+        val imageAsText = image != null && kind != TaskKind.IMAGE_EDIT && (
+            WebChatRuntime.handles(selectedProvider) ||
+                (!autoRoute && !LlmClient.supportsVision(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: ""))
+            )
+        if (imageAsText && ImageToText.pickProvider(prefs) == null) {
             messages = messages + Message(
-                "⚠️ الموديل الحالي لا يقرأ الصور. فعّل «🧠 تلقائي» من زر المزود أسفل مربع الكتابة (يختار موديلاً يقرأ الصور)، أو اختر Gemini أو Claude أو OpenAI أو Mistral. (محرر الصور في القائمة الجانبية يعمل مع أي مزود.)",
+                "⚠️ هذه الدردشة لا تقرأ الصور مباشرة. لتحليلها أضف مفتاح مزود يقرأ الصور (Gemini المجاني من AI Studio مثلاً) في الإعدادات، فيحوّل التطبيق الصور إلى نص ويرسلها لأي دردشة ويب أو موديل. أو فعّل «🧠 تلقائي».",
                 false
             )
             saveCurrent()
@@ -1666,7 +1673,7 @@ fun LionApp() {
             }
             if (image != null) {
                 if (isNotEmpty()) append('\n')
-                append("🖼️ ").append(image.name)
+                append("🖼️ ").append(image.displayName())
             }
         }
         val fileText = file?.text.orEmpty()
@@ -1745,6 +1752,25 @@ fun LionApp() {
             "https://www.google.com/search?q=" + Uri.encode(query)
         } else {
             null
+        }
+
+        if (imageAsText && image != null) {
+            val basePrompt = prompt
+            loadingChats[chatId] = true
+            toolStatus[chatId] = "🖼️ أحلّل الصور (استخراج النص + الوصف) ثم أرسلها نصاً إلى الدردشة…"
+            scope.launch {
+                val analysis = withContext(Dispatchers.IO) { ImageToText.describe(prefs, image, text) }
+                loadingChats[chatId] = false
+                toolStatus.remove(chatId)
+                if (analysis == null) {
+                    appendToChat(chatId, Message("⚠️ تعذّر تحليل الصور بمزود الرؤية (تحقق من المفتاح أو الشبكة). لم تُرسل الرسالة للدردشة.", false))
+                    return@launch
+                }
+                val enriched = basePrompt + "\n\n" + ImageToText.asPromptBlock(image.displayName(), analysis)
+                runChat(chatId, enriched, history, null, ytUrl, ytmUrl, anghamiUrl, browserUrl,
+                    SmartRouter.classify(enriched, false, 0, null))
+            }
+            return
         }
 
         if (file == null && image == null && ActionDetector.looksLikeCommand(text)) {

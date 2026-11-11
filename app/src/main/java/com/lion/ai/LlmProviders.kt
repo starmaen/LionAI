@@ -24,13 +24,15 @@ internal fun LlmClient.callOpenAiCompatible(
         val userContent: Any = if (image == null) {
             message
         } else {
-            JSONArray()
-                .put(JSONObject().put("type", "text").put("text", message))
-                .put(
-                    JSONObject()
-                        .put("type", "image_url")
-                        .put("image_url", JSONObject().put("url", imageDataUri(image)))
-                )
+            JSONArray().put(JSONObject().put("type", "text").put("text", message)).also { arr ->
+                image.all().forEach { img ->
+                    arr.put(
+                        JSONObject()
+                            .put("type", "image_url")
+                            .put("image_url", JSONObject().put("url", imageDataUri(img)))
+                    )
+                }
+            }
         }
         messages.put(JSONObject().put("role", "user").put("content", userContent))
 
@@ -124,11 +126,11 @@ internal fun LlmClient.callGemini(
             )
         }
         val userParts = JSONArray().put(JSONObject().put("text", message))
-        if (image != null) {
+        image?.all()?.forEach { img ->
             userParts.put(
                 JSONObject().put(
                     "inline_data",
-                    JSONObject().put("mime_type", image.mime).put("data", image.base64)
+                    JSONObject().put("mime_type", img.mime).put("data", img.base64)
                 )
             )
         }
@@ -188,13 +190,15 @@ internal fun LlmClient.callCohere(
         val cohereContent: Any = if (image == null) {
             message
         } else {
-            JSONArray()
-                .put(JSONObject().put("type", "text").put("text", message))
-                .put(
-                    JSONObject()
-                        .put("type", "image_url")
-                        .put("image_url", JSONObject().put("url", imageDataUri(image)))
-                )
+            JSONArray().put(JSONObject().put("type", "text").put("text", message)).also { arr ->
+                image.all().forEach { img ->
+                    arr.put(
+                        JSONObject()
+                            .put("type", "image_url")
+                            .put("image_url", JSONObject().put("url", imageDataUri(img)))
+                    )
+                }
+            }
         }
         messages.put(JSONObject().put("role", "user").put("content", cohereContent))
 
@@ -239,7 +243,7 @@ internal fun LlmClient.callClaude(
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }
         val claudeContent = JSONArray()
-        if (image != null) {
+        image?.all()?.forEach { img ->
             claudeContent.put(
                 JSONObject()
                     .put("type", "image")
@@ -247,8 +251,8 @@ internal fun LlmClient.callClaude(
                         "source",
                         JSONObject()
                             .put("type", "base64")
-                            .put("media_type", image.mime)
-                            .put("data", image.base64)
+                            .put("media_type", img.mime)
+                            .put("data", img.base64)
                     )
             )
         }
@@ -546,13 +550,15 @@ internal fun LlmClient.callOpenAiResponses(
         val userContent: Any = if (image == null) {
             message
         } else {
-            JSONArray()
-                .put(JSONObject().put("type", "input_text").put("text", message))
-                .put(
-                    JSONObject()
-                        .put("type", "input_image")
-                        .put("image_url", imageDataUri(image))
-                )
+            JSONArray().put(JSONObject().put("type", "input_text").put("text", message)).also { arr ->
+                image.all().forEach { img ->
+                    arr.put(
+                        JSONObject()
+                            .put("type", "input_image")
+                            .put("image_url", imageDataUri(img))
+                    )
+                }
+            }
         }
         input.put(JSONObject().put("role", "user").put("content", userContent))
 

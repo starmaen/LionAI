@@ -23,7 +23,27 @@ import java.nio.charset.CodingErrorAction
 import java.util.zip.ZipInputStream
 
 data class Attachment(val name: String, val text: String)
-data class ImageAttachment(val name: String, val mime: String, val base64: String)
+data class ImageAttachment(
+    val name: String,
+    val mime: String,
+    val base64: String,
+    /** صور إضافية مرفقة مع هذه الصورة في الرسالة نفسها (دعم عدة صور). */
+    val more: List<ImageAttachment> = emptyList()
+) {
+    /** كل الصور بالترتيب (هذه ثم الإضافية)، كلٌّ منها بلا `more`. */
+    fun all(): List<ImageAttachment> = listOf(copy(more = emptyList())) + more.flatMap { it.all() }
+
+    fun displayName(): String = all().joinToString("، ") { it.name }
+
+    companion object {
+        const val MAX_IMAGES = 6
+        fun merge(list: List<ImageAttachment>): ImageAttachment? {
+            val flat = list.flatMap { it.all() }.take(MAX_IMAGES)
+            val first = flat.firstOrNull() ?: return null
+            return first.copy(more = flat.drop(1))
+        }
+    }
+}
 
 object Attachments {
     private const val MAX_CHARS = 24000

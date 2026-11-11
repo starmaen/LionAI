@@ -793,7 +793,7 @@ internal fun LionComposer(
                     Text(
                         listOfNotNull(
                             file?.let { "📎 ${it.name}" },
-                            image?.let { "🖼️ ${it.name}" }
+                            image?.let { "🖼️ ${it.displayName()}" }
                         ).joinToString("  ·  "),
                         color = Gold,
                         fontSize = 12.sp,

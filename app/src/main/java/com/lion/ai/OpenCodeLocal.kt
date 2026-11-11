@@ -161,8 +161,8 @@ object OpenCodeLocal {
         val parts = JSONArray()
         val includeHistory = history.takeLast(6).joinToString("\n") { "${it.role}: ${it.content}" }
         parts.put(JSONObject().put("type", "text").put("text", if (includeHistory.isBlank()) message else "$includeHistory\nuser: $message"))
-        if (image != null) {
-            parts.put(JSONObject().put("type", "file").put("mime", image.mime).put("url", "data:${image.mime};base64,${image.base64}"))
+        image?.all()?.forEach { img ->
+            parts.put(JSONObject().put("type", "file").put("mime", img.mime).put("url", "data:${img.mime};base64,${img.base64}"))
         }
         val body = JSONObject()
             .put("model", JSONObject().put("providerID", providerId).put("modelID", modelId))
