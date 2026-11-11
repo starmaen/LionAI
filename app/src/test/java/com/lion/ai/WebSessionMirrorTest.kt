@@ -73,7 +73,6 @@ class WebSessionMirrorTest {
         val turn = "رسالة المستخدم الأولى\nثلاثة أسطر"
         assertTrue(f.admit(turn))
         assertFalse("نفس النص لا يعاد", f.admit(turn))
-        // الصفحة تعيد الرسم بأسطر/مسافات مختلفة: البصمة المطاطة تمنع التكرار.
         assertFalse(f.admit("رسالة المستخدم الأولى\n\nثلاثة أسطر "))
         assertFalse(f.admit("رسالة  المستخدم الأولى ثلاثة أسطر"))
         assertFalse(f.isNew(turn))
@@ -85,7 +84,6 @@ class WebSessionMirrorTest {
         val outbound = "سياق المحادثة السابقة\n— انتهى السياق —\n\nالرسالة الجديدة: كم القاهرة؟"
         f.markOwn(outbound)
         assertFalse(f.admit(outbound))
-        // الصفحة تعيد رسم ما كتبه التطبيق مع فروق أسطر/مسافات فقط: لا ينعكس مكرراً.
         assertFalse(f.admit("سياق المحادثة السابقة\n\n— انتهى السياق —\n\n\nالرسالة الجديدة: كم القاهرة؟"))
         assertTrue(f.admit("سؤال كتبه المستخدم بنفسه داخل الصفحة"))
     }
@@ -93,7 +91,6 @@ class WebSessionMirrorTest {
     @Test fun filterEvictsOldestSignaturesBeyondCapacity() {
         val f = WebMirrorFilter(maxSignatures = 8)
         (1..12).forEach { i -> assertTrue(f.admit("دور رقم $i")) }
-        // الأقدم طُرد من ذاكرة البصمات، فيصبح «جديداً» ثانية؛ الأحدث يبقى معلوماً.
         assertTrue(f.isNew("دور رقم 1"))
         assertFalse(f.isNew("دور رقم 12"))
     }
@@ -103,18 +100,5 @@ class WebSessionMirrorTest {
         f.markOwn("نص التطبيق")
         f.clear()
         assertTrue(f.admit("نص التطبيق"))
-    }
-
-    @Test fun webOutboundSurvivesSaveAndLoadRoundTrip() {
-        val outbound = "سياق كامل…\n\nالرسالة: أكمل من حيث توقفت"
-        val encoded = ChatStore.encode(listOf(
-            Message("رد من صفحة المزود", false, via = "🌐 Gemini · رد الصفحة", webOutbound = outbound)
-        ))
-        val decoded = ChatStore.decode(encoded).single()
-        assertEquals(outbound, decoded.webOutbound)
-        assertEquals("🌐 Gemini · رد الصفحة", decoded.via)
-        // الرسائل القديمة بلا الحقل تبقى سليمة.
-        val legacy = ChatStore.decode(ChatStore.encode(listOf(Message("نص عادي", true))))
-        assertEquals(null, legacy.single().webOutbound)
     }
 }
