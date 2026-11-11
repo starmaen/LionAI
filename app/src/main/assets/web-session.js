@@ -108,7 +108,18 @@
     const node = reversed ? unseen[0] : unseen[unseen.length - 1];
     return {node: node, value: answerText(node)};
   }
-  function answers() { return nodes(C.answer).filter(function (n) { return visible(n) && !isUserTurn(n); }); }
+    function answers() { return nodes(C.answer).filter(function (n) { return visible(n) && !isUserTurn(n); }); }
+  /** أدوار المساعد المرئية في الصفحة (الأحدث آخراً) لعكسها في شات التطبيق. */
+  function visibleTurns(limit) {
+    const list = answers();
+    const out = [];
+    const from = Math.max(0, list.length - (limit || 6));
+    for (let i = from; i < list.length; i++) {
+      const t = answerText(list[i]);
+      if (t) out.push({role: 'assistant', text: t});
+    }
+    return out;
+  }
   function answerText(n) {
     if (!n) return '';
     const clone = n.cloneNode(true);
@@ -392,8 +403,12 @@
       if (find(C.stop)) return result('site_busy');
       if (looksLikeLogin()) return result('needs_input');
       if (!input) return result('needs_input');
-      if (input.disabled || input.readOnly || input.getAttribute('aria-disabled') === 'true') return result('input_disabled');
+            if (input.disabled || input.readOnly || input.getAttribute('aria-disabled') === 'true') return result('input_disabled');
       return result('ready');
+    }
+    // مراقب مستقل عن أي طلب: يعكس ما يظهر في الصفحة حتى لو كتب المستخدم فيها بنفسه.
+    if (action === 'turns') {
+      return result('turns', {turns: visibleTurns(8)});
     }
     let state = window.__lionSessionRequest;
     if (action === 'prepare') {
@@ -508,8 +523,9 @@
         (age >= 700 && (state.sawStop || completeInside || completeNearby)) ||
         age >= settle
       );
-      return result(completed ? 'complete' : 'streaming',
-        {text: value, observedStop: state.sawStop, viaFallback: viaFallback, diag: info});
+            return result(completed ? 'complete' : 'streaming',
+        {text: value, observedStop: state.sawStop, viaFallback: viaFallback, diag: info,
+         turns: visibleTurns(6)});
     }
     return result('unknown_action');
   } catch (e) { return result('selector_error', {error: String(e.message || e).slice(0, 160)}); }
