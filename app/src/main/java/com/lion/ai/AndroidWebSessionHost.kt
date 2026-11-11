@@ -14,6 +14,9 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.webkit.CookieManager
@@ -50,6 +53,30 @@ internal class AndroidWebSessionHost(
     private var inputLease: WebView? = null
     private var previousFocus: View? = null
 
+    /** هل كانت لوحة المفاتيح ظاهرة (بطلب المستخدم) قبل أن تأخذ الجلسة التركيز؟ */
+    private var imeShownBeforeLease = false
+    private var leaseReleasedAt = 0L
+
+    private fun imeVisible(): Boolean = runCatching {
+        ViewCompat.getRootWindowInsets(activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+    }.getOrDefault(false)
+
+    /**
+     * حارس لوحة المفاتيح: صفحات الويب تعيد التركيز لحقلها أثناء الإرسال/الاستلام فتظهر اللوحة وتغطي الشاشة
+     * دون لمس المستخدم. نُخفيها فقط عندما (1) يكون التركيز لدى WebView الخلفية وليس حقل التطبيق، أو
+     * (2) خلال ثوانٍ من انتهاء الطلب إن لم تكن ظاهرة قبله. حقل الكتابة في التطبيق لا يتأثر.
+     */
+    private val imeGuard = ViewTreeObserver.OnGlobalLayoutListener {
+        if (destroyed || interactive || !imeVisible()) return@OnGlobalLayoutListener
+        val webFocused = activity.currentFocus is SessionWebView
+        val justReleased = !imeShownBeforeLease && SystemClock.uptimeMillis() - leaseReleasedAt < 3_000L
+        if (webFocused || (pending != null && inputLease != null) || justReleased) hideKeyboardIfBackground()
+    }
+
+    init {
+        runCatching { activity.window.decorView.viewTreeObserver.addOnGlobalLayoutListener(imeGuard) }
+    }
+
     /** Allow programmatic editor focus without creating an IME connection behind chat. */
     private class SessionWebView(activity: ComponentActivity) : WebView(activity) {
         var manualInput = false
@@ -79,6 +106,7 @@ internal class AndroidWebSessionHost(
     private fun acquireEditorFocus(view: WebView) {
         if (interactive || inputLease === view) return
         previousFocus = activity.currentFocus
+        imeShownBeforeLease = imeVisible()
         inputLease = view
         setInteractive(false)
         view.requestFocus()
@@ -90,6 +118,7 @@ internal class AndroidWebSessionHost(
         val wasFocused = leased.hasFocus()
         inputLease = null
         previousFocus = null
+        leaseReleasedAt = SystemClock.uptimeMillis()
         setInteractive(interactive)
         if (!interactive && wasFocused && restore?.isAttachedToWindow == true) {
             restore.requestFocus()
@@ -334,16 +363,32 @@ internal class AndroidWebSessionHost(
             }
         }
     }
+    /** طلبات وصلت أثناء انشغال الجلسة: تنتظر دورها بدل الرفض الفوري (سبب «تعمل أحياناً ولا تعمل أحياناً»). */
+    private val queued = ArrayDeque<Pair<WebSessionTransport.Request, (WebSessionTransport.Reply) -> Unit>>()
+
     override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
-        main.post {
-            if (destroyed || pending != null) {
-                done(WebSessionTransport.Reply("⚠️ جلسة الويب غير متاحة أو مشغولة.", false))
-                return@post
+        main.post { launch(request, done) }
+    }
+
+    private fun launch(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
+        run {
+            if (destroyed) {
+                done(WebSessionTransport.Reply("⚠️ جلسة الويب غير متاحة.", false))
+                return@run
+            }
+            val busy = pending
+            if (busy != null) {
+                // طلب عالق تجاوز مهلته بأكثر من 10 ثوانٍ: ننهيه ليبدأ هذا الطلب.
+                if (System.currentTimeMillis() > busy.deadline + 10_000L) fail(busy, "انتهت مهلة الطلب السابق العالق.")
+                else {
+                    queued.addLast(request to done)
+                    return@run
+                }
             }
             val adapter = WebSiteAdapters.get(request.provider, prefs)
             if (adapter == null) {
                 done(WebSessionTransport.Reply("⚠️ لا يوجد موصّل لهذا الموقع.", false))
-                return@post
+                return@run
             }
             val view = viewFor(adapter)
             var reloaded = false
@@ -397,6 +442,7 @@ internal class AndroidWebSessionHost(
         }
         CookieManager.getInstance().flush()
         p.done(reply)
+        main.post { if (!destroyed && pending == null) queued.removeFirstOrNull()?.let { launch(it.first, it.second) } }
     }
     private fun tick(p: Pending) {
         if (pending !== p || destroyed) return
@@ -596,13 +642,16 @@ internal class AndroidWebSessionHost(
     }
     override fun cancel(token: String) {
         main.post {
+            queued.removeAll { it.first.token == token }
             pending?.takeIf { it.request.token == token }?.let { fail(it, "أُلغي الطلب.") }
         }
     }
     fun cancelCurrent() { pending?.let { fail(it, "أُلغي الانتظار. يمكنك إيقاف التوليد من الصفحة.") } }
     fun destroy() {
         destroyed = true
+        runCatching { activity.window.decorView.viewTreeObserver.removeOnGlobalLayoutListener(imeGuard) }
         pending?.let { fail(it, "أُغلقت واجهة التطبيق.") }
+        while (queued.isNotEmpty()) queued.removeFirst().second(WebSessionTransport.Reply("⚠️ أُغلقت واجهة التطبيق.", false))
         main.removeCallbacksAndMessages(null)
         container.removeAllViews()
         pool.values.forEach { it.stopLoading(); it.destroy() }

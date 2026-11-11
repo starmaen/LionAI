@@ -22,6 +22,8 @@ object WebSessionTransport {
     }
     @Volatile private var host: Host? = null
     private val active = AtomicReference<String?>(null)
+    /** طابور عادل: الرسائل المتزامنة (غرفة العمليات/أدوات/مزودات) تنتظر دورها بدل الرفض الفوري. */
+    private val gate = java.util.concurrent.Semaphore(1, true)
     fun attach(value: Host) { host = value }
     fun detach(value: Host) { if (host === value) host = null }
     fun attached(): Boolean = host != null
@@ -35,10 +37,17 @@ object WebSessionTransport {
         val current = host ?: return Reply("⚠️ افتح التطبيق لتشغيل جلسة الويب.", false)
         if (current.isUiThread()) return Reply("⚠️ لا يمكن انتظار الويب على خيط الواجهة.", false)
         val token = UUID.randomUUID().toString()
-        if (!active.compareAndSet(null, token)) return Reply("⚠️ توجد رسالة ويب قيد التنفيذ. انتظر أو ألغها.", false)
+        val timeout = timeoutMs.coerceIn(1000, 180_000)
+        val acquired = try {
+            gate.tryAcquire(timeout.toLong(), TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return Reply("⚠️ أُلغي الانتظار في طابور جلسة الويب.", false)
+        }
+        if (!acquired) return Reply("⚠️ جلسة الويب مشغولة برسالة أخرى طويلة. أعد المحاولة بعد انتهائها.", false)
+        active.set(token)
         val result = AtomicReference<Reply?>(null)
         val latch = CountDownLatch(1)
-        val timeout = timeoutMs.coerceIn(1000, 180_000)
         return try {
             current.start(Request(token, provider, prompt, timeout, fresh, recapFull, recapDelta)) { reply ->
                 if (active.get() == token && result.compareAndSet(null, reply)) latch.countDown()
@@ -54,6 +63,7 @@ object WebSessionTransport {
         } finally {
             current.cancel(token)
             active.compareAndSet(token, null)
+            gate.release()
         }
     }
 
