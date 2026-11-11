@@ -101,4 +101,18 @@ class WebSessionMirrorTest {
         f.clear()
         assertTrue(f.admit("نص التطبيق"))
     }
+
+    @Test fun protocolTextIsNeverMirrored() {
+        assertTrue(WebMirrorFilter.isProtocol("[[TOOL]]{\"name\":\"file_read\",\"args\":{}}[[/TOOL]]"))
+        assertTrue(WebMirrorFilter.isProtocol("نتائج الأدوات: تمت القراءة"))
+        assertTrue(WebMirrorFilter.isProtocol("[[ASK]]هل أكمل؟[[/ASK]]"))
+        assertFalse(WebMirrorFilter.isProtocol("مرحباً، كيف أساعدك؟"))
+    }
+
+    @Test fun finalReplyMarkedOwnIsNotMirroredAgain() {
+        val f = WebMirrorFilter()
+        val reply = "هذا هو الجواب النهائي من الصفحة"
+        f.markOwn(reply) // ما يفعله finish() في المضيف
+        assertFalse(f.admit(reply))
+    }
 }

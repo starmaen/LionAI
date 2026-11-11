@@ -380,15 +380,19 @@ internal class AndroidWebSessionHost(
     private fun emitTurns(p: Pending, result: JSONObject?) {
         val turns = result?.optJSONArray("turns") ?: return
         val seed = !turnsSeeded
+        // آخر دور في الصفحة هو الرد الذي يبنيه التطبيق الآن (يعرضه البث الحي ويضيفه التطبيق مرة واحدة
+        // عند الاكتمال)، فلا يُعكس أبداً كدور منفصل؛ هذا كان سبب تكرار الجواب مرتين.
+        val last = turns.length() - 1
         for (i in 0 until turns.length()) {
             val item = turns.optJSONObject(i) ?: continue
             val text = item.optString("text").trim()
             if (text.isBlank()) continue
             val role = item.optString("role", "assistant")
-            if (seed) {
-                mirrorFilter.markOwn(text)
-            } else if (mirrorFilter.admit(text)) {
-                WebSessionMirror.capturedTurn(p.chatId, p.adapter.id, role, text)
+            when {
+                seed -> mirrorFilter.markOwn(text)
+                i == last -> Unit
+                WebMirrorFilter.isProtocol(text) -> mirrorFilter.markOwn(text)
+                mirrorFilter.admit(text) -> WebSessionMirror.capturedTurn(p.chatId, p.adapter.id, role, text)
             }
         }
         turnsSeeded = true
@@ -418,6 +422,11 @@ internal class AndroidWebSessionHost(
         releaseEditorFocus()
         hideKeyboardIfBackground()
         status(p, if (reply.success) "✅ استُقبل رد جديد من صفحة الموقع" else reply.text)
+        // الرد النهائي يضيفه التطبيق بنفسه: نبصمه (وآخر نص بُثّ) كي لا يعود كدور مكرر في الطلب التالي.
+        if (reply.success) {
+            mirrorFilter.markOwn(reply.text)
+            if (p.lastText.isNotBlank()) mirrorFilter.markOwn(p.lastText)
+        }
         if (reply.success) {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", true).apply()
             display(false, "${providerInfo(p.adapter.id).shortName} • وصل الرد من الصفحة")

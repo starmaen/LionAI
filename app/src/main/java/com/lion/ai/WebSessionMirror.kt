@@ -57,6 +57,20 @@ object WebSessionMirror {
  * المستخدم داخل الصفحة بنفسه، أو ردٌ من موقع آخر لم يمره الشات).
  */
 class WebMirrorFilter(private val maxSignatures: Int = 400) {
+    companion object {
+        private val PROTOCOL_MARKERS = listOf(
+            "[[TOOL]]", "[[/TOOL]]", "[[ASK]]", "[[/ASK]]",
+            "نتائج الأدوات", "وكيل برمجة وتطوير داخل Lion AI", "سياق محادثتنا السابقة"
+        )
+
+        /**
+         * نصوص بروتوكول الأدوات (كتل [[TOOL]]/[[ASK]] ونتائج الأدوات) ملك حلقة الوكيل (ToolAgent)
+         * وليست كلاماً يُعكس في الشات: عكسها كان يحقن رسائل خام في سجل المحادثة فيتشوّه السياق
+         * وعدّاد recaps وتتعطّل أدوات المطوّر.
+         */
+        fun isProtocol(text: String): Boolean = PROTOCOL_MARKERS.any { text.contains(it) }
+    }
+
     private val seen = ConcurrentLinkedQueue<String>()
     private val seenSet = LinkedHashSet<String>()
 

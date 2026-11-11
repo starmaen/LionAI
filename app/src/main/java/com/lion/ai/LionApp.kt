@@ -356,12 +356,16 @@ fun LionApp() {
     // أدوار صفحة الويب (بما فيها ما يكتبه المستخدم داخل الصفحة بنفسه) تظهر في الشات فوراً.
     // الفلتر في المضيف يمنع عكس ما أرسله التطبيق، فلا تتكرر الرسالة ولا تنشأ حلقة.
             capturedSink.handler = { chatId, provider, role, text ->
-        if (chatId == currentChat && text.isNotBlank()) {
-            val already = messages.lastOrNull()?.let { it.text.trim() == text.trim() && it.isUser == (role == "user") }
-            if (already != true) {
+        // بروتوكول الأدوات ملك حلقة الوكيل، ولا يدخل سجل المحادثة (يفسد السياق والأدوات).
+        if (chatId == currentChat && text.isNotBlank() && !WebMirrorFilter.isProtocol(text)) {
+            val isUser = role == "user"
+            val norm = text.trim()
+            // لا تكرار أمام أي من آخر الرسائل (لا آخر رسالة فقط).
+            val already = messages.takeLast(8).any { it.text.trim() == norm && it.isUser == isUser }
+            if (!already) {
                 messages = messages + Message(
                     text = text,
-                    isUser = role == "user",
+                    isUser = isUser,
                     via = providerInfo(provider).shortName
                 )
                 saveCurrent()
@@ -508,6 +512,12 @@ fun LionApp() {
     }
 
     fun appendToChat(chatId: String, message: Message) {
+        // حارس أخير ضد تكرار الرد نفسه (مثلاً إن عكسته الصفحة قبل أن يضيفه التطبيق).
+        val tail = if (chatId == currentChat) messages.lastOrNull()
+            else ChatRepository.load(prefs, chatId).lastOrNull()
+        if (tail != null && !tail.isUser && !message.isUser &&
+            tail.text.trim().isNotEmpty() && tail.text.trim() == message.text.trim()
+        ) return
         if (chatId == currentChat) {
             messages = messages + message
             saveCurrent()
