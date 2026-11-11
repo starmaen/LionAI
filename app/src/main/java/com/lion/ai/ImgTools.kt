@@ -2,6 +2,7 @@ package com.lion.ai
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,7 +38,7 @@ class ImgTools(private val context: Context) {
         }
     }
 
-    suspend fun modify(workDir: String, filePath: String, newContent: ByteArray): Result<Unit> = 
+    suspend fun modify(workDir: String, filePath: String, newContent: ByteArray): Result<Unit> =
         withContext(Dispatchers.IO) { runCatching {
             val target = File(workDir, filePath)
             require(target.exists()) { "الملف غير موجود: $filePath" }
@@ -57,7 +58,7 @@ class ImgTools(private val context: Context) {
     }}
 
     suspend fun deliverToUser(file: File): Result<Uri> = withContext(Dispatchers.IO) { runCatching {
-        FileDelivery.getUriForFile(context, file) ?: throw IllegalStateException("فشل إنشاء URI")
+        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
     }}
 
     private fun detectImgType(file: File) = when {
@@ -92,7 +93,7 @@ class ImgTools(private val context: Context) {
     }
 
     private fun repackBootImage(dir: File, out: File) {
-        FileOutputStream(out).use { 
+        FileOutputStream(out).use {
             it.write(File(dir, "header.bin").readBytes())
             it.write(File(dir, "payload.bin").readBytes())
         }
