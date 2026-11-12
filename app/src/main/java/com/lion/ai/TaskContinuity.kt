@@ -75,7 +75,15 @@ object WriteIntent {
      * طلب قراءة/رفض فعلي. عبارات النهي الجزئية داخل أمر صريح («احذف الفرع X، ولا تحذف أي فرع آخر»)
      * قيود على نطاق الإذن وليست رفضاً للمهمة، فلا تُلغي الإذن الممنوح بالأمر نفسه.
      */
-    fun isReadOnlyRequest(s: String): Boolean = isDenial(s) && !startsImperative(s)
+    fun isReadOnlyRequest(s: String): Boolean = isDenial(s) && !startsImperative(s) && !hasMutationIntent(s)
+
+    /** فعل تعديل/حذف/كتابة/تشغيل بصيغة الأمر في أي موضع (لا «تعدل» المنفية): يعني أن الطلب ليس قراءة فقط. */
+    private val MUTATION_WORD = Regex(
+        "(?:^|[\\s،,.:؛;(\\[\"'])(?:احذف|انشئ|اكتب|عدل|غير|اصلح|شغل|نفذ|ارفع|اضف|ادمج|ابن|انسخ|انقل|امسح|" +
+            "delete|create|write|edit|modify|run|dispatch|push|merge|remove|build)(?![\\p{L}\\p{N}])",
+        RegexOption.IGNORE_CASE
+    )
+    fun hasMutationIntent(s: String): Boolean = MUTATION_WORD.containsMatchIn(clean(s))
 
     fun permits(s: String): Boolean {
         val t = clean(s)

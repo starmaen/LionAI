@@ -42,4 +42,12 @@ class ToolMarkupTest {
         assertTrue(m.writeGranted)
         assertTrue(WriteIntent.isReadOnlyRequest("لا تعدل شيئاً"))
     }
+
+    @Test fun linkFirstMessageWithNegativeConstraintIsNotReadOnly() {
+        val msg = "https://github.com/starmaen/LionAI احذف الفرع test/tools-check-1. لا تحذف أي فرع آخر ولا main."
+        assertTrue(WriteIntent.isDenial(msg))
+        assertTrue(!WriteIntent.isReadOnlyRequest(msg))
+        assertTrue(WriteIntent.isReadOnlyRequest("افحص المشروع فقط ولا تعدل شيئاً"))
+        assertTrue(WriteIntent.isReadOnlyRequest("لا تعدل شيئاً"))
+    }
 }
