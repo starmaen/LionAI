@@ -273,6 +273,7 @@ object AiTools {
 
         // Meta / tool discovery
         Def("tools_schema", ToolGroup.META, """{"group":"github|files|code|comms|web|database|util|connectors"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
+        Def("tools_request_access", ToolGroup.META, """{"resource":"github|files|shell|connector|android permission","reason":"سبب الحاجة للوصول"}""", "طلب الوصول عبر بطاقة القرار؛ لا يمنح صلاحيات تلقائياً"),
         Def("tools_groups", ToolGroup.META, "{}", "حالة مجموعات الأدوات والموصلات والصلاحيات"),
 
         // Telegram Bot API
@@ -801,6 +802,16 @@ object AiTools {
                 .append(" (محسوب على كل النتائج لا على المعروض)")
         }
         return sb.toString()
+    }
+
+    /** Missing configuration is a decision, never an implicit grant. */
+    fun accessRequirement(ctx: ToolContext, call: ToolCall): String? {
+        val def = byName[call.name] ?: return null
+        if (isMutation(call) && !ctx.allowWrite) return "تفعيل السماح للذكاء بالكتابة من إعدادات أدوات المطور"
+        val connector = def.connector
+        if (connector != null && !ConnectorAuth.isConnected(ctx.prefs, connector))
+            return "ربط الموصل $connector من إعدادات الموصلات"
+        return null
     }
 
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
@@ -1870,6 +1881,7 @@ $code
                     .replace(req(args, "text"), args.optString("replacement"))
                     .take(16_000)
             }
+            "tools_request_access" -> throw IllegalStateException("طلب الوصول يحتاج جلسة وكيل تفاعلية وبطاقة قرار؛ لم تُمنح أي صلاحية")
             "tools_schema" -> {
                 val raw = args.optString("group").trim().lowercase()
                 val group = ToolGroup.values().firstOrNull { it.id == raw || it.name.lowercase() == raw }
@@ -1882,6 +1894,7 @@ $code
             }
             "tools_groups" -> buildString {
                 append("🧭 حالة الأدوات\n")
+                append("إذن التعديل لهذه المهمة: ").append(if (ctx.writeAuthorized) "ممنوح" else "غير ممنوح").append('\n')
                 append("التشغيل التلقائي: ").append(if (agentEnabled(ctx.prefs)) "مفعّل" else "متوقف").append('\n')
                 append("الكتابة والتنفيذ: ").append(if (ctx.allowWrite) "مسموح" else "معطّل").append('\n')
                 ToolGroup.values().forEach { group ->

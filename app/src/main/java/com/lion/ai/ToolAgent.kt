@@ -250,6 +250,11 @@ object ToolAgent {
         else if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
             "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
             else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها مرة واحدة فقط."
+        // Export compact task context to web composers.
+        system += "\n" + WebToolBridge.CONTEXT_START +
+            "\nوضع القراءة فقط: $readOnly؛ الكتابة في الإعدادات: ${profile.allowWrite && !readOnly}؛ إذن المهمة: ${memory.writeGranted && !readOnly}" +
+            "\n" + modeBlock.take(1_000) + AiTools.contextHint(contextText, prefs).take(2_000) +
+            "\n" + resumeRaw.takeLast(2_000) + "\n" + WebToolBridge.CONTEXT_END
         val toolContext = ToolContext(
             context,
             prefs,
@@ -619,6 +624,21 @@ object ToolAgent {
                     onProgress?.invoke("💬 بانتظار إذنك: $what")
                     return Result(askWithReport(question), used, complete = false, responded = memory.responded)
                 }
+            }
+            // Access requests use the decision card, never an implicit grant.
+            val missingAccess = calls.firstNotNullOfOrNull { AiTools.accessRequirement(toolContext, it) }
+            val accessRequest = calls.firstOrNull { it.name == "tools_request_access" }
+            if ((accessRequest != null || missingAccess != null) && !readOnly && !WriteIntent.isDenial(userRequest)) {
+                val resource = missingAccess ?: accessRequest!!.args.optString("resource").take(120)
+                val reason = accessRequest?.args?.optString("reason").orEmpty().take(500)
+                val question = "يلزم وصول إلى: $resource. $reason\n" +
+                    "فعّل الصلاحية أو اربط الحساب من إعدادات التطبيق ثم اختر المتابعة، أو ارفض الطلب. " +
+                    "الموافقة هنا وحدها لا تغيّر إعدادات الوصول."
+                session?.askQuestion(question)
+                memory.checkpoint(historyBuffer, current)
+                session?.let { CheckpointStore.save(prefs, it) }
+                onProgress?.invoke("💬 بانتظار إعداد الوصول: $resource")
+                return Result(askWithReport(question), used, complete = false, responded = memory.responded)
             }
             val observations = calls.map { call ->
                 currentCoroutineContext().ensureActive()

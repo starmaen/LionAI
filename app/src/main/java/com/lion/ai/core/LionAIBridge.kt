@@ -17,27 +17,17 @@ class LionAIBridge(
     }
     @JavascriptInterface fun onWebError(err: String) { onError(err) }
     @JavascriptInterface fun log(msg: String) { Log.d("LionBridge", msg) }
-    @JavascriptInterface fun readFile(path: String): String {
-        return try {
-            if (!WebProvidersPrefs.isFilesEnabled(context)) return "FILES_DISABLED"
-            val f = java.io.File(path)
-            if (!f.exists()) "NOT_FOUND:$path" else f.readText().take(80000)
-        } catch (e: Exception) { "ERR:${e.message}" }
-    }
-    @JavascriptInterface fun writeFile(path: String, content: String): String {
-        return try {
-            if (!WebProvidersPrefs.isFilesEnabled(context)) return "FILES_DISABLED"
-            val f = java.io.File(path); f.parentFile?.mkdirs(); f.writeText(content); "OK:${f.absolutePath}"
-        } catch (e: Exception) { "ERR:${e.message}" }
-    }
+    // Files must go through ToolAgent permission and Manifest gates.
+    @JavascriptInterface fun readFile(path: String): String = "USE_TOOL_AGENT:file_read"
+    @JavascriptInterface fun writeFile(path: String, content: String): String = "USE_TOOL_AGENT:file_write"
     @JavascriptInterface fun getDevToolsStatus(): String = "{\"files\":${WebProvidersPrefs.isFilesEnabled(context)},\"github\":${WebProvidersPrefs.isGitHubEnabled(context)},\"email\":${WebProvidersPrefs.isEmailEnabled(context)}}"
 
     companion object {
         fun setupWebViewWithBrain(webView: WebView, provider: WebProvider, bridge: LionAIBridge): WebView {
             webView.settings.javaScriptEnabled = true
             webView.settings.domStorageEnabled = true
-            webView.settings.allowFileAccess = true
-            webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            webView.settings.allowFileAccess = false
+            webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             webView.settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 LionAI"
             webView.addJavascriptInterface(bridge, "Android")
             webView.webViewClient = object : WebViewClient() {
@@ -67,10 +57,10 @@ class LionAIBridge(
             return webView
         }
         fun sendPrompt(webView: WebView, prompt: String) {
-            val safe = prompt.replace("\"","\\\"")
+            val safe = org.json.JSONObject.quote(prompt)
             val js = """
                 (function(){
-                    var p="$safe";
+                    var p=$safe;
                     var inputs=document.querySelectorAll('textarea, [contenteditable=true]');
                     var inp=inputs.length>0?inputs[inputs.length-1]:null;
                     if(!inp) return;

@@ -17,7 +17,7 @@ class WebToolBridgeTest {
         assertTrue(out.contains("[[TOOL]]"))
         assertTrue(out.contains("tools_groups"))
         assertTrue(out.endsWith("اقرأ ملف build.gradle.kts"))
-        assertTrue(out.length < 4_000)
+        assertTrue(out.length < 8_000)
     }
 
     @Test fun toolResultTurnIsRedactedAndCapped() {
@@ -111,5 +111,27 @@ class WebToolBridgeTest {
         assertTrue(out.contains("أنت تعمل عبر تطبيق Lion AI"))
         assertTrue(out.contains("نتائج الأدوات"))
         assertEquals("مرحبا", WebToolBridge.rehydrate("مرحبا"))
+    }
+
+    @Test fun taskPermissionsSurviveFirstAndContinuationTurns() {
+        val secret = "ghp_" + "a".repeat(36)
+        val sys = agentSystem + WebToolBridge.CONTEXT_START +
+            "readOnly=true taskWrite=false repo=owner/repo " + secret + WebToolBridge.CONTEXT_END
+        for (msg in listOf("افحص المشروع", "نتائج الأدوات: ok")) {
+            val shaped = WebToolBridge.shape(sys, msg)
+            assertTrue(shaped.contains("readOnly=true taskWrite=false repo=owner/repo"))
+            assertFalse(shaped.contains(secret))
+        }
+        WebToolBridge.resetPage("permissions-test")
+        val first = WebToolBridge.plan("permissions-test", sys, "افحص").text
+        val next = WebToolBridge.plan("permissions-test", sys, "نتائج الأدوات: ok").text
+        assertTrue(first.contains("tools_request_access"))
+        assertTrue(next.contains("taskWrite=false"))
+    }
+
+    @Test fun catalogueIncludesAllToolGroupsAndAccessRequests() {
+        val text = WebToolBridge.shape(agentSystem, "افحص الأدوات")
+        ToolGroup.values().forEach { assertTrue("Missing ${it.id}", text.contains(it.id)) }
+        assertTrue(text.contains("tools_request_access"))
     }
 }
