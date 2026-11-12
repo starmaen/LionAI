@@ -1003,8 +1003,93 @@ object GitHubClient {
         return "✅ أُنشئ الإصدار ${o.optString("tag_name")} — ${o.optString("html_url")}"
     }
 
+    /** أسماء الفروع المحمية: الفرع الافتراضي + main/master + ما حدده المستخدم في keep. */
+    internal fun protectedBranchNames(keep: List<String>, defaultBranch: String): Set<String> =
+        (keep + defaultBranch + "main" + "master")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+
+    /**
+     * اختيار الفروع المستهدفة للحذف (دالة نقية بلا شبكة، قابلة للاختبار):
+     * الأسماء الصريحة تُضاف كما هي، ويُضاف كل فرع موجود يطابق البادئة و/أو النمط.
+     * الأسماء المحمية تُستبعد من النتيجة.
+     */
+    internal fun branchTargets(
+        existing: List<String>,
+        branches: List<String>,
+        prefix: String,
+        pattern: String,
+        keep: List<String>,
+        defaultBranch: String
+    ): List<String> {
+        val protectedNames = protectedBranchNames(keep, defaultBranch)
+        val regex = pattern.trim()
+            .takeIf { it.isNotEmpty() }
+            ?.let { runCatching { Regex(it, RegexOption.IGNORE_CASE) }.getOrNull() }
+        val prefixClean = prefix.trim()
+        val targets = LinkedHashSet<String>()
+        branches.map { it.trim() }.filter { it.isNotEmpty() }.forEach { targets.add(it) }
+        if (prefixClean.isNotEmpty() || regex != null) {
+            existing.filter { name ->
+                (prefixClean.isEmpty() || name.startsWith(prefixClean)) &&
+                    (regex == null || regex.containsMatchIn(name))
+            }.forEach { targets.add(it) }
+        }
+        return targets.filter { it !in protectedNames }
+    }
+
     fun deleteBranch(token: String, owner: String, repo: String, branch: String) {
         request("/repos/${encode(owner)}/${encode(repo)}/git/refs/heads/${encode(branch)}", token, "DELETE")
+    }
+
+    /** نتيجة محاولة حذف فرع واحد داخل الحذف المجمّع. */
+    data class BranchDeletion(val branch: String, val deleted: Boolean, val note: String = "")
+
+    /**
+     * حذف مجمّع للفروع: بالأسماء الصريحة [branches]، أو ببادئة [prefix]، أو بنمط Regex [pattern]،
+     * أو بمزيج منها. الفرع الافتراضي للمستودع والفروع في [keep] لا تُحذف أبداً، والفروع غير
+     * الموجودة تُبلَّغ كتخطٍّ لا كخطأ. [dryRun] يعيد الخطة دون أي حذف فعلي.
+     */
+    fun deleteBranches(
+        token: String,
+        owner: String,
+        repo: String,
+        branches: List<String> = emptyList(),
+        prefix: String = "",
+        pattern: String = "",
+        keep: List<String> = emptyList(),
+        dryRun: Boolean = false
+    ): List<BranchDeletion> {
+        val existing = listBranches(token, owner, repo)
+        val defaultBranch = runCatching { getRepo(token, owner, repo).defaultBranch }.getOrDefault("main")
+        val protectedNames = protectedBranchNames(keep, defaultBranch)
+        val targets = branchTargets(existing, branches, prefix, pattern, keep, defaultBranch)
+        if (targets.isEmpty()) return emptyList()
+
+        val results = mutableListOf<BranchDeletion>()
+        targets.forEach { name ->
+            when {
+                name in protectedNames ->
+                    results.add(BranchDeletion(name, false, "محمي: الفرع الافتراضي أو مستثنى"))
+                name !in existing ->
+                    results.add(BranchDeletion(name, false, "غير موجود على المستودع"))
+                dryRun ->
+                    results.add(BranchDeletion(name, false, "تجربة جافة: سيُحذف فعلياً بـ dry_run=false"))
+                else -> {
+                    val attempt = runCatching { deleteBranch(token, owner, repo, name) }
+                    results.add(
+                        if (attempt.isSuccess) BranchDeletion(name, true, "حُذف")
+                        else BranchDeletion(
+                            name,
+                            false,
+                            (attempt.exceptionOrNull()?.message ?: "فشل الحذف").take(160)
+                        )
+                    )
+                }
+            }
+        }
+        return results
     }
 
     /** بصمة git blob القياسية (SHA-1) للمقارنة مع شجرة GitHub دون تنزيل المحتوى. */

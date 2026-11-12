@@ -1458,6 +1458,9 @@ fun SettingsScreen(
                         Text("لا تظهر بطاقة إذن: ينفّذ الوكيل التعديلات مباشرة (يبقى الفحص والقراءة فقط محمياً عند طلبه صراحةً).", color = Color(0xFF9A9A9A), fontSize = 11.sp)
                     }
                 }
+                Spacer(Modifier.height(10.dp))
+                // سقف خطوات الأدوات + التمديد التلقائي + انتظار إجابة الأسئلة داخل الحلقة.
+                AgentStepBudgetSetting(prefs)
                 Spacer(Modifier.height(8.dp))
                 Text("توكن GitHub (Personal Access Token)", color = Color.White, fontSize = 13.sp)
                 OutlinedTextField(

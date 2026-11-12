@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -112,6 +113,89 @@ fun SettingsSection(
                     .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
                 content = content
             )
+        }
+    }
+}
+
+/** خيار رقمي صغير داخل [AgentStepBudgetSetting]. */
+@Composable
+private fun StepOptionChip(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Text(
+        label,
+        color = if (selected) Amber else Color(0xFFB0B0B0),
+        fontSize = 12.sp,
+        modifier = Modifier
+            .background(if (selected) Color(0xFF3A2E00) else Color(0xFF1F1F1F), RoundedCornerShape(8.dp))
+            .clickable { onSelect() }
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    )
+}
+
+/**
+ * سقف خطوات الأدوات في دورة الوكيل، والتمديد التلقائي، وانتظار إجابة [[ASK]] داخل الحلقة.
+ * «تلقائي» (0) لا يضع رقماً ثابتاً: يبدأ من السقف الافتراضي ويمتد ما دام العمل يتقدّم،
+ * والقيد الحقيقي يبقى الوقت وطلب المستخدم للإيقاف.
+ */
+@Composable
+fun AgentStepBudgetSetting(prefs: SharedPreferences) {
+    var maxSteps by remember { mutableStateOf(prefs.getInt(AGENT_MAX_STEPS, 0)) }
+    var autoExtend by remember { mutableStateOf(prefs.getBoolean(AGENT_AUTO_EXTEND_STEPS, true)) }
+    var inlineAsk by remember { mutableStateOf(prefs.getBoolean(AGENT_INLINE_ASK, true)) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text("سقف خطوات الأدوات في الدورة الواحدة", color = Color.White, fontSize = 14.sp)
+        Text(
+            "«تلقائي» يفتح السقف ويمتد تلقائياً ما دام العمل يتقدّم، فالمهمة الطويلة لا تتوقف في منتصفها.",
+            color = Color(0xFF9A9A9A),
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(0 to "تلقائي", 40 to "40", 80 to "80", 160 to "160").forEach { (value, label) ->
+                StepOptionChip(label = label, selected = maxSteps == value) {
+                    maxSteps = value
+                    prefs.edit().putInt(AGENT_MAX_STEPS, value).apply()
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = autoExtend,
+                onCheckedChange = {
+                    autoExtend = it
+                    prefs.edit().putBoolean(AGENT_AUTO_EXTEND_STEPS, it).apply()
+                },
+                colors = SwitchDefaults.colors(checkedThumbColor = Amber)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("تمديد تلقائي للسقف عند تقدّم فعلي", color = Color.White, fontSize = 14.sp)
+                Text(
+                    "كلما نجحت أداة يُضاف سقف إضافي (حتى حدّ أمان 400 خطوة)، بدل التوقف وإعادة الطلب.",
+                    color = Color(0xFF9A9A9A),
+                    fontSize = 11.sp
+                )
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = inlineAsk,
+                onCheckedChange = {
+                    inlineAsk = it
+                    prefs.edit().putBoolean(AGENT_INLINE_ASK, it).apply()
+                    if (!it) AgentAsk.clear()
+                },
+                colors = SwitchDefaults.colors(checkedThumbColor = Amber)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("إجابة أسئلة الوكيل داخل نفس حلقة التنفيذ", color = Color.White, fontSize = 14.sp)
+                Text(
+                    "عند سؤال [[ASK]] تنتظر الحلقة ردّك دون إنهاء الجلسة ولا فقدان أي خطوة منفذة (مهلة 8 دقائق ثم حفظ آمن).",
+                    color = Color(0xFF9A9A9A),
+                    fontSize = 11.sp
+                )
+            }
         }
     }
 }

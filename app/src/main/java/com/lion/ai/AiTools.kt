@@ -28,8 +28,6 @@ enum class ToolGroup(val id: String, val label: String, val icon: String) {
     META("meta", "إدارة الأدوات", "🧭")
 }
 
-data class ToolCall(val name: String, val args: JSONObject, val raw: String)
-
 data class ToolResult(val name: String, val output: String, val ok: Boolean)
 
 data class ToolAuditEntry(
@@ -266,7 +264,14 @@ object AiTools {
         Def("github_list_tags", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "وسوم الإصدارات"),
         Def("github_create_tag", ToolGroup.GITHUB, """{"repo":"owner/name","name":"v1.0.0","from":"main"}""", "إنشاء وسم إصدار", true),
         Def("github_create_release", ToolGroup.GITHUB, """{"repo":"owner/name","tag":"v1.0.0","name":"","body":"","draft":false,"prerelease":false}""", "إنشاء Release", true),
-        Def("github_delete_branch", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"feature"}""", "حذف فرع (لا يحذف الفرع الافتراضي عادةً)", true),
+        Def("github_delete_branch", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"feature"}""", "حذف فرع واحد (لا يحذف الفرع الافتراضي عادةً)", true),
+        Def(
+            "github_delete_branches",
+            ToolGroup.GITHUB,
+            """{"repo":"owner/name","branches":["feature/x","tmp/y"],"prefix":"feature/","pattern":"^tmp-.*","keep":["dev"],"dry_run":false}""",
+            "حذف فروع مجمّعة دفعة واحدة: بأسماء صريحة (branches) أو ببادئة (prefix) أو نمط (pattern)، مع استثناء الفرع الافتراضي والمستثنى في keep تلقائياً",
+            true
+        ),
 
         // Files: precise patch
         Def("file_apply_patch", ToolGroup.FILES, """{"path":"src/Main.kt","patch":"@@ -1,2 +1,2 @@\n ...","backup":true}""", "تطبيق unified diff بدقة ورفض عدم التطابق", true),
@@ -362,10 +367,6 @@ object AiTools {
     )
 
     private val byName = defs.associateBy { it.name }
-
-    private val MARKER = Regex("\\[\\[TOOL\\]\\](.*?)\\[\\[/TOOL\\]\\]", RegexOption.DOT_MATCHES_ALL)
-    private val TOOL_TAG = Regex("<tool_call>(.*?)</tool_call>", RegexOption.DOT_MATCHES_ALL)
-    private val FENCE = Regex("```(?:tool|json|ai-tool)?\\s*(\\{.*?\\})\\s*```", RegexOption.DOT_MATCHES_ALL)
 
     fun token(prefs: SharedPreferences): String =
         (prefs.getString("github_token", "") ?: "").trim()
@@ -596,7 +597,9 @@ object AiTools {
         val builder = StringBuilder()
         builder.append("\n\n=== أدوات متاحة ===\n")
         builder.append("عند الحاجة الفعلية، استدعِ أداة واحدة أو أكثر بهذه الصيغة فقط داخل ردك:\n")
-        builder.append("[[TOOL]]\n{\"tool\":\"اسم_الأداة\",\"args\":{...}}\n[[/TOOL]]\n")
+        builder.append("[[TOOL]]\n{\"name\":\"اسم_الأداة\",\"args\":{...}}\n[[/TOOL]]\n")
+        // المفتاحان متكافئان: لا يرفض المحلل "tool" ولا "name" ولا arguments/parameters.
+        builder.append("المفتاحان \"name\" و\"tool\" متكافئان تماماً (وكذلك args/arguments/parameters)؛ استخدم أي صيغة تعتادها.\n")
         builder.append("ستتلقى نتيجة كل أداة ثم تتابع حتى تُنجز المهمة. لا تخترع نتائج. ")
         builder.append("لا تضع أسراراً في الملفات أو الردود. المسارات محصورة في مساحة عمل التطبيق. ")
         builder.append("لا تكتب أو تحذف أو تدفع إلى GitHub، ولا ترسل بريداً أو رسالة Slack، ولا ترفع إلى Drive، ولا تنشئ مواعيد أو صفحات، إلا إذا طلب المستخدم ذلك صراحة. ")
@@ -732,58 +735,19 @@ object AiTools {
         return properties
     }
 
-    fun parseCalls(text: String): List<ToolCall> {
-        val found = mutableListOf<ToolCall>()
-        val blocks = mutableListOf<String>()
-        MARKER.findAll(text).forEach { blocks.add(it.groupValues[1]) }
-        TOOL_TAG.findAll(text).forEach { blocks.add(it.groupValues[1]) }
-        FENCE.findAll(text).forEach { blocks.add(it.groupValues[1]) }
-        // صيغ معطوبة شائعة: إغلاق بـ [[TOOL]] بدل [[/TOOL]]، أو بلا إغلاق، أو داخل سياج كود: نقرأ JSON المتوازن بعد كل [[TOOL]].
-        if (blocks.isEmpty()) {
-            var from = text.indexOf("[[TOOL]]")
-            while (from >= 0) {
-                ToolMarkup.balancedJson(text, from + "[[TOOL]]".length)?.let { blocks.add(it) }
-                from = text.indexOf("[[TOOL]]", from + 8)
-            }
-        }
-        if (blocks.isEmpty()) {
-            // بعض النماذج ترسل JSON عارياً بلا سياج.
-            val start = text.indexOf('{')
-            val end = text.lastIndexOf('}')
-            if (start >= 0 && end > start) blocks.add(text.substring(start, end + 1))
-        }
-        blocks.forEach { raw ->
-            val trimmed = raw.trim()
-            val candidates = mutableListOf<JSONObject>()
-            runCatching { JSONObject(trimmed) }.getOrNull()?.let { candidates.add(it) }
-            runCatching { org.json.JSONArray(trimmed) }.getOrNull()?.let { array ->
-                for (i in 0 until array.length()) array.optJSONObject(i)?.let { candidates.add(it) }
-            }
-            if (candidates.isEmpty()) return@forEach
-            candidates.forEach { json ->
-                val name = json.optString("tool").ifBlank { json.optString("name") }
-                    .ifBlank { json.optJSONObject("function")?.optString("name").orEmpty() }
-                val rawArgs = json.opt("args") ?: json.opt("arguments")
-                    ?: json.optJSONObject("function")?.opt("arguments")
-                val args = when (rawArgs) {
-                    is JSONObject -> rawArgs
-                    is String -> runCatching { JSONObject(rawArgs) }.getOrDefault(JSONObject())
-                    else -> JSONObject()
-                }
-                if (byName.containsKey(name) && found.none { it.name == name && it.args.toString() == args.toString() }) {
-                    found.add(ToolCall(name, args, trimmed))
-                }
-            }
-        }
-        return found
-    }
+    /**
+     * يحلّل استدعاءات الأدوات من نص الرد. المنطق في [ToolCallCodec] (بلا اعتماد على أندرويد)
+     * ليكون قابلاً للاختبار ولقبول "name"/"tool" و"args"/"arguments" بلا رفض.
+     */
+    fun parseCalls(text: String): List<ToolCall> = ToolCallCodec.parse(text, byName.keys)
 
     private val CODE_WRITE_TOOLS = setOf(
         "file_write", "file_append", "file_apply_patch", "file_delete", "file_move",
         "file_copy", "file_mkdir", "file_unzip", "file_integrity_save", "code_patch",
         "code_translate_save", "github_write_file",
         "github_commit_files", "github_push_workspace", "github_delete_file",
-        "github_bootstrap_project", "github_create_repo", "github_create_branch"
+        "github_bootstrap_project", "github_create_repo", "github_create_branch",
+        "github_delete_branch", "github_delete_branches"
     )
 
     fun isMutation(call: ToolCall): Boolean = byName[call.name]?.write == true ||
@@ -2081,6 +2045,39 @@ $code
                 val branch = req(args, "branch")
                 GitHubClient.deleteBranch(token, owner, repo, branch)
                 "✅ حُذف الفرع $branch"
+            }
+            "github_delete_branches" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                fun names(key: String): List<String> {
+                    val array = args.optJSONArray(key) ?: return args.optString(key).trim()
+                        .takeIf { it.isNotBlank() }?.split(',')?.map { it.trim() }.orEmpty()
+                    return (0 until array.length()).mapNotNull { index ->
+                        array.optString(index).trim().takeIf { it.isNotBlank() }
+                    }
+                }
+                val branches = names("branches") + names("branch")
+                val keep = names("keep") + names("protected")
+                val prefix = args.optString("prefix").trim()
+                val pattern = args.optString("pattern").ifBlank { args.optString("regex") }.trim()
+                if (branches.isEmpty() && prefix.isBlank() && pattern.isBlank()) {
+                    throw IllegalArgumentException("حدد أسماء الفروع في branches، أو بادئة prefix، أو نمطاً pattern")
+                }
+                val dryRun = args.optBoolean("dry_run", false) || args.optBoolean("dryRun", false)
+                val results = GitHubClient.deleteBranches(
+                    token, owner, repo, branches, prefix, pattern, keep, dryRun
+                )
+                if (results.isEmpty()) "لا توجد فروع مطابقة للحذف."
+                else buildString {
+                    val deleted = results.count { it.deleted }
+                    append(if (dryRun) "🧪 تجربة جافة (لم يُحذف شيء): " else "🗑️ نتيجة الحذف: ")
+                        .append("$deleted حُذف من ").append(results.size).append(" فرعاً\n")
+                    results.forEach { item ->
+                        append(if (item.deleted) "• ✅ " else "• ⏭️ ").append(item.branch)
+                        if (item.note.isNotBlank()) append(" — ").append(item.note)
+                        append('\n')
+                    }
+                    if (dryRun) append("\nأعد التنفيذ بـ dry_run=false للحذف الفعلي.")
+                }.trim()
             }
             "file_apply_patch" -> {
                 val path = req(args, "path")

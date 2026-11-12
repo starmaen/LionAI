@@ -1636,6 +1636,8 @@ fun LionApp() {
     /** يوقف توليد الرد الحالي فوراً دون حذف ما وصل منه. */
     fun stopChat() {
         val id = currentChat
+        // إيقاف الانتظار التفاعلي أولاً حتى لا تُترك الحلقة معلّقة على سؤال لن يأتي ردّه.
+        AgentAsk.cancel(id)
         chatJobs.remove(id)?.cancel()
         loadingChats[id] = false
         toolStatus[id] = ""
@@ -1644,6 +1646,26 @@ fun LionApp() {
     }
 
     fun sendMessage() {
+        // إجابة على سؤال الوكيل [[ASK]] داخل نفس حلقة التنفيذ: تُسلَّم للحلقة الجارية
+        // بدل بدء دور جديد، فتبقى الخطوات المنفذة والسياق وإذن الكتابة كما هي.
+        if (AgentAsk.isWaiting(currentChat)) {
+            val answer = input.trim()
+            if (answer.isEmpty()) {
+                toolStatus[currentChat] = "💬 اكتب ردّك أو قرارك لي أكمل من هذه النقطة"
+                return
+            }
+            val askedChat = currentChat
+            val delivered = AgentAsk.deliver(askedChat, answer)
+            messages = messages + Message(answer, true)
+            input = ""
+            saveCurrent()
+            toolStatus[askedChat] = if (delivered) {
+                "▶️ وصل ردّك — أتابع المهمة من النقطة نفسها دون فقدان أي خطوة"
+            } else {
+                "💬 لم يصل السؤال للحلقة (توقفت)، سأتابع من نقطة التوقف المحفوظة"
+            }
+            return
+        }
         if (loadingChats[currentChat] == true) {
             val note = input.trim()
             if (note.isNotEmpty() && attachment == null && imageAttachment == null) {

@@ -14,6 +14,21 @@ internal const val LLM_CLAUDE_MAX_TOKENS = 8192
 
 internal const val LLM_OPENAI_MAX_TOKENS = 8192
 
+/**
+ * سقف خطوات الأدوات في دورة الوكيل الواحدة.
+ * 0 = تلقائي/مفتوح: يبدأ من السقف الافتراضي ويمتد تلقائياً ما دام العمل يتقدّم.
+ */
+internal const val AGENT_MAX_STEPS = "agent_max_steps"
+
+/** تمديد تلقائي للسقف عند تقدّم فعلي (أداة نجحت) — لا يوقف المهمة الطويلة. */
+internal const val AGENT_AUTO_EXTEND_STEPS = "agent_auto_extend_steps"
+
+/** إجابة سؤال [[ASK]] داخل نفس حلقة التنفيذ بدل إنهاء الجلسة. */
+internal const val AGENT_INLINE_ASK = "agent_inline_ask"
+
+/** السقف المطلق للخطوات في مهمة واحدة (حاجز أمان؛ القيد الحقيقي هو الوقت). */
+internal const val AGENT_HARD_MAX_STEPS = 400
+
 /** مفتاح AI Horde المجهول المعتمد للاستخدام بدون حساب. */
 internal const val LLM_HORDE_ANON_KEY = "0000000000"
 
