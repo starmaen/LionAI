@@ -1239,6 +1239,8 @@ fun SettingsScreen(
 
             UserPlatformsSection(prefs)
 
+            ProviderManagerSection(prefs)
+
             SettingsSection(
                 title = "⚙️ الإعدادات العامة والعقل المركزي",
                 subtitle = "القراءة التلقائية، عناوين المحادثات، التأكيدات، واختيار النموذج تلقائياً"

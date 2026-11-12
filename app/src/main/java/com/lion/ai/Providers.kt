@@ -992,7 +992,12 @@ val BUILTIN_PROVIDERS = listOf(
 
 /** المدمجون + المنصات التي أضافها المستخدم (UserPlatforms)، تُقرأ ديناميكياً عند كل وصول. */
 val PROVIDERS: List<ProviderInfo>
-    get() = BUILTIN_PROVIDERS + UserPlatforms.infos()
+    get() {
+        val removed = ProviderRemoval.removedIds()
+        return (BUILTIN_PROVIDERS + UserPlatforms.infos()).let { all ->
+            if (removed.isEmpty()) all else all.filterNot { it.id in removed }
+        }
+    }
 
 /** هل المزود مفعّل؟ الافتراضي مفعّل حتى لا يتغير سلوك الإصدارات السابقة. */
 fun providerEnabled(prefs: SharedPreferences, id: String): Boolean =
@@ -1019,5 +1024,5 @@ fun providerInfo(id: String): ProviderInfo {
             custom = true
         )
     }
-    return PROVIDERS.firstOrNull { it.id == "gemini" } ?: PROVIDERS.first()
+    return PROVIDERS.firstOrNull { it.id == "gemini" } ?: PROVIDERS.firstOrNull() ?: BUILTIN_PROVIDERS.first()
 }

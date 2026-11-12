@@ -278,13 +278,13 @@ fun LionApp() {
     }
     var contacts by remember { mutableStateOf(listOf<Contact>()) }
     var selectedProvider by remember {
-        mutableStateOf(prefs.getString("provider", "gemini") ?: "gemini")
+        mutableStateOf(ProviderRemoval.resolve(prefs.getString("provider", "gemini") ?: "gemini"))
     }
     DisposableEffect(prefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
                 "provider", "auto_route" -> {
-                    selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+                    selectedProvider = ProviderRemoval.resolve(prefs.getString("provider", "gemini") ?: "gemini")
                     autoRoute = prefs.getBoolean("auto_route", true)
                 }
                 "web_session_event" -> {
@@ -422,7 +422,7 @@ fun LionApp() {
         stashStateFor(activeTabId)
         activeTabId = tabId
         TabsStore.saveActive(prefs, tabId)
-        val provider = if (providerInfo(tab.provider).supportsAppChat) tab.provider else "gemini"
+        val provider = ProviderRemoval.resolve(if (providerInfo(tab.provider).supportsAppChat) tab.provider else "gemini")
         selectedProvider = provider
         autoRoute = tab.autoRoute
         prefs.edit().putString("provider", provider).putBoolean("auto_route", tab.autoRoute).apply()
@@ -472,7 +472,7 @@ fun LionApp() {
             val target = tabs.getOrNull(index.coerceAtMost(tabs.size - 1)) ?: tabs.first()
             activeTabId = target.id
             TabsStore.saveActive(prefs, target.id)
-            val provider = if (providerInfo(target.provider).supportsAppChat) target.provider else "gemini"
+            val provider = ProviderRemoval.resolve(if (providerInfo(target.provider).supportsAppChat) target.provider else "gemini")
             selectedProvider = provider
             autoRoute = target.autoRoute
             prefs.edit().putString("provider", provider).putBoolean("auto_route", target.autoRoute).apply()
@@ -510,7 +510,7 @@ fun LionApp() {
                 TabsStore.save(prefs, tabs)
             }
             // نزامن مزود العلامة مع شاشة المحادثة حتى لا تظهر واجهة مزود ويُنفَّذ طلب مزود آخر.
-            val provider = if (providerInfo(tab.provider).supportsAppChat) tab.provider else "gemini"
+            val provider = ProviderRemoval.resolve(if (providerInfo(tab.provider).supportsAppChat) tab.provider else "gemini")
             selectedProvider = provider
             autoRoute = tab.autoRoute
             prefs.edit().putString("provider", provider).putBoolean("auto_route", tab.autoRoute).apply()
@@ -1985,14 +1985,14 @@ fun LionApp() {
                 showSettings = false
                 LlmClient.reloadOverrides(prefs)
                 autoRoute = prefs.getBoolean("auto_route", true)
-                selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+                selectedProvider = ProviderRemoval.resolve(prefs.getString("provider", "gemini") ?: "gemini")
                 syncActiveTab()
             },
             onSave = {
                 showSettings = false
                 LlmClient.reloadOverrides(prefs)
                 autoRoute = prefs.getBoolean("auto_route", true)
-                selectedProvider = prefs.getString("provider", "gemini") ?: "gemini"
+                selectedProvider = ProviderRemoval.resolve(prefs.getString("provider", "gemini") ?: "gemini")
                 syncActiveTab()
             },
             quickModeLabel = currentMode.short,
