@@ -190,9 +190,14 @@ class TaskContinuity {
         receipts.put(key, JSONObject().put("state", "uncertain"))
         return true
     }
-    fun recordMutation(key: String, output: String, ok: Boolean) {
+    /**
+     * definite = فشل محلي حاسم (patch/تعديل ملف يُتحقق منه كاملاً قبل الكتابة): لم يتغير شيء، فلا يُسمّى «غير مؤكد»
+     * ولا يوقف المهمة. أما فشل الشبكة/الصدفة فيبقى غير مؤكد لأنه قد يكون نفذ فعلاً.
+     */
+    fun recordMutation(key: String, output: String, ok: Boolean, definite: Boolean = false) {
         // A failed network response can still have committed remotely. Never auto-retry it.
-        receipts.put(key, JSONObject().put("state", if(ok) "done" else "uncertain").put("output", output.take(16000)))
+        val state = if (ok) "done" else if (definite) "failed" else "uncertain"
+        receipts.put(key, JSONObject().put("state", state).put("output", output.take(16000)))
         epoch++
         reads.keys().asSequence().toList().forEach { reads.remove(it) }
     }

@@ -46,15 +46,16 @@ object WebToolBridge {
         - للتعديل/الحذف/الدفع نفّذ فقط ما طلبه المستخدم صراحة، وعند نقص قرار اسأل بـ [[ASK]]سؤال واحد[[/ASK]].
         - اكتب كل كتلة [[TOOL]] في سطر مستقل (ويفضّل داخل كتلة كود ```) بلا أي شرح داخلها، والـJSON بعلامات اقتباس عادية ".
         - للأعداد والمقارنات لا تعدّ ولا تحسب بنفسك: استخدم عدداً تعيده الأداة (مثل count_suffix في file_tree وgithub_list_tree)، وإن لم يتوفر فاذكر أنه تقدير.
-        - للتعديل: عدّل بـ file_apply_patch (فروق صغيرة) بدل إعادة كتابة ملف كبير، ثم تحقق بـ file_diff وgate_run قبل أي رفع.
+        - للتعديل: عدّل بـ file_edit (old/new؛ الأوثق) أو file_apply_patch بدل إعادة كتابة ملف كبير، ثم تحقق بـ file_diff وgate_run قبل أي رفع.
         - بعد الرفع: استدعِ github_wait_run وقرأ سجل الفشل بـ github_run_logs إن فشل، ثم أصلح وأعد الرفع حتى ينجح البناء. لا تعلن النجاح قبل نجاح البناء فعلاً.
         - إن أعادت أداة خطأً فاقرأه وأصلح السبب ثم أعد المحاولة؛ لا تتجاهله ولا تخمّن.
         - عند الانتهاء اكتب إجابة نهائية بالعربية بلا أي كتلة [[TOOL]].
-        أدوات شائعة: file_tree, file_read, file_write, file_apply_patch, file_diff, code_doctor, gate_run,
+        أدوات شائعة: file_tree, file_read, file_write, file_edit, file_apply_patch, file_diff, code_doctor, gate_run,
         github_repo_overview, github_list_tree, github_read_file, github_search_code, github_push_workspace,
         github_dispatch, github_wait_run, github_run_logs, build_diagnose, execute_command.
         لمخطط أي أداة استدعِ tools_schema، ولبقية المجموعات استدعِ tools_groups.
         المجموعات: github, web, files, database, firebase, code, util, connectors, comms, shell, quality, control, memory, mcp, meta.
+        للتعديل النصي في ملف موجود استخدم file_edit (old = النص الحالي حرفياً، new = الجديد) فهو أوثق من file_apply_patch.
         للسرعة: اجمع كل الأدوات المستقلة في رد واحد (كتلة [[TOOL]] لكل أداة) بدل أداة واحدة في كل رد؛ فكل رد = جولة كاملة عبر الصفحة.
         عند نقص صلاحية أو ربط حساب استدعِ tools_request_access مع resource وreason؛ يعرض التطبيق بطاقة قرار ويحفظ المهمة.
         الموافقة النصية لا تربط حساباً ولا تمنح صلاحية أندرويد ولا تتجاوز الإعدادات. تحقق بـ tools_groups بعد استئناف المهمة.
@@ -91,7 +92,7 @@ object WebToolBridge {
         else text.take(FIRST_MAX / 2) + "\n…[اقتُطع الوسط لطول الرسالة]…\n" + text.takeLast(FIRST_MAX / 2)
 
     private val COMMON_TOOLS = listOf(
-        "file_tree", "file_read", "file_write", "file_apply_patch", "file_diff", "code_doctor", "gate_run",
+        "file_tree", "file_read", "file_write", "file_edit", "file_apply_patch", "file_diff", "code_doctor", "gate_run",
         "github_repo_overview", "github_list_tree", "github_read_file", "github_search_code",
         "github_push_workspace", "github_dispatch", "github_wait_run", "github_run_logs", "build_diagnose",
         "execute_command", "tools_schema", "tools_groups", "tools_request_access"

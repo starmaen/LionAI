@@ -274,7 +274,8 @@ object AiTools {
         ),
 
         // Files: precise patch
-        Def("file_apply_patch", ToolGroup.FILES, """{"path":"src/Main.kt","patch":"@@ -1,2 +1,2 @@\n ...","backup":true}""", "تطبيق unified diff بدقة ورفض عدم التطابق", true),
+        Def("file_edit", ToolGroup.FILES, """{"path":"src/Main.kt","old":"النص الحالي حرفياً","new":"النص الجديد","replace_all":false}""", "تعديل ملف باستبدال نصي (الأوثق والأسهل؛ فضّله على file_apply_patch)", true),
+    Def("file_apply_patch", ToolGroup.FILES, """{"path":"src/Main.kt","patch":"@@ -1,2 +1,2 @@\n ...","backup":true}""", "تطبيق unified diff بدقة ورفض عدم التطابق", true),
 
         // Meta / tool discovery
         Def("tools_schema", ToolGroup.META, """{"group":"github|files|code|comms|web|database|util|connectors"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
@@ -742,7 +743,7 @@ object AiTools {
     fun parseCalls(text: String): List<ToolCall> = ToolCallCodec.parse(text, byName.keys)
 
     private val CODE_WRITE_TOOLS = setOf(
-        "file_write", "file_append", "file_apply_patch", "file_delete", "file_move",
+        "file_write", "file_append", "file_edit", "file_apply_patch", "file_delete", "file_move",
         "file_copy", "file_mkdir", "file_unzip", "file_integrity_save", "code_patch",
         "code_translate_save", "github_write_file",
         "github_commit_files", "github_push_workspace", "github_delete_file",
@@ -2079,11 +2080,28 @@ $code
                     if (dryRun) append("\nأعد التنفيذ بـ dry_run=false للحذف الفعلي.")
                 }.trim()
             }
+            "file_edit" -> {
+                val path = req(args, "path")
+                val info = FileTools.read(ctx.context, path, maxBytes = 4_000_000)
+                if (info.binary) throw IllegalArgumentException("الملف ثنائي ولا يمكن تعديله نصياً")
+                if (!args.has("new")) throw IllegalArgumentException("الحقل new مطلوب (نص فارغ للحذف).")
+                val edited = TextEdit.replace(info.text, req(args, "old"), args.optString("new", ""), args.optBoolean("replace_all", false))
+                if (args.optBoolean("backup", true)) {
+                    runCatching { FileTools.write(ctx.context, ".lion-backup/" + path.replace('/', '_') + ".bak", info.text) }
+                }
+                FileTools.write(ctx.context, path, edited.text)
+                "✅ عُدِّل $path — ${edited.count} موضع"
+            }
             "file_apply_patch" -> {
                 val path = req(args, "path")
                 val info = FileTools.read(ctx.context, path, maxBytes = 4_000_000)
                 if (info.binary) throw IllegalArgumentException("الملف ثنائي ولا يمكن تعديله نصياً")
-                val applied = UnifiedDiff.apply(info.text, req(args, "patch"))
+                val applied = try {
+                    UnifiedDiff.apply(info.text, req(args, "patch"))
+                } catch (e: IllegalArgumentException) {
+                    throw IllegalArgumentException((e.message ?: "فشل الـ patch") +
+                        "\n💡 لا تكرر patch: استخدم file_edit بنص الموضع الحالي حرفياً (old) والجديد (new)، بعد قراءة الملف بنطاق الأسطر.")
+                }
                 if (args.optBoolean("backup", true)) {
                     runCatching {
                         FileTools.write(ctx.context, ".lion-backup/" + path.replace('/', '_') + ".bak", info.text)
