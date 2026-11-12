@@ -213,6 +213,10 @@ object ToolAgent {
     ): Result {
         val memory = session?.continuity ?: TaskContinuity().also { it.begin(userRequest, false) }
         val label = providerLabel.ifBlank { providerInfo(provider).shortName }
+        // «السماح التلقائي»: إذن كتابة مفتوح لكل المحادثات والمزودات دون بطاقة (إلا في طلبات القراءة الصريحة).
+        if (!readOnly && prefs.getBoolean("auto_grant_write", false) && !WriteIntent.isReadOnlyRequest(userRequest)) {
+            memory.writeGranted = true
+        }
         session?.start(prompt, label)
         session?.setMode(chatMode)
         session?.let { CheckpointStore.save(prefs, it) }
@@ -637,7 +641,7 @@ object ToolAgent {
             // أداة تعديل مطلوبة بلا إذن صالح: لا نُعيدها للنموذج كفشل صامت (فيكرّر المحاولة والمستخدم لا يرى شيئاً)،
             // بل نعرض بطاقة قرار صريحة ونحفظ الجلسة؛ موافقتك تمنح الإذن وتتابع المهمة من النقطة نفسها.
             // طلب فحص/قراءة صريح (أو رفض سابق) يبقى حظراً صامتاً: المستخدم قال لا تعدّل، فلا نسأله.
-            if (toolContext.allowWrite && !memory.writeGranted && !WriteIntent.isDenial(userRequest)) {
+            if (toolContext.allowWrite && !memory.writeGranted && !WriteIntent.isReadOnlyRequest(userRequest)) {
                 val blocked = calls.firstOrNull { AiTools.isMutation(it) }
                 if (blocked != null) {
                     val target = blocked.args.optString("path").ifBlank {
@@ -656,7 +660,7 @@ object ToolAgent {
             // Access requests use the decision card, never an implicit grant.
             val missingAccess = calls.firstNotNullOfOrNull { AiTools.accessRequirement(toolContext, it) }
             val accessRequest = calls.firstOrNull { it.name == "tools_request_access" }
-            if ((accessRequest != null || missingAccess != null) && !readOnly && !WriteIntent.isDenial(userRequest)) {
+            if ((accessRequest != null || missingAccess != null) && !readOnly && !WriteIntent.isReadOnlyRequest(userRequest)) {
                 val resource = missingAccess ?: accessRequest!!.args.optString("resource").take(120)
                 val reason = accessRequest?.args?.optString("reason").orEmpty().take(500)
                 val question = "يلزم وصول إلى: $resource. $reason\n" +

@@ -66,15 +66,26 @@ object WriteIntent {
         if (DENIAL.containsMatchIn(t)) return true
         return head(s) in setOf("لا", "كلا", "الغاء", "cancel", "stop", "no", "reject", "denied", "deny")
     }
+    private val IMPERATIVE = Regex("^(?:(?:صديقي|اخي|رجاء|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(اصلح|اصلاح|عدل|تعديل|غير|انشئ|انشاء|اصنع|صنع|اكتب|اضف|احذف|ارفع|نفذ|انفذ|ارسل|ارسل|برمج|طور|حول|ترجم|شغل|ثبت|صمم|اعمل|حسن|fix|repair|edit|modify|create|write|add|delete|implement|send|push|deploy|build|make|generate|refactor)(?:\\s|$)")
+
+    /** الرسالة تبدأ بفعل أمر صريح (أنشئ/احذف/اكتب/شغّل…). */
+    fun startsImperative(s: String): Boolean = IMPERATIVE.containsMatchIn(clean(s))
+
+    /**
+     * طلب قراءة/رفض فعلي. عبارات النهي الجزئية داخل أمر صريح («احذف الفرع X، ولا تحذف أي فرع آخر»)
+     * قيود على نطاق الإذن وليست رفضاً للمهمة، فلا تُلغي الإذن الممنوح بالأمر نفسه.
+     */
+    fun isReadOnlyRequest(s: String): Boolean = isDenial(s) && !startsImperative(s)
+
     fun permits(s: String): Boolean {
         val t = clean(s)
-        if (isDenial(t)) return false
+        if (isReadOnlyRequest(t)) return false
         if (isApproval(t)) return false
         // "اكتب" وحدها قد تعني صياغة نص. لا نمنح كتابة إلا عندما يكون الهدف ملفاً/كوداً.
         if (Regex("^(?:(?:صديقي|اخي|رجاء|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(?:اكتب|write)\\s+", RegexOption.IGNORE_CASE).containsMatchIn(t) &&
             !FILE_TARGET.containsMatchIn(t)) return false
         // Anchored imperative only. Questions, quoted examples and historical instructions do not grant rights.
-        return Regex("^(?:(?:صديقي|اخي|رجاء|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(اصلح|اصلاح|عدل|تعديل|غير|انشئ|انشاء|اصنع|صنع|اكتب|اضف|احذف|ارفع|نفذ|انفذ|ارسل|ارسل|برمج|طور|حول|ترجم|شغل|ثبت|صمم|اعمل|حسن|fix|repair|edit|modify|create|write|add|delete|implement|send|push|deploy|build|make|generate|refactor)(?:\\s|$)").containsMatchIn(t)
+        return IMPERATIVE.containsMatchIn(t)
     }
 }
 
@@ -132,7 +143,7 @@ class TaskContinuity {
         val approved = WriteIntent.isApproval(userRequest) &&
             (resume || answering || writeGranted || persistedWrite)
         writeGranted = when {
-            WriteIntent.isDenial(userRequest) -> false
+            WriteIntent.isReadOnlyRequest(userRequest) -> false
             WriteIntent.isExecute(userRequest) -> true
             WriteIntent.permits(userRequest) -> true
             approved -> true

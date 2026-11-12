@@ -199,6 +199,7 @@ fun SettingsScreen(
     var githubToken by remember { mutableStateOf(prefs.getString("github_token", "") ?: "") }
     var githubAgent by remember { mutableStateOf(prefs.getBoolean("agent_tools", true)) }
     var githubWrite by remember { mutableStateOf(prefs.getBoolean("agent_write", true)) }
+    var autoGrantWrite by remember { mutableStateOf(prefs.getBoolean("auto_grant_write", false)) }
     var githubRepo by remember { mutableStateOf(prefs.getString("github_default_repo", "") ?: "") }
     var githubStatus by remember { mutableStateOf("") }
     var githubTesting by remember { mutableStateOf(false) }
@@ -1434,6 +1435,27 @@ fun SettingsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("السماح للذكاء بالكتابة والحذف والدفع", color = Color.White, fontSize = 14.sp)
                         Text("يشمل ملفات مساحة العمل وتعديل GitHub. أوقفه إن أردت وضع القراءة فقط.", color = Color(0xFF9A9A9A), fontSize = 11.sp)
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        autoGrantWrite = !autoGrantWrite
+                        prefs.edit().putBoolean("auto_grant_write", autoGrantWrite).apply()
+                    }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Switch(
+                        checked = autoGrantWrite,
+                        onCheckedChange = {
+                            autoGrantWrite = it
+                            prefs.edit().putBoolean("auto_grant_write", it).apply()
+                        },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("إذن كتابة مفتوح لكل المحادثات والمزودات", color = Color.White, fontSize = 14.sp)
+                        Text("لا تظهر بطاقة إذن: ينفّذ الوكيل التعديلات مباشرة (يبقى الفحص والقراءة فقط محمياً عند طلبه صراحةً).", color = Color(0xFF9A9A9A), fontSize = 11.sp)
                     }
                 }
                 Spacer(Modifier.height(8.dp))

@@ -31,4 +31,15 @@ class ToolMarkupTest {
         assertTrue(WriteIntent.permits(ok))
         assertTrue(WriteIntent.isDenial("اختبار أدوات لا تغيّر أي شيء خارج الفرع"))
     }
+
+    @Test fun scopedNegativeConstraintDoesNotCancelAnExplicitCommand() {
+        val cmd = "احذف الفرع test/tools-check-1 من مستودع starmaen/LionAI ثم تحقق. لا تحذف أي فرع آخر ولا main."
+        assertTrue(WriteIntent.isDenial(cmd))
+        assertTrue(WriteIntent.startsImperative(cmd))
+        assertTrue(!WriteIntent.isReadOnlyRequest(cmd))
+        assertTrue(WriteIntent.permits(cmd))
+        val m = TaskContinuity(); m.begin(cmd, false)
+        assertTrue(m.writeGranted)
+        assertTrue(WriteIntent.isReadOnlyRequest("لا تعدل شيئاً"))
+    }
 }

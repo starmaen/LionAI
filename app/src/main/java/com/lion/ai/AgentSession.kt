@@ -80,7 +80,7 @@ class AgentSession(val chatId: String) {
         )
         if (prefs != null) {
             if (continuity.writeGranted) PermissionStore.grantWrite(prefs, chatId)
-            else if (WriteIntent.isDenial(userRequest)) PermissionStore.revokeWrite(prefs, chatId)
+            else if (WriteIntent.isReadOnlyRequest(userRequest)) PermissionStore.revokeWrite(prefs, chatId)
         }
         if (!continuity.resume) lastTask = userRequest.take(600)
         completed = false
