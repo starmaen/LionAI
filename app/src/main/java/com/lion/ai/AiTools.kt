@@ -737,6 +737,14 @@ object AiTools {
         MARKER.findAll(text).forEach { blocks.add(it.groupValues[1]) }
         TOOL_TAG.findAll(text).forEach { blocks.add(it.groupValues[1]) }
         FENCE.findAll(text).forEach { blocks.add(it.groupValues[1]) }
+        // صيغ معطوبة شائعة: إغلاق بـ [[TOOL]] بدل [[/TOOL]]، أو بلا إغلاق، أو داخل سياج كود: نقرأ JSON المتوازن بعد كل [[TOOL]].
+        if (blocks.isEmpty()) {
+            var from = text.indexOf("[[TOOL]]")
+            while (from >= 0) {
+                ToolMarkup.balancedJson(text, from + "[[TOOL]]".length)?.let { blocks.add(it) }
+                from = text.indexOf("[[TOOL]]", from + 8)
+            }
+        }
         if (blocks.isEmpty()) {
             // بعض النماذج ترسل JSON عارياً بلا سياج.
             val start = text.indexOf('{')

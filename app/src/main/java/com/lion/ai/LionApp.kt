@@ -180,13 +180,17 @@ internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: B
  * يقرر هل تُفتح دورة الأدوات. الأمر التنفيذي والاستئناف يفتحانها دائماً.
  * في «المطوّر» تُفتح أيضاً لأي سؤال يشير إلى مشروع/ملف/خطأ فعلي (يقرأ الواقع قبل أن يجيب).
  */
+internal fun hasProjectReference(text: String, chatMode: ChatMode): Boolean =
+    (chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)) ||
+        (chatMode == ChatMode.GENERAL && GENERAL_REPO_REFERENCE.containsMatchIn(text)) ||
+        (chatMode != ChatMode.LEARN && text.contains("github.com/"))
+
 internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode: ChatMode = ChatMode.GENERAL): Boolean {
     if (hasWork) return true
     val text = prompt.trim().lowercase()
     if (text.isBlank()) return false
     // الدردشة العامة أيضاً: ذكر مستودع/GitHub/README/ملف برمجي يعني قراءة الواقع بالأدوات لا التخمين (كان الرد «ليس لدي أداة»).
-    val projectRef = (chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)) ||
-        (chatMode == ChatMode.GENERAL && GENERAL_REPO_REFERENCE.containsMatchIn(text))
+    val projectRef = hasProjectReference(text, chatMode)
     // الأصل جواب مباشر: أي سؤال (عاصمة؟ هل هذا ملف pdf؟ ماذا تعني كلمة؟ هل بإمكانك…؟) لا يفتح أدوات.
     // الاستثناء الوحيد: سؤال عن مشروع/خطأ فعلي في «المطوّر» يقرأ الواقع قبل أن يجيب.
     if (UserIntent.classify(text) != UserIntent.Kind.REQUEST) return projectRef
@@ -306,7 +310,7 @@ fun LionApp() {
                     toolStatus[chatId] = providerInfo(provider).shortName + " • 📤 أُرسل إلى الصفحة (" + fullText.length + " حرفاً)"
             }
             override fun onPartial(chatId: String, provider: String, fullText: String) {
-                if (loadingChats[chatId] == true) livePartial[chatId] = fullText
+                if (loadingChats[chatId] == true) livePartial[chatId] = ToolMarkup.strip(fullText)
             }
             override fun onStage(chatId: String, provider: String, note: String) {
                 if (loadingChats[chatId] == true) toolStatus[chatId] = note

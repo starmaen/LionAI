@@ -78,7 +78,7 @@ object ToolAgent {
      * يُدفع المزود للتنفيذ في الرد نفسه، وإن أصرّ يُعامل كفشل مزود.
      */
     internal fun isIntentOnly(reply: String): Boolean {
-        val text = reply.replace(TOOL_BLOCK, "").replace(ASK, "").replace(ASK_ALT, "").trim()
+        val text = ToolMarkup.strip(reply).replace(ASK, "").replace(ASK_ALT, "").trim()
         if (text.isEmpty() || text.length > 700 || text.contains("```")) return false
         if (TRAILING_QUESTION.containsMatchIn(text.takeLast(200))) return false
         if (DONE_WORDS.containsMatchIn(text)) return false
@@ -97,8 +97,10 @@ object ToolAgent {
      * رسالة سؤال/قدرة (لا طلب تنفيذ) وليست استئنافاً لمهمة: تُجاب مباشرة.
      * لا بطاقة قرار/إذن، ولا دفع النموذج لاستدعاء أداة. البطاقة تبقى للمهام التنفيذية فقط.
      */
-    internal fun answerOnly(userRequest: String, resume: Boolean): Boolean =
-        !resume && UserIntent.classify(userRequest) != UserIntent.Kind.REQUEST
+    internal fun answerOnly(userRequest: String, resume: Boolean, chatMode: ChatMode = ChatMode.GENERAL): Boolean =
+        !resume && UserIntent.classify(userRequest) != UserIntent.Kind.REQUEST &&
+            // رابط/مستودع/ملف مشروع في الطلب = قراءة الواقع بالأدوات، حتى لو وردت كلمة «شرح» أو «نبذة».
+            !hasProjectReference(userRequest.trim().lowercase(), chatMode)
 
     internal fun formatUserAsk(question: String): String =
         question.trim().let { "$it\n\n— 💬 أنتظر ردك لأكمل المهمة من هذه النقطة (لن أفقد ما تم إنجازه)." }
@@ -136,6 +138,7 @@ object ToolAgent {
         - عند الانتقال إلى مزود بديل أو غرفة العمليات، تبقى نتائج الأدوات والجلسة هي مصدر الحقيقة؛ لا تعد تنفيذ عملية ناجحة ولا تبدأ من الصفر.
 
         قواعد صارمة:
+        - لا تشرح للمستخدم كيف تُستدعى الأدوات ولا تعرض صيغتها: حين يلزم فعل (قراءة، فحص، كتابة، بناء) أرسل استدعاء الأداة نفسه مباشرة بلا مقدمة، وبعد وصول النتيجة تابع.
         - استخدم الأدوات فقط عند الحاجة الفعلية، ولا تختلق نتائج أدوات.
         - لا تقل إنك عدّلت/حذفت/دفعت شيئاً إلا إذا عادت نتيجة أداة تؤكد ذلك.
         - لا تضع مفاتيح أو أسراراً داخل الملفات أو الردود.
@@ -275,7 +278,7 @@ object ToolAgent {
         var lastGateText = ""
         var deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
         val hardDeadline = System.currentTimeMillis() + HARD_LIMIT_MS
-        val answerOnly = answerOnly(userRequest, memory.resume)
+        val answerOnly = answerOnly(userRequest, memory.resume, chatMode)
 
         val maxSteps = stepBudget(chatMode, groups.isNotEmpty() || forceExecution)
         // سجل العمل الحي: يظهر في الواجهة (✅ منجز / ❌ فشل / خطوة جارية) ويُلخَّص في تقرير نهائي ثابت لا يعتمد على النموذج.
@@ -446,7 +449,7 @@ object ToolAgent {
                 ?.groupValues?.get(1)?.trim()
             if (!explicitAsk.isNullOrBlank() && answerOnly) {
                 // سؤال معرفي/قدرة: السؤال جزء من الجواب النصي، لا بطاقة قرار.
-                val plain = reply.replace(ASK, "\$1").replace(ASK_ALT, "\$1").replace(TOOL_BLOCK, "").trim()
+                val plain = ToolMarkup.strip(reply.replace(ASK, "\$1").replace(ASK_ALT, "\$1")).trim()
                 return finish(plain.ifBlank { explicitAsk }, true)
             }
             if (!explicitAsk.isNullOrBlank()) {
@@ -719,8 +722,7 @@ object ToolAgent {
         used.any { it.removePrefix("github_") in GATE_WRITE_TOOLS.map { name -> name.removePrefix("github_") } }
 
     private fun finalAnswer(reply: String, used: List<String>): String {
-        val clean = reply
-            .replace(Regex("\\[\\[TOOL\\]\\].*?\\[\\[/TOOL\\]\\]", RegexOption.DOT_MATCHES_ALL), "")
+        val clean = ToolMarkup.strip(reply)
             .replace(ASK, "")
             .replace(ASK_ALT, "")
             .trim()

@@ -146,15 +146,18 @@ internal fun LionMessageList(
             val canRegenerate = !message.isUser && previousUser != null && index > 0 &&
                 messages[index - 1].isUser && message.pending == null &&
                 messages.drop(index + 1).none { it.isUser } && !ActionDetector.looksLikeCommand(previousUser.text)
+            // بروتوكول الأدوات الخام لا يُعرض: يظهر مكانه مسار التنفيذ.
+            val shown = if (!message.isUser && ToolMarkup.hasMarkup(message.text))
+                message.copy(text = ToolMarkup.strip(message.text).ifBlank { "⏳ جارٍ تنفيذ الأدوات…" }) else message
             Bubble(
-                message, context, tts, index, onPendingChoice, canRegenerate,
+                shown, context, tts, index, onPendingChoice, canRegenerate,
                 { onRegenerate(index) }, { onReply(index) },
                 askEnabled = !loading && index == messages.lastIndex,
                 onAskReply = onAskReply
             )
         }
         if (loading) {
-            val live = livePartial.orEmpty()
+            val live = ToolMarkup.strip(livePartial.orEmpty())
             if (live.isNotBlank()) {
                 item(key = "$currentChat:live") {
                     Bubble(
