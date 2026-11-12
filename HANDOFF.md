@@ -3,7 +3,7 @@
 آخر تحديث: 2026-11-01 · راجع `git log --oneline -5` لمعرفة أحدث commit.
 
 ## ملخص سريع
-LionAI أصبح: أوضاع محادثة معزولة (GENERAL / CODE / LEARN) + Control Plane (Manifest + بوابات جودة + توقيع HMAC) + مزود مخصص OpenAI-Compatible (LiteLLM/Ollama/Gateway) + طبقة أدوات موسّعة (SHELL/QUALITY/CONTROL/MEMORY/MCP).
+LionAI أصبح: أوضاع محادثة معزولة (GENERAL / CODE؛ التعلّم مدمج في CODE) + Control Plane (Manifest + بوابات جودة + توقيع HMAC) + مزود مخصص OpenAI-Compatible (LiteLLM/Ollama/Gateway) + طبقة أدوات موسّعة (SHELL/QUALITY/CONTROL/MEMORY/MCP).
 
 - البناء والاختبارات تُشغَّل عبر GitHub Actions فقط (لا JDK/Android SDK في بيئة العمل).
 - Workflow: `.github/workflows/build.yml` → `./gradlew testDebugUnitTest` ثم APK موقّع كـArtifact.
