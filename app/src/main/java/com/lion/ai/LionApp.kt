@@ -159,6 +159,12 @@ private val PROJECT_REFERENCE = Regex(
         "\\.(?:kt|kts|java|py|js|ts|tsx|json|xml|ya?ml|md|gradle|sh)\\b|[\\w-]+/[\\w./-]+)"
 )
 
+/** إشارات صريحة إلى مستودع أو ملف مشروع في الدردشة العامة (أضيق من PROJECT_REFERENCE كي لا تُفتح الأدوات للكلام العادي). */
+private val GENERAL_REPO_REFERENCE = Regex(
+    "(مستودع|ريبو|repo\\b|repository|github|readme|" +
+        "\\.(?:kt|kts|java|py|js|ts|tsx|json|xml|ya?ml|md|gradle|sh)\\b)"
+)
+
 /**
  * التنفيذ الإجباري (دفع النموذج لاستدعاء أداة): في «المطوّر» لا يُفرض على كل رسالة،
  * بل على الأوامر التنفيذية ومهام التطوير والاستئناف فقط؛ أسئلة المشروع تستخدم الأدوات عند الحاجة بلا إجبار.
@@ -178,7 +184,9 @@ internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode:
     if (hasWork) return true
     val text = prompt.trim().lowercase()
     if (text.isBlank()) return false
-    val projectRef = chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)
+    // الدردشة العامة أيضاً: ذكر مستودع/GitHub/README/ملف برمجي يعني قراءة الواقع بالأدوات لا التخمين (كان الرد «ليس لدي أداة»).
+    val projectRef = (chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)) ||
+        (chatMode == ChatMode.GENERAL && GENERAL_REPO_REFERENCE.containsMatchIn(text))
     // الأصل جواب مباشر: أي سؤال (عاصمة؟ هل هذا ملف pdf؟ ماذا تعني كلمة؟ هل بإمكانك…؟) لا يفتح أدوات.
     // الاستثناء الوحيد: سؤال عن مشروع/خطأ فعلي في «المطوّر» يقرأ الواقع قبل أن يجيب.
     if (UserIntent.classify(text) != UserIntent.Kind.REQUEST) return projectRef
@@ -219,6 +227,14 @@ fun LionApp() {
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
     val toolStatus = remember { mutableStateMapOf<String, String>() }
+    // سجل عمل الوكيل وحدث الصفحة الأخير يُدمجان معاً: حدث الصفحة لا يمحو سلسلة العمل (قراءة ← فحص ← متابعة ← بناء).
+    val agentProgress = remember { HashMap<String, String>() }
+    val pageEvents = remember { HashMap<String, String>() }
+    fun composeProgress(id: String): String {
+        val log = agentProgress[id].orEmpty()
+        val event = pageEvents[id].orEmpty().trim()
+        return if (event.isBlank()) log else if (log.isBlank()) event else "$log\n$event"
+    }
     /** الرد الجزئي القادم من صفحة الويب لكل محادثة (بث حي). */
     val livePartial = remember { mutableStateMapOf<String, String>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
@@ -269,7 +285,10 @@ fun LionApp() {
                 }
                 "web_session_event" -> {
                     val id = prefs.getString("web_session_event_chat", "").orEmpty()
-                    if (loadingChats[id] == true) toolStatus[id] = prefs.getString("web_session_event", "").orEmpty()
+                    if (loadingChats[id] == true) {
+                        pageEvents[id] = prefs.getString("web_session_event", "").orEmpty()
+                        toolStatus[id] = composeProgress(id)
+                    }
                 }
             }
         }
@@ -1259,7 +1278,11 @@ fun LionApp() {
                                 providerLabel = if (opsActive) OperationsRoom.BRAND else SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,
-                                onProgress = { status -> toolStatus[chatId] = status }
+                                onProgress = { status ->
+                                    agentProgress[chatId] = status
+                                    pageEvents.remove(chatId)
+                                    toolStatus[chatId] = composeProgress(chatId)
+                                }
                             )
                         }.getOrElse { ToolAgent.Result("⚠️ تعذر تشغيل الأدوات: ${it.message ?: it.javaClass.simpleName}", emptyList(), complete = false, responded = session.continuity.responded) }
                     }
@@ -1568,6 +1591,8 @@ fun LionApp() {
                     (if (consensusPercent >= 0) " · 🧩 " + consensusPercent + "%" else "")
             }
             toolStatus.remove(chatId)
+            agentProgress.remove(chatId)
+            pageEvents.remove(chatId)
             livePartial.remove(chatId)
             // الجلسة تبقى فقط إذا لم تُقبل إجابة مكتملة أو كان هناك سؤال معلّق؛ اكتمال المهمة يصفّرها.
             if (standalone) {

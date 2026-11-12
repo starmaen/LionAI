@@ -149,4 +149,11 @@ class DevTaskTest {
         }
     }
 
+
+    @Test fun generalChatOpensToolsForRepoAndFileReferences() {
+        assertTrue(shouldUseAgentForPrompt("ما محتوى README.md في المستودع؟", false, ChatMode.GENERAL))
+        assertTrue(shouldUseAgentForPrompt("ماذا يوجد في مستودعي starmaen/LionAI على github", false, ChatMode.GENERAL))
+        assertFalse(shouldUseAgentForPrompt("ما هي عاصمة فرنسا", false, ChatMode.GENERAL))
+        assertFalse(shouldUseAgentForPrompt("هل بإمكانك قراءة ملف؟", false, ChatMode.GENERAL))
+    }
 }
