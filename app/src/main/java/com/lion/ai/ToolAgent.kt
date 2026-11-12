@@ -65,6 +65,7 @@ object ToolAgent {
             "(إذن|اذن|أذونات|اذونات|صلاحي|صلاحية|تصريح|permission|authorization|access)",
         RegexOption.IGNORE_CASE
     )
+    private val DELETE_BRANCH_REQUEST = Regex("(احذف|حذف|delete)\\s+(ال)?(فرع|branch)", RegexOption.IGNORE_CASE)
     private val DESTRUCTIVE_ASK = Regex(
         "(حذف|delete|remove|دفع|push|نشر|deploy|ارسال|إرسال|send|تثبيت|install|drop|truncate)",
         RegexOption.IGNORE_CASE
@@ -206,7 +207,9 @@ object ToolAgent {
         via: String = Channel.AUTO,
         userRequest: String = prompt,
         /** قراءة فقط: مجموعات القراءة وحدها، وكل أداة تعديل/تنفيذ مرفوضة مهما قال النص. يُستخدم لجمع الأدلة في غرفة العمليات. */
-        readOnly: Boolean = false
+        readOnly: Boolean = false,
+        /** شرح النموذج بين الأدوات («سأقرأ الملف الآن…») يصل إلى المحادثة كرسالة فعلية لا في مسار التنفيذ وحده. */
+        onNarration: ((String) -> Unit)? = null
     ): Result {
         val memory = session?.continuity ?: TaskContinuity().also { it.begin(userRequest, false) }
         val label = providerLabel.ifBlank { providerInfo(provider).shortName }
@@ -275,6 +278,8 @@ object ToolAgent {
         var lastSignature = ""
         var repeated = 0
         var nudges = 0
+        var endNudges = 0
+        var lastNarration = ""
         var promiseNudges = 0
         var permissionNudges = 0
         var repairNudges = 0
@@ -575,6 +580,18 @@ object ToolAgent {
                 if (AnswerGuard.claimsCompletedAction(reply) && okMutations == 0 && !memory.hasConfirmedMutation()) {
                     return finish("رفضت إعلان تعديل أو رفع بلا نتيجة أداة تؤكده. لم أعتبر المهمة مكتملة.", false, "لا دليل على تنفيذ التعديل")
                 }
+                // خطوة مطلوبة صراحةً لم تُنفَّذ (حذف الفرع التجريبي الذي أُنشئ): لا يُقبل الختام قبلها.
+                if (endNudges < 2 && "github_create_branch" in used && "github_delete_branch" !in used &&
+                    DELETE_BRANCH_REQUEST.containsMatchIn(userRequest) &&
+                    System.currentTimeMillis() + 45_000L < deadline
+                ) {
+                    endNudges++
+                    historyBuffer.add(ChatTurn("user", current))
+                    historyBuffer.add(ChatTurn("assistant", reply))
+                    current = "لم تكتمل المهمة: طلب المستخدم حذف الفرع الذي أنشأته ولم تستدعِ github_delete_branch بعد. " +
+                        "استدعِه الآن للفرع التجريبي نفسه (وليس الفرع الافتراضي) ثم أعطِ الملخص النهائي."
+                    continue
+                }
                 val answer = finalAnswer(reply, used)
                 if (used.isNotEmpty()) session?.recordNote("اكتملت المهمة: " + answer.take(240))
                 if (used.isNotEmpty()) {
@@ -587,6 +604,14 @@ object ToolAgent {
                 )
             }
 
+            // شرح النموذج المرافق للأدوات يظهر في المحادثة بدل أن يضيع داخل مسار التنفيذ.
+            if (onNarration != null) {
+                val narration = ToolMarkup.strip(reply).replace(ASK, "").replace(ASK_ALT, "").trim()
+                if (narration.length >= 12 && narration != lastNarration && !isIntentOnly(narration)) {
+                    lastNarration = narration
+                    onNarration.invoke(narration.take(700))
+                }
+            }
             val signature = calls.joinToString("|") { it.name + it.args.toString() }
             if (signature == lastSignature) {
                 repeated++

@@ -1280,6 +1280,7 @@ fun LionApp() {
                                 providerLabel = if (opsActive) OperationsRoom.BRAND else SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,
+                                onNarration = { text -> scope.launch { appendToChat(chatId, Message(text, false)) } },
                                 onProgress = { status ->
                                     agentProgress[chatId] = status
                                     pageEvents.remove(chatId)
