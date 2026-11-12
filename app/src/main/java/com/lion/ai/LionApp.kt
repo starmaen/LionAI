@@ -244,7 +244,6 @@ fun LionApp() {
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
     var currentMode by remember { mutableStateOf(ChatRepository.modeOf(prefs, currentChat)) }
         var showModePicker by remember { mutableStateOf(false) }
-    var pendingMode by remember { mutableStateOf<ChatMode?>(null) }
     var promotionRequest by remember { mutableStateOf<String?>(null) }
     var chatMetas by remember { mutableStateOf(listOf<ChatMeta>()) }
     var scheduledItems by remember { mutableStateOf(listOf<ScheduledItem>()) }
@@ -533,6 +532,14 @@ fun LionApp() {
             tabs = tabs.map { if (it.id == tab.id) it.copy(chatId = id) else it }
             TabsStore.save(prefs, tabs)
         }
+    }
+
+    /** تبديل الوضع داخل المحادثة نفسها دون محادثة جديدة؛ runChat يقرأ الوضع من ChatRepository.modeOf. */
+    fun chooseMode(selected: ChatMode) {
+        if (selected == currentMode) return
+        ChatRepository.setMode(prefs, currentChat, selected)
+        currentMode = selected
+        refreshChats()
     }
 
     fun appendToChat(chatId: String, message: Message) {
@@ -2021,7 +2028,7 @@ fun LionApp() {
             },
                         quickModeLabel = currentMode.short,
             currentChatMode = currentMode,
-            onSelectMode = { pendingMode = it },
+            onSelectMode = { chooseMode(it) },
             onOpenMode = {
                 showSettings = false
                 showModePicker = true
@@ -2282,22 +2289,7 @@ fun LionApp() {
         }
     }
 
-    fun chooseMode(selected: ChatMode) {
-        if (selected == currentMode) return
-        if (messages.isEmpty()) {
-            ChatRepository.setMode(prefs, currentChat, selected)
-            currentMode = selected
-            refreshChats()
-        } else {
-            // منع تلوث السياق: وضع جديد = محادثة جديدة معزولة.
-            startNewChat(selected)
-            refreshChats()
-        }
-    }
 
-        LaunchedEffect(pendingMode) {
-        pendingMode?.let { chooseMode(it); pendingMode = null }
-    }
 
     if (showModePicker) {
         ModePickerDialog(
@@ -2317,12 +2309,8 @@ fun LionApp() {
             onDismiss = { promotionRequest = null },
             onPromote = {
                 if (promotion.isNotBlank()) {
-                    val savedAttachment = attachment
-                    val savedImage = imageAttachment
-                    startNewChat(ChatMode.CODE)
+                    chooseMode(ChatMode.CODE)
                     input = promotion
-                    attachment = savedAttachment
-                    imageAttachment = savedImage
                     promotionRequest = null
                     autoSendTrigger += 1
                 }
