@@ -491,6 +491,10 @@ internal class AndroidWebSessionHost(
         } else {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", false).apply()
             display(false, reply.text)
+            // مهلة/فشل بعد إرسال الرسالة: الصفحة غالباً ما زالت تولّد الرد. نلتقطه لاحقاً إلى المحادثة بدل أن يضيع في الصفحة.
+            scheduleCapture(p.adapter, p.chatId, 25_000L)
+            scheduleCapture(p.adapter, p.chatId, 75_000L)
+            scheduleCapture(p.adapter, p.chatId, 160_000L)
         }
         CookieManager.getInstance().flush()
         p.done(reply)

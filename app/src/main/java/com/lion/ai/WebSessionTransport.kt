@@ -39,7 +39,7 @@ object WebSessionTransport {
         val current = host ?: return Reply("⚠️ افتح التطبيق لتشغيل جلسة الويب.", false)
         if (current.isUiThread()) return Reply("⚠️ لا يمكن انتظار الويب على خيط الواجهة.", false)
         val token = UUID.randomUUID().toString()
-        val timeout = timeoutMs.coerceIn(1000, 180_000)
+        val timeout = timeoutMs.coerceIn(1000, 420_000)
         val acquired = try {
             gate.tryAcquire(timeout.toLong(), TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {

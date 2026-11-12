@@ -393,7 +393,10 @@ object ToolAgent {
                 )
             }
             publish("🧠 $label يخطط للخطوة ${step + 1}")
-            val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, 120_000L).toInt()
+            // صفحات الويب (خاصة نماذج التفكير بعد نتائج طويلة كسجل بناء) قد تحتاج دقائق للرد: مهلة 120ث كانت تقطع الرد
+        // وتهجره في الصفحة. نمنحها حتى 6 دقائق للخطوة الواحدة.
+        val stepCap = if (WebChatRuntime.handles(provider)) 360_000L else 120_000L
+        val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, stepCap).toInt()
             val toolTurn = if (nativeTools != null && nativeTools.length() > 0) {
                 LlmClient.askWithTools(
                     message = current,
