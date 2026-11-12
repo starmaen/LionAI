@@ -142,7 +142,9 @@ fun SettingsScreen(
     onOpenDevTools: () -> Unit = {},
     onOpenConnectors: () -> Unit = {},
     quickModeLabel: String = "",
-    onOpenMode: () -> Unit = {},
+        onOpenMode: () -> Unit = {},
+    currentChatMode: ChatMode = ChatMode.GENERAL,
+    onSelectMode: (ChatMode) -> Unit = {},
     onOpenMedia: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
@@ -324,18 +326,22 @@ fun SettingsScreen(
             var hubVersion by remember { mutableStateOf(0) }
             SettingsTabsBar(settingsTab) { settingsTab = it }
             Spacer(Modifier.height(4.dp))
-            if (settingsTab == 3) {
+                        run {
             SettingsSection(
-                title = "🎛️ الأوضاع والوسائط",
-                subtitle = "نُقلت من تحت صندوق الكتابة لتبقى واجهة المحادثة نظيفة",
+                title = "💬 خيارات المحادثة",
+                subtitle = "عام: دردشة مباشرة والأدوات عند الطلب فقط · المطوّر: كل الأدوات حاضرة. ينطبق على كل المزودات والجسر",
                 initiallyExpanded = true
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { persist(); onOpenMode() },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
-                    ) { Text("💬 وضع المحادثة: $quickModeLabel", color = Color(0xFFE0E0E0), fontSize = 12.sp) }
+                                        ChatMode.entries.forEach { m ->
+                        val on = m == currentChatMode
+                        Button(
+                            onClick = { persist(); onSelectMode(m) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (on) Color(0xFFFFB800) else Color(0xFF2A2A2A))
+                        ) { Text("${m.icon} ${m.short}", color = if (on) Color.Black else Color(0xFFE0E0E0), fontSize = 12.sp) }
+                    }
+
                     Button(
                         onClick = { persist(); onOpenMedia() },
                         modifier = Modifier.weight(1f),

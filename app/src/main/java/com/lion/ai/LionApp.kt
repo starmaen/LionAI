@@ -243,7 +243,8 @@ fun LionApp() {
     val livePartial = remember { mutableStateMapOf<String, String>() }
     var currentChat by remember { mutableStateOf(prefs.getString("last_chat", "default") ?: "default") }
     var currentMode by remember { mutableStateOf(ChatRepository.modeOf(prefs, currentChat)) }
-    var showModePicker by remember { mutableStateOf(false) }
+        var showModePicker by remember { mutableStateOf(false) }
+    var pendingMode by remember { mutableStateOf<ChatMode?>(null) }
     var promotionRequest by remember { mutableStateOf<String?>(null) }
     var chatMetas by remember { mutableStateOf(listOf<ChatMeta>()) }
     var scheduledItems by remember { mutableStateOf(listOf<ScheduledItem>()) }
@@ -2018,7 +2019,9 @@ fun LionApp() {
                 selectedProvider = ProviderRemoval.resolve(prefs.getString("provider", "gemini") ?: "gemini")
                 syncActiveTab()
             },
-            quickModeLabel = currentMode.short,
+                        quickModeLabel = currentMode.short,
+            currentChatMode = currentMode,
+            onSelectMode = { pendingMode = it },
             onOpenMode = {
                 showSettings = false
                 showModePicker = true
@@ -2290,6 +2293,10 @@ fun LionApp() {
             startNewChat(selected)
             refreshChats()
         }
+    }
+
+        LaunchedEffect(pendingMode) {
+        pendingMode?.let { chooseMode(it); pendingMode = null }
     }
 
     if (showModePicker) {
