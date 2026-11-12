@@ -603,7 +603,8 @@ object ToolAgent {
 
             // أداة تعديل مطلوبة بلا إذن صالح: لا نُعيدها للنموذج كفشل صامت (فيكرّر المحاولة والمستخدم لا يرى شيئاً)،
             // بل نعرض بطاقة قرار صريحة ونحفظ الجلسة؛ موافقتك تمنح الإذن وتتابع المهمة من النقطة نفسها.
-            if (toolContext.allowWrite && !memory.writeGranted) {
+            // طلب فحص/قراءة صريح (أو رفض سابق) يبقى حظراً صامتاً: المستخدم قال لا تعدّل، فلا نسأله.
+            if (toolContext.allowWrite && !memory.writeGranted && !WriteIntent.isDenial(userRequest)) {
                 val blocked = calls.firstOrNull { AiTools.isMutation(it) }
                 if (blocked != null) {
                     val target = blocked.args.optString("path").ifBlank {
