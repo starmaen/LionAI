@@ -54,8 +54,12 @@ object TextEdit {
     }
 
     private fun notFoundHint(lines: List<String>, oldLines: List<String>): String {
-        val key = oldLines.firstOrNull { it.length >= 6 }?.take(30).orEmpty()
-        val at = if (key.isBlank()) -1 else lines.indexOfFirst { it.contains(key) }
+        val first = oldLines.firstOrNull { it.length >= 6 }.orEmpty()
+        // مطابقة تقريبية: نجرّب بادئات أقصر تدريجياً حتى نجد أقرب سطر.
+        val at = listOf(30, 20, 14, 10).asSequence()
+            .map { first.take(it) }.filter { it.length >= 8 }.distinct()
+            .map { key -> lines.indexOfFirst { l -> l.contains(key) } }
+            .firstOrNull { it >= 0 } ?: -1
         val near = if (at >= 0) {
             val from = (at - 1).coerceAtLeast(0)
             val to = (at + 4).coerceAtMost(lines.size - 1)
