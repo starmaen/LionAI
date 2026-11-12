@@ -601,6 +601,24 @@ object ToolAgent {
             historyBuffer.add(ChatTurn("user", current))
             historyBuffer.add(ChatTurn("assistant", assistantText))
 
+            // أداة تعديل مطلوبة بلا إذن صالح: لا نُعيدها للنموذج كفشل صامت (فيكرّر المحاولة والمستخدم لا يرى شيئاً)،
+            // بل نعرض بطاقة قرار صريحة ونحفظ الجلسة؛ موافقتك تمنح الإذن وتتابع المهمة من النقطة نفسها.
+            if (toolContext.allowWrite && !memory.writeGranted) {
+                val blocked = calls.firstOrNull { AiTools.isMutation(it) }
+                if (blocked != null) {
+                    val target = blocked.args.optString("path").ifBlank {
+                        blocked.args.optString("branch").ifBlank { blocked.args.optString("workflow").ifBlank { blocked.args.optString("name") } }
+                    }.replace('\n', ' ').takeLast(60)
+                    val what = blocked.name.removePrefix("github_").replace('_', ' ') + if (target.isBlank()) "" else " ← $target"
+                    val question = "أحتاج إذنك لتنفيذ تعديل: $what. هل تسمح لي بتنفيذ التعديلات المطلوبة في هذه المهمة؟ (نعم / لا)"
+                    session?.recordNote("طُلب إذن الكتابة قبل تنفيذ $what")
+                    session?.askQuestion(question)
+                    memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
+                    session?.let { CheckpointStore.save(prefs, it) }
+                    onProgress?.invoke("💬 بانتظار إذنك: $what")
+                    return Result(askWithReport(question), used, complete = false, responded = memory.responded)
+                }
+            }
             val observations = calls.map { call ->
                 currentCoroutineContext().ensureActive()
                 val path = call.args.optString("path").ifBlank { call.args.optString("from") }

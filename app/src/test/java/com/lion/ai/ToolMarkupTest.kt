@@ -25,4 +25,10 @@ class ToolMarkupTest {
         assertFalse(ToolAgent.answerOnly(ask, false, ChatMode.GENERAL))
         assertTrue(shouldUseAgentForPrompt(ask, false, ChatMode.GENERAL))
     }
+
+    @Test fun explicitBranchTestRequestGrantsWriteButNegativePhrasingDoesNot() {
+        val ok = "أنشئ فرعاً اختبارياً باسم test/tools-check-1 في مستودع starmaen/LionAI واكتب فيه الملف .lion-test/check.txt ثم شغّل build.yml واحذف الفرع. لديك إذن كتابة كامل على هذا الفرع وحده."
+        assertTrue(WriteIntent.permits(ok))
+        assertTrue(WriteIntent.isDenial("(لا تغيّر أي شيء خارج الفرع)"))
+    }
 }
