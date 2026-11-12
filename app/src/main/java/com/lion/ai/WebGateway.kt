@@ -168,7 +168,8 @@ object WebGateway {
         else -> MODE_OFF
     }
 
-    fun supports(provider: String): Boolean = supported.contains(provider)
+    /** المدمج + ما يعلنه الخادم فعلياً (/health): الـ Worker يدعم مزودات أكثر وأضافية عبر EXTRA_PROVIDERS. */
+    fun supports(provider: String): Boolean = supported.contains(provider) || provider in remoteIds
 
     /** المزودات المفعّلة فعلاً على الخادم (تُحدَّث عند فحص الخادم أو جلب الموديلات). فارغة = غير معروف بعد. */
     @Volatile

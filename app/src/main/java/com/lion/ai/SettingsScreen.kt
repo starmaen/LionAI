@@ -92,6 +92,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -318,6 +320,11 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             // ما كان شريطاً تحت صندوق الكتابة صار هنا: وضع المحادثة والميديا. (التوجيه تلقائي/يدوي أدناه.)
+            var settingsTab by rememberSaveable { mutableStateOf(0) }
+            var hubVersion by remember { mutableStateOf(0) }
+            SettingsTabsBar(settingsTab) { settingsTab = it }
+            Spacer(Modifier.height(4.dp))
+            if (settingsTab == 3) {
             SettingsSection(
                 title = "🎛️ الأوضاع والوسائط",
                 subtitle = "نُقلت من تحت صندوق الكتابة لتبقى واجهة المحادثة نظيفة",
@@ -336,12 +343,14 @@ fun SettingsScreen(
                     ) { Text("🎨 ميديا", color = Color(0xFFE0E0E0), fontSize = 12.sp) }
                 }
             }
+            }
 
             LionChatSettingsCard(prefs = prefs, onActivate = { id ->
                 provider = id
                 autoRouteSetting = false
             })
 
+            if (settingsTab == 0) {
             SettingsSection(
                 title = "🔑 المزودات الأساسية (API)",
                 subtitle = "اضغط على المزود لفتح مفتاحه وموديله وزر الاختبار. الدائرة ● = المزود النشط",
@@ -398,7 +407,11 @@ fun SettingsScreen(
                     }
                 }
             }
+            }
 
+            if (settingsTab == 1) {
+            ConnectionHubSection(prefs, onChanged = { hubVersion++ })
+            key(hubVersion) {
             // بطاقة الخادم المحلي (Proxy) لعرض البورت الذي اختاره نظام أندرويد تلقائياً
             Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
@@ -635,7 +648,7 @@ fun SettingsScreen(
                             LlmClient.reloadOverrides(prefs)
                         }
                         SettingsSection(
-                            title = "🌐 مزودات خادم الويب",
+                            title = "🧩 تفاصيل الخوادم (الرابط والمفتاح والمزودات)",
                             subtitle = "اختياري: مباشر أو عبر Cloudflare/Render — افحص ثم فعّل",
                             badge = WebGateway.modeLabel(gwMode),
                             nested = true
@@ -1189,7 +1202,10 @@ fun SettingsScreen(
                     }
                 }
             }
+            }
+            }
 
+            if (settingsTab == 0) {
             listOf(ProviderGroup.WEB, ProviderGroup.MEDIA).forEach { group ->
                 val groupProviders = PROVIDERS.filter { it.group == group }
                 if (groupProviders.isNotEmpty()) {
@@ -1241,7 +1257,9 @@ fun SettingsScreen(
             UserPlatformsSection(prefs)
 
             ProviderManagerSection(prefs)
+            }
 
+            if (settingsTab == 3) {
             SettingsSection(
                 title = "⚙️ الإعدادات العامة والعقل المركزي",
                 subtitle = "القراءة التلقائية، عناوين المحادثات، التأكيدات، واختيار النموذج تلقائياً"
@@ -1286,7 +1304,9 @@ fun SettingsScreen(
                 }
 
             }
+            }
 
+            if (settingsTab == 2) {
             SettingsSection(
                 title = "🎚️ جودة الإجابات والمصادر",
                 subtitle = "وضع الإجابة وطولها والبحث بالويب وإجماع النماذج"
@@ -1536,7 +1556,9 @@ fun SettingsScreen(
                     Text("🔌 ربط الحسابات: Drive · Gmail · Calendar · Notion · Slack", color = Color(0xFFFFB800), fontSize = 12.sp)
                 }
             }
+            }
 
+            if (settingsTab == 3) {
             SettingsSection(
                 title = "🔔 التنبيهات والتذكيرات",
                 subtitle = "اختبار الإشعارات والمنبه والأذونات"
@@ -1601,6 +1623,7 @@ fun SettingsScreen(
                 if (alarmStatus.isNotBlank()) {
                     Text(alarmStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
                 }
+            }
             }
 
             Spacer(Modifier.height(24.dp))
