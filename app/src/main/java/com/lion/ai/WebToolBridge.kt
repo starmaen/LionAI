@@ -54,6 +54,9 @@ object WebToolBridge {
         github_repo_overview, github_list_tree, github_read_file, github_search_code, github_push_workspace,
         github_dispatch, github_wait_run, github_run_logs, build_diagnose, execute_command.
         لمخطط أي أداة استدعِ tools_schema، ولبقية المجموعات استدعِ tools_groups.
+        المجموعات: github, web, files, database, firebase, code, util, connectors, comms, shell, quality, control, memory, mcp, meta.
+        عند نقص صلاحية أو ربط حساب استدعِ tools_request_access مع resource وreason؛ يعرض التطبيق بطاقة قرار ويحفظ المهمة.
+        الموافقة النصية لا تربط حساباً ولا تمنح صلاحية أندرويد ولا تتجاوز الإعدادات. تحقق بـ tools_groups بعد استئناف المهمة.
     """.trimIndent()
 
     /** علامة وجود ترويسة البروتوكول داخل نص الرسالة المُرسلة للموقع. */
@@ -62,7 +65,7 @@ object WebToolBridge {
     const val NEXT =
         "\n\nتابع: أرسل كتلة [[TOOL]]{\"name\":\"...\",\"args\":{...}}[[/TOOL]] لخطوتك التالية، " +
             "أو الإجابة النهائية بالعربية إن اكتملت المهمة. " +
-            "تذكير ثابت في كل استكمال: لا تستخدم أدواتك الداخلية في الموقع (بحث، تنفيذ كود، تصفح، Canvas)؛ أدوات التطبيق عبر كتل [[TOOL]] وحدها المعتمدة وستنجح."
+            "تذكير ثابت في كل استكمال: لا تستخدم أدواتك الداخلية في الموقع (بحث، تنفيذ كود، تصفح، Canvas)؛ أدوات التطبيق عبر كتل [[TOOL]] وحدها المعتمدة؛ تحقق من نتيجة كل استدعاء."
 
     private val SECRETS = listOf(
         Regex("sk-[A-Za-z0-9_-]{20,}"),
@@ -90,7 +93,7 @@ object WebToolBridge {
         "file_tree", "file_read", "file_write", "file_apply_patch", "file_diff", "code_doctor", "gate_run",
         "github_repo_overview", "github_list_tree", "github_read_file", "github_search_code",
         "github_push_workspace", "github_dispatch", "github_wait_run", "github_run_logs", "build_diagnose",
-        "execute_command", "tools_schema"
+        "execute_command", "tools_schema", "tools_groups", "tools_request_access"
     )
 
     /** التعليمات + تواقيع الأدوات الشائعة (بلا حاجة لـtools_schema لكل أداة، فتقل الرحلات). */
@@ -99,14 +102,23 @@ object WebToolBridge {
         return if (sigs.isBlank()) PROTOCOL else PROTOCOL + "\n\nتواقيع الأدوات الشائعة:\n" + sigs
     }
 
-    private fun first(msg: String): String =
-        header() + "\n\n— — —\nطلب المستخدم:\n" + capFirst(redact(msg))
+    const val CONTEXT_START = "[LION_WEB_CONTEXT]"
+    const val CONTEXT_END = "[/LION_WEB_CONTEXT]"
+
+    private fun taskContext(system: String): String {
+        if (!system.contains(CONTEXT_START)) return ""
+        val context = system.substringAfter(CONTEXT_START).substringBefore(CONTEXT_END)
+        return "\n\nسياق التطبيق والصلاحيات الحالية:\n" + redact(context).take(6_000)
+    }
+
+    private fun first(msg: String, system: String): String =
+        header() + taskContext(system) + "\n\n— — —\nطلب المستخدم:\n" + capFirst(redact(msg))
 
     /** يُستدعى من WebSessionTransport.prompt(): الدردشة العادية تمرّ كما هي. (نقي: بلا حالة) */
     fun shape(system: String, message: String): String {
         val msg = message.trim()
         if (!system.contains(AGENT_MARK)) return msg
-        return if (CONTINUATIONS.any { msg.startsWith(it) }) capTurn(redact(msg)) + NEXT else first(msg)
+        return if (CONTINUATIONS.any { msg.startsWith(it) }) capTurn(redact(msg)) + taskContext(system) + NEXT else first(msg, system)
     }
 
     data class Shaped(val text: String, val fresh: Boolean)
@@ -134,11 +146,11 @@ object WebToolBridge {
         if (CONTINUATIONS.any { msg.startsWith(it) }) {
             val known = modes[provider] == "agent"
             modes[provider] = "agent"
-            val body = capTurn(redact(msg)) + NEXT
+            val body = capTurn(redact(msg)) + taskContext(system) + NEXT
             return Shaped(if (known) body else header() + "\n\n— — —\nتابع المهمة (سياق المحادثة السابقة غير متاح لديك):\n" + body, false)
         }
         modes[provider] = "agent"
-        return Shaped(first(msg), false)
+        return Shaped(first(msg, system), false)
     }
 
     /** يُستدعى عندما تُعاد الصفحة لحالتها الأولى: لا يعرف الموقع شيئاً مما سبق. */
