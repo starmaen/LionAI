@@ -55,6 +55,7 @@ object WebToolBridge {
         github_dispatch, github_wait_run, github_run_logs, build_diagnose, execute_command.
         لمخطط أي أداة استدعِ tools_schema، ولبقية المجموعات استدعِ tools_groups.
         المجموعات: github, web, files, database, firebase, code, util, connectors, comms, shell, quality, control, memory, mcp, meta.
+        للسرعة: اجمع كل الأدوات المستقلة في رد واحد (كتلة [[TOOL]] لكل أداة) بدل أداة واحدة في كل رد؛ فكل رد = جولة كاملة عبر الصفحة.
         عند نقص صلاحية أو ربط حساب استدعِ tools_request_access مع resource وreason؛ يعرض التطبيق بطاقة قرار ويحفظ المهمة.
         الموافقة النصية لا تربط حساباً ولا تمنح صلاحية أندرويد ولا تتجاوز الإعدادات. تحقق بـ tools_groups بعد استئناف المهمة.
     """.trimIndent()

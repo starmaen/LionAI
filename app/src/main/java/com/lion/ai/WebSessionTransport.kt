@@ -24,6 +24,9 @@ object WebSessionTransport {
     private val active = AtomicReference<String?>(null)
     /** طابور عادل: الرسائل المتزامنة (غرفة العمليات/أدوات/مزودات) تنتظر دورها بدل الرفض الفوري. */
     private val gate = java.util.concurrent.Semaphore(1, true)
+    /** تمديد مهلة طلب جارٍ بينما الصفحة ما زالت تكتب/تولّد: المضيف يستدعيه فتنتظر الدردشة بدل أن تقطع. */
+    private val extended = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    fun extend(token: String, untilMs: Long) { extended.merge(token, untilMs) { a, b -> maxOf(a, b) } }
     fun attach(value: Host) { host = value }
     fun detach(value: Host) { if (host === value) host = null }
     fun attached(): Boolean = host != null
@@ -54,7 +57,16 @@ object WebSessionTransport {
             current.start(Request(token, provider, prompt, timeout, fresh, recapFull, recapDelta)) { reply ->
                 if (active.get() == token && result.compareAndSet(null, reply)) latch.countDown()
             }
-            if (!latch.await(timeout.toLong() + 1000L, TimeUnit.MILLISECONDS)) {
+            // انتظار «بحسب النشاط»: المهلة تتجدد (extend) ما دامت الصفحة تكتب، وتنتهي فقط عند السكون أو السقف المطلق.
+            val absoluteCap = System.currentTimeMillis() + 25 * 60_000L
+            var limit = System.currentTimeMillis() + timeout.toLong() + 1000L
+            var finished = false
+            while (true) {
+                if (latch.await(400, TimeUnit.MILLISECONDS)) { finished = true; break }
+                limit = maxOf(limit, (extended[token] ?: 0L) + 1000L)
+                if (System.currentTimeMillis() > minOf(limit, absoluteCap)) break
+            }
+            if (!finished) {
                 Reply("⚠️ تأخر رد الصفحة عن المهلة؛ الجلسة لم تُنهَ وقد تكون الرسالة أُرسلت. افحص الصفحة قبل إعادة المحاولة.", false, true)
             } else result.get() ?: Reply("⚠️ لم يصل رد من الصفحة؛ الجلسة لم تُنهَ. أعد المحاولة أو افتح الجلسة للتحقق.", false)
         } catch (_: InterruptedException) {
@@ -64,6 +76,7 @@ object WebSessionTransport {
             Reply("⚠️ تعذّر تشغيل جلسة الويب: ${e.message}", false)
         } finally {
             current.cancel(token)
+            extended.remove(token)
             active.compareAndSet(token, null)
             gate.release()
         }

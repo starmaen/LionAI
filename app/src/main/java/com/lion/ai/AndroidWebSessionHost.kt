@@ -163,7 +163,7 @@ internal class AndroidWebSessionHost(
         val adapter: WebSiteAdapter,
         val view: WebView,
         val done: (WebSessionTransport.Reply) -> Unit,
-        val deadline: Long,
+        var deadline: Long,
         val chatId: String = ActiveChat.id,
         var stage: String = "probe",
         var submitted: Boolean = false,
@@ -180,8 +180,19 @@ internal class AndroidWebSessionHost(
         var completeSeenAt: Long = 0L,
         var completeText: String = "",
         var outboundSent: Boolean = false,
-        var busyTicks: Int = 0
+        var busyTicks: Int = 0,
+        /** السقف المطلق للطلب مهما تجددت المهلة. */
+        val hardLimit: Long = System.currentTimeMillis() + 25 * 60_000L
     )
+
+    /** الصفحة ما زالت حيّة (تكتب/تولّد): نجدّد مهلة الطلب بدل أن نقطع رداً قيد الكتابة. */
+    private fun bump(p: Pending) {
+        val next = minOf(System.currentTimeMillis() + 150_000L, p.hardLimit)
+        if (next > p.deadline) {
+            p.deadline = next
+            WebSessionTransport.extend(p.request.token, next)
+        }
+    }
     override fun isUiThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
     /** Dispatch a real touch so the page receives a trusted click (JS .click() is often ignored). */
@@ -569,6 +580,8 @@ internal class AndroidWebSessionHost(
             } else {
                 val state = result.optString("status")
                 p.lastStatus = state
+                // الصفحة تولّد (زر إيقاف ظاهر) حتى لو لم يظهر نص بعد (تفكير/بحث): لا نقطع الانتظار.
+                if (p.submitted && result.optBoolean("generating", false)) bump(p)
                 result.optString("diag").takeIf { it.isNotBlank() }?.let { p.lastDiag = it }
                 when (state) {
                     "origin" -> {
@@ -642,6 +655,7 @@ internal class AndroidWebSessionHost(
                                         val streamed = result.optString("text")
                         if (streamed.isNotBlank()) {
                             if (streamed != p.lastText) {
+                                bump(p)
                                 p.lastText = streamed
                                 p.lastTextAt = System.currentTimeMillis()
                                 // بث حي: النص كاملاً كما في الصفحة، فقاعة تنمو لحظة بلحظة.
