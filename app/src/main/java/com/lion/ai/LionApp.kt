@@ -183,7 +183,7 @@ internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: B
 internal fun hasProjectReference(text: String, chatMode: ChatMode): Boolean =
     (chatMode == ChatMode.CODE && PROJECT_REFERENCE.containsMatchIn(text)) ||
         (chatMode == ChatMode.GENERAL && GENERAL_REPO_REFERENCE.containsMatchIn(text)) ||
-        (chatMode != ChatMode.LEARN && text.contains("github.com/"))
+        text.contains("github.com/")
 
 internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode: ChatMode = ChatMode.GENERAL): Boolean {
     if (hasWork) return true
