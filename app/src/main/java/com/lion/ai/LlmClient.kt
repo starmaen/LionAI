@@ -46,13 +46,13 @@ object LlmClient {
 
     /** سقف زمني لمحاولة واحدة حسب نوع المهمة: البسيط سريع، والبرمجة تحتمل الانتظار. */
     internal fun attemptTimeoutMs(kind: TaskKind): Int = when (kind) {
-        TaskKind.FAST -> 12_000
-        TaskKind.GENERAL, TaskKind.WRITING -> 30_000
-        TaskKind.FACTUAL -> 30_000
-        TaskKind.REASONING -> 40_000
-        TaskKind.VISION, TaskKind.IMAGE_EDIT -> 45_000
-        TaskKind.CODE, TaskKind.DEV -> 60_000
-        TaskKind.LONG_DOC -> 45_000
+        TaskKind.FAST -> 20_000
+        TaskKind.GENERAL, TaskKind.WRITING -> 60_000
+        TaskKind.FACTUAL -> 60_000
+        TaskKind.REASONING -> 120_000
+        TaskKind.VISION, TaskKind.IMAGE_EDIT -> 90_000
+        TaskKind.CODE, TaskKind.DEV -> 180_000
+        TaskKind.LONG_DOC -> 120_000
     }
 
     private inline fun <T> withReadTimeout(ms: Int, block: () -> T): T {

@@ -155,4 +155,12 @@ class SmartRouterTest {
     fun repeatFmtZeroIsEmpty() {
         assertEquals("", RepeatFmt.label(0L))
     }
+
+    @Test
+    fun devRequestWithAttachedImageIsNotAnImageEdit() {
+        assertFalse(ImageIntent.looksLikeEdit("نفذ التعديلات وادفعها الى غيت هاب وراقب البناء حتى ينجح وان فشل اصلح الخطأ"))
+        assertFalse(ImageIntent.looksLikeEdit("افتح الملف وعدل الدالة"))
+        assertTrue(ImageIntent.looksLikeEdit("اقتص الصورة"))
+        assertTrue(ImageIntent.looksLikeEdit("عدل الصورة وغمق الألوان"))
+    }
 }

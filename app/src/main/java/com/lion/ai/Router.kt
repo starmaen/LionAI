@@ -88,12 +88,26 @@ enum class AnswerMode(val id: String, val label: String, val hint: String) {
 }
 
 object ImageIntent {
+    // كلمات كاملة فقط: «التعديلات» أو «فتح الملف» ليست تعديل صورة.
     private val EDIT = Regex(
-        "(عدل|تعديل|فتح|فتحي|غمق|اقتص|قص |دور|ادر |قلب|فلتر|ابيض واسود|سيبيا|ضبابي|موه|تمويه|حده|حسن (ال)?(صوره|جوده)|" +
-            "كبر|صغر|غير حجم|اكتب على|اضف نص|ارسم|حول (ال)?صوره|edit|crop|rotate|filter|brighten|resize)"
+        "(?<![\\p{L}])(عدل|عدلي|تعديل|فتح|فتحي|غمق|اقتص|اقتصي|قص|دور|ادر|اقلب|قلب|فلتر|ابيض واسود|سيبيا|ضبابي|موه|تمويه|حده|حسن|كبر|صغر|غير حجم|" +
+            "اكتب على|اضف نص|ارسم|حول|edit|crop|rotate|filter|brighten|resize)(?![\\p{L}])"
+    )
+    private val IMAGE_WORD = Regex(
+        "(?<![\\p{L}])(ال)?(صوره|صور|لقطه|لقطات|شعار|ايقونه|رسمه|image|photo|picture|screenshot|logo|icon)(?![\\p{L}])"
+    )
+    private val DEV_CONTEXT = Regex(
+        "(github|غيت ?هاب|مستودع|بناء|كود|commit|apk|workflow|ملف|مزود|ادوات|اصلح|ادفع|\\.kt|\\.js|\\.md)"
     )
 
-    fun looksLikeEdit(text: String): Boolean = EDIT.containsMatchIn(TextNorm.forMatch(text))
+    /** تعديل صورة فعلاً: فعل تعديل مع إشارة إلى الصورة، أو أمر قصير مجرد. طلبات التطوير مع صورة مرفقة ليست تعديل صورة. */
+    fun looksLikeEdit(text: String): Boolean {
+        val t = TextNorm.forMatch(text)
+        if (!EDIT.containsMatchIn(t)) return false
+        if (IMAGE_WORD.containsMatchIn(t)) return true
+        val words = t.split(Regex("\\s+")).count { it.isNotBlank() }
+        return !DEV_CONTEXT.containsMatchIn(t) && words <= 6
+    }
 }
 
 /**

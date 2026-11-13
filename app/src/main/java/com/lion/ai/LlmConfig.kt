@@ -4,7 +4,7 @@ internal const val LLM_USER_AGENT = "LionAI/1.6 (Android)"
 
 internal const val LLM_CONNECT_TIMEOUT = 10_000
 
-internal const val LLM_READ_TIMEOUT = 60_000
+internal const val LLM_READ_TIMEOUT = 120_000
 
 internal const val LLM_MAX_TOKENS = 2048
 

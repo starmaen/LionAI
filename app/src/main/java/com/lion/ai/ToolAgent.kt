@@ -85,6 +85,7 @@ object ToolAgent {
             "(إذن|اذن|أذونات|اذونات|صلاحي|صلاحية|تصريح|permission|authorization|access)",
         RegexOption.IGNORE_CASE
     )
+    private val PLACEHOLDER_REPLY = Regex("(استدعاء\\s*(ال)?أدوات|استدعاء\\s*أداة|tool\\s*call|سأستدعي|جار[يٍ]\\s*التنفيذ|\\(\\s*أدوات\\s*\\))", RegexOption.IGNORE_CASE)
     private val LOCAL_FILE_MUTATIONS = setOf("file_apply_patch", "file_edit", "file_write", "file_move", "file_copy", "file_delete", "file_mkdir")
     private val DELETE_BRANCH_REQUEST = Regex("(احذف|حذف|delete)\\s+(ال)?(فرع|branch)", RegexOption.IGNORE_CASE)
     private val DESTRUCTIVE_ASK = Regex(
@@ -710,6 +711,20 @@ object ToolAgent {
                 }
                 if (AnswerGuard.claimsCompletedAction(reply) && okMutations == 0 && !memory.hasConfirmedMutation()) {
                     return finish("رفضت إعلان تعديل أو رفع بلا نتيجة أداة تؤكده. لم أعتبر المهمة مكتملة.", false, "لا دليل على تنفيذ التعديل")
+                }
+                // ردّ فارغ المعنى («(استدعاء أدوات)») أو مهمة تعديل لم تُنفَّذ فيها أي خطوة كتابة: لا يُعلَن الاكتمال.
+                val bareReply = ToolMarkup.strip(reply).replace(ASK, "").replace(ASK_ALT, "").trim()
+                val placeholderReply = bareReply.length < 90 && PLACEHOLDER_REPLY.containsMatchIn(bareReply)
+                val unfinishedWork = WriteIntent.hasMutationIntent(userRequest) && okMutations == 0 &&
+                    bareReply.length < 160 && !WriteIntent.isReadOnlyRequest(userRequest)
+                if ((placeholderReply || unfinishedWork) && endNudges < 4 && System.currentTimeMillis() + 45_000L < deadline) {
+                    endNudges++
+                    historyBuffer.add(ChatTurn("user", current))
+                    historyBuffer.add(ChatTurn("assistant", reply))
+                    current = "ردّك السابق لا يتضمن نتيجة فعلية، ولم تُنفَّذ بعد خطوات التعديل المطلوبة في طلب المستخدم. " +
+                        "نفّذ الخطوة التالية الآن بإرسال استدعاء الأداة نفسه ([[TOOL]]{\"name\":...}[[/TOOL]]) دون وصف أو عبارة مثل «استدعاء أدوات». " +
+                        "إن احتجت إذناً أو توضيحاً فاسأل المستخدم بسؤال واضح."
+                    continue
                 }
                 // خطوة مطلوبة صراحةً لم تُنفَّذ (حذف الفرع التجريبي الذي أُنشئ): لا يُقبل الختام قبلها.
                 if (endNudges < 2 && "github_create_branch" in used &&
