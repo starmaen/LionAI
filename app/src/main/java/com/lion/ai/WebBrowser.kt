@@ -64,9 +64,6 @@ import androidx.webkit.WebViewFeature
  *     الحالية بنافذة فارغة عند أي `window.open` (تسجيل الدخول وغيره): الآن تُفتح الروابط في نفس العرض.
  *  3. ترويسة `X-Requested-With` كانت تفضح التطبيق فتحجب Google وغيرها الدخول داخل WebView: تُحذف هنا.
  *  4. أزرار التنقل وتبديل الجوال/سطح المكتب أُزيلت؛ بقي إغلاق وتحديث فقط، والرجوع يتم بزر النظام.
- *  5. (جديد) روابط مثل intent:// وms-copilot:// وmsauth:// التي لا يوجد تطبيق يفتحها كانت تعود false من
- *     shouldOverrideUrlLoading فيحاول WebView تحميلها بنفسه ويعرض «نوع الرابط غير مدعوم» فوق الصفحة
- *     (حالة Copilot). الآن لا يُترك أي رابط غير ويب لـ WebView أبداً، ويُتّبع browser_fallback_url عند وجوده.
  */
 
 private val WEB_BG = Color(0xFF121212)
@@ -92,25 +89,6 @@ internal fun hostOf(url: String): String {
 /** الروابط التي يفتحها الـ WebView داخلياً؛ ما عداها يُسلَّم لتطبيق خارجي. */
 internal fun isWebUrl(url: String): Boolean =
     url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
-
-/**
- * مخططات داخلية تخص الصفحة نفسها (blob/data/about). تسليمها لتطبيق خارجي كان يكسر تنزيلات وإطارات
- * وصفحات تستعملها مواقع الدردشة، فتبقى داخل WebView دائماً.
- */
-internal fun isInternalScheme(url: String): Boolean =
-    url.startsWith("blob:", ignoreCase = true) ||
-        url.startsWith("data:", ignoreCase = true) ||
-        url.startsWith("about:", ignoreCase = true)
-
-private val FALLBACK_PARAM = Regex("S\\.browser_fallback_url=([^;]+)")
-
-/** يستخرج browser_fallback_url (https فقط) من رابط intent:// ؛ null إن لم يوجد أو لم يكن https. */
-internal fun intentFallbackUrl(url: String): String? {
-    if (!url.startsWith("intent:", ignoreCase = true)) return null
-    val raw = FALLBACK_PARAM.find(url)?.groupValues?.getOrNull(1) ?: return null
-    val decoded = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrNull() ?: return null
-    return decoded.takeIf { it.startsWith("https://", ignoreCase = true) }
-}
 
 /** رسائل الخطأ بعربية واضحة بدل شاشة سوداء فارغة. */
 internal fun describeWebError(code: Int): String = when (code) {
@@ -290,15 +268,7 @@ internal class LionWebController(
             request: WebResourceRequest
         ): Boolean {
             val url = request.url?.toString().orEmpty()
-            if (isWebUrl(url) || isInternalScheme(url)) return false
-            // رابط تطبيق (intent/ms-copilot/msauth…): نتبع بديل المتصفح إن وُجد، وإلا نحاول تسليمه
-            // لتطبيق خارجي، وفي كل الأحوال نُرجع true كي لا يحاول WebView تحميله فيظهر «غير مدعوم».
-            intentFallbackUrl(url)?.let { fallback ->
-                view.loadUrl(fallback)
-                return true
-            }
-            openExternal(url)
-            return true
+            return if (isWebUrl(url)) false else openExternal(url)
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
@@ -319,8 +289,6 @@ internal class LionWebController(
             error: WebResourceError
         ) {
             if (!request.isForMainFrame) return
-            // الصفحة الحالية سليمة؛ الرابط غير المدعوم أُلغي أصلاً ولا يستحق شاشة خطأ كاملة.
-            if (error.errorCode == WebViewClient.ERROR_UNSUPPORTED_SCHEME) return
             errorMessage = describeWebError(error.errorCode)
         }
 

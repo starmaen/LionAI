@@ -15,9 +15,6 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- يُبقي العملية حيّة أثناء انتظار رد صفحة ويب (WebSessionService) -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -44,15 +41,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LionAI">
 
-        <!--
-            configChanges: بدونها كان تدوير الشاشة أو تغيير الخط/الثيم/لوحة المفاتيح يعيد إنشاء النشاط،
-            فيُدمَّر مضيف جلسات الويب (WebView) ويفشل الطلب الجاري ويضيع سياق الصفحة.
-        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|density|fontScale|uiMode|layoutDirection|locale"
             android:theme="@style/Theme.LionAI">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -75,11 +67,6 @@
             android:theme="@style/Theme.LionAI"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|density|fontScale|uiMode" />
-
-        <service
-            android:name=".WebSessionService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".LionNotificationListener"
