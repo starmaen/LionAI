@@ -14,6 +14,12 @@ class WebBridgeFixesTest {
         assertNull(intentFallbackUrl("https://copilot.com/"))
     }
 
+    @Test fun appStoreRedirectsAreRecognised() {
+        assertTrue(isAppStoreUrl("https://play.google.com/store/apps/details?id=com.microsoft.copilot"))
+        assertTrue(isAppStoreUrl("market://details?id=com.microsoft.copilot"))
+        assertTrue(!isAppStoreUrl("https://copilot.com/"))
+    }
+
     private class Echo : WebSessionTransport.Host {
         val seen = mutableListOf<WebSessionTransport.Request>()
         override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {

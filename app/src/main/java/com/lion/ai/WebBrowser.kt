@@ -104,6 +104,15 @@ internal fun intentFallbackUrl(url: String): String? {
     return decoded.takeIf { it.startsWith("https://", ignoreCase = true) }
 }
 
+/** صفحات تثبيت التطبيق: Copilot وغيره يحوّل المتصفح المحمول إليها بدل فتح الدردشة. */
+internal fun isAppStoreUrl(url: String): Boolean {
+    val u = url.trim().lowercase()
+    if (u.startsWith("market:") || u.startsWith("itms-apps:") || u.startsWith("itms-appss:")) return true
+    if (!isWebUrl(u)) return false
+    val host = hostOf(u).substringBefore(':')
+    return host == "play.google.com" || host == "apps.apple.com" || host == "appgallery.huawei.com"
+}
+
 /** رسائل الخطأ بعربية واضحة بدل شاشة سوداء فارغة. */
 internal fun describeWebError(code: Int): String = when (code) {
     WebViewClient.ERROR_HOST_LOOKUP -> "تعذّر العثور على عنوان الموقع."
@@ -282,6 +291,8 @@ internal class LionWebController(
             request: WebResourceRequest
         ): Boolean {
             val url = request.url?.toString().orEmpty()
+            // لا نترك الموقع يحوّلنا إلى متجر التطبيقات بدل صفحة الدردشة.
+            if (isAppStoreUrl(url)) return true
             if (isWebUrl(url)) return false
             val fallback = intentFallbackUrl(url)
             if (fallback != null) { view.loadUrl(fallback); return true }

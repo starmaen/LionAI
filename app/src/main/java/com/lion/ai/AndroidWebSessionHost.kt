@@ -350,6 +350,10 @@ internal class AndroidWebSessionHost(
             override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
                 // Login redirects remain interactive; execution checks the exact top-level origin again.
                 val target = request.url.toString()
+                if (isAppStoreUrl(target)) {
+                    level(adapter.id, WebSessionStatus.Level.AMBER, "تجاهلتُ تحويلاً إلى متجر التطبيقات")
+                    return true
+                }
                 if (request.url.scheme == "https") return false
                 // مواقع مثل Copilot تحاول فتح تطبيقها (intent:// أو ms-copilot://): نتبع الرابط الاحتياطي
                 // إن وُجد ونتجاهل البقية بصمت بدل شاشة «رابط غير مدعوم».
