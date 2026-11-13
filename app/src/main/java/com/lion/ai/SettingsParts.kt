@@ -257,6 +257,26 @@ fun ProviderCard(
         if (!modelCache.containsKey(id)) modelCache[id] = ModelCatalog.cached(prefs, id)
     }
     val hasKey = keys[id].orEmpty().isNotBlank()
+    var healthTick by remember { mutableStateOf(0) }
+    val health = remember(id, testing, healthTick) { ProviderHealth.get(prefs, id) }
+
+    // يحفظ ما في الحقول فوراً: الخروج بالإيماءة لم يعد يضيّع المفتاح أو الموديل أو العنوان.
+    fun saveFields() {
+        val editor = prefs.edit()
+        val k = keys[id].orEmpty().filterNot { it.isWhitespace() }
+        if (k.isNotBlank()) editor.putString("api_key_$id", k)
+        editor.putString("model_$id", models[id].orEmpty())
+        editor.putString("endpoint_$id", endpoints[id].orEmpty().trim())
+        if (info.needsAccountId) editor.putString("cf_account_id", accountId)
+        editor.apply()
+    }
+
+    val activate: () -> Unit = {
+        onActivate()
+        saveFields()
+        LlmClient.reloadOverrides(prefs)
+        ProviderSelection.syncActiveTab(prefs)
+    }
     val shape = RoundedCornerShape(10.dp)
 
     Column(
@@ -275,7 +295,7 @@ fun ProviderCard(
         ) {
             RadioButton(
                 selected = active,
-                onClick = onActivate,
+                onClick = activate,
                 colors = RadioButtonDefaults.colors(selectedColor = Amber)
             )
             Column(modifier = Modifier.weight(1f)) {
@@ -284,13 +304,21 @@ fun ProviderCard(
             }
             ProviderToggle(prefs = prefs, id = id)
             Spacer(Modifier.width(6.dp))
+            val h = health
             Text(
                 when {
+                    h != null && h.ok -> "🟢 " + ProviderHealth.ageLabel(h.atMs)
+                    h != null -> "🔴 فشل " + ProviderHealth.ageLabel(h.atMs)
                     hasKey -> "✅ مفتاح"
                     info.keyless -> "🆓 بلا مفتاح"
                     else -> "⚪ بلا مفتاح محفوظ"
                 },
-                color = if (hasKey || info.keyless) Color(0xFF7CC47C) else Color(0xFF8A8A8A),
+                color = when {
+                    h != null && h.ok -> Color(0xFF7CC47C)
+                    h != null -> Color(0xFFFF6B6B)
+                    hasKey || info.keyless -> Color(0xFF7CC47C)
+                    else -> Color(0xFF8A8A8A)
+                },
                 fontSize = 11.sp
             )
             Spacer(Modifier.width(8.dp))
@@ -299,11 +327,14 @@ fun ProviderCard(
 
         if (expanded) {
             Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
-                TextButton(onClick = onActivate) {
-                    Text(if (active) "✖ إلغاء المزود" else "✔ استخدم هذا المزود", color = if (active) Color(0xFFFF3333) else Amber, fontSize = 12.sp)
+                TextButton(onClick = activate) {
+                    Text(if (active) "✔ هذا هو المزود النشط" else "✔ استخدم هذا المزود", color = Amber, fontSize = 12.sp)
                 }
                 if (active) {
                     Text("● المزود النشط حالياً", color = Amber, fontSize = 12.sp)
+                }
+                health?.takeIf { !it.ok && it.note.isNotBlank() }?.let {
+                    Text("آخر خطأ: " + it.note, color = Color(0xFFFF6B6B), fontSize = 11.sp)
                 }
 
                 Spacer(Modifier.height(4.dp))
@@ -311,7 +342,7 @@ fun ProviderCard(
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = keys[id].orEmpty(),
-                    onValueChange = { keys[id] = it },
+                    onValueChange = { keys[id] = it; saveFields() },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("الصق المفتاح هنا", color = Color(0xFF707070)) },
                     textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
@@ -343,12 +374,12 @@ fun ProviderCard(
 
                 fun testProvider() {
                     data class Outcome(val list: List<String>, val model: String, val reply: String)
+                    // نحفظ الحقول أولاً ليطابق الاختبار ما ستستخدمه المحادثة فعلاً.
+                    saveFields()
+                    LlmClient.reloadOverrides(prefs)
                     val key = keys[id].orEmpty().ifBlank { prefs.getString("api_key_$id", "") ?: "" }
                     val account = accountId
                     val isServer = info.custom || id == "local_proxy" || id.startsWith(UserPlatforms.PREFIX)
-                    // نحفظ العنوان الوسيط/المخصص الحالي مؤقتاً ليشمله الاختبار
-                    LlmClient.endpointOverrides =
-                        LlmClient.endpointOverrides + (id to endpoints[id].orEmpty().trim())
                     scope.launch {
                         val outcome = withContext(Dispatchers.IO) {
                             runCatching {
@@ -360,13 +391,18 @@ fun ProviderCard(
                                     model = list.firstOrNull() ?: info.defaultModel
                                 }
                                 if (model.isBlank()) model = info.defaultModel
-                                val reply = LlmClient.ask(
-                                    "أجب بكلمة واحدة فقط: تم", key, id, emptyList(), model, account
-                                )
+                                val probe = "أجب بكلمة واحدة فقط: تم"
+                                // نفس ترتيب المحادثة اليدوية: المباشر أولاً ثم الخادم الخارجي.
+                                var reply = LlmClient.ask(probe, key, id, emptyList(), model, account, via = Channel.DIRECT)
+                                if (LlmClient.isErrorReply(reply) && WebGateway.shouldRoute(id)) {
+                                    val viaServer = LlmClient.ask(probe, key, id, emptyList(), model, account, via = Channel.GATEWAY)
+                                    if (!LlmClient.isErrorReply(viaServer)) reply = viaServer
+                                }
                                 Outcome(list, model, reply)
                             }
                         }
                         testing = false
+                        healthTick++
                         outcome.onSuccess { value ->
                             if (value.list.isNotEmpty()) {
                                 modelCache[id] = value.list
@@ -432,7 +468,7 @@ Spacer(Modifier.height(8.dp))
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = models[id].orEmpty(),
-                        onValueChange = { models[id] = it },
+                        onValueChange = { models[id] = it; saveFields() },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(info.defaultModel, color = Color(0xFF707070)) },
                         textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
@@ -452,7 +488,7 @@ Spacer(Modifier.height(8.dp))
                         DropdownMenuItem(
                             text = { Text("↺ الافتراضي (${info.defaultModel})", color = Amber) },
                             onClick = {
-                                models[id] = ""
+                                models[id] = ""; saveFields()
                                 modelMenuOpen = false
                             }
                         )
@@ -460,7 +496,7 @@ Spacer(Modifier.height(8.dp))
                             DropdownMenuItem(
                                 text = { Text(if (option == activeModel) "$option  ✓" else option) },
                                 onClick = {
-                                    models[id] = option
+                                    models[id] = option; saveFields()
                                     modelMenuOpen = false
                                 }
                             )
@@ -525,7 +561,7 @@ Spacer(Modifier.height(8.dp))
                     )
                     OutlinedTextField(
                         value = endpoints[id].orEmpty(),
-                        onValueChange = { endpoints[id] = it },
+                        onValueChange = { endpoints[id] = it; saveFields() },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         placeholder = {

@@ -11,7 +11,6 @@ object SecurePrefs {
     private const val LEGACY_FILE = "lion_prefs"
     private const val MIGRATED = "secure_migrated_v1"
     private const val OPEN_ATTEMPTS = 3
-    private const val RETRY_COOLDOWN_MS = 30_000L
 
     @Volatile
     var usingPlaintextFallback: Boolean = false
@@ -23,6 +22,9 @@ object SecurePrefs {
     @Volatile
     private var lastFailureAt: Long = 0L
 
+    @Volatile
+    private var fallbackLocked = false
+
     private val lock = Any()
 
     fun get(context: Context): SharedPreferences {
@@ -30,9 +32,7 @@ object SecurePrefs {
         synchronized(lock) {
             cached?.let { return it }
             val app = context.applicationContext ?: context
-            val now = System.currentTimeMillis()
-            val coolingDown = lastFailureAt != 0L && now - lastFailureAt < RETRY_COOLDOWN_MS
-            if (!coolingDown) {
+            if (!fallbackLocked) {
                 val secure = openSecure(app)
                 if (secure != null) {
                     usingPlaintextFallback = false
@@ -41,6 +41,9 @@ object SecurePrefs {
                     cached = secure
                     return secure
                 }
+                // فشل الفتح: نثبّت الملف النصي لباقي عمر العملية كي لا تتبدّل نسخة التخزين
+                // في منتصف الجلسة. تُعاد محاولة التشفير مع التشغيل التالي ويُدمج ما كُتب هنا.
+                fallbackLocked = true
                 lastFailureAt = System.currentTimeMillis()
             }
             usingPlaintextFallback = true
