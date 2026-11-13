@@ -15,7 +15,7 @@ function page(url = 'https://claude.ai/') {
   function run(action, prompt='hello', token='token1') {
     return JSON.parse(w.eval(source.replace('__LION_CONFIG__', JSON.stringify(config))
       .replace('__LION_TOKEN__', JSON.stringify(token)).replace('__LION_ACTION__', JSON.stringify(action))
-      .replace('__LION_PROMPT__', JSON.stringify(prompt)).replace('__LION_INTERACTIVE__', 'false')));
+      .replace('__LION_FILES__', '[]').replace('__LION_PROMPT__', JSON.stringify(prompt)).replace('__LION_INTERACTIVE__', 'false')));
   }
   function answer(value, copy = false) {
     const n = w.document.createElement('article'); n.className='assistant'; n.textContent=value;
@@ -328,4 +328,20 @@ test('fallback never completes while a generic stop button is visible',()=>withP
   const b = p.w.document.createElement('button'); b.setAttribute('aria-label', 'Stop generating'); b.textContent = 'Stop';
   p.w.document.body.append(b);
   p.advance(30000); assert.equal(p.run('poll', FALLBACK_PROMPT).status, 'streaming');
+}));
+
+test('generic busy indicator blocks premature completion; probe reports turn count',()=>withPage(p=>{
+  p.answer('old', true);
+  assert.equal(p.run('probe').turns, 1);
+  p.run('prepare');p.run('submit');
+  p.answer('thinking...');
+  const busy=p.w.document.createElement('div');busy.setAttribute('aria-busy','true');p.w.document.body.append(busy);
+  p.run('poll');p.advance(9000);
+  assert.equal(p.run('poll').status,'streaming');
+  busy.remove();p.advance(2100);
+  assert.equal(p.run('poll').status,'complete');
+}));
+test('attach without files is a no-op and attach_wait reports ready',()=>withPage(p=>{
+  assert.equal(p.run('attach').status,'attached');
+  assert.equal(p.run('attach_wait').status,'attach_ready');
 }));

@@ -4,7 +4,9 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -56,7 +58,7 @@ fun WebSessionPanel(content: @Composable () -> Unit) {
                 host?.setInteractive(showSession)
             },
             modifier = Modifier.fillMaxSize()
-                .padding(top = if (showSession) 56.dp else 0.dp)
+                .padding(top = if (showSession) 100.dp else 0.dp)
                 .then(if (showSession) Modifier.windowInsetsPadding(WindowInsets.systemBars) else Modifier)
                 .zIndex(if (showSession) 1f else -1f)
         )
@@ -65,13 +67,43 @@ fun WebSessionPanel(content: @Composable () -> Unit) {
             content()
         }
         if (showSession) {
-            Surface(modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).zIndex(2f), color = Color(0xFF20180F)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text(label, color = Color(0xFFFF8A30), fontSize = 12.sp, maxLines = 2, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { host?.reloadCurrent() }) { Text("تحديث") }
-                    TextButton(onClick = { closeSession() }) { Text("العودة للشات") }
+            Surface(modifier = Modifier.fillMaxWidth().statusBarsPadding().height(100.dp).zIndex(2f), color = Color(0xFF20180F)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(label, color = Color(0xFFFF8A30), fontSize = 12.sp, maxLines = 2, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { host?.goBack() }) { Text("رجوع") }
+                        TextButton(onClick = { host?.reloadCurrent() }) { Text("تحديث") }
+                        TextButton(onClick = { closeSession() }) { Text("العودة للشات") }
+                    }
+                    // تبديل صفحة الويب المعروضة من داخل التطبيق (المواقع المفعّلة فقط).
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        WebChatRuntime.members(prefs).forEach { info ->
+                            val st = WebSessionStatus.infoFor(info.id)
+                            TextButton(onClick = { WebSessionTransport.open(info.id) }) {
+                                Text("● ", color = webLevelColor(st.level), fontSize = 12.sp)
+                                Text(info.shortName, color = Color(0xFFEEEEEE), fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+fun webLevelColor(level: WebSessionStatus.Level): Color = when (level) {
+    WebSessionStatus.Level.GREEN -> Color(0xFF3DDC84)
+    WebSessionStatus.Level.AMBER -> Color(0xFFFFB800)
+    WebSessionStatus.Level.RED -> Color(0xFFFF4D4D)
+    WebSessionStatus.Level.IDLE -> Color(0xFF8A8A8A)
+}
+
+/** نقطة حالة صفحة الويب للمزود المختار: تفتح الجلسة عند النقر. لا تظهر لمزودات API. */
+@Composable
+fun WebStatusDot(provider: String) {
+    if (!WebChatRuntime.handles(provider)) return
+    val info = WebSessionStatus.infoFor(provider)
+    TextButton(onClick = { WebSessionTransport.open(provider) }) {
+        Text("●", color = webLevelColor(info.level), fontSize = 16.sp)
     }
 }

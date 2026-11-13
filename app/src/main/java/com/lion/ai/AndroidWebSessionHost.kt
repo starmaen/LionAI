@@ -1,7 +1,12 @@
 package com.lion.ai
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
+import android.webkit.ValueCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.Bitmap
 import android.net.http.SslError
 import android.webkit.SslErrorHandler
@@ -46,8 +51,37 @@ internal class AndroidWebSessionHost(
     private val loads = mutableMapOf<WebView, WebPageLoad>()
     private var displayedProvider: String? = null
     private val script = activity.assets.open("web-session.js").bufferedReader().use { it.readText() }
-        private var pending: Pending? = null
+    private var pending: Pending? = null
     private var destroyed = false
+    private var chooserCallback: ValueCallback<Array<Uri>>? = null
+    private val chooserKey = "lion_web_files_" + System.identityHashCode(this)
+    private val chooserLauncher: ActivityResultLauncher<Intent>? = runCatching {
+        activity.activityResultRegistry.register(chooserKey, ActivityResultContracts.StartActivityForResult()) { res ->
+            val cb = chooserCallback
+            chooserCallback = null
+            cb?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res.resultCode, res.data))
+        }
+    }.getOrNull()
+
+    /** بناء السكربت في مكان واحد. النص (prompt) يُستبدل آخراً كي لا تُحقن علامات استبدال من داخله. */
+    private fun render(adapter: WebSiteAdapter, token: String, action: String, prompt: String = "", files: String = "[]"): String =
+        script.replace("__LION_CONFIG__", adapter.json().toString())
+            .replace("__LION_TOKEN__", JSONObject.quote(token))
+            .replace("__LION_ACTION__", JSONObject.quote(action))
+            .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
+            .replace("__LION_FILES__", files)
+            .replace("__LION_PROMPT__", JSONObject.quote(prompt))
+
+    private fun keepAlive(on: Boolean) { WebSessionKeepAlive.set(activity, on) }
+    private fun chatUrlKey(provider: String, chat: String) = "web_chat_url_${provider}_$chat"
+    private fun saveChatUrl(p: Pending) {
+        val url = p.view.url.orEmpty().substringBefore('#')
+        if (p.chatId.isBlank() || url == p.adapter.url || url.length > 400 || !p.adapter.accepts(url)) return
+        prefs.edit().putString(chatUrlKey(p.adapter.id, p.chatId), url).apply()
+    }
+    private fun level(provider: String, level: WebSessionStatus.Level, text: String) =
+        WebSessionStatus.set(provider, level, text)
+
     private var interactive = false
     /** يمنع عكس ما أرسله التطبيق نفسه إلى الشات مرة أخرى (حلقة لا نهائية). */
     /** أول قراءة بعد فتح الجلسة تُبصم تاريخ الصفحة بدل بثّه كأنه جديد. */
@@ -93,6 +127,7 @@ internal class AndroidWebSessionHost(
     }
 
     init {
+        WebSessionStatus.hostAlive = true
         runCatching { activity.window.decorView.viewTreeObserver.addOnGlobalLayoutListener(imeGuard) }
     }
 
@@ -159,7 +194,7 @@ internal class AndroidWebSessionHost(
     }
 
     private data class Pending(
-        val request: WebSessionTransport.Request,
+        var request: WebSessionTransport.Request,
         val adapter: WebSiteAdapter,
         val view: WebView,
         val done: (WebSessionTransport.Reply) -> Unit,
@@ -180,6 +215,11 @@ internal class AndroidWebSessionHost(
         var completeSeenAt: Long = 0L,
         var completeText: String = "",
         var outboundSent: Boolean = false,
+        /** الصفحة استُعيدت إلى رابط محادثة محفوظ: نتحقق أنها ما زالت تحمل المحادثة قبل الاعتماد عليها. */
+        var restored: Boolean = false,
+        var restoreChecked: Boolean = false,
+        val basePrompt: String = request.prompt,
+        var attachedAt: Long = 0L,
         var busyTicks: Int = 0,
         /** السقف المطلق للطلب مهما تجددت المهلة. */
         val hardLimit: Long = System.currentTimeMillis() + 25 * 60_000L
@@ -262,10 +302,28 @@ internal class AndroidWebSessionHost(
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
         val load = WebPageLoad()
         loads[view] = load
-        view.webChromeClient = WebChromeClient()
+        view.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                w: WebView, cb: ValueCallback<Array<Uri>>, params: FileChooserParams
+            ): Boolean {
+                val launcher = chooserLauncher
+                // أثناء قيادة التطبيق للصفحة لا نفتح منتقياً فجأة؛ في الجلسة اليدوية يعمل رفع الملفات والصور.
+                if (launcher == null || !interactive) { cb.onReceiveValue(null); return true }
+                chooserCallback?.onReceiveValue(null)
+                chooserCallback = cb
+                val intent = runCatching { params.createIntent() }.getOrNull()
+                    ?: Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                return runCatching { launcher.launch(intent); true }.getOrElse {
+                    chooserCallback = null
+                    cb.onReceiveValue(null)
+                    true
+                }
+            }
+        }
         view.webViewClient = object : WebViewClient() {
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 load.start(url)
+                level(adapter.id, WebSessionStatus.Level.AMBER, "جارٍ تحميل الصفحة")
                 reportLoad(adapter, "جارٍ تحميل ${load.origin}")
             }
             override fun onPageCommitVisible(v: WebView, url: String) {
@@ -278,6 +336,8 @@ internal class AndroidWebSessionHost(
                 reportCommitted(adapter, load)
             }
             override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
+                // رابط تطبيق مخصص (ms-copilot:// وغيره) ليس فشل صفحة: شُطب في shouldOverrideUrlLoading.
+                if (error.errorCode == WebViewClient.ERROR_UNSUPPORTED_SCHEME) return
                 if (request.isForMainFrame) pageFailed(adapter, v, "${describeWebError(error.errorCode)} (رمز ${error.errorCode})")
             }
             override fun onReceivedHttpError(v: WebView, request: WebResourceRequest, response: WebResourceResponse) {
@@ -289,9 +349,17 @@ internal class AndroidWebSessionHost(
             }
             override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
                 // Login redirects remain interactive; execution checks the exact top-level origin again.
-                return request.url.scheme != "https"
+                val target = request.url.toString()
+                if (request.url.scheme == "https") return false
+                // مواقع مثل Copilot تحاول فتح تطبيقها (intent:// أو ms-copilot://): نتبع الرابط الاحتياطي
+                // إن وُجد ونتجاهل البقية بصمت بدل شاشة «رابط غير مدعوم».
+                val fb = intentFallbackUrl(target)
+                if (fb != null) v.loadUrl(fb)
+                else level(adapter.id, WebSessionStatus.Level.AMBER, "تجاهلتُ رابط تطبيق (${request.url.scheme}://)")
+                return true
             }
             override fun onRenderProcessGone(v: WebView, detail: RenderProcessGoneDetail): Boolean {
+                level(adapter.id, WebSessionStatus.Level.RED, "توقفت عملية المتصفح")
                 pending?.takeIf { it.view === v }?.let { fail(it, "توقفت عملية المتصفح. افتح الجلسة مجدداً.") }
                 pool.remove(adapter.id)
                 loads.remove(v)
@@ -327,10 +395,16 @@ internal class AndroidWebSessionHost(
             WebPageLoad.Phase.FAILED -> load.error
             else -> return
         }
+        when (load.phase) {
+            WebPageLoad.Phase.READY -> level(adapter.id, WebSessionStatus.Level.GREEN, "الصفحة جاهزة")
+            WebPageLoad.Phase.REDIRECT -> level(adapter.id, WebSessionStatus.Level.AMBER, "تحتاج تسجيل دخول")
+            else -> level(adapter.id, WebSessionStatus.Level.RED, load.error)
+        }
         reportLoad(adapter, message)
     }
     private fun pageFailed(adapter: WebSiteAdapter, view: WebView, message: String) {
         loads[view]?.fail(message)
+        level(adapter.id, WebSessionStatus.Level.RED, message)
         reportLoad(adapter, "⚠️ $message")
         prefs.edit().putBoolean("web_session_verified_${adapter.id}", false).apply()
         pending?.takeIf { it.view === view }?.let { fail(it, message) }
@@ -351,14 +425,22 @@ internal class AndroidWebSessionHost(
     }
     override fun open(provider: String) {
         main.post {
-            if (destroyed || pending != null) return@post
-                        val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
+            if (destroyed) return@post
+            val busy = pending
+            if (busy != null && busy.adapter.id != provider) {
+                display(false, "الجلسة مشغولة برد جارٍ من ${providerInfo(busy.adapter.id).shortName}؛ انتظر انتهاءه أو أوقفه ثم بدّل الموقع")
+                return@post
+            }
+            val adapter = WebSiteAdapters.get(provider, prefs) ?: return@post
             viewFor(adapter)
             display(true, "${providerInfo(provider).shortName} • سجّل الدخول هنا عند الحاجة")
             // فور فتح الجلسة: انعكس ما هو موجود في الصفحة من محادثة سابقة إلى الشات.
             scheduleCapture(adapter, ActiveChat.id, 4_000L)
         }
     }
+    fun canGoBack(): Boolean = displayedProvider?.let { pool[it]?.canGoBack() } == true
+    fun goBack() { displayedProvider?.let { pool[it]?.takeIf { v -> v.canGoBack() }?.goBack() } }
+
     override fun inspect(provider: String) {
         main.post {
             if (destroyed || pending != null) return@post
@@ -388,11 +470,7 @@ internal class AndroidWebSessionHost(
             return
         }
         run {
-            val js = script.replace("__LION_CONFIG__", adapter.json().toString())
-                .replace("__LION_TOKEN__", JSONObject.quote("diagnostic"))
-                .replace("__LION_ACTION__", JSONObject.quote("diagnose"))
-                .replace("__LION_PROMPT__", JSONObject.quote(""))
-                .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
+            val js = render(adapter, "diagnostic", "diagnose")
             view.evaluateJavascript(js) { raw ->
                 val text = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
                 val diagnostic = runCatching { JSONObject(text ?: "{}") }.getOrElse { JSONObject() }
@@ -437,16 +515,22 @@ internal class AndroidWebSessionHost(
             }
             val view = viewFor(adapter)
             var reloaded = false
-            if (request.fresh || chatIds[adapter.id] != ActiveChat.id || loads[view]?.phase == WebPageLoad.Phase.FAILED) {
-                // Re-enter the site's initial chat route for each LionAI conversation.
-                loads[view]?.start(adapter.url)
-                view.loadUrl(adapter.url)
-                chatIds[adapter.id] = ActiveChat.id
+            // معرّف المحادثة من الطلب نفسه: ActiveChat متغير عام يتبدل مع علامة التبويب فكان يعيد تحميل الصفحة ويضيّع السياق.
+            val chat = request.chatId.ifBlank { ActiveChat.id }
+            var restored = false
+            if (request.fresh || chatIds[adapter.id] != chat || loads[view]?.phase == WebPageLoad.Phase.FAILED) {
+                // نعود إلى رابط محادثة هذا التبويب المحفوظ (إن وُجد) بدل بدء محادثة جديدة فارغة في الموقع.
+                val saved = if (request.fresh) "" else prefs.getString(chatUrlKey(adapter.id, chat), "").orEmpty()
+                val target = saved.takeIf { it.isNotBlank() && adapter.accepts(it) } ?: adapter.url
+                restored = target != adapter.url
+                loads[view]?.start(target)
+                view.loadUrl(target)
+                chatIds[adapter.id] = chat
                 reloaded = true
-                WebToolBridge.resetPage(adapter.id)
+                if (restored) WebToolBridge.resetMode(adapter.id) else WebToolBridge.resetPage(adapter.id)
             }
-            // صفحة جديدة لا تعرف شيئاً: نُلحق سياق المحادثة. صفحة قائمة: ما فاتها فقط (أدوار أجابها غيرها).
-            val recap = if (reloaded) request.recapFull else request.recapDelta
+            // صفحة جديدة لا تعرف شيئاً: نُلحق سياق المحادثة. صفحة قائمة/مستعادة: ما فاتها فقط (يُتحقق منها لاحقاً).
+            val recap = if (reloaded && !restored) request.recapFull else request.recapDelta
             // بعد إعادة التحميل فقد الموقع بروتوكول الأدوات: نعيد الترويسة مع رسائل الاستكمال
             // وإلا توقفت الأدوات عند أول خطوة بعد التحديث. ونُقيّد حجم الرسالة المجمّعة كي لا
             // يرفضها حقل الموقع أو يُفعّل حدود المعدل بعد رسالتين.
@@ -455,8 +539,11 @@ internal class AndroidWebSessionHost(
                 recap.take(12_000) + "\n…[اقتُطع جزء من ملخص السياق]…\n" else recap
             val effective = if (recapCapped.isBlank()) request.copy(prompt = shapedPrompt)
                 else request.copy(prompt = recapCapped + "\n\n" + shapedPrompt)
-            val p = Pending(effective, adapter, view, done, System.currentTimeMillis() + request.timeoutMs)
+            val p = Pending(effective, adapter, view, done, System.currentTimeMillis() + request.timeoutMs,
+                chatId = chat, restored = restored, basePrompt = shapedPrompt)
             pending = p
+            keepAlive(true)
+            level(adapter.id, WebSessionStatus.Level.GREEN, "يعمل الآن")
             // ربط كامل مع الشات: النص الحرفي الذي ستكتبه الصفحة يُبث فوراً، وبصمته محفوظة
             // كي لا ينعكس دور المستخدم في الصفحة كأنه رسالة جديدة.
             mirrorFor(request.provider, p.chatId).markOwn(effective.prompt)
@@ -494,6 +581,8 @@ internal class AndroidWebSessionHost(
         status(p, if (reply.success) "✅ استُقبل رد جديد من صفحة الموقع" else reply.text)
         if (reply.success) {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", true).apply()
+            saveChatUrl(p)
+            level(p.adapter.id, WebSessionStatus.Level.GREEN, "وصل الرد من الصفحة")
             display(false, "${providerInfo(p.adapter.id).shortName} • وصل الرد من الصفحة")
             // بصمة الرد كي لا ينعكس من الصفحة مكرراً، ثم استخراج أي أدوار جديدة ظهرت بعد الاكتمال.
             mirrorFor(p.adapter.id, p.chatId).markOwn(reply.text)
@@ -501,6 +590,7 @@ internal class AndroidWebSessionHost(
             scheduleCapture(p.adapter, p.chatId, 1_200L)
         } else {
             prefs.edit().putBoolean("web_session_verified_${p.adapter.id}", false).apply()
+            level(p.adapter.id, WebSessionStatus.Level.RED, reply.text.take(120))
             display(false, reply.text)
             // مهلة/فشل بعد إرسال الرسالة: الصفحة غالباً ما زالت تولّد الرد. نلتقطه لاحقاً إلى المحادثة بدل أن يضيع في الصفحة.
             scheduleCapture(p.adapter, p.chatId, 25_000L)
@@ -509,7 +599,12 @@ internal class AndroidWebSessionHost(
         }
         CookieManager.getInstance().flush()
         p.done(reply)
-        main.post { if (!destroyed && pending == null) queued.removeFirstOrNull()?.let { launch(it.first, it.second) } }
+        main.post {
+            if (!destroyed && pending == null) {
+                val next = queued.removeFirstOrNull()
+                if (next != null) launch(next.first, next.second) else keepAlive(false)
+            }
+        }
     }
     private fun tick(p: Pending) {
         if (pending !== p || destroyed) return
@@ -563,12 +658,13 @@ internal class AndroidWebSessionHost(
             fail(p, "تغير عنوان الصفحة إلى ${WebPageLoad.originOf(p.view.url.orEmpty())}. لم أكتب الرسالة خارج الموقع المحدد.")
             return
         }
-        val js = script.replace("__LION_CONFIG__", p.adapter.json().toString())
-            .replace("__LION_TOKEN__", JSONObject.quote(p.request.token))
-            .replace("__LION_ACTION__", JSONObject.quote(p.stage))
-            .replace("__LION_PROMPT__", JSONObject.quote(p.request.prompt))
-            .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
-        if (p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
+        val filesJson = if (p.stage == "attach") org.json.JSONArray().also { arr ->
+            p.request.files.forEach { f ->
+                arr.put(JSONObject().put("name", f.name).put("type", f.mime).put("b64", f.base64))
+            }
+        }.toString() else "[]"
+        val js = render(p.adapter, p.request.token, p.stage, p.request.prompt, filesJson)
+        if (p.stage == "attach" || p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
             acquireEditorFocus(p.view)
         }
         p.view.evaluateJavascript(js) { raw ->
@@ -590,7 +686,34 @@ internal class AndroidWebSessionHost(
                         fail(p, "الوثيقة الحالية $actual لا تطابق موقع الدردشة. افتح الجلسة وأعد تحميلها؛ لم تُرسل الرسالة.")
                         return@evaluateJavascript
                     }
-                    "ready" -> p.stage = "prepare"
+                    "ready" -> {
+                        if (p.restored && !p.restoreChecked) {
+                            p.restoreChecked = true
+                            // الصفحة المستعادة بلا أي رد ظاهر = فقدت المحادثة: نعيد السياق كاملاً بدل الاعتماد عليها.
+                            if (result.optInt("turns", -1) == 0 && p.request.recapFull.isNotBlank()) {
+                                val full = p.request.recapFull.take(12_000) + "\n\n" + p.basePrompt
+                                p.request = p.request.copy(prompt = full)
+                                mirrorFor(p.adapter.id, p.chatId).markOwn(full)
+                                status(p, "الصفحة بلا المحادثة السابقة؛ أعدتُ السياق كاملاً")
+                            }
+                        }
+                        p.stage = if (p.request.files.isNotEmpty() && p.attachedAt == 0L) "attach" else "prepare"
+                    }
+                    "attached" -> {
+                        p.attachedAt = System.currentTimeMillis()
+                        p.stage = "attach_wait"
+                        status(p, "أُرفق الملف؛ بانتظار اكتمال رفعه في الموقع")
+                    }
+                    "attach_busy" -> {
+                        if (System.currentTimeMillis() - p.attachedAt > 30_000L) p.stage = "prepare"
+                    }
+                    "attach_ready" -> {
+                        if (System.currentTimeMillis() - p.attachedAt >= 2_500L) p.stage = "prepare"
+                    }
+                    "attach_failed" -> {
+                        fail(p, "تعذّر إرفاق الملف/الصورة آلياً في هذا الموقع. أرفقه يدوياً من «الجلسة» ثم أعد المحاولة؛ لم تُرسل الرسالة.")
+                        return@evaluateJavascript
+                    }
                     "prepared" -> {
                         p.stage = "locate"
                         status(p, "وصل النص إلى حقل الموقع؛ جارٍ الإرسال")
@@ -730,7 +853,7 @@ internal class AndroidWebSessionHost(
             }
             val delayMs = when (p.stage) {
                 "poll" -> 220L
-                "prepare", "locate", "enter", "submit" -> 280L
+                "attach", "attach_wait", "prepare", "locate", "enter", "submit" -> 280L
                 else -> 450L
             }
             main.postDelayed({ tick(p) }, delayMs)
@@ -757,11 +880,7 @@ internal class AndroidWebSessionHost(
             return
         }
         if (!adapter.accepts(view.url.orEmpty())) return
-        val js = script.replace("__LION_CONFIG__", adapter.json().toString())
-            .replace("__LION_TOKEN__", JSONObject.quote("capture"))
-            .replace("__LION_ACTION__", JSONObject.quote("capture"))
-            .replace("__LION_PROMPT__", JSONObject.quote(""))
-            .replace("__LION_INTERACTIVE__", if (interactive) "true" else "false")
+        val js = render(adapter, "capture", "capture")
         view.evaluateJavascript(js) { raw ->
             if (destroyed || pending != null) return@evaluateJavascript
             val decoded = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
@@ -806,6 +925,11 @@ internal class AndroidWebSessionHost(
     fun cancelCurrent() { pending?.let { fail(it, "أُلغي الانتظار. يمكنك إيقاف التوليد من الصفحة.") } }
     fun destroy() {
         destroyed = true
+        keepAlive(false)
+        chooserCallback?.onReceiveValue(null)
+        chooserCallback = null
+        runCatching { chooserLauncher?.unregister() }
+        WebSessionStatus.markAllClosed("أُغلقت جلسة الويب")
         setCaptureLoop(false)
         runCatching { activity.window.decorView.viewTreeObserver.removeOnGlobalLayoutListener(imeGuard) }
         pending?.let { fail(it, "أُغلقت واجهة التطبيق.") }

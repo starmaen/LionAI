@@ -155,6 +155,9 @@ object WebToolBridge {
         return Shaped(first(msg, system), false)
     }
 
+    /** استُعيدت صفحة محادثة محفوظة: تبقى معرفتها بالسجل، ويُعاد فقط تقدير وضع الوكيل/الدردشة. */
+    fun resetMode(provider: String) { modes.remove(provider) }
+
     /** يُستدعى عندما تُعاد الصفحة لحالتها الأولى: لا يعرف الموقع شيئاً مما سبق. */
     fun resetPage(provider: String) {
         modes.remove(provider)

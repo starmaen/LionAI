@@ -393,6 +393,20 @@ fun LionApp() {
                 )
                 saveCurrent()
             }
+        } else if (chatId.isNotBlank() && chatId != currentChat && text.isNotBlank() &&
+            !WebMirrorFilter.isProtocol(text)
+        ) {
+            // المستخدم بدّل علامة التبويب أثناء الرد: كان الحدث يُسقَط فيضيع الرد الكامل. نحفظه في محادثته.
+            val isUser = role == "user"
+            val norm = text.trim()
+            val stored = ChatRepository.load(prefs, chatId)
+            if (stored.takeLast(8).none { it.text.trim() == norm && it.isUser == isUser }) {
+                ChatRepository.save(
+                    prefs, chatId,
+                    stored + Message(text = text, isUser = isUser, via = providerInfo(provider).shortName)
+                )
+                refreshChats()
+            }
         }
     }
 
@@ -1650,7 +1664,8 @@ fun LionApp() {
         loadingChats[id] = false
         toolStatus[id] = ""
         livePartial.remove(id)
-        WebSessionTransport.cancelActive()
+        // يلغي طلب هذه المحادثة فقط؛ طلب علامة تبويب أخرى جارٍ لا يُمَسّ.
+        WebSessionTransport.cancelActive(id)
     }
 
     fun sendMessage() {
@@ -1710,7 +1725,10 @@ fun LionApp() {
             return
         }
         // دردشات الويب والموديلات بلا رؤية لا تستقبل الصور مباشرة: نحوّل الصور إلى نص بموديل رؤية (OCR + وصف).
-        val imageAsText = image != null && kind != TaskKind.IMAGE_EDIT && (
+        // دردشات الويب تستقبل الصورة كملف مرفق فعلي (WebSessionTransport.WebFile) ما لم يُطفأ الإعداد.
+        val webUpload = image != null && WebChatRuntime.handles(selectedProvider) &&
+            prefs.getBoolean("web_upload_files", true)
+        val imageAsText = image != null && kind != TaskKind.IMAGE_EDIT && !webUpload && (
             WebChatRuntime.handles(selectedProvider) ||
                 (!autoRoute && !LlmClient.supportsVision(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: ""))
             )
@@ -2472,6 +2490,7 @@ fun LionApp() {
                         }
                     },
                     actions = {
+                        WebStatusDot(selectedProvider)
                         IconButton(onClick = { addTab() }) {
                             Icon(Icons.Filled.Add, "علامة تبويب جديدة", tint = Color(0xFFFFB800))
                         }

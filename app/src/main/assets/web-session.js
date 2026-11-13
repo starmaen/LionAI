@@ -6,6 +6,7 @@
   const token = __LION_TOKEN__;
   const action = __LION_ACTION__;
   const prompt = __LION_PROMPT__;
+  const filesData = __LION_FILES__;
   // true = المستخدم يتعامل مع الصفحة بنفسه الآن (الجلسة مفتوحة)؛ false = التطبيق يقود الصفحة آلياً.
   const interactive = __LION_INTERACTIVE__;
   function result(status, extra) { return JSON.stringify(Object.assign({status: status, token: token}, extra || {})); }
@@ -354,6 +355,24 @@
     if (collapsed(answer) === collapsed(expectedText())) answer = '';
     return {shown: true, answer: answer};
   }
+  // مؤشرات «الموقع ما زال يعمل» عندما لا يُعرف زر الإيقاف الخاص به: بدونها كان السكون القصير
+  // (تفكير/بحث/استدعاء أداة) يُحسب اكتمالاً فيصل الجواب مقطوعاً.
+  function genericBusy() {
+    try {
+      return nodes('[aria-busy="true"], [data-is-streaming="true"], [data-streaming="true"], [class*="streaming"], [class*="typing-indicator"], [class*="is-generating"]').some(visible);
+    } catch (e) { return false; }
+  }
+  function uploading() {
+    try {
+      return nodes('progress, [role="progressbar"], [class*="uploading"], [class*="upload-progress"], [aria-busy="true"]').some(visible);
+    } catch (e) { return false; }
+  }
+  function toFile(f) {
+    const bin = atob(f.b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new File([arr], f.name || 'file', {type: f.type || 'application/octet-stream'});
+  }
   function genericStop() {
     return nodes('button, [role="button"]').some(function (b) {
       if (!visible(b)) return false;
@@ -473,11 +492,48 @@
       if (looksLikeLogin()) return result('needs_input');
       if (!input) return result('needs_input');
             if (input.disabled || input.readOnly || input.getAttribute('aria-disabled') === 'true') return result('input_disabled');
-      return result('ready');
+      return result('ready', {turns: answers().length});
     }
     // مراقب مستقل عن أي طلب: يعكس ما يظهر في الصفحة حتى لو كتب المستخدم فيها بنفسه.
     if (action === 'turns') {
       return result('turns', {turns: visibleTurns(8)});
+    }
+    if (action === 'attach') {
+      // إرفاق الصور/الملفات: (1) حقل input[type=file] (حتى المخفي) عبر DataTransfer، (2) لصق في المحرر.
+      if (!filesData.length) return result('attached');
+      if (document.visibilityState === 'hidden') return result('page_hidden');
+      if (!input) return result('needs_input');
+      let dt = null;
+      try {
+        dt = new DataTransfer();
+        filesData.forEach(function (f) { dt.items.add(toFile(f)); });
+      } catch (e) { return result('attach_failed', {error: 'datatransfer'}); }
+      const wantsImage = filesData.every(function (f) { return /^image\//i.test(f.type || ''); });
+      const inputs = nodes("input[type='file']").filter(function (i) { return !i.disabled; });
+      const fits = function (i) {
+        const a = (i.accept || '').toLowerCase();
+        if (!a) return true;
+        if (wantsImage) return /image|png|jpe?g|webp|\*\/\*|\.(png|jpg|jpeg|webp)/.test(a);
+        return true;
+      };
+      const target = inputs.find(fits) || null;
+      if (target) {
+        try {
+          target.files = dt.files;
+          target.dispatchEvent(new Event('input', {bubbles: true}));
+          target.dispatchEvent(new Event('change', {bubbles: true}));
+          if (target.files && target.files.length) return result('attached', {via: 'input'});
+        } catch (e) {}
+      }
+      try {
+        input.focus({preventScroll: true});
+        input.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true}));
+        return result('attached', {via: 'paste'});
+      } catch (e) {}
+      return result('attach_failed', {error: 'no-path'});
+    }
+    if (action === 'attach_wait') {
+      return result(uploading() || genericBusy() ? 'attach_busy' : 'attach_ready');
     }
     let state = window.__lionSessionRequest;
     if (action === 'prepare') {
@@ -557,7 +613,9 @@
       let viaFallback = false;
       const explicitStop = !!find(C.stop);
       if (explicitStop) state.sawStop = true;
-      const stopping = explicitStop || (state.sent && genericStop());
+      const busyNow = genericBusy();
+      if (busyNow) state.sawStop = true;
+      const stopping = explicitStop || busyNow || (state.sent && genericStop());
       const info = 'a=' + list.length + ' new=' + (isNew ? 1 : 0) + ' shown=' + (fb.shown ? 1 : 0) +
         ' stop=' + (stopping ? 1 : 0) + ' len=' + (value || '').length;
       if (C.error) {

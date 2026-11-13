@@ -90,6 +90,20 @@ internal fun hostOf(url: String): String {
 internal fun isWebUrl(url: String): Boolean =
     url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
 
+/**
+ * مواقع مثل Copilot تحاول فتح تطبيقها عبر intent:// أو ms-copilot:// ؛ إن لم يوجد التطبيق كان WebView
+ * يعرض «نوع الرابط غير مدعوم». نتبع الرابط الاحتياطي https إن وُجد داخل intent، وإلا نتجاهل الرابط.
+ */
+internal fun intentFallbackUrl(url: String): String? {
+    if (!url.startsWith("intent:", ignoreCase = true)) return null
+    val key = "S.browser_fallback_url="
+    val i = url.indexOf(key)
+    if (i < 0) return null
+    val raw = url.substring(i + key.length).substringBefore(';')
+    val decoded = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrNull() ?: return null
+    return decoded.takeIf { it.startsWith("https://", ignoreCase = true) }
+}
+
 /** رسائل الخطأ بعربية واضحة بدل شاشة سوداء فارغة. */
 internal fun describeWebError(code: Int): String = when (code) {
     WebViewClient.ERROR_HOST_LOOKUP -> "تعذّر العثور على عنوان الموقع."
@@ -268,7 +282,12 @@ internal class LionWebController(
             request: WebResourceRequest
         ): Boolean {
             val url = request.url?.toString().orEmpty()
-            return if (isWebUrl(url)) false else openExternal(url)
+            if (isWebUrl(url)) return false
+            val fallback = intentFallbackUrl(url)
+            if (fallback != null) { view.loadUrl(fallback); return true }
+            // نحاول التطبيق الخارجي ثم نُنهي التنقل دائماً: ترك WebView يحمّل مخططاً مخصصاً يعرض خطأ «غير مدعوم».
+            openExternal(url)
+            return true
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
@@ -289,6 +308,7 @@ internal class LionWebController(
             error: WebResourceError
         ) {
             if (!request.isForMainFrame) return
+            if (error.errorCode == WebViewClient.ERROR_UNSUPPORTED_SCHEME) return
             errorMessage = describeWebError(error.errorCode)
         }
 

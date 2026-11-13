@@ -245,7 +245,13 @@ object LlmClient {
         if (WebChatRuntime.handles(provider)) {
             val prefs = WebChatRuntime.prefs() ?: return "⚠️ افتح إعدادات جلسات الويب أولاً."
             if (!WebChatRuntime.available(prefs, provider)) return "⚠️ فعّل جلسات الويب والموقع المطلوب من Lion Chat."
-            if (image != null) return "⚠️ إرسال الصور آلياً إلى الصفحات غير مدعوم؛ افتح الصفحة لرفع الصورة يدوياً."
+            // الصور تُرفق آلياً بصفحة الموقع (حقل ملف أو لصق في المحرر)، بدل رفضها أو تحويلها إلى نص فقط.
+            val webFiles = if (image == null) emptyList() else image.all().take(4).map {
+                WebSessionTransport.WebFile(it.name, it.mime, it.base64)
+            }
+            if (webFiles.sumOf { it.base64.length } > 6_000_000) {
+                return "⚠️ حجم الصور أكبر من حد النقل الآلي للصفحة (نحو 4.5MB). صغّرها أو ارفعها يدوياً من «الجلسة»."
+            }
             if (message.length > 60_000) return "⚠️ سياق المحادثة أكبر من حد النقل الآمن للصفحة (60000 حرف). اختصره أو ابدأ محادثة جديدة."
             // A named site is only that site. The hub may rank verified members.
             // Individual فحص and in-app Send to Arena/Claude/… must never fan out.
@@ -263,10 +269,13 @@ object LlmClient {
                 val started = System.currentTimeMillis()
                 // حدود المحادثة في الصفحة (وكيل ↔ دردشة عادية) وتشكيل رسالة الوكيل لكل موقع على حدة.
                 val shaped = WebToolBridge.plan(route.provider, systemPrompt, message)
-                val chatKey = ActiveChat.id
+                // معرّف المحادثة يأتي من الطلب نفسه؛ ActiveChat متغير عام يتغير عند تبديل علامة التبويب
+                // فيوجّه الرد/إعادة التحميل/الانعكاس إلى محادثة خاطئة.
+                val chatKey = chatId.ifBlank { ActiveChat.id }
                 val (recapFull, recapDelta) = WebToolBridge.recaps(route.provider, chatKey, history)
                 val result = WebSessionTransport.exchange(
-                    route.provider, shaped.text, remaining, shaped.fresh, recapFull, recapDelta
+                    route.provider, shaped.text, remaining, shaped.fresh, recapFull, recapDelta,
+                    chatKey, if (route === ordered.first()) webFiles else emptyList()
                 )
                 if (result.success) WebToolBridge.markSeen(route.provider, chatKey, history.size)
                 SmartRouter.record(route, result.success, System.currentTimeMillis() - started)

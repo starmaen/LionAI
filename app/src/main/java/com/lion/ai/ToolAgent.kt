@@ -331,6 +331,8 @@ object ToolAgent {
         var okMutations = 0
         var okCount = 0
         var failCount = 0
+        // آخر نص جوهري كتبه المزود: يُعرض مع أي توقف أو ملخص بدل أن يضيع الجواب خلف سجل الإجراءات.
+        var lastSubstantive = ""
         fun statusReport(complete: Boolean, why: String): String {
             val neutral = why.isBlank() || why.contains("المزود")
             val status = when {
@@ -357,7 +359,7 @@ object ToolAgent {
                 sb.append("- خطوات تعذّرت: ").append(failedSteps.takeLast(3).joinToString("، ")).append('\n')
             }
             // سجل الخطوات يبقى في الشات بعد انتهاء المهمة (كان يظهر مؤقتاً أثناء العمل ثم يختفي) ومعه سبب كل فشل.
-            if (workLog.isNotEmpty()) {
+            if (workLog.isNotEmpty() && !(complete && failCount == 0)) {
                 sb.append("- سجل الخطوات:\n")
                 if (workLog.size > 30) sb.append("- … (").append(workLog.size - 30).append(" خطوات أقدم)\n")
                 workLog.takeLast(30).forEach { sb.append("- ").append(it.take(170)).append('\n') }
@@ -469,10 +471,12 @@ object ToolAgent {
         }
         fun finish(text: String, complete: Boolean, why: String = ""): Result {
             val cards = if (presented.isEmpty()) "" else "\n\n" + presented.joinToString("\n") { FileDelivery.marker(it) }
+            val shown = if (!complete && lastSubstantive.isNotBlank() && !text.contains(lastSubstantive.take(60)))
+                text + "\n\n**آخر ما وصل من المزود:**\n" + lastSubstantive.take(3_500) else text
             memory.checkpoint(historyBuffer, if (complete) "" else current)
-            if (complete) memory.checkpoint(historyBuffer + ChatTurn("user",current) + ChatTurn("assistant",text), "")
+            if (complete) memory.checkpoint(historyBuffer + ChatTurn("user",current) + ChatTurn("assistant",shown), "")
             session?.let { CheckpointStore.save(prefs, it) }
-            return Result(if (used.isEmpty()) text else text + statusReport(complete, why) + cards, used, complete, memory.responded)
+            return Result(if (used.isEmpty()) shown else shown + statusReport(complete, why) + cards, used, complete, memory.responded)
         }
         var cycle = 0
         var stepBudgetNow = maxSteps
@@ -548,6 +552,9 @@ object ToolAgent {
             }
 
             memory.responded = true
+            ToolMarkup.strip(reply).replace(ASK, "").replace(ASK_ALT, "").trim().let {
+                if (it.length >= 40 && !isIntentOnly(it)) lastSubstantive = it
+            }
             session?.let {
                 ProviderStick.set(prefs, it.chatId, provider, model)
                 memory.checkpoint(historyBuffer, current)
@@ -739,7 +746,7 @@ object ToolAgent {
                         "استدعِه الآن للفرع التجريبي نفسه (وليس الفرع الافتراضي) ثم أعطِ الملخص النهائي."
                     continue
                 }
-                val answer = finalAnswer(reply, used)
+                val answer = finalAnswer(reply, used, lastSubstantive)
                 if (used.isNotEmpty()) session?.recordNote("اكتملت المهمة: " + answer.take(240))
                 if (used.isNotEmpty()) {
                     session?.markCompleted()
@@ -950,11 +957,12 @@ object ToolAgent {
     private fun gatesNeeded(used: List<String>): Boolean =
         used.any { it.removePrefix("github_") in GATE_WRITE_TOOLS.map { name -> name.removePrefix("github_") } }
 
-    private fun finalAnswer(reply: String, used: List<String>): String {
+    private fun finalAnswer(reply: String, used: List<String>, lastText: String = ""): String {
         val clean = ToolMarkup.strip(reply)
             .replace(ASK, "")
             .replace(ASK_ALT, "")
             .trim()
+            .ifBlank { lastText.trim() }
         if (used.isEmpty()) return clean.ifBlank { "لم أجد حاجة لاستخدام أدوات." }
         return clean.ifBlank { "اكتملت العملية." }
     }
