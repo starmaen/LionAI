@@ -44,6 +44,8 @@ class AgentContinuityIntegrationTest {
     @Test fun serverFailureThenRestartPreservesActualToolOutputWithoutReexecutingTool()=runBlocking {
         val prefs=FakePrefs();val original=LlmClient.endpointOverrides
         Backend(listOf(200 to reply("[[TOOL]]{\"name\":\"util_uuid\",\"args\":{}}[[/TOOL]]"),503 to "{\"error\":{\"message\":\"test outage\"}}",
+                        503 to "{\"error\":{\"message\":\"test outage\"}}",
+            503 to "{\"error\":{\"message\":\"test outage\"}}",
             200 to reply("النتيجة السابقة محفوظة؛ اكتمل الفحص."))).use { server ->
             try {
                 LlmClient.endpointOverrides=mapOf("custom" to server.url)
@@ -55,7 +57,8 @@ class AgentContinuityIntegrationTest {
                 saved.beginTurn("أكمل")
                 val second=execute(saved,prefs,"أكمل")
                 assertTrue(second.complete);assertTrue(second.tools.isEmpty())
-                assertEquals(3,server.requests.size)
+                                // 1) طلب الأداة، 2-4) ثلاث محاولات على 503 (محاولة + إعادتان)، 5) طلب الاستئناف الناجح.
+                assertEquals(5,server.requests.size)
                 assertTrue(server.requests.last().contains(uuid))
                 assertTrue(server.requests.all { JSONObject(it).optString("model")=="fixture-model" })
             } finally { LlmClient.endpointOverrides=original }

@@ -22,6 +22,7 @@ object LlmClient {
         lastErrors.remove(provider)
         lastSuccess[provider] = "$model — " +
             java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date())
+        ProviderHealth.recordAuto(provider, true)
     }
 
     fun diagnostics(): String = buildString {
@@ -334,6 +335,7 @@ object LlmClient {
                 if (WebGateway.current().mode == WebGateway.MODE_ONLY || gatewayOnly) {
                     val why = lastWhy.ifBlank { "لا رد من الخادم" }
                     lastErrors[provider] = "gateway: " + why.take(200)
+                    ProviderHealth.recordAuto(provider, false, lastErrors[provider].orEmpty())
                     return@withReadTimeout "⚠️ تعذّرت الخوادم ($provider): ${why.take(160)}\n" +
                         "فعّل «المباشر أولاً» أو بدّل الاختيار إلى «مباشر» من الإعدادات ← الاتصال."
                 }
@@ -440,6 +442,7 @@ object LlmClient {
         } catch (e: LlmException) {
             val raw = e.message.orEmpty()
             lastErrors[provider] = "HTTP ${e.status}: " + raw.take(200)
+            ProviderHealth.recordAuto(provider, false, lastErrors[provider].orEmpty())
             if (provider.startsWith("opencode") &&
                 (raw.contains("FreeUsageLimit", ignoreCase = true) ||
                     raw.contains("Free usage limit", ignoreCase = true) ||
@@ -471,10 +474,12 @@ object LlmClient {
             }
         } catch (e: java.net.UnknownHostException) {
             lastErrors[provider] = "DNS: " + (e.message ?: "").take(200)
+            ProviderHealth.recordAuto(provider, false, lastErrors[provider].orEmpty())
             "⚠️ تعذّر حل اسم النطاق (DNS) للخادم.\n" +
                 "جرّب: إيقاف Private DNS أو ضبطه على 1.1.1.1، أو VPN، أو افتح الرابط في المتصفح للتأكد."
         } catch (e: Exception) {
             lastErrors[provider] = "اتصال: " + (e.message ?: e.javaClass.simpleName).take(200)
+            ProviderHealth.recordAuto(provider, false, lastErrors[provider].orEmpty())
             "⚠️ تعذر الاتصال بالمزود: ${e.message ?: e.javaClass.simpleName}"
         }
         }
@@ -638,6 +643,21 @@ object LlmClient {
         if (wait > 0) Thread.sleep(wait)
     }
 
+    private val TRANSIENT_STATUS = setOf(408, 502, 503, 504, 529)
+
+    /** أعطال شبكة عابرة قبل أي رد من الخادم. المهلة البطيئة عند القراءة لا تُعاد حتى لا تتضاعف. */
+    private fun isTransientNetwork(e: java.io.IOException): Boolean {
+        if (Thread.currentThread().isInterrupted) return false
+        return when (e) {
+            is java.net.UnknownHostException -> true
+            is java.net.SocketTimeoutException -> e.message.orEmpty().contains("connect", ignoreCase = true)
+            is java.net.SocketException -> true
+            is javax.net.ssl.SSLException -> true
+            is java.io.EOFException -> true
+            else -> false
+        }
+    }
+
     internal fun postJson(
         url: String,
         headers: Map<String, String>,
@@ -645,6 +665,7 @@ object LlmClient {
     ): JSONObject {
         throttleFor(url)
         var attempt = 0
+        var netRetries = 0
         while (true) {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -672,10 +693,22 @@ object LlmClient {
                     Thread.sleep((retryAfter ?: (4_000L * attempt)).coerceIn(1_000L, 20_000L))
                     continue
                 }
+                if (status in TRANSIENT_STATUS && netRetries < 2) {
+                    netRetries++
+                    Thread.sleep(1_500L * netRetries)
+                    continue
+                }
                 if (status !in 200..299) {
                     throw LlmException(status, errorMessage(json, raw))
                 }
                 return json ?: throw LlmException(status, "رد غير صالح من المزود")
+            } catch (e: java.io.IOException) {
+                if (netRetries < 2 && isTransientNetwork(e)) {
+                    netRetries++
+                    Thread.sleep(1_500L * netRetries)
+                    continue
+                }
+                throw e
             } finally {
                 connection.disconnect()
             }
