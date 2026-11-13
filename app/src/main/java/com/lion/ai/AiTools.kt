@@ -919,6 +919,7 @@ object AiTools {
                 val (owner, repo) = repoOf(ctx, args)
                 val path = req(args, "path")
                 val content = args.optString("content")
+                ContentGuard.problem(path, null, content)?.let { throw IllegalArgumentException(it) }
                 val result = GitHubClient.writeFile(
                     token, owner, repo, path, content,
                     args.optString("message", "تحديث من Lion AI"),
@@ -1111,6 +1112,7 @@ object AiTools {
                     (0 until array.length()).mapNotNull { array.optString(it).takeIf { value -> value.isNotBlank() } }
                 }.orEmpty()
                 if (files.isEmpty() && deletions.isEmpty()) throw IllegalArgumentException("حدد files أو delete")
+                files.forEach { (p, c) -> ContentGuard.problem(p, null, c)?.let { throw IllegalArgumentException(it) } }
                 val sha = GitHubClient.commitFiles(
                     token, owner, repo, args.optString("branch"),
                     args.optString("message", "تحديث من Lion AI"),
@@ -1413,7 +1415,12 @@ object AiTools {
                 }
             }
             "file_write", "write_file" -> {
-                val entry = FileTools.write(ctx.context, req(args, "path"), args.optString("content"))
+                val path = req(args, "path")
+                val content = args.optString("content")
+                val existing = runCatching { FileTools.read(ctx.context, path, maxBytes = 4_000_000) }.getOrNull()
+                    ?.takeIf { !it.binary }?.text
+                ContentGuard.require(path, existing, content, args.optBoolean("allow_shrink", false))
+                val entry = FileTools.write(ctx.context, path, content)
                 "✅ كُتب ${entry.path} (${entry.size} بايت)"
             }
             "file_delete" -> {
