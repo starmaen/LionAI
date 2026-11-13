@@ -341,7 +341,13 @@ internal class AndroidWebSessionHost(
                 if (request.isForMainFrame) pageFailed(adapter, v, "${describeWebError(error.errorCode)} (رمز ${error.errorCode})")
             }
             override fun onReceivedHttpError(v: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-                if (request.isForMainFrame) pageFailed(adapter, v, "رفض تحميل الصفحة: HTTP ${response.statusCode}. افتح الجلسة للتحقق أو أعد تحميلها.")
+                if (request.isForMainFrame) {
+                    val code = response.statusCode
+                    val hint = if (code == 401 || code == 403)
+                        " قد يحجب الموقع (Google/Microsoft) الصفحة حسب البلد أو الشبكة أو لأنها داخل تطبيق. جرّب «المتصفح» على الشبكة نفسها؛ إن فشلت هناك فالحجب من الخادم ولا يُحل من التطبيق."
+                    else " افتح الجلسة للتحقق أو أعد تحميلها."
+                    pageFailed(adapter, v, "رفض تحميل الصفحة: HTTP $code.$hint")
+                }
             }
             override fun onReceivedSslError(v: WebView, handler: SslErrorHandler, error: SslError) {
                 handler.cancel() // Never bypass certificate validation.
@@ -442,6 +448,14 @@ internal class AndroidWebSessionHost(
             scheduleCapture(adapter, ActiveChat.id, 4_000L)
         }
     }
+    /** يفتح الصفحة الحالية في المتصفح العادي (تسجيل الدخول والتحقق يعملان فيه أفضل من WebView). */
+    fun openCurrentInBrowser() {
+        val id = displayedProvider ?: return
+        val url = pool[id]?.url?.takeIf { it.startsWith("https://") }
+            ?: WebSiteAdapters.get(id, prefs)?.url ?: return
+        runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)) }
+    }
+
     fun canGoBack(): Boolean = displayedProvider?.let { pool[it]?.canGoBack() } == true
     fun goBack() { displayedProvider?.let { pool[it]?.takeIf { v -> v.canGoBack() }?.goBack() } }
 

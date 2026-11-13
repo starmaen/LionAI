@@ -73,6 +73,7 @@ fun WebSessionPanel(content: @Composable () -> Unit) {
                         Text(label, color = Color(0xFFFF8A30), fontSize = 12.sp, maxLines = 2, modifier = Modifier.weight(1f))
                         TextButton(onClick = { host?.goBack() }) { Text("رجوع") }
                         TextButton(onClick = { host?.reloadCurrent() }) { Text("تحديث") }
+                        TextButton(onClick = { host?.openCurrentInBrowser() }) { Text("المتصفح") }
                         TextButton(onClick = { closeSession() }) { Text("العودة للشات") }
                     }
                     // تبديل صفحة الويب المعروضة من داخل التطبيق (المواقع المفعّلة فقط).
