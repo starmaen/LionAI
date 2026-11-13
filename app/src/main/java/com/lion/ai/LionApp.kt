@@ -2213,18 +2213,15 @@ fun LionApp() {
                     HubCategory.EXTERNAL -> {
                         // اختيار مزود من نافذة الخادم الخارجي يفعّل قناته مع ترك
                         // بقية القنوات على حالها (يمكن تشغيلها كلها معاً).
-                        prefs.edit().putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO).apply()
-                        setProviderEnabled(prefs, WebGateway.ENABLED_ID, true)
-                        RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, true)
-                        gatewayMode = WebGateway.MODE_AUTO
+                        ServerRegistry.enableFromHub(prefs, ServerRegistry.BUILTIN_GATEWAY)
+                        gatewayMode = WebGateway.load(prefs).mode
                         gatewayEnabled = true
-                        WebGateway.load(prefs)
                     }
                     HubCategory.LOCAL -> {
-                        RoutePolicy.setChannelEnabled(prefs, Channel.LOCAL, true)
+                        ServerRegistry.enableFromHub(prefs, ServerRegistry.BUILTIN_LOCAL)
                     }
                     HubCategory.INDEPENDENT -> {
-                        RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, true)
+                        ServerRegistry.setDirectFirst(prefs, true)
                     }
                     else -> Unit
                 }
@@ -2238,25 +2235,24 @@ fun LionApp() {
                 )
             },
             onGatewayEnabled = { value ->
-                setProviderEnabled(prefs, WebGateway.ENABLED_ID, value)
+                if (value) ServerRegistry.enableFromHub(prefs, ServerRegistry.BUILTIN_GATEWAY)
+                else ServerRegistry.setOn(prefs, ServerRegistry.BUILTIN_GATEWAY, false)
                 gatewayEnabled = value
-                RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, value)
-                if (value && gatewayMode == WebGateway.MODE_OFF) {
-                    gatewayMode = WebGateway.MODE_AUTO
-                    prefs.edit().putString(WebGateway.KEY_MODE, gatewayMode).apply()
-                }
-                WebGateway.load(prefs)
+                gatewayMode = WebGateway.load(prefs).mode
             },
             onGatewayMode = { value ->
-                prefs.edit().putString(WebGateway.KEY_MODE, value).apply()
-                gatewayMode = value
-                RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, value != WebGateway.MODE_OFF)
-                if (value == WebGateway.MODE_ONLY) {
-                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, false)
-                } else {
-                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, true)
+                when (value) {
+                    WebGateway.MODE_OFF -> ServerRegistry.selectMode(prefs, off = true)
+                    WebGateway.MODE_ONLY -> {
+                        ServerRegistry.selectMode(prefs, off = false)
+                        ServerRegistry.setDirectFirst(prefs, false)
+                    }
+                    else -> {
+                        ServerRegistry.selectMode(prefs, off = false)
+                        ServerRegistry.setDirectFirst(prefs, true)
+                    }
                 }
-                WebGateway.load(prefs)
+                gatewayMode = WebGateway.load(prefs).mode
             },
             onOpenSettings = {
                 hubCategory = null

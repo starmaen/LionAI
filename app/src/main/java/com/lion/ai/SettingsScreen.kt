@@ -326,14 +326,15 @@ fun SettingsScreen(
             var hubVersion by remember { mutableStateOf(0) }
             SettingsTabsBar(settingsTab) { settingsTab = it }
             Spacer(Modifier.height(4.dp))
-                        run {
             SettingsSection(
                 title = "💬 خيارات المحادثة",
-                subtitle = "عام: دردشة مباشرة والأدوات عند الطلب فقط · المطوّر: كل الأدوات حاضرة. ينطبق على كل المزودات والجسر",
+                subtitle = "الوضع: عام أو المطوّر · المزود: يدوي (تختاره أنت) أو تلقائي (العقل المركزي يختاره)",
                 initiallyExpanded = true
             ) {
+                Text("وضع المحادثة", color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        ChatMode.entries.forEach { m ->
+                    ChatMode.entries.forEach { m ->
                         val on = m == currentChatMode
                         Button(
                             onClick = { persist(); onSelectMode(m) },
@@ -341,14 +342,47 @@ fun SettingsScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = if (on) Color(0xFFFFB800) else Color(0xFF2A2A2A))
                         ) { Text("${m.icon} ${m.short}", color = if (on) Color.Black else Color(0xFFE0E0E0), fontSize = 12.sp) }
                     }
-
-                    Button(
-                        onClick = { persist(); onOpenMedia() },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
-                    ) { Text("🎨 ميديا", color = Color(0xFFE0E0E0), fontSize = 12.sp) }
                 }
-            }
+                Spacer(Modifier.height(12.dp))
+                Text("اختيار المزود", color = Color(0xFFB0B0B0), fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            // التلقائي لا يغيّر مزودك المحفوظ؛ العقل المركزي يختار الأنسب ويبدّل فقط عند انقطاع المزود.
+                            autoRouteSetting = true
+                            prefs.edit().putBoolean("auto_route", true).commit()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
+                        )
+                    ) {
+                        Text("🧠 تلقائي", color = if (autoRouteSetting) Color.Black else Color(0xFFE0E0E0), fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = {
+                            // اليدوي: مزودك فقط، ولا علاقة للعقل المركزي بأي مرحلة.
+                            autoRouteSetting = false
+                            prefs.edit().putBoolean("auto_route", false).commit()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (!autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
+                        )
+                    ) {
+                        Text("✋ يدوي", color = if (!autoRouteSetting) Color.Black else Color(0xFFE0E0E0), fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (autoRouteSetting)
+                        "🧠 تلقائي: العقل المركزي يختار المزود حسب الكفاءة والحاجة، ولا يبدّله ما دام يعمل، ويبدّله عند انقطاع الاتصال به."
+                    else
+                        "✋ يدوي: تعمل بالمزود الذي تختاره من قائمة المزودات (${RoutePolicy.shortName(provider)}) دون أي تدخل من العقل المركزي، والتبديل بين المزودات بيدك.",
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 11.sp
+                )
             }
 
             LionChatSettingsCard(prefs = prefs, onActivate = { id ->
@@ -416,799 +450,51 @@ fun SettingsScreen(
             }
 
             if (settingsTab == 1) {
-            ConnectionHubSection(prefs, onChanged = { hubVersion++ })
-            key(hubVersion) {
-            // بطاقة الخادم المحلي (Proxy) لعرض البورت الذي اختاره نظام أندرويد تلقائياً
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                ServersSection(prefs, onChanged = { hubVersion++ })
+                SettingsSection(
+                    title = "➕ استيراد مزود/منصة (OpenAI-Compatible JSON)",
+                    subtitle = "يُضاف المزود إلى قائمة المزودات المشتركة",
+                    nested = true
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "🖥️ الخادم المحلي (Proxy داخل التطبيق)",
-                            color = Color(0xFFFFB800),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            if (LocalAIProxy.isRunning()) "الحالة: يعمل تلقائياً" else "الحالة: متوقف",
-                            color = if (LocalAIProxy.isRunning()) Color(0xFF4CAF50) else Color(0xFFF44336),
-                            fontSize = 14.sp
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        var directChannel by remember {
-                            mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.DIRECT))
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("🔌 استخدام الاتصال المباشر بالمزود", color = Color.White, fontSize = 13.sp)
-                                Text(
-                                    "مستقل تماماً؛ يمكن إيقافه عند استخدام خادم واحد فقط",
-                                    color = Color(0xFF9A9A9A), fontSize = 10.sp
-                                )
-                            }
-                            Switch(
-                                checked = directChannel,
-                                onCheckedChange = {
-                                    directChannel = it
-                                    RoutePolicy.setChannelEnabled(prefs, Channel.DIRECT, it)
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        var localChannel by remember {
-                            mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.LOCAL))
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "استخدام الخادم المحلي كمسار تنفيذ",
-                                    color = Color.White,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    "يُجرَّب مع المسار المباشر أو بعده — يعمل وحده أو مع أي مسار آخر",
-                                    color = Color(0xFF9A9A9A),
-                                    fontSize = 10.sp
-                                )
-                            }
-                            Switch(
-                                checked = localChannel,
-                                onCheckedChange = {
-                                    localChannel = it
-                                    RoutePolicy.setChannelEnabled(prefs, Channel.LOCAL, it)
-                                    if (it) {
-                                        settingsScope.launch(Dispatchers.IO) { LocalAIProxy.start(ctx, prefs) }
-                                    } else {
-                                        LocalAIProxy.stop()
-                                    }
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        var backend by remember { mutableStateOf(LocalAIProxy.backendProvider(prefs)) }
-                        val backendOptions = remember {
-                            PROVIDERS.filter {
-                                it.group == ProviderGroup.API && it.id != "local_proxy" && it.id != "custom"
-                            }
-                        }
-                        val backendName = backendOptions.firstOrNull { it.id == backend }?.label ?: backend
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
-                                ),
-                                onClick = {
-                                    // التلقائي لا يغيّر مزودك المحفوظ؛ العقل المركزي يدير
-                                    // الاختيار مؤقتاً، وعند العودة لليدوي يعود مزودك كما كان.
-                                    autoRouteSetting = true
-                                    prefs.edit().putBoolean("auto_route", true).apply()
-                                }
-                            ) {
-                                Text(
-                                    "🧠 تلقائي (العقل المركزي)", fontSize = 11.sp, maxLines = 1,
-                                    color = if (autoRouteSetting) Color(0xFF121212) else Color(0xFFE0E0E0)
-                                )
-                            }
-                            Button(
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (!autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
-                                ),
-                                onClick = {
-                                    // اليدوي يوقف تدخّل العقل المركزي ولا يغيّر المزود ولا الخادم.
-                                    autoRouteSetting = false
-                                    prefs.edit().putBoolean("auto_route", false).apply()
-                                }
-                            ) {
-                                Text(
-                                    "✋ يدوي (أختار المزود)", fontSize = 11.sp, maxLines = 1,
-                                    color = if (!autoRouteSetting) Color(0xFF121212) else Color(0xFFE0E0E0)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        val chosenName = if (provider == RoutePolicy.LOCAL_PROXY) {
-                            "الخادم المحلي ($backendName)"
-                        } else {
-                            providerInfo(provider).shortName
-                        }
-                        Text(
-                            if (autoRouteSetting)
-                                "🧠 تلقائي: العقل المركزي يختار الأفضل والأسرع حسب نوع المحادثة (عام/المطوّر) وينتقل لمزود آخر عند الفشل. اختيارك المحفوظ لليدوي: $chosenName."
-                            else
-                                "✋ يدوي: المزود المختار = $chosenName. يعمل كما هو، والبديل يعمل فقط إذا توقف عن الرد.",
-                            color = Color(0xFFB0B0B0),
-                            fontSize = 12.sp
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        OperationsRoomCard(prefs)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "المزود الخلفي للخادم: $backendName — اختياره لا يغيّر مزود المحادثة ولا وضعها التلقائي/اليدوي.",
-                            color = Color(0xFF9A9A9A), fontSize = 10.sp
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        backendOptions.chunked(3).forEach { rowItems ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                rowItems.forEach { info ->
-                                    // شبكة الخادم: تختار مزودَ routing الخادم فقط، مستقلة تماماً
-                                    // عن المزود الفردي النشط في المحادثة.
-                                    val selected = info.id == backend
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .background(
-                                                if (selected) Color(0xFFFFB800) else Color(0xFF2A2A2A),
-                                                RoundedCornerShape(16.dp)
-                                            )
-                                            .clickable {
-                                                // إعداد وسيط مستقل: لا يغيّر مزود المحادثة ولا مسارها ولا وضعها.
-                                                backend = info.id
-                                                prefs.edit().putString("local_proxy_backend", info.id).apply()
-                                            }
-                                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            if (info.id == "openai") "ChatGPT" else info.shortName,
-                                            color = if (selected) Color(0xFF121212) else Color(0xFFE0E0E0),
-                                            fontSize = 11.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    }
-                                }
-                                repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                        }
-                        val selectedInfo = backendOptions.firstOrNull { it.id == backend }
-
-                        // المكان الوحيد المطلوب من المستخدم: مفتاح المزود المختار
-                        if (selectedInfo != null && !selectedInfo.keyless && !backend.startsWith("imp_")) {
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = keys[backend] ?: "",
-                                onValueChange = { value ->
-                                    keys[backend] = value
-                                    prefs.edit()
-                                        .putString("api_key_$backend", value.filterNot { it.isWhitespace() })
-                                        .apply()
-                                },
-                                label = { Text("🔑 مفتاح API لـ ${selectedInfo.shortName}", fontSize = 11.sp) },
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth(),
-                                textStyle = TextStyle(fontSize = 12.sp, color = Color(0xFFE0E0E0))
-                            )
+                    var importJson by remember { mutableStateOf("") }
+                    var importNote by remember { mutableStateOf("") }
+                    OutlinedTextField(
+                        value = importJson,
+                        onValueChange = { importJson = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                        placeholder = {
                             Text(
-                                "يُحفظ تلقائياً — بعد إدخاله يعمل المزود مباشرة في المحادثة، وعبر الخادم المحلي عند اختياره.",
-                                color = Color(0xFF7A7A7A),
+                                """[{"label":"Gateway","baseUrl":"https://host/v1","model":"hf/deepseek-ai/DeepSeek-V4.1-Flash-1017","apiKey":"..."}]""",
+                                color = Color(0xFF707070),
                                 fontSize = 10.sp
                             )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        val activeBackendModel = (prefs.getString("model_$backend", "") ?: "")
-                            .ifBlank { selectedInfo?.defaultModel ?: "" }
-                        Text(
-                            "الموديل التلقائي: ${activeBackendModel.ifBlank { "غير محدد" }} — يبدأ الخادم تلقائياً عند فتح التطبيق.",
-                            color = Color(0xFF7A7A7A),
-                            fontSize = 11.sp
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF64B5F6),
+                            unfocusedBorderColor = Color(0xFF3A3A3A),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
                         )
-
-                        // تبويب فرعي: مزودات خادم الويب (Cloudflare/Render) — اختياري وغير إلزامي.
-                        Spacer(Modifier.height(10.dp))
-                        var gwMode by remember {
-                            mutableStateOf(
-                                WebGateway.normalizeMode(
-                                    prefs.getString(WebGateway.KEY_MODE, WebGateway.MODE_OFF)
-                                )
-                            )
-                        }
-                        var gwUrl by remember { mutableStateOf(prefs.getString(WebGateway.KEY_URL, "").orEmpty()) }
-                        var gwToken by remember { mutableStateOf(prefs.getString(WebGateway.KEY_TOKEN, "").orEmpty()) }
-                        var gwReport by remember { mutableStateOf("") }
-                        var gwBusy by remember { mutableStateOf(false) }
-                        var gwModels by remember { mutableStateOf<List<String>>(emptyList()) }
-                        var gwModelsFor by remember { mutableStateOf("") }
-                        var gwModelsBusy by remember { mutableStateOf(false) }
-                        var gwSelectedModel by remember { mutableStateOf("") }
-                        fun saveGateway() {
-                            val saved = WebGateway.save(prefs, gwUrl, gwToken, gwMode)
-                            if (saved.url.isNotBlank() && saved.url != gwUrl.trim()) gwUrl = saved.url
-                            LlmClient.reloadOverrides(prefs)
-                        }
-                        SettingsSection(
-                            title = "🧩 تفاصيل الخوادم (الرابط والمفتاح والمزودات)",
-                            subtitle = "اختياري: مباشر أو عبر Cloudflare/Render — افحص ثم فعّل",
-                            badge = WebGateway.modeLabel(gwMode),
-                            nested = true
-                        ) {
-                            Text(
-                                "الوضع المختار: " + when (gwMode) {
-                                    WebGateway.MODE_AUTO -> "يجرّب الخادم أولاً ثم يعود تلقائياً للمباشر عند فشله."
-                                    WebGateway.MODE_ONLY -> "عبر الخادم فقط. للعودة اضغط «مباشر»."
-                                    else -> "مباشر فقط — لا يستخدم أي خادم خارجي."
-                                },
-                                color = Color(0xFF9A9A9A),
-                                fontSize = 10.sp
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            var gatewayChannel by remember {
-                                mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.GATEWAY))
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        onClick = {
+                            val added = ImportedProviders.importFrom(prefs, importJson)
+                            importNote = if (added > 0) {
+                                "✅ أُضيف $added مزود."
+                            } else {
+                                "⚠️ لم يُضف شيء — تحقق من JSON (baseUrl مطلوب)."
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("تفعيل الخادم الخارجي كمسار تنفيذ", color = Color.White, fontSize = 13.sp)
-                                    Text(
-                                        "يعمل منفرداً أو مع المباشر والمحلي دون تغيير المزود",
-                                        color = Color(0xFF9A9A9A), fontSize = 10.sp
-                                    )
-                                }
-                                Switch(
-                                    checked = gatewayChannel,
-                                    onCheckedChange = {
-                                        gatewayChannel = it
-                                        RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, it)
-                                        setProviderEnabled(prefs, WebGateway.ENABLED_ID, it)
-                                        if (it && gwMode == WebGateway.MODE_OFF) gwMode = WebGateway.MODE_AUTO
-                                        if (!it && gwMode != WebGateway.MODE_OFF) gwMode = WebGateway.MODE_OFF
-                                        saveGateway()
-                                    },
-                                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFB800))
-                                )
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    WebGateway.MODE_OFF to "🔌 مباشر",
-                                    WebGateway.MODE_AUTO to "🌐 خادم أولاً",
-                                    WebGateway.MODE_ONLY to "☁️ خادم فقط"
-                                ).forEach { (mode, label) ->
-                                    Button(
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (gwMode == mode) Color(0xFFFFB800) else Color(0xFF2A2A2A)
-                                        ),
-                                        onClick = {
-                                            gwMode = mode
-                                            gatewayChannel = mode != WebGateway.MODE_OFF
-                                            RoutePolicy.setChannelEnabled(prefs, Channel.GATEWAY, gatewayChannel)
-                                            setProviderEnabled(prefs, WebGateway.ENABLED_ID, gatewayChannel)
-                                            RoutePolicy.setChannelEnabled(
-                                                prefs, Channel.DIRECT, mode != WebGateway.MODE_ONLY
-                                            )
-                                            saveGateway()
-                                        }
-                                    ) {
-                                        Text(
-                                            label,
-                                            fontSize = 10.sp,
-                                            maxLines = 1,
-                                            color = if (gwMode == mode) Color(0xFF121212) else Color(0xFFE0E0E0)
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = gwUrl,
-                                onValueChange = { gwUrl = it; saveGateway() },
-                                label = { Text("رابط الخادم (Base URL)", fontSize = 11.sp) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text(WebGateway.DEFAULT_URL, fontSize = 10.sp) },
-                                textStyle = TextStyle(fontSize = 12.sp, color = Color(0xFFE0E0E0))
-                            )
-                            if (gwUrl.isBlank()) {
-                                TextButton(onClick = {
-                                    gwUrl = WebGateway.DEFAULT_URL
-                                    saveGateway()
-                                }) { Text("ملء رابط الخادم المعروف", color = Color(0xFFFFB800), fontSize = 11.sp) }
-                            }
-                            Text(
-                                "فحص /health يعيد 200 بدون مفتاح. المحادثة و«النماذج» تحتاج RELAY_TOKEN مطابقاً لسر Cloudflare.",
-                                color = Color(0xFF9A9A9A),
-                                fontSize = 10.sp
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            OutlinedTextField(
-                                value = gwToken,
-                                onValueChange = { gwToken = it; saveGateway() },
-                                label = { Text("مفتاح الخادم (RELAY_TOKEN)", fontSize = 11.sp) },
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth(),
-                                textStyle = TextStyle(fontSize = 12.sp, color = Color(0xFFE0E0E0))
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Button(
-                                    enabled = !gwBusy,
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                                    onClick = {
-                                        gwBusy = true
-                                        gwReport = "⏳ أفحص الخادم…"
-                                        saveGateway()
-                                        settingsScope.launch {
-                                            gwReport = withContext(Dispatchers.IO) {
-                                                WebGateway.test(prefs, gwUrl, gwToken)
-                                            }
-                                            gwBusy = false
-                                        }
-                                    }
-                                ) { Text("1) الخادم", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
-                                Button(
-                                    enabled = !gwBusy,
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                                    onClick = {
-                                        val pid = gwModelsFor.ifBlank { backend }
-                                        val model = gwSelectedModel.ifBlank { WebGateway.defaultModel(pid) }
-                                        gwBusy = true
-                                        gwReport = "⏳ أفحص ${WebGateway.providerLabel(pid)} عبر الخادم…"
-                                        saveGateway()
-                                        settingsScope.launch {
-                                            gwReport = withContext(Dispatchers.IO) {
-                                                WebGateway.testProvider(prefs, pid, model)
-                                            }
-                                            gwBusy = false
-                                        }
-                                    }
-                                ) { Text("2) المزود", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
-                                Button(
-                                    enabled = !gwBusy,
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                                    onClick = {
-                                        gwBusy = true
-                                        gwReport = "⏳ أحدّث موديلات الخادم…"
-                                        saveGateway()
-                                        settingsScope.launch {
-                                            val models = withContext(Dispatchers.IO) { WebGateway.listModels(prefs) }
-                                            val pid = gwModelsFor.ifBlank { backend }
-                                            if (models.isNotEmpty() && pid.isNotBlank()) {
-                                                val subs = models.filter { it.startsWith("$pid/") }
-                                                    .map { it.removePrefix("$pid/") }
-                                                if (subs.isNotEmpty()) {
-                                                    gwModels = subs.distinct().take(30)
-                                                }
-                                            }
-                                            gwReport = if (models.isEmpty()) {
-                                                WebGateway.lastModelsError.ifBlank {
-                                                    "⚠️ لا موديلات — تحقق من الرابط و RELAY_TOKEN."
-                                                }
-                                            } else {
-                                                "✅ ${models.size} موديلاً متاحاً من الخادم."
-                                            }
-                                            gwBusy = false
-                                        }
-                                    }
-                                ) { Text("3) النماذج", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                "🧠 في «تلقائي» يدخل العقل المركزي مزودات الخادم ضمن اختياره (وضع «خادم أولاً/فقط»)، وفي «يدوي» يبقى مزودك المختار ولا يتبدل إلا إن توقف.",
-                                color = Color(0xFF9A9A9A),
-                                fontSize = 10.sp
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Button(
-                                enabled = !gwBusy,
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                                onClick = {
-                                    val pid = gwModelsFor.ifBlank { backend }
-                                    val model = gwSelectedModel.ifBlank { RoutePolicy.modelFor(prefs, pid) }
-                                    gwBusy = true
-                                    gwReport = "⏳ أفحص ${RoutePolicy.shortName(pid)} عبر المسارات الثلاثة (مباشر / خادم ويب / خادم محلي)…"
-                                    saveGateway()
-                                    settingsScope.launch {
-                                        gwReport = withContext(Dispatchers.IO) { RouteDiagnostics.report(prefs, pid, model) }
-                                        gwBusy = false
-                                    }
-                                }
-                            ) { Text("🔬 فحص المسارات الثلاثة", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
-                            if (gwReport.isNotBlank()) {
-                                Spacer(Modifier.height(6.dp))
-                                Text(gwReport.take(2400), color = Color.White, fontSize = 10.sp)
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "المزودات المدعومة عبر الخادم (اختر للفحص ثم فعّل):",
-                                color = Color(0xFFB0B0B0),
-                                fontSize = 11.sp
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            WebGateway.providers
-                                .chunked(3)
-                                .forEach { rowItems ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        rowItems.forEach { info ->
-                                            val active = info.id == backend && provider == RoutePolicy.LOCAL_PROXY
-                                            val browsing = info.id == gwModelsFor
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .background(
-                                                        when {
-                                                            active -> Color(0xFFFFB800)
-                                                            browsing -> Color(0xFF64B5F6)
-                                                            else -> Color(0xFF2A2A2A)
-                                                        },
-                                                        RoundedCornerShape(16.dp)
-                                                    )
-                                                    .clickable {
-                                                        // اختيار للفحص فقط — لا يفعّل شيئاً بعد.
-                                                        gwModelsFor = info.id
-                                                        gwSelectedModel = ""
-                                                        gwModelsBusy = true
-                                                        gwModels = emptyList()
-                                                        gwReport = "ℹ️ ${info.label}: افحص المزود ثم اختر موديلاً واضغط «حفظ الموديل»."
-                                                        settingsScope.launch {
-                                                            val all = withContext(Dispatchers.IO) {
-                                                                WebGateway.listModels(prefs)
-                                                            }
-                                                            val subs = all
-                                                                .filter { it.startsWith("${info.id}/") }
-                                                                .map { it.removePrefix("${info.id}/") }
-                                                            gwModels = (subs.ifEmpty { listOf(info.defaultModel) })
-                                                                .distinct().take(30)
-                                                            gwModelsBusy = false
-                                                        }
-                                                    }
-                                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    info.label + if (active) " ✓" else "",
-                                                    color = if (active || browsing) Color(0xFF121212) else Color(0xFFE0E0E0),
-                                                    fontSize = 11.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    fontWeight = if (active || browsing) FontWeight.Bold else FontWeight.Normal
-                                                )
-                                            }
-                                        }
-                                        repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                                    }
-                                    Spacer(Modifier.height(6.dp))
-                                }
-                            if (gwModelsFor.isNotBlank()) {
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "🧩 الموديلات الفرعية لـ ${WebGateway.providerLabel(gwModelsFor)}:",
-                                    color = Color(0xFFFFB800),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                when {
-                                    gwModelsBusy -> Text(
-                                        "⏳ أجلب الموديلات من الخادم…",
-                                        color = Color(0xFF9A9A9A),
-                                        fontSize = 10.sp
-                                    )
-                                    gwModels.isEmpty() -> Text(
-                                        "لا موديلات معروضة — اكتب الموديل يدوياً في بطاقة المزود بالأعلى، أو اضغط «📋 الموديلات».",
-                                        color = Color(0xFF9A9A9A),
-                                        fontSize = 10.sp
-                                    )
-                                    else -> gwModels.chunked(2).forEach { modelRow ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            modelRow.forEach { modelId ->
-                                                val chosen = modelId == gwSelectedModel
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .background(
-                                                            if (chosen) Color(0xFF4CAF50) else Color(0xFF1F1F1F),
-                                                            RoundedCornerShape(8.dp)
-                                                        )
-                                                        .clickable {
-                                                            gwSelectedModel = modelId
-                                                            prefs.edit()
-                                                                .putString("model_$gwModelsFor", modelId)
-                                                                .putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO)
-                                                                .apply()
-                                                            gwMode = WebGateway.MODE_AUTO
-                                                            LlmClient.reloadOverrides(prefs)
-                                                            gwReport = "✅ حُفظ $gwModelsFor/$modelId. اختر المزود نفسه من قائمة المزودات، وسيمرّ عبر الخادم في وضع «خادم أولاً»."
-                                                        }
-                                                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        modelId,
-                                                        color = if (chosen) Color(0xFF0D0D0D) else Color(0xFFCFCFCF),
-                                                        fontSize = 9.sp,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            }
-                                            repeat(2 - modelRow.size) { Spacer(Modifier.weight(1f)) }
-                                        }
-                                        Spacer(Modifier.height(4.dp))
-                                    }
-                                }
-                                if (gwSelectedModel.isNotBlank()) {
-                                    Text(
-                                        "الموديل المختار: $gwSelectedModel",
-                                        color = Color(0xFF4CAF50),
-                                        fontSize = 10.sp
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Button(
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                                        onClick = {
-                                            prefs.edit()
-                                                .putString("model_$gwModelsFor", gwSelectedModel)
-                                                .putString(WebGateway.KEY_MODE, WebGateway.MODE_AUTO)
-                                                .apply()
-                                            gwMode = WebGateway.MODE_AUTO
-                                            LlmClient.reloadOverrides(prefs)
-                                            gwReport = "✅ حُفظ $gwModelsFor/$gwSelectedModel. اختر المزود من القائمة الرئيسية — سيمرّ عبر الخادم تلقائياً."
-                                        }
-                                    ) { Text("💾 حفظ الموديل", color = Color(0xFF0D0D0D), fontSize = 11.sp) }
-                                }
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "🔒 الوضع المباشر يبقى متاحاً دائماً: مفاتيح المزودات محفوظة كما هي، ويمكنك العودة بضغطة «مباشر». وعند تعطّل الخادم في وضع «خادم أولاً» يكمل التطبيق تلقائياً بالمفتاح المباشر.",
-                                color = Color(0xFF7A7A7A),
-                                fontSize = 10.sp
-                            )
-                        }
-
-                        // مزودون محفوظون سابقاً (اختيار سريع فقط — دون رابط أو كتابة)
-                        var importedVersion by remember { mutableStateOf(0) }
-                        val importedList = remember(importedVersion) { ImportedProviders.list(prefs) }
-                        if (importedList.isNotEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "🌐 مزودون إضافيون محفوظون:",
-                                color = Color(0xFFB0B0B0),
-                                fontSize = 12.sp
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            importedList.chunked(3).forEach { rowItems ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    rowItems.forEach { entry ->
-                                        val selected = entry.id == backend
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .background(
-                                                    if (selected) Color(0xFF64B5F6) else Color(0xFF2A2A2A),
-                                                    RoundedCornerShape(16.dp)
-                                                )
-                                                .clickable {
-                                                    backend = entry.id
-                                                    prefs.edit().putString("local_proxy_backend", entry.id).apply()
-                                                }
-                                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                entry.label,
-                                                color = if (selected) Color(0xFF121212) else Color(0xFFE0E0E0),
-                                                fontSize = 11.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        }
-                                    }
-                                    repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                                }
-                                Spacer(Modifier.height(6.dp))
-                            }
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        var importJson by remember { mutableStateOf("") }
-                        var importNote by remember { mutableStateOf("") }
-                        Text(
-                            "➕ استيراد مزود/منصة (OpenAI-Compatible JSON)",
-                            color = Color(0xFF64B5F6),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                            importJson = ""
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF64B5F6))
+                    ) { Text("استيراد", color = Color(0xFF0D0D0D), fontSize = 12.sp) }
+                    if (importNote.isNotBlank()) {
                         Spacer(Modifier.height(4.dp))
-                        OutlinedTextField(
-                            value = importJson,
-                            onValueChange = { importJson = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
-                            placeholder = {
-                                Text(
-                                    """[{"label":"Gateway","baseUrl":"https://host/v1","model":"hf/deepseek-ai/DeepSeek-V4.1-Flash-1017","apiKey":"..."}]""",
-                                    color = Color(0xFF707070),
-                                    fontSize = 10.sp
-                                )
-                            },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF64B5F6),
-                                unfocusedBorderColor = Color(0xFF3A3A3A),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            )
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Button(
-                            onClick = {
-                                val added = ImportedProviders.importFrom(prefs, importJson)
-                                importNote = if (added > 0) {
-                                    "✅ أُضيف $added مزود. اضغط اسمه أدناه لتفعيله."
-                                } else {
-                                    "⚠️ لم يُضف شيء — تحقق من JSON (baseUrl مطلوب)."
-                                }
-                                importJson = ""
-                                importedVersion++
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF64B5F6))
-                        ) { Text("استيراد", color = Color(0xFF0D0D0D), fontSize = 12.sp) }
-                        if (importNote.isNotBlank()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(importNote, color = Color(0xFFB0B0B0), fontSize = 11.sp)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        var proxyReport by remember { mutableStateOf("") }
-                        var proxyBusy by remember { mutableStateOf(false) }
-                        Text("🧪 فحص الخادم ← فحص المزود ← تحديث النماذج", color = Color(0xFFFFB800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(6.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(
-                                enabled = !proxyBusy,
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                                onClick = {
-                                    proxyBusy = true
-                                    proxyReport = "⏳ أفحص الخادم المحلي…"
-                                    settingsScope.launch {
-                                        proxyReport = withContext(Dispatchers.IO) { LocalAIProxy.healthCheck() }
-                                        proxyBusy = false
-                                    }
-                                }
-                            ) { Text("1) الخادم", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
-                            Button(
-                                enabled = !proxyBusy,
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                                onClick = {
-                                    proxyBusy = true
-                                    proxyReport = "⏳ أفحص المزود الخلفي مباشرة ثم عبر الخادم…"
-                                    settingsScope.launch {
-                                        proxyReport = withContext(Dispatchers.IO) { LocalAIProxy.providerCheck(prefs) }
-                                        proxyBusy = false
-                                    }
-                                }
-                            ) { Text("2) المزود", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
-                            Button(
-                                enabled = !proxyBusy,
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                                onClick = {
-                                    proxyBusy = true
-                                    proxyReport = "⏳ أستدعي قائمة النماذج من الإنترنت…"
-                                    settingsScope.launch {
-                                        proxyReport = withContext(Dispatchers.IO) { LocalAIProxy.refreshModels(prefs) }
-                                        proxyBusy = false
-                                    }
-                                }
-                            ) { Text("3) النماذج", color = Color(0xFFFFB800), fontSize = 11.sp, maxLines = 1) }
-                        }
-                        if (proxyReport.isNotBlank()) {
-                            Spacer(Modifier.height(6.dp))
-                            Text(proxyReport.take(1500), color = Color.White, fontSize = 11.sp)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        val proxyUrl = LocalAIProxy.getUrl()
-                        if (proxyUrl.isNotEmpty()) {
-                            Text(
-                                "رابط الخادم المحلي (تلقائي — لا حاجة لنسخه):",
-                                color = Color(0xFFB0B0B0),
-                                fontSize = 12.sp
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    proxyUrl,
-                                    color = Color(0xFF64B5F6),
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                IconButton(
-                                    onClick = {
-                                        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("LionAI Proxy", proxyUrl))
-                                    },
-                                ) {
-                                    Text("📋 نسخ", color = Color(0xFFFFB800), fontSize = 11.sp)
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "كيف يعمل: الخادم المحلي يعمل تلقائياً على 127.0.0.1. اختر المزود من الشبكة أعلاه وأدخل مفتاحه مرة واحدة، فيوجّه الخادم كل طلبات التطبيق إليه تلقائياً ويعيد الرد. لا حاجة لأي إعداد يدوي آخر.",
-                                color = Color(0xFF7A7A7A),
-                                fontSize = 11.sp,
-                                maxLines = 3
-                            )
-                        } else {
-                            Text(
-                                "لم يبدأ الخادم بعد. أعد فتح التطبيق لبدء الخادم المحلي تلقائياً.",
-                                color = Color(0xFF7A7A7A),
-                                fontSize = 12.sp
-                            )
-                        }
+                        Text(importNote, color = Color(0xFFB0B0B0), fontSize = 11.sp)
                     }
                 }
-            }
-            }
             }
 
             if (settingsTab == 0) {

@@ -286,7 +286,6 @@ object LlmClient {
         }
         // المفاتيح الملصوقة تحمل غالباً مسافة أو سطراً جديداً يُفسد الطلب في كل المزودات
         val apiKey = apiKey.filterNot { it.isWhitespace() }
-        val gateway = WebGateway.current()
         // قناة التنفيذ: مباشر/خادم خارجي/خادم محلي. DIRECT يمنع الخادم، و GATEWAY
         // يفرضه دون رجوع داخلي (الرجوع يكون بمحاولة تالية من الخطة).
         val wantDirect = forceDirect || via == Channel.DIRECT
@@ -315,23 +314,28 @@ object LlmClient {
             // خيار الخادم الخارجي: لا يمنع الوضع المباشر ولا يلغيه.
             if (viaGateway) {
                 val gwModel = WebGateway.gatewayModel(provider, model)
-                val attempt = runCatching {
-                    callOpenAiCompatible(
-                        WebGateway.chatUrl(gateway.url), gateway.token, gwModel, turns, message,
-                        extraHeaders = mapOf("X-Api-Key" to gateway.token),
-                        maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
-                    )
+                var lastWhy = ""
+                // كل خادم مفعّل بالترتيب (واحد أو الكل حسب اختيار المستخدم) حتى يرد أحدها.
+                for (relay in WebGateway.relays()) {
+                    val attempt = runCatching {
+                        callOpenAiCompatible(
+                            WebGateway.chatUrl(relay.url), relay.token, gwModel, turns, message,
+                            extraHeaders = if (relay.token.isBlank()) emptyMap() else mapOf("X-Api-Key" to relay.token),
+                            maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = systemPrompt
+                        )
+                    }
+                    val reply = attempt.getOrNull()
+                    if (reply != null && !isErrorReply(reply)) {
+                        recordSuccess(provider, "$gwModel · ${relay.name}")
+                        return@withReadTimeout reply
+                    }
+                    lastWhy = relay.name + ": " + (attempt.exceptionOrNull()?.message ?: reply ?: "لا رد من الخادم")
                 }
-                val reply = attempt.getOrNull()
-                if (reply != null && !isErrorReply(reply)) {
-                    recordSuccess(provider, "$gwModel · خادم")
-                    return@withReadTimeout reply
-                }
-                if (gateway.mode == WebGateway.MODE_ONLY || gatewayOnly) {
-                    val why = attempt.exceptionOrNull()?.message ?: reply ?: "لا رد من الخادم"
+                if (WebGateway.current().mode == WebGateway.MODE_ONLY || gatewayOnly) {
+                    val why = lastWhy.ifBlank { "لا رد من الخادم" }
                     lastErrors[provider] = "gateway: " + why.take(200)
-                    return@withReadTimeout "⚠️ تعذّر الخادم الخارجي ($provider): ${why.take(160)}\n" +
-                        "بدّل الوضع إلى «خادم أولاً» أو «مباشر» من الإعدادات ← الخادم المحلي."
+                    return@withReadTimeout "⚠️ تعذّرت الخوادم ($provider): ${why.take(160)}\n" +
+                        "فعّل «المباشر أولاً» أو بدّل الاختيار إلى «مباشر» من الإعدادات ← الاتصال."
                 }
                 // MODE_AUTO: نكمل تلقائياً إلى المزوّد المباشر بنفس مفتاحه.
             }

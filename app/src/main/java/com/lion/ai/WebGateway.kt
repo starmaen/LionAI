@@ -76,6 +76,12 @@ object WebGateway {
     @Volatile
     private var cached = Config("", "", MODE_OFF)
 
+    /** نقاط الوصول الفعلية (الخادم الخارجي + الخوادم المضافة) حسب اختيار المستخدم. */
+    @Volatile
+    private var relayCache: List<ServerRegistry.Relay> = emptyList()
+
+    fun relays(): List<ServerRegistry.Relay> = relayCache
+
     fun load(prefs: SharedPreferences): Config {
         val config = Config(
             url = (prefs.getString(KEY_URL, "") ?: "").trim(),
@@ -84,6 +90,7 @@ object WebGateway {
             enabled = providerEnabled(prefs, ENABLED_ID)
         )
         cached = config
+        relayCache = ServerRegistry.relays(prefs)
         return config
     }
 
@@ -183,10 +190,8 @@ object WebGateway {
     /** هل نمرّر هذا المزود عبر الخادم الخارجي في الوضع الحالي؟ */
     fun shouldRoute(provider: String): Boolean {
         val config = cached
-        return config.enabled &&
-            config.mode != MODE_OFF &&
-            config.configured &&
-            config.token.isNotBlank() &&
+        return config.mode != MODE_OFF &&
+            relayCache.isNotEmpty() &&
             supports(provider)
     }
 
@@ -287,6 +292,59 @@ object WebGateway {
             ?.optJSONObject("message")?.optString("content", "").orEmpty().trim()
         return if (content.isBlank()) "⚠️ رد فارغ من $gatewayModel (HTTP ${result.code}، ${ms}ms)"
         else "✅ $gatewayModel يعمل عبر الخادم (${ms}ms): ${content.take(80)}"
+    }
+
+    /** فحص خادم بدون مزود: /health ثم /models كبديل، دون لمس إعدادات الخادم الخارجي المحفوظة. */
+    fun testServerHealth(url: String, token: String): String {
+        if (url.isBlank()) return "⚠️ أدخل رابط الخادم أولاً."
+        val health = healthUrl(url)
+        val first = http(health, "GET", token, readMs = 12_000)
+        if (first.ok && !first.html) {
+            val json = runCatching { org.json.JSONObject(first.body) }.getOrNull()
+            val providers = json?.optJSONObject("providers")
+            val names = providers?.keys()?.asSequence()?.joinToString(", ").orEmpty()
+            return "✅ الخادم يعمل (HTTP ${first.code})" +
+                (if (providers != null) " — ${providers.length()} مزود مفعّل" else "") +
+                (if (names.isNotBlank()) " ($names)" else "") + ".\n$health"
+        }
+        val models = modelsUrl(url)
+        val second = http(models, "GET", token, readMs = 15_000)
+        if (second.ok && !second.html) {
+            val count = runCatching { org.json.JSONObject(second.body).optJSONArray("data")?.length() }.getOrNull() ?: 0
+            return "✅ الخادم يعمل (لا يوفّر /health لكن /models يرد: $count موديل).\n$models"
+        }
+        return describeHttp(second).ifBlank { describeHttp(first) }.ifBlank { "❌ تعذّر فحص الخادم.\n$health" }
+    }
+
+    /** فحص خادم مع مزود محدد (طلب محادثة حقيقي قصير) دون لمس الإعدادات المحفوظة. */
+    fun testServerWithProvider(url: String, token: String, provider: String, model: String): String {
+        if (url.isBlank()) return "⚠️ أدخل رابط الخادم أولاً."
+        val pid = provider.trim()
+        val actualModel = model.trim().ifBlank { defaultModel(pid) }
+        val gatewayModel = gatewayModel(pid, actualModel)
+        val body = org.json.JSONObject().apply {
+            put("model", gatewayModel)
+            put(
+                "messages",
+                org.json.JSONArray().put(
+                    org.json.JSONObject().put("role", "user").put("content", "أجب بكلمة واحدة فقط: تم")
+                )
+            )
+            put("max_tokens", 8)
+            put("temperature", 0)
+        }.toString()
+        val started = System.currentTimeMillis()
+        val result = http(chatUrl(url), "POST", token, body, readMs = 45_000)
+        val ms = System.currentTimeMillis() - started
+        if (!result.ok || result.html) {
+            return describeHttp(result).ifBlank { "❌ تعذّر فحص $gatewayModel" }
+                .replaceFirst("❌ ", "❌ $gatewayModel — ")
+        }
+        val json = runCatching { org.json.JSONObject(result.body) }.getOrNull()
+        val content = json?.optJSONArray("choices")?.optJSONObject(0)
+            ?.optJSONObject("message")?.optString("content", "").orEmpty().trim()
+        return if (content.isBlank()) "⚠️ رد فارغ من $gatewayModel (HTTP ${result.code}، ${ms}ms)"
+        else "✅ $gatewayModel يعمل عبر هذا الخادم (${ms}ms): ${content.take(80)}"
     }
 
     /** جلب موديلات البوابة (اختياري) — يتطلب RELAY_TOKEN. */
