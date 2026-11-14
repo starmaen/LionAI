@@ -3,6 +3,10 @@ name: Build Lion AI APK
 on:
   push:
     branches: [ main ]
+  # الفروع تبقى بلا بناء حتى تُفتح لها Pull Request: بهذا يُبنى الفرع ويُختبر قبل الدمج
+  # بدل أن يُبنى main فقط بعد فوات الأوان.
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
