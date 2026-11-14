@@ -60,10 +60,31 @@ fun LionEngineCard() {
     var customUrl by remember { mutableStateOf(LionEngine.customUrl(prefs)) }
     var showCustom by remember { mutableStateOf(prefs.getString(LionEngine.KEY_CUSTOM_URL, "").orEmpty().isNotBlank()) }
 
-    // فحص الحالة على IO فقط: isRunning() تفتح اتصالاً بالمنفذ، ولا يجوز حجبه على خيط الواجهة.
+    var profile by remember { mutableStateOf<LionEngine.DeviceProfile?>(null) }
+    var recommended by remember { mutableStateOf<LionEngine.Pick?>(null) }
+    var warning by remember { mutableStateOf<String?>(null) }
+
+    // التركيبة المناسبة للجهاز تُطبَّق مرة واحدة عند أول فتح، ثم يبقى اختيار المستخدم محترماً.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val picked = LionEngine.applyRecommendedOnce(context, prefs)
+            if (picked != null) {
+                selected = picked.modelId
+                ctxSize = picked.ctx
+                message = "⚙️ ضُبطت التركيبة المناسبة لجهازك تلقائياً: ${picked.modelId} · سياق ${picked.ctx} (${picked.why})"
+            }
+        }
+    }
+
+    // فحص الحالة على IO فقط: فحص المنفذ يفتح اتصالاً، ولا يجوز حجبه على خيط الواجهة.
     LaunchedEffect(Unit) {
         while (true) {
-            withContext(Dispatchers.IO) { LionEngine.refreshPhase(context) }
+            withContext(Dispatchers.IO) {
+                LionEngine.refreshPhase(context)
+                profile = LionEngine.deviceProfile(context)
+                recommended = LionEngine.recommendFor(profile?.totalRamMb ?: 0L, profile?.lowRamDevice ?: false)
+                warning = LionEngine.ramWarning(context, prefs)
+            }
             delay(5_000)
         }
     }
@@ -100,6 +121,29 @@ fun LionEngineCard() {
                 color = ENGINE_MUTED, fontSize = 11.sp
             )
             Spacer(Modifier.height(8.dp))
+
+            // ملفّ الجهاز: أرقام فعلية + التركيبة الموصى بها + تحذير الرام
+            profile?.let { p ->
+                Text(
+                    "جهازك: رام ${p.ramText} · متاح الآن ${p.availText} · مساحة حرة ${p.storageText}",
+                    color = ENGINE_MUTED, fontSize = 10.sp
+                )
+            }
+            recommended?.let { rec ->
+                val different = rec.modelId != selected || rec.ctx != ctxSize
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("الموصى به: ${rec.modelId} · سياق ${rec.ctx} — ${rec.why}", color = ENGINE_OK, fontSize = 10.sp)
+                    if (different) {
+                        TextButton(enabled = !busy, onClick = {
+                            LionEngine.applyRecommended(prefs, rec)
+                            selected = rec.modelId
+                            ctxSize = rec.ctx
+                            message = "✅ طُبّقت التركيبة الموصى بها."
+                        }) { Text("طبّق", color = ENGINE_GOLD, fontSize = 10.sp) }
+                    }
+                }
+            }
+            warning?.let { Text(it, color = ENGINE_BAD, fontSize = 10.sp) }
 
             // اختيار النموذج
             LionCatalog.MODELS.forEach { m ->

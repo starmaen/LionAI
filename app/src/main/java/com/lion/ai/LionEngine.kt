@@ -46,6 +46,15 @@ object LionCatalog {
             note = "≈940MB — الأنسب للهواتف 4–6GB · سرعة جيدة"
         ),
         LionGguf(
+            id = "lion-1-nano",
+            label = "Lion-1 Nano — Qwen2.5 0.5B · Q4_K_M",
+            url = "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/" +
+                "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+            file = "lion-1-nano-q4_k_m.gguf",
+            bytes = 397_808_192L,
+            note = "≈380MB — للأجهزة 3–4GB · أسرع بكثير، أضعف في التخطيط"
+        ),
+        LionGguf(
             id = "lion-1-base",
             label = "Lion-1 Base — Qwen2.5 3B · Q4_K_M",
             url = "https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/" +
@@ -86,6 +95,9 @@ object LionEngine {
     const val KEY_CTX = "lion_engine_ctx"
     const val KEY_THREADS = "lion_engine_threads"
     const val KEY_AUTOSTART = "lion_engine_autostart"
+
+    /** يُضبط مرة واحدة عند أول تشغيل: التركيبة المناسبة لجهاز المستخدم. */
+    const val KEY_PROFILE_SET = "lion_engine_profile_set"
 
     const val DEFAULT_CTX = 8192
     val CTX_CHOICES = listOf(4096, 8192, 16384)
@@ -187,6 +199,112 @@ object LionEngine {
         return if (mb > 1024) "%.1f GB".format(mb / 1024.0) else "$mb MB"
     }
 
+    // ─────────────────────────── ملفّ الجهاز والتوصية ───────────────────────────
+
+    /** قياسات الجهاز الفعلية: الرام الكلية/المتاحة والمساحة الحرة. */
+    data class DeviceProfile(
+        val totalRamMb: Long,
+        val availRamMb: Long,
+        val freeStorageMb: Long,
+        val lowRamDevice: Boolean
+    ) {
+        val ramText: String get() = "%.1f GB".format(totalRamMb / 1024.0)
+        val availText: String get() = "%.1f GB".format(availRamMb / 1024.0)
+        val storageText: String get() = "%.1f GB".format(freeStorageMb / 1024.0)
+    }
+
+    fun deviceProfile(context: Context): DeviceProfile {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        val info = android.app.ActivityManager.MemoryInfo()
+        var totalMb = 0L
+        var availMb = 0L
+        var lowRam = false
+        if (am != null) {
+            am.getMemoryInfo(info)
+            totalMb = info.totalMem / (1024 * 1024)
+            availMb = info.availMem / (1024 * 1024)
+            lowRam = am.isLowRamDevice
+        }
+        val freeMb = try {
+            val stat = android.os.StatFs(context.filesDir.absolutePath)
+            stat.availableBytes / (1024 * 1024)
+        } catch (e: Exception) {
+            -1L
+        }
+        return DeviceProfile(totalMb, availMb, freeMb, lowRam)
+    }
+
+    /** تركيبة موصى بها لنموذج وسياق حسب الرام الفعلية (دالة صرفة قابلة للاختبار). */
+    data class Pick(val modelId: String, val ctx: Int, val why: String)
+
+    fun recommendFor(totalRamMb: Long, lowRamDevice: Boolean = false): Pick = when {
+        // أقل من 3.5GB: النموذج الصغير فقط
+        totalRamMb in 1L..3_500L -> Pick("lion-1-nano", 4096, "رام أقل من 3.5GB — Nano أخف")
+        // 3.5–5.5GB (هواتف 4GB): Mini بسياق متوسط
+        totalRamMb in 3_501L..5_500L -> Pick("lion-1-mini", 4096, "رام 4GB — Mini بسياق 4096")
+        // 5.5–9.5GB (6–8GB): Mini بسياق أوسع
+        totalRamMb in 5_501L..9_500L -> Pick("lion-1-mini", 8192, "رام 6–8GB — Mini بسياق 8192")
+        // 12GB+ : النموذج 3B
+        totalRamMb > 9_500L -> Pick("lion-1-base", 8192, "رام 12GB+ — 3B بسياق 8192")
+        else -> Pick(LionCatalog.DEFAULT_ID, if (lowRamDevice) 4096 else DEFAULT_CTX, "قياس غير متاح — الافتراضي الآمن")
+    }
+
+    /** يُطبَّق مرة واحدة فقط حتى لا يلغى اختيار المستخدم اليدوي في كل فتح. */
+    fun applyRecommendedOnce(context: Context, prefs: SharedPreferences): Pick? {
+        if (prefs.getBoolean(KEY_PROFILE_SET, false)) return null
+        val pick = recommendFor(deviceProfile(context).totalRamMb)
+        prefs.edit()
+            .putString(KEY_MODEL, pick.modelId)
+            .putInt(KEY_CTX, pick.ctx)
+            .putBoolean(KEY_PROFILE_SET, true)
+            .apply()
+        return pick
+    }
+
+    fun applyRecommended(prefs: SharedPreferences, pick: Pick) {
+        prefs.edit()
+            .putString(KEY_MODEL, pick.modelId)
+            .putInt(KEY_CTX, pick.ctx)
+            .putBoolean(KEY_PROFILE_SET, true)
+            .apply()
+        refreshPhase()
+    }
+
+    /** حاجة الذاكرة التقديرية: أوزان النموذج + ذاكرة السياق + Alpine + هامش. */
+    internal fun neededRamMb(modelBytes: Long, ctx: Int): Long =
+        modelBytes / (1024 * 1024) + (ctx / 1024L) * 40L + 350L
+
+    /**
+     * فحص قبل التحميل/التشغيل. يعيد null إذا كان كل شيء كافياً، أو رسالة عربية صريحة
+     * تذكر الأرقام الفعلية بدل أن يفشل التشغيل لاحقاً بخطأ غامض.
+     */
+    fun preflight(context: Context, prefs: SharedPreferences): String? {
+        val profile = deviceProfile(context)
+        val model = model(prefs)
+        val needStorage = if (hasModel(context, prefs)) 200L else model.bytes / (1024 * 1024) + 450L
+        if (profile.freeStorageMb in 0..needStorage) {
+            return "المساحة الحرة ${profile.storageText} لا تكفي (المطلوب ≈ %.1f GB). حرّر مساحة ثم أعد المحاولة."
+                .format(needStorage / 1024.0)
+        }
+        val need = neededRamMb(model.bytes, ctx(prefs))
+        if (profile.availRamMb in 1..(need - 150L)) {
+            return "الرام المتاحة الآن ${profile.availText} أقل من المطلوب ≈ %.1f GB لهذا النموذج. " +
+                "أغلق تطبيقات الخلفية، أو اختر Lion-1 Nano، أو أنقص السياق.".format(need / 1024.0)
+        }
+        return null
+    }
+
+    /** تحذير فقط — لا يمنع التشغيل لأن الذاكرة المتاحة تتغير بسرعة. */
+    fun ramWarning(context: Context, prefs: SharedPreferences): String? {
+        val profile = deviceProfile(context)
+        val need = neededRamMb(model(prefs).bytes, ctx(prefs))
+        if (profile.availRamMb in 1..(need - 150L)) {
+            return "⚠️ الرام المتاحة ${profile.availText} والمطلوب ≈ %.1f GB — قد يتوقف المحرّك."
+                .format(need / 1024.0)
+        }
+        return null
+    }
+
     // ─────────────────────────── الحالة والفحص ───────────────────────────
 
     fun refreshPhase(context: Context? = ContextHolder.peek()) {
@@ -282,6 +400,11 @@ object LionEngine {
             sb.append("• السياق: ").append(ctx(prefs)).append(" رمز · الخيوط: ").append(threads(prefs)).append('\n')
             sb.append("• التشغيل التلقائي: ").append(if (autoStart(prefs)) "مفعّل" else "متوقف").append('\n')
         }
+        runCatching {
+            val profile = deviceProfile(context)
+            sb.append("• الجهاز: رام ").append(profile.ramText)
+                .append(" (متاح ").append(profile.availText).append(") · مساحة حرة ").append(profile.storageText).append('\n')
+        }
         sb.append("• المنفذ: ").append(BASE_URL).append(if (isRunning()) " (يستجيب ✅)" else " (لا يستجيب)").append('\n')
         if (progress.isNotBlank()) sb.append("• التقدّم: ").append(progress).append('\n')
         if (lastError.isNotBlank()) sb.append("• آخر خطأ: ").append(lastError).append('\n')
@@ -351,6 +474,14 @@ object LionEngine {
             progress = "✅ النموذج منزَّل مسبقاً"
             refreshPhase(context)
             return true
+        }
+        val profile = deviceProfile(context)
+        val needMb = (if (expected > 0) expected else 1_200L * 1024 * 1024) / (1024 * 1024) + 400L
+        if (profile.freeStorageMb in 0..needMb) {
+            lastError = "المساحة الحرة ${profile.storageText} لا تكفي لتنزيل النموذج (المطلوب ≈ %.1f GB)."
+                .format(needMb / 1024.0)
+            progress = "❌ مساحة غير كافية"
+            return false
         }
         target.parentFile?.mkdirs()
         val part = File(target.parentFile, target.name + ".part")
@@ -451,6 +582,16 @@ object LionEngine {
             lastError = "النموذج غير منزَّل."
             phase = Phase.MODEL_MISSING
             return false
+        }
+        // فحص قبل التشغيل: نقص المساحة يمنع، ونقص الرام يُحذَّر فقط (يتغير بسرعة).
+        preflight(context, prefs)?.let { problem ->
+            if (problem.contains("المساحة")) {
+                lastError = problem
+                phase = Phase.ERROR
+                progress = "❌ مساحة غير كافية"
+                return false
+            }
+            appendLog("⚠️ $problem")
         }
         starting = true
         phase = Phase.STARTING

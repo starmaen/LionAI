@@ -175,3 +175,14 @@ Base URL (إن وُجد):
 **التحقق المحلي في هذه الجولة:** لا JDK/Android SDK في بيئة العمل الكاملة (CI فقط)، لذا تم
 typecheck بـ kotlinc على `LionEngine.kt`/`LionOne.kt`/`LionEngineUi.kt` مقابل `android-35.jar`
 وjars Compose الحقيقية: **0 أخطاء أمامية**. يلزم تأكيد `:app:testDebugUnitTest` على GitHub Actions.
+
+### ملحق (نفس الجولة): تركيبة تلقائية حسب الجهاز + نموذج Nano
+- أُضيف `lion-1-nano` (Qwen2.5 0.5B · Q4_K_M ≈ 380MB) للأجهزة الضعيفة.
+- `LionEngine.recommendFor(totalRamMb)` دالة صرفة: ≤3.5GB → nano/4096، 4GB → mini/4096،
+  6–8GB → mini/8192، 12GB+ → base/8192. تُطبَّق مرة واحدة (`lion_engine_profile_set`)
+  ولا تُلغي اختيار المستخدم اليدوي بعدها.
+- `deviceProfile` + `preflight` + `ramWarning`: أرقام فعلية (رام متاحة/مساحة حرة) ورسالة صريحة
+  قبل التنزيل والتشغيل، مع قاعدة: حاجة الذاكرة = حجم النموذج + (السياق÷1024×40MB) + 350MB.
+- الرام الافتراضية (Memory Fusion مثل 4+3GB) **لا تُحسب** لأنها تخزين بطيء ينهار مع النموذج.
+- اختبارات: `recommendationFollowsRealRamNotVirtualRam`، `everyRecommendedModelExistsInCatalog`،
+  `memoryRequirementGrowsWithModelAndContext`.

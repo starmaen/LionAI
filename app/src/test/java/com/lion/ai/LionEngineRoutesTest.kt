@@ -59,6 +59,43 @@ class LionEngineRoutesTest {
     }
 
     @Test
+    fun recommendationFollowsRealRamNotVirtualRam() {
+        // هواتف 4GB (مثل Tecno Spark 8 Pro): Mini بسياق 4096 — الرام الافتراضية لا تُحسب.
+        val fourGb = LionEngine.recommendFor(3_800L)
+        assertEquals("lion-1-mini", fourGb.modelId)
+        assertEquals(4096, fourGb.ctx)
+        // 6–8GB: سياق أوسع بالنموذج نفسه.
+        assertEquals(8192, LionEngine.recommendFor(6_000L).ctx)
+        assertEquals("lion-1-mini", LionEngine.recommendFor(8_000L).modelId)
+        // 12GB+: النموذج 3B.
+        assertEquals("lion-1-base", LionEngine.recommendFor(12_000L).modelId)
+        // 3GB أو أقل: النموذج الصغير.
+        assertEquals("lion-1-nano", LionEngine.recommendFor(2_500L).modelId)
+        // قياس غير متاح: افتراضي آمن لا ينهار.
+        assertEquals(LionCatalog.DEFAULT_ID, LionEngine.recommendFor(0L).modelId)
+    }
+
+    @Test
+    fun everyRecommendedModelExistsInCatalog() {
+        listOf(2_000L, 4_000L, 8_000L, 16_000L).forEach { ram ->
+            val pick = LionEngine.recommendFor(ram)
+            assertTrue(pick.modelId, LionCatalog.MODELS.any { it.id == pick.modelId })
+            assertTrue(pick.ctx in LionEngine.CTX_CHOICES)
+        }
+    }
+
+    @Test
+    fun memoryRequirementGrowsWithModelAndContext() {
+        val mini = LionCatalog.MODELS.first { it.id == "lion-1-mini" }
+        val nano = LionCatalog.MODELS.first { it.id == "lion-1-nano" }
+        assertTrue(LionEngine.neededRamMb(nano.bytes, 4096) < LionEngine.neededRamMb(mini.bytes, 4096))
+        assertTrue(LionEngine.neededRamMb(mini.bytes, 4096) < LionEngine.neededRamMb(mini.bytes, 8192))
+        // 1.5B بسياق 4096 يجب أن يبقى داخل هاتف 4GB مع Alpine.
+        val need = LionEngine.neededRamMb(mini.bytes, 4096)
+        assertTrue("الحاجة $need MB", need in 1_200L..2_000L)
+    }
+
+    @Test
     fun forcedModelSelectsTheTask() {
         assertEquals(LionOne.Task.CODE, LionOne.task("lion-1-code", "مرحباً"))
         assertEquals(LionOne.Task.TRANSLATE, LionOne.task("lion-1-translate", "أي نص"))
