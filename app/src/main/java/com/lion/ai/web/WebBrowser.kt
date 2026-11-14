@@ -65,6 +65,33 @@ private val WEB_MUTED = Color(0xFF9A9A9A)
 internal fun mobileUserAgent(base: String): String =
     base.replace("; wv", "").replace("Version/4.0 ", "")
 
+/** وكيل سطح المكتب بإصدار يطابق محرك WebView الفعلي (لا رقم ثابت قديم). */
+internal fun desktopMajor(base: String): Int =
+    Regex("Chrome/(\\d+)").find(base)?.groupValues?.get(1)?.toIntOrNull() ?: 138
+
+internal fun desktopUserAgent(base: String = ""): String {
+    val major = desktopMajor(base)
+    return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/$major.0.0.0 Safari/537.36 Edg/$major.0.0.0"
+}
+
+/** يطابق ترويسات Client Hints مع وكيل Windows كي لا تتناقض مع «Android/mobile». */
+internal fun applyDesktopClientHints(settings: WebSettings, major: Int) {
+    try {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+            fun brand(name: String, v: String) = androidx.webkit.UserAgentMetadata.BrandVersion.Builder()
+                .setBrand(name).setMajorVersion(v).setFullVersion("$v.0.0.0").build()
+            val meta = androidx.webkit.UserAgentMetadata.Builder()
+                .setBrandVersionList(listOf(brand("Microsoft Edge", "$major"), brand("Chromium", "$major"), brand("Not.A/Brand", "99")))
+                .setFullVersion("$major.0.0.0")
+                .setPlatform("Windows").setPlatformVersion("10.0.0")
+                .setArchitecture("x86").setBitness(64).setModel("").setMobile(false)
+                .build()
+            WebSettingsCompat.setUserAgentMetadata(settings, meta)
+        }
+    } catch (_: Throwable) { }
+}
+
 internal fun hostOf(url: String): String {
     val afterScheme = url.substringAfter("://", url)
     return afterScheme
@@ -172,7 +199,8 @@ internal class LionWebController(
             displayZoomControls = false
             mediaPlaybackRequiresUserGesture = false
             textZoom = 100
-            userAgentString = mobileUserAgent(baseUserAgent)
+            userAgentString = if (startUrl.contains("copilot")) desktopUserAgent(baseUserAgent) else mobileUserAgent(baseUserAgent)
+            if (startUrl.contains("copilot")) applyDesktopClientHints(this, desktopMajor(baseUserAgent))
         }
         hideRequestedWithHeader(webView.settings)
         webView.webViewClient = lionClient

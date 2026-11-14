@@ -295,7 +295,9 @@ internal class AndroidWebSessionHost(
             loadWithOverviewMode = true
             setSupportMultipleWindows(false)
             javaScriptCanOpenWindowsAutomatically = false
-            userAgentString = mobileUserAgent(WebSettings.getDefaultUserAgent(activity))
+            userAgentString = if (adapter.id == "copilot_web") desktopUserAgent(WebSettings.getDefaultUserAgent(activity))
+                else mobileUserAgent(WebSettings.getDefaultUserAgent(activity))
+            if (adapter.id == "copilot_web") applyDesktopClientHints(this, desktopMajor(WebSettings.getDefaultUserAgent(activity)))
         }
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {

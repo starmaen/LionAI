@@ -85,6 +85,12 @@ object ToolAgent {
             "(إذن|اذن|أذونات|اذونات|صلاحي|صلاحية|تصريح|permission|authorization|access)",
         RegexOption.IGNORE_CASE
     )
+    private val BUILD_FAIL = Regex("(?i)(conclusion\\W{0,4}failure|\\bfailure\\b|\\bfailed\\b|فشل|❌)")
+    private val BUILD_PASS = Regex("(?i)(conclusion\\W{0,4}success|completed successfully|\\bsuccess\\b|نجح|✅)")
+    internal fun buildFailed(output: String): Boolean {
+        val head = output.take(800)
+        return BUILD_FAIL.containsMatchIn(head) && !BUILD_PASS.containsMatchIn(head)
+    }
     private val PLACEHOLDER_REPLY = Regex("(استدعاء\\s*(ال)?أدوات|استدعاء\\s*أداة|tool\\s*call|سأستدعي|جار[يٍ]\\s*التنفيذ|\\(\\s*أدوات\\s*\\))", RegexOption.IGNORE_CASE)
     private val LOCAL_FILE_MUTATIONS = setOf("file_apply_patch", "file_edit", "file_write", "file_move", "file_copy", "file_delete", "file_mkdir")
     private val DELETE_BRANCH_REQUEST = Regex("(احذف|حذف|delete)\\s+(ال)?(فرع|branch)", RegexOption.IGNORE_CASE)
@@ -321,6 +327,8 @@ object ToolAgent {
         var permissionNudges = 0
         var repairNudges = 0
         var gateNudges = 0
+        var buildFailedPending = false
+        var buildNudges = 0
         var lastGateOk = true
         var lastGateText = ""
         var deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
@@ -755,6 +763,25 @@ object ToolAgent {
                         "استدعِه الآن للفرع التجريبي نفسه (وليس الفرع الافتراضي) ثم أعطِ الملخص النهائي."
                     continue
                 }
+                if (buildFailedPending && !readOnly && !answerOnly) {
+                    if (buildNudges < 4 && System.currentTimeMillis() + 45_000L < deadline) {
+                        buildNudges++
+                        session?.recordNote("فشل البناء قائم؛ دُفع المزود للفحص والإصلاح ($buildNudges/4)")
+                        publish("🔧 البناء فاشل — أطلب من $label الفحص والإصلاح ($buildNudges/4)")
+                        historyBuffer.add(ChatTurn("user", current))
+                        historyBuffer.add(ChatTurn("assistant", reply))
+                        current = "آخر بناء فشل ولم يُصلَح بعد، فلا يُقبل ختام المهمة. لا تكتب تقرير فشل ولا تنتظر أمراً. " +
+                            "استدعِ الآن build_diagnose على سجل الفشل (أو github_run_logs)، ثم صحّح الملفات، ثم github_push_workspace، " +
+                            "ثم github_dispatch وgithub_wait_run، وكرّر حتى ينجح البناء. أرسل استدعاء الأداة مباشرة بلا مقدمة."
+                        continue
+                    }
+                    session?.providerFailed(label, "توقف بعد فشل البناء دون إصلاحه")
+                    session?.let { CheckpointStore.save(prefs, it) }
+                    return finish(
+                        "فشل البناء لم يُصلَح، وحُفظ السياق ليتابع مزود بديل من النقطة نفسها.",
+                        false, "فشل البناء لم يُصلَح"
+                    ).copy(stalled = true)
+                }
                 val answer = finalAnswer(reply, used, lastSubstantive)
                 if (used.isNotEmpty()) session?.recordNote("اكتملت المهمة: " + answer.take(240))
                 if (used.isNotEmpty()) {
@@ -880,6 +907,9 @@ object ToolAgent {
                     else -> AiTools.execute(toolContext, call).also { if (cacheable && it.ok) memory.recordRead(fingerprint, it.output) }
                 }
                 session?.let { CheckpointStore.save(prefs, it) }
+                if (call.name == "github_wait_run" || call.name == "github_get_run") {
+                    buildFailedPending = buildFailed(result.output)
+                }
                 workLog.add(
                     if (result.ok) "✅ $desc"
                     else "❌ $desc — " + result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty().take(110)
