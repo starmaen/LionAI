@@ -96,4 +96,25 @@ class ControlPlaneTest {
         val result = ControlPlane.reachability(snapshot, setOf("src/main/kotlin/Main.kt"))
         assertFalse(result.orphans.contains("build/Generated.kt"))
     }
+
+    @Test
+    fun balanceHandlesRegexAfterKeywordsAndEscapedBackticks() {
+        // كان return /...\/\*.../ يضلّل المحلّل سابقاً فيظن /* بداية تعليق متعدد الأسطر حتى نهاية الملف.
+        val js = """
+            function check(a) {
+              if (a) return /image|png|jpe?g|webp|\*\/\*|\.(png|jpg|jpeg|webp)/.test(a);
+              const tpl = `escaped \` backtick with unbalanced { inside template`;
+              return typeof /abc([a-z/]/i === 'object';
+            }
+        """.trimIndent()
+        assertNull(ControlPlane.balance(js))
+
+        // التحقق المباشر من ملف web-session.js الحقيقي في المشروع.
+        val asset = listOf(
+            java.io.File("src/main/assets/web-session.js"),
+            java.io.File("app/src/main/assets/web-session.js")
+        ).firstOrNull { it.isFile }
+        assertNotNull(asset)
+        assertNull(ControlPlane.balance(asset!!.readText()))
+    }
 }

@@ -38,4 +38,18 @@ class TextEditTest {
         m.beginMutation("n"); m.recordMutation("n", "timeout", ok = false)
         assertTrue(m.hasUncertainMutation())
     }
+
+    @Test fun tier3WhitespaceFallbackDoesNotDoubleBaseIndentation() {
+        // المسافات داخل التعبير مختلفة (فيقفز الفاحص إلى المستوى 3 الخالي من المسافات)؛
+        // يجب الحفاظ على إزاحة الملف الأصلية دون مضاعفتها في السطر الأول أو إضاعتها في السطر الثاني.
+        val code = "class Demo {\n    val sum = a + b\n    return sum\n}\n"
+        val r = TextEdit.replace(
+            code,
+            "    val sum=a+b\n    return sum",
+            "    val sum = a + b + 1\n    if (sum > 0) {\n        return sum\n    }"
+        )
+        assertEquals(1, r.count)
+        val expected = "class Demo {\n    val sum = a + b + 1\n    if (sum > 0) {\n        return sum\n    }\n}\n"
+        assertEquals(expected, r.text)
+    }
 }

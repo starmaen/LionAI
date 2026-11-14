@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -240,6 +241,7 @@ fun ProviderCard(
     prefs: SharedPreferences,
     scope: CoroutineScope
 ) {
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var expanded by rememberSaveable { mutableStateOf(active) }
     var modelMenuOpen by remember { mutableStateOf(false) }
@@ -422,6 +424,35 @@ fun ProviderCard(
                     }
                 }
 
+                fun testProviderTools() {
+                    saveFields()
+                    LlmClient.reloadOverrides(prefs)
+                    val key = keys[id].orEmpty().ifBlank { prefs.getString("api_key_$id", "") ?: "" }
+                    val mdl = models[id].orEmpty().trim()
+                    val account = accountId
+                    scope.launch {
+                        val report = withContext(Dispatchers.IO) {
+                            runCatching {
+                                ToolSelfTest.run(
+                                    context = context,
+                                    prefs = prefs,
+                                    provider = id,
+                                    apiKeyOverride = key,
+                                    modelOverride = mdl,
+                                    accountIdOverride = account,
+                                    onStage = { stage -> scope.launch { testStatus = stage } }
+                                )
+                            }
+                        }
+                        testing = false
+                        healthTick++
+                        testStatus = report.fold(
+                            onSuccess = { it.detailedText() },
+                            onFailure = { "❌ فشل اختبار الأدوات: " + (it.message ?: "خطأ غير معروف") }
+                        )
+                    }
+                }
+
                 // زر الاختبار تحت المفتاح - يتكيف تلقائياً بناءً على نوع المزود
                 var testButtonLabel by remember { mutableStateOf("") }
                 var testButtonOnClick by remember { mutableStateOf<() -> Unit>({}) }
@@ -446,11 +477,23 @@ fun ProviderCard(
                 }
 
                 if (testButtonLabel.isNotBlank()) {
-                    TextButton(
-                        enabled = !testing,
-                        onClick = testButtonOnClick
-                    ) {
-                        Text(testButtonLabel, color = Amber, fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            enabled = !testing,
+                            onClick = testButtonOnClick
+                        ) {
+                            Text(testButtonLabel, color = Amber, fontSize = 12.sp)
+                        }
+                        TextButton(
+                            enabled = !testing,
+                            onClick = {
+                                testing = true
+                                testStatus = "⏳ أختبر دورة الأدوات (4 مراحل)..."
+                                testProviderTools()
+                            }
+                        ) {
+                            Text("🛠️ اختبار الأدوات", color = Amber, fontSize = 12.sp)
+                        }
                     }
                     if (testStatus.isNotBlank()) {
                         Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
@@ -602,11 +645,23 @@ Spacer(Modifier.height(8.dp))
                             else -> {}
                         }
                         if (testButtonLabel.isNotBlank()) {
-                            TextButton(
-                                enabled = !testing,
-                                onClick = testButtonOnClick
-                            ) {
-                                Text(testButtonLabel, color = Amber, fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    enabled = !testing,
+                                    onClick = testButtonOnClick
+                                ) {
+                                    Text(testButtonLabel, color = Amber, fontSize = 12.sp)
+                                }
+                                TextButton(
+                                    enabled = !testing,
+                                    onClick = {
+                                        testing = true
+                                        testStatus = "⏳ أختبر دورة الأدوات على الخادم (4 مراحل)..."
+                                        testProviderTools()
+                                    }
+                                ) {
+                                    Text("🛠️ اختبار الأدوات", color = Amber, fontSize = 12.sp)
+                                }
                             }
                             if (testStatus.isNotBlank()) {
                                 Text(testStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)

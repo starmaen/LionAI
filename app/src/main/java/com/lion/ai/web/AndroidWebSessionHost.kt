@@ -196,7 +196,7 @@ internal class AndroidWebSessionHost(
     private data class Pending(
         var request: WebSessionTransport.Request,
         val adapter: WebSiteAdapter,
-        val view: WebView,
+        var view: WebView,
         val done: (WebSessionTransport.Reply) -> Unit,
         var deadline: Long,
         val chatId: String = ActiveChat.id,
@@ -223,9 +223,19 @@ internal class AndroidWebSessionHost(
         var busyTicks: Int = 0,
         /** فرصة أخيرة واحدة: عند «النقرة غير المؤكدة» نكمل الفحص عبر poll قبل الاستسلام. */
         var pollRetried: Boolean = false,
+        /** محاولة استشفاء تلقائية واحدة فقط قبل الإرسال (لا تتكرر أبداً بعد الإرسال). */
+        var recovered: Boolean = false,
+        var tickRunnable: Runnable? = null,
         /** السقف المطلق للطلب مهما تجددت المهلة. */
         val hardLimit: Long = System.currentTimeMillis() + 25 * 60_000L
     )
+
+    private fun scheduleTick(p: Pending, delayMs: Long) {
+        p.tickRunnable?.let { main.removeCallbacks(it) }
+        val r = Runnable { tick(p) }
+        p.tickRunnable = r
+        if (delayMs <= 0L) main.post(r) else main.postDelayed(r, delayMs)
+    }
 
     /** الصفحة ما زالت حيّة (تكتب/تولّد): نجدّد مهلة الطلب بدل أن نقطع رداً قيد الكتابة. */
     private fun bump(p: Pending) {
@@ -344,7 +354,13 @@ internal class AndroidWebSessionHost(
             override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
                 // رابط تطبيق مخصص (ms-copilot:// وغيره) ليس فشل صفحة: شُطب في shouldOverrideUrlLoading.
                 if (error.errorCode == WebViewClient.ERROR_UNSUPPORTED_SCHEME) return
-                if (request.isForMainFrame) pageFailed(adapter, v, "${describeWebError(error.errorCode)} (رمز ${error.errorCode})")
+                if (request.isForMainFrame) {
+                    pageFailed(
+                        adapter, v,
+                        "${describeWebError(error.errorCode)} (رمز ${error.errorCode})",
+                        WebPreSubmitRecovery.Trigger.PAGE_ERROR
+                    )
+                }
             }
             override fun onReceivedHttpError(v: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                 if (request.isForMainFrame) {
@@ -352,12 +368,21 @@ internal class AndroidWebSessionHost(
                     val hint = if (code == 401 || code == 403)
                         " قد يحجب الموقع (Google/Microsoft) الصفحة حسب البلد أو الشبكة أو لأنها داخل تطبيق. جرّب «المتصفح» على الشبكة نفسها؛ إن فشلت هناك فالحجب من الخادم ولا يُحل من التطبيق."
                     else " افتح الجلسة للتحقق أو أعد تحميلها."
-                    pageFailed(adapter, v, "رفض تحميل الصفحة: HTTP $code.$hint")
+                    pageFailed(
+                        adapter, v,
+                        "رفض تحميل الصفحة: HTTP $code.$hint",
+                        WebPreSubmitRecovery.Trigger.HTTP_ERROR,
+                        httpStatus = code
+                    )
                 }
             }
             override fun onReceivedSslError(v: WebView, handler: SslErrorHandler, error: SslError) {
                 handler.cancel() // Never bypass certificate validation.
-                pageFailed(adapter, v, "فشل التحقق من شهادة HTTPS؛ لم يُرسل نص المحادثة.")
+                pageFailed(
+                    adapter, v,
+                    "فشل التحقق من شهادة HTTPS؛ لم يُرسل نص المحادثة.",
+                    WebPreSubmitRecovery.Trigger.SSL_ERROR
+                )
             }
             override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
                 // Login redirects remain interactive; execution checks the exact top-level origin again.
@@ -376,11 +401,22 @@ internal class AndroidWebSessionHost(
             }
             override fun onRenderProcessGone(v: WebView, detail: RenderProcessGoneDetail): Boolean {
                 level(adapter.id, WebSessionStatus.Level.RED, "توقفت عملية المتصفح")
-                pending?.takeIf { it.view === v }?.let { fail(it, "توقفت عملية المتصفح. افتح الجلسة مجدداً.") }
+                val active = pending?.takeIf { it.view === v }
                 pool.remove(adapter.id)
                 loads.remove(v)
                 (v.parent as? FrameLayout)?.removeView(v)
                 v.destroy()
+                if (active != null) {
+                    val decision = WebPreSubmitRecovery.decide(
+                        trigger = WebPreSubmitRecovery.Trigger.RENDER_GONE,
+                        submitted = active.submitted,
+                        alreadyRecovered = active.recovered,
+                        restoredChatUrl = active.restored
+                    )
+                    if (!recoverPreSubmit(active, decision, recreateView = true)) {
+                        fail(active, "توقفت عملية المتصفح. افتح الجلسة مجدداً.")
+                    }
+                }
                 return true
             }
         }
@@ -418,17 +454,88 @@ internal class AndroidWebSessionHost(
         }
         reportLoad(adapter, message)
     }
-    private fun pageFailed(adapter: WebSiteAdapter, view: WebView, message: String) {
+    private fun pageFailed(
+        adapter: WebSiteAdapter,
+        view: WebView,
+        message: String,
+        trigger: WebPreSubmitRecovery.Trigger = WebPreSubmitRecovery.Trigger.PAGE_ERROR,
+        httpStatus: Int = 0
+    ) {
         loads[view]?.fail(message)
         level(adapter.id, WebSessionStatus.Level.RED, message)
         reportLoad(adapter, "⚠️ $message")
         prefs.edit().putBoolean("web_session_verified_${adapter.id}", false).apply()
         val pendingHere = pending?.takeIf { it.view === view }
         if (pendingHere == null || !pendingHere.submitted) {
-            // فشل تحميل المدخل الأساسي لا يعني تعطل الخدمة: جرّب المداخل البديلة لنفس الموقع.
-            if (tryAlternate(adapter, view)) return
+            // فشل تحميل المدخل الأساسي لا يعني تعطل الخدمة: جرّب المداخل البديلة لنفس الموقع (باستثناء فشل الشهادة أو الحجب الصريح).
+            if (trigger != WebPreSubmitRecovery.Trigger.SSL_ERROR &&
+                httpStatus != 401 && httpStatus != 403 &&
+                tryAlternate(adapter, view)
+            ) return
+            if (pendingHere != null) {
+                val decision = WebPreSubmitRecovery.decide(
+                    trigger = trigger,
+                    submitted = pendingHere.submitted,
+                    alreadyRecovered = pendingHere.recovered,
+                    restoredChatUrl = pendingHere.restored,
+                    httpStatus = httpStatus
+                )
+                if (recoverPreSubmit(pendingHere, decision, recreateView = false)) return
+            }
         }
         pendingHere?.let { fail(it, message) }
+    }
+
+    /**
+     * استشفاء تلقائي آمن لمرة واحدة فقط قبل إرسال الرسالة:
+     * لا يُستدعى أبداً بعد الإرسال (submitted == true)، ولا عند أخطاء SSL أو 401/403،
+     * ويعود للمدخل الأساسي مع السياق الكامل عند فشل رابط محادثة مستعاد.
+     */
+    private fun recoverPreSubmit(
+        p: Pending,
+        decision: WebPreSubmitRecovery.Decision,
+        recreateView: Boolean
+    ): Boolean {
+        if (!decision.recover || p.submitted || p.recovered || destroyed || pending !== p) return false
+        p.recovered = true
+        p.stage = "probe"
+        p.lastStatus = "loading"
+        p.hiddenTicks = 0
+        p.busyTicks = 0
+        p.restoreChecked = false
+        if (decision.clearSavedChatUrl && p.chatId.isNotBlank()) {
+            prefs.edit().remove(chatUrlKey(p.adapter.id, p.chatId)).apply()
+        }
+        WebToolBridge.resetPage(p.adapter.id)
+        val rehydratedBase = WebToolBridge.rehydrate(p.basePrompt)
+        if (decision.fallbackToBaseUrl && p.restored) {
+            p.restored = false
+            val recap = p.request.recapFull
+            val recapCapped = if (recap.length + rehydratedBase.length > 30_000)
+                recap.take(12_000) + "\n…[اقتُطع جزء من ملخص السياق]…\n" else recap
+            val fullPrompt = if (recapCapped.isBlank()) rehydratedBase else recapCapped + "\n\n" + rehydratedBase
+            p.request = p.request.copy(prompt = fullPrompt)
+            mirrorFor(p.adapter.id, p.chatId).markOwn(fullPrompt)
+        } else {
+            val rehydratedCurrent = WebToolBridge.rehydrate(p.request.prompt)
+            p.request = p.request.copy(prompt = rehydratedCurrent)
+            mirrorFor(p.adapter.id, p.chatId).markOwn(rehydratedCurrent)
+        }
+        if (recreateView) {
+            p.view = viewFor(p.adapter)
+            chatIds[p.adapter.id] = p.chatId
+        } else {
+            val target = if (decision.fallbackToBaseUrl) p.adapter.url
+            else p.view.url?.takeIf { p.adapter.accepts(it) } ?: p.adapter.url
+            loads[p.view]?.start(target)
+            p.view.loadUrl(target)
+        }
+        p.deadline = minOf(maxOf(p.deadline, System.currentTimeMillis() + 60_000L), p.hardLimit)
+        WebSessionTransport.extend(p.request.token, p.deadline)
+        level(p.adapter.id, WebSessionStatus.Level.AMBER, "إعادة تهيئة تلقائية للجلسة")
+        status(p, "🔄 ${decision.reason}")
+        scheduleTick(p, 700L)
+        return true
     }
 
     /** فشل مدخل الموقع → الانتقال للمدخل البديل التالي مرة واحدة لكل مدخل؛ كوكيز الجلسة تبقى. */
@@ -599,7 +706,7 @@ internal class AndroidWebSessionHost(
             status(p, "جارٍ تجهيز جلسة الموقع؛ لا حاجة لمفتاح API")
             WebSessionMirror.stage(p.chatId, request.provider, "📡 اتصال بصفحة ${providerInfo(request.provider).shortName}")
             display(false, "${providerInfo(request.provider).shortName} • اتصال بصفحة الويب")
-            tick(p)
+            scheduleTick(p, 0L)
         }
     }
         private var lastStreamNoteAt = 0L
@@ -623,6 +730,8 @@ internal class AndroidWebSessionHost(
     }
     private fun finish(p: Pending, reply: WebSessionTransport.Reply) {
         if (pending !== p) return
+        p.tickRunnable?.let { main.removeCallbacks(it) }
+        p.tickRunnable = null
         pending = null
         releaseEditorFocus()
         hideKeyboardIfBackground()
@@ -680,7 +789,7 @@ internal class AndroidWebSessionHost(
                 p.deadline = minOf(System.currentTimeMillis() + 45_000L, p.hardLimit)
                 WebSessionTransport.extend(p.request.token, p.deadline)
                 status(p, "لم يتأكد الإرسال بعد؛ أتابع فحص الصفحة 45ث إضافية قبل الاستسلام")
-                main.postDelayed({ tick(p) }, 700)
+                scheduleTick(p, 700L)
                 return
             }
             val message = when (p.lastStatus) {
@@ -709,8 +818,16 @@ internal class AndroidWebSessionHost(
             else -> {
                 p.lastStatus = "loading"
                 if (load?.loadExpired(System.currentTimeMillis()) == true) {
-                    fail(p, "لم يكتمل تحميل صفحة الموقع خلال 30 ثانية. افتح الجلسة واضغط تحديث؛ لم يُرسل النص.")
-                } else main.postDelayed({ tick(p) }, 700)
+                    val decision = WebPreSubmitRecovery.decide(
+                        trigger = WebPreSubmitRecovery.Trigger.LOAD_TIMEOUT,
+                        submitted = p.submitted,
+                        alreadyRecovered = p.recovered,
+                        restoredChatUrl = p.restored
+                    )
+                    if (!recoverPreSubmit(p, decision, recreateView = false)) {
+                        fail(p, "لم يكتمل تحميل صفحة الموقع خلال 30 ثانية. افتح الجلسة واضغط تحديث؛ لم يُرسل النص.")
+                    }
+                } else scheduleTick(p, 700L)
                 return
             }
         }
@@ -916,7 +1033,7 @@ internal class AndroidWebSessionHost(
                 "attach", "attach_wait", "prepare", "locate", "enter", "submit" -> 280L
                 else -> 450L
             }
-            main.postDelayed({ tick(p) }, delayMs)
+            scheduleTick(p, delayMs)
         }
     }
     /** استخراج محادثة الصفحة بعد جاهزيتها؛ إعادة محاولة حتى deadline إن لم تكتمل أحمال الصفحة. */
@@ -1002,3 +1119,67 @@ internal class AndroidWebSessionHost(
         WebSessionTransport.detach(this)
     }
 }
+
+/**
+ * سياسة استشفاء جلسة الويب قبل إرسال الرسالة (معزولة لاختبار JVM المباشر دون WebView).
+ * القاعدة الذهبية: لا إعادة محاولة مطلقاً إذا أُرسلت الرسالة (submitted == true) أو سُجّلت محاولة استشفاء سابقة،
+ * ولا عند أخطاء الشهادة (SSL) أو رفض الصلاحية الصريح (HTTP 401/403).
+ */
+internal object WebPreSubmitRecovery {
+    enum class Trigger { RENDER_GONE, PAGE_ERROR, HTTP_ERROR, SSL_ERROR, LOAD_TIMEOUT }
+
+    data class Decision(
+        val recover: Boolean,
+        val clearSavedChatUrl: Boolean = false,
+        val fallbackToBaseUrl: Boolean = false,
+        val reason: String = ""
+    )
+
+    fun decide(
+        trigger: Trigger,
+        submitted: Boolean,
+        alreadyRecovered: Boolean,
+        restoredChatUrl: Boolean,
+        httpStatus: Int = 0
+    ): Decision {
+        if (submitted || alreadyRecovered) return Decision(false)
+        return when (trigger) {
+            Trigger.SSL_ERROR -> Decision(false)
+            Trigger.HTTP_ERROR -> when {
+                httpStatus == 401 || httpStatus == 403 -> Decision(false)
+                (httpStatus == 404 || httpStatus == 410) && restoredChatUrl -> Decision(
+                    recover = true,
+                    clearSavedChatUrl = true,
+                    fallbackToBaseUrl = true,
+                    reason = "رابط المحادثة المحفوظ لم يعد صالحاً (HTTP $httpStatus)؛ أعود للمدخل الأساسي مع السياق الكامل"
+                )
+                httpStatus in 500..599 || httpStatus == 429 || httpStatus == 408 -> Decision(
+                    recover = true,
+                    clearSavedChatUrl = restoredChatUrl,
+                    fallbackToBaseUrl = restoredChatUrl,
+                    reason = "خطأ خادم عابر (HTTP $httpStatus) قبل الإرسال؛ أعيد التحميل مرة واحدة"
+                )
+                else -> Decision(false)
+            }
+            Trigger.RENDER_GONE -> Decision(
+                recover = true,
+                clearSavedChatUrl = false,
+                fallbackToBaseUrl = restoredChatUrl,
+                reason = "توقفت عملية عارض المتصفح قبل الإرسال؛ أعيد تشغيل الجلسة تلقائياً مرة واحدة"
+            )
+            Trigger.PAGE_ERROR -> Decision(
+                recover = true,
+                clearSavedChatUrl = restoredChatUrl,
+                fallbackToBaseUrl = restoredChatUrl,
+                reason = "تعذّر التحميل الأولي قبل الإرسال؛ أعيد التحميل تلقائياً مرة واحدة"
+            )
+            Trigger.LOAD_TIMEOUT -> Decision(
+                recover = true,
+                clearSavedChatUrl = restoredChatUrl,
+                fallbackToBaseUrl = true,
+                reason = "تأخر التحميل الأولي 30ث قبل الإرسال؛ أعيد فتح المدخل الأساسي مرة واحدة"
+            )
+        }
+    }
+}
+

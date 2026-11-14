@@ -7,8 +7,16 @@ package com.lion.ai
  */
 object ToolMarkup {
     private val CLOSED = Regex("\\[\\[TOOL\\]\\].*?\\[\\[/?TOOL\\]\\]", RegexOption.DOT_MATCHES_ALL)
-    private val FENCED_EMPTY = Regex("```[a-zA-Z-]*\\s*```")
-    private val DSML_BLOCK = Regex("<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*(?:tool_)?calls\\s*>.*?</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*(?:tool_)?calls\\s*>", RegexOption.DOT_MATCHES_ALL)
+    private val TOOL_CALL_TAG = Regex("<tool_call>.*?</tool_call>", RegexOption.DOT_MATCHES_ALL)
+    private val FENCED_EMPTY = Regex("```[a-zA-Z0-9_-]*\\s*```")
+    private val DSML_BLOCK = Regex(
+        "<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*(?:(?:function|tool)_)?calls\\b[^>]*>.*?</[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*(?:(?:function|tool)_)?calls\\s*>",
+        RegexOption.DOT_MATCHES_ALL
+    )
+    private val DSML_INVOKE_BLOCK = Regex(
+        "<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*invoke\\b[^>]*>.*?</[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*invoke\\s*>",
+        RegexOption.DOT_MATCHES_ALL
+    )
     private val DSML_STRAY = Regex("</?[^<>a-zA-Z/]*DSML[^<>]*>")
     private val STRAY = Regex("\\[\\[/?TOOL\\]\\]")
     private val TOOL_RESULTS_HEADER = Regex("^نتائج الأدوات.*$", RegexOption.MULTILINE)
@@ -43,8 +51,13 @@ object ToolMarkup {
 
     /** نص خالٍ من كل أثر لكتل الأدوات (مغلقة أو معطوبة أو غير مغلقة). */
     fun strip(text: String): String {
-        if (!text.contains("[[") && !text.contains("DSML")) return text
-        var out = text.replace(DSML_BLOCK, "").replace(DSML_STRAY, "").replace(CLOSED, "")
+        if (!text.contains("[[") && !text.contains("DSML") && !text.contains("<tool_call>")) return text
+        var out = text
+            .replace(DSML_BLOCK, "")
+            .replace(DSML_INVOKE_BLOCK, "")
+            .replace(DSML_STRAY, "")
+            .replace(TOOL_CALL_TAG, "")
+            .replace(CLOSED, "")
         // كتلة بلا إغلاق: نزيل [[TOOL]] مع JSON المتوازن الذي يليها.
         var guard = 0
         while (guard++ < 20) {
@@ -58,5 +71,6 @@ object ToolMarkup {
     }
 
     /** هل في النص أثر لبروتوكول الأدوات؟ */
-    fun hasMarkup(text: String): Boolean = text.contains("[[TOOL]]") || text.contains("[[/TOOL]]") || text.contains("DSML")
+    fun hasMarkup(text: String): Boolean =
+        text.contains("[[TOOL]]") || text.contains("[[/TOOL]]") || text.contains("DSML") || text.contains("<tool_call>")
 }

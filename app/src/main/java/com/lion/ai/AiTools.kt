@@ -784,20 +784,345 @@ object AiTools {
         "path" to listOf("file_path", "filepath", "filename", "file_name", "file", "target_path", "filePath"),
         "old" to listOf("old_text", "old_string", "old_str", "search", "find", "original", "oldText"),
         "new" to listOf("new_text", "new_string", "new_str", "replace", "replacement", "newText"),
+        "find" to listOf("old", "old_text", "old_string", "old_str", "search", "original", "oldText"),
+        "replace" to listOf("new", "new_text", "new_string", "new_str", "replacement", "newText"),
         "content" to listOf("text", "contents", "data", "body", "file_content"),
-        "command" to listOf("cmd", "shell", "script")
+        "text" to listOf("content", "message", "body", "value"),
+        "body" to listOf("content", "text", "message"),
+        "command" to listOf("cmd", "shell", "script"),
+        "query" to listOf("q", "keyword", "keywords", "search_query", "term"),
+        "url" to listOf("uri", "href", "endpoint"),
+        "workflow_id" to listOf("workflow", "workflow_file", "workflow_name", "workflowId"),
+        "run_id" to listOf("runId", "id_run"),
+        "job_id" to listOf("jobId"),
+        "artifact_id" to listOf("artifactId"),
+        "message_id" to listOf("messageId", "msg_id"),
+        "chat_id" to listOf("chatId"),
+        "file_id" to listOf("fileId"),
+        "page_id" to listOf("pageId"),
+        "event_id" to listOf("eventId"),
+        "user_id" to listOf("userId")
     )
 
-    internal fun normalizeArgs(args: JSONObject) {
+    /** المرادفات الافتراضية الآمنة عند استدعاء normalizeArgs بدون اسم أداة. */
+    private val GLOBAL_ALIAS_KEYS = setOf("path", "old", "new", "content", "command", "query", "url", "workflow_id")
+
+    private val signatureExamples: Map<String, JSONObject> by lazy {
+        defs.associate { def ->
+            def.name to (runCatching { JSONObject(def.signature.ifBlank { "{}" }) }.getOrNull() ?: JSONObject())
+        }
+    }
+
+    internal fun normalizeArgs(args: JSONObject, toolName: String? = null) {
+        val example = toolName?.let { signatureExamples[it] }
+        val allowedKeys: Set<String>? = example?.let { ex ->
+            val keys = ex.keys().asSequence().toMutableSet()
+            when (toolName) {
+                "read_file" -> keys.add("path")
+                "write_file" -> { keys.add("path"); keys.add("content") }
+                "execute_command" -> keys.add("command")
+            }
+            keys
+        }
         ARG_ALIASES.forEach { (canonical, aliases) ->
+            if (allowedKeys != null && canonical !in allowedKeys) return@forEach
+            if (allowedKeys == null && canonical !in GLOBAL_ALIAS_KEYS) return@forEach
             if (args.has(canonical) && !args.isNull(canonical)) return@forEach
             aliases.firstOrNull { args.has(it) && !args.isNull(it) }?.let { args.put(canonical, args.get(it)) }
+        }
+        // إذا أرسل النموذج مصفوفة أو كائن JSON كنص مفرد، حوّله وفق مثال التوقيع.
+        if (example != null) {
+            example.keys().forEach { key ->
+                val raw = args.opt(key) as? String ?: return@forEach
+                val trimmed = raw.trim()
+                when (example.opt(key)) {
+                    is JSONArray -> if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                        runCatching { JSONArray(trimmed) }.getOrNull()?.let { args.put(key, it) }
+                    }
+                    is JSONObject -> if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                        runCatching { JSONObject(trimmed) }.getOrNull()?.let { args.put(key, it) }
+                    }
+                }
+            }
+        }
+    }
+
+    private val REQUIRED_STRINGS: Map<String, List<String>> = mapOf(
+        "github_create_repo" to listOf("name"),
+        "github_read_file" to listOf("path"),
+        "github_write_file" to listOf("path"),
+        "github_delete_file" to listOf("path"),
+        "github_create_branch" to listOf("branch"),
+        "github_create_issue" to listOf("title"),
+        "github_comment_issue" to listOf("body"),
+        "github_create_pr" to listOf("title", "head"),
+        "github_search_repos" to listOf("query"),
+        "github_search_code" to listOf("query"),
+        "github_bootstrap_project" to listOf("name"),
+        "github_create_repo_from_template" to listOf("template", "name"),
+        "github_compare" to listOf("base", "head"),
+        "github_create_tag" to listOf("name"),
+        "github_create_release" to listOf("tag"),
+        "github_delete_branch" to listOf("branch"),
+        "drive_open" to listOf("url_or_id"),
+        "drive_read" to listOf("file_id"),
+        "drive_download" to listOf("file_id"),
+        "drive_upload" to listOf("name"),
+        "drive_mkdir" to listOf("name"),
+        "drive_move" to listOf("file_id", "folder_id"),
+        "drive_rename" to listOf("file_id", "name"),
+        "drive_copy" to listOf("file_id"),
+        "drive_trash" to listOf("file_id"),
+        "drive_meta" to listOf("file_id"),
+        "drive_update" to listOf("file_id"),
+        "gmail_search" to listOf("query"),
+        "gmail_read" to listOf("message_id"),
+        "gmail_send" to listOf("to", "body"),
+        "gmail_draft" to listOf("to", "body"),
+        "gmail_modify" to listOf("message_id"),
+        "gmail_trash" to listOf("message_id"),
+        "gmail_attachment" to listOf("message_id", "attachment_id"),
+        "calendar_create" to listOf("summary", "start"),
+        "calendar_update" to listOf("event_id"),
+        "calendar_delete" to listOf("event_id"),
+        "calendar_quick_add" to listOf("text"),
+        "notion_read" to listOf("page_id"),
+        "notion_create" to listOf("parent_page", "title", "content"),
+        "notion_append" to listOf("page_id", "content"),
+        "slack_post" to listOf("channel", "text"),
+        "slack_history" to listOf("channel"),
+        "connector_get" to listOf("path"),
+        "connector_request" to listOf("path"),
+        "web_fetch" to listOf("url"),
+        "web_search" to listOf("query"),
+        "web_api" to listOf("url"),
+        "web_download" to listOf("url"),
+        "file_search" to listOf("query"),
+        "file_read" to listOf("path"),
+        "read_file" to listOf("path"),
+        "file_write" to listOf("path"),
+        "write_file" to listOf("path"),
+        "file_delete" to listOf("path"),
+        "file_mkdir" to listOf("path"),
+        "file_zip_list" to listOf("path"),
+        "file_zip_read" to listOf("path", "entry"),
+        "file_zip_create" to listOf("target"),
+        "boot_info" to listOf("path"),
+        "boot_unpack" to listOf("path"),
+        "boot_repack" to listOf("dir"),
+        "pdf_info" to listOf("path"),
+        "pdf_read" to listOf("path"),
+        "pdf_split" to listOf("path", "pages"),
+        "pdf_create" to listOf("text"),
+        "file_present" to listOf("path"),
+        "file_unzip" to listOf("path"),
+        "file_append" to listOf("path"),
+        "file_move" to listOf("from", "to"),
+        "file_copy" to listOf("from", "to"),
+        "file_checksum" to listOf("path"),
+        "file_diff" to listOf("first", "second"),
+        "file_edit" to listOf("path", "old"),
+        "file_apply_patch" to listOf("path", "patch"),
+        "db_schema" to listOf("db"),
+        "db_query" to listOf("db", "sql"),
+        "db_import_json" to listOf("db", "table", "json"),
+        "db_export_json" to listOf("db", "table"),
+        "db_delete" to listOf("db"),
+        "firestore_get" to listOf("path"),
+        "firestore_query" to listOf("collection"),
+        "firestore_set" to listOf("path"),
+        "site_probe" to listOf("url"),
+        "toolchain_install" to listOf("package"),
+        "code_analyze" to listOf("code"),
+        "code_analyze_file" to listOf("path"),
+        "code_patch" to listOf("path", "find"),
+        "util_json" to listOf("text"),
+        "util_base64" to listOf("text"),
+        "util_hash" to listOf("text"),
+        "util_url" to listOf("text"),
+        "util_regex" to listOf("pattern", "text"),
+        "util_jwt" to listOf("token"),
+        "util_cron" to listOf("cron"),
+        "util_diff" to listOf("first", "second"),
+        "util_csv" to listOf("text"),
+        "util_slug" to listOf("text"),
+        "util_color" to listOf("color"),
+        "util_regex_replace" to listOf("pattern", "text"),
+        "telegram_send" to listOf("chat_id", "text"),
+        "telegram_send_media" to listOf("chat_id"),
+        "telegram_edit" to listOf("chat_id", "text"),
+        "telegram_delete" to listOf("chat_id"),
+        "telegram_forward" to listOf("chat_id", "from_chat_id"),
+        "telegram_pin" to listOf("chat_id"),
+        "telegram_chat_info" to listOf("chat_id"),
+        "telegram_members" to listOf("chat_id"),
+        "telegram_file_download" to listOf("file_id"),
+        "telegram_webhook_set" to listOf("url"),
+        "telegram_poll" to listOf("chat_id", "question"),
+        "telegram_invite" to listOf("chat_id"),
+        "telegram_admin" to listOf("chat_id"),
+        "whatsapp_send" to listOf("to", "text"),
+        "whatsapp_template" to listOf("to", "name"),
+        "whatsapp_media" to listOf("to"),
+        "whatsapp_mark_read" to listOf("message_id"),
+        "whatsapp_templates" to listOf("waba_id"),
+        "whatsapp_numbers" to listOf("waba_id"),
+        "whatsapp_download" to listOf("media_id"),
+        "notifications_reply" to listOf("key", "text"),
+        "notifications_dismiss" to listOf("key"),
+        "manifest_create" to listOf("project"),
+        "manifest_update" to listOf("path"),
+        "pipeline_start" to listOf("project"),
+        "memory_save" to listOf("title", "body"),
+        "memory_delete" to listOf("id"),
+        "execute_command" to listOf("command"),
+        "shell_exec" to listOf("command"),
+        "code_run" to listOf("language", "code"),
+        "shell_which" to listOf("name"),
+        "android_install_run" to listOf("apk"),
+        "mcp_add_server" to listOf("name", "url"),
+        "mcp_remove_server" to listOf("id"),
+        "mcp_list_tools" to listOf("server"),
+        "mcp_call" to listOf("server", "tool"),
+        "mcp_ping" to listOf("server")
+    )
+
+    /** مفاتيح يُسمح أن تكون فارغة "" (مثل حذف نص أو إنشاء ملف فارغ) لكن يجب إرسالها صراحةً. */
+    private val REQUIRED_PRESENT: Map<String, List<String>> = mapOf(
+        "file_edit" to listOf("new"),
+        "file_write" to listOf("content"),
+        "write_file" to listOf("content"),
+        "file_append" to listOf("content"),
+        "github_write_file" to listOf("content")
+    )
+
+    private val REQUIRED_POSITIVE_LONG: Map<String, List<String>> = mapOf(
+        "github_comment_issue" to listOf("number"),
+        "github_pr_files" to listOf("number"),
+        "github_merge_pr" to listOf("number"),
+        "github_review_pr" to listOf("number"),
+        "github_close_issue" to listOf("number"),
+        "github_workflow_jobs" to listOf("run_id"),
+        "github_rerun" to listOf("run_id"),
+        "github_cancel" to listOf("run_id"),
+        "github_list_artifacts" to listOf("run_id"),
+        "github_get_run" to listOf("run_id"),
+        "github_run_logs" to listOf("run_id"),
+        "github_job_log" to listOf("job_id"),
+        "github_download_artifact" to listOf("artifact_id"),
+        "telegram_edit" to listOf("message_id"),
+        "telegram_delete" to listOf("message_id"),
+        "telegram_forward" to listOf("message_id"),
+        "telegram_pin" to listOf("message_id"),
+        "telegram_admin" to listOf("user_id")
+    )
+
+    private val REQUIRED_ARRAYS: Map<String, List<String>> = mapOf(
+        "file_read_many" to listOf("paths"),
+        "pdf_merge" to listOf("paths"),
+        "file_zip_create" to listOf("sources"),
+        "telegram_commands" to listOf("commands"),
+        "manifest_create" to listOf("files")
+    )
+
+    /**
+     * فحص شامل ومسبق لوسائط الأداة قبل أي اتصال شبكي أو تعديل ملفات.
+     * يعيد رسالة خطأ عربية جامعة لكل الحقول الناقصة/الخاطئة مع التوقيع المتوقع، أو null عند الصحة.
+     */
+    internal fun validateArgs(call: ToolCall): String? {
+        val def = byName[call.name] ?: return "أداة غير معروفة: ${call.name}"
+        val sentBefore = call.args.keys().asSequence().toList()
+        normalizeArgs(call.args, call.name)
+        val args = call.args
+        val problems = mutableListOf<String>()
+
+        REQUIRED_STRINGS[call.name]?.forEach { key ->
+            if (args.optString(key).trim().isBlank()) problems.add("«$key» مطلوب (نص غير فارغ)")
+        }
+        REQUIRED_PRESENT[call.name]?.forEach { key ->
+            if (!args.has(key) || args.isNull(key)) problems.add("«$key» مطلوب (أرسل المفتاح حتى لو كانت قيمته فارغة \"\")")
+        }
+        REQUIRED_POSITIVE_LONG[call.name]?.forEach { key ->
+            val v = args.optLong(key, 0L)
+            if (v <= 0L) problems.add("«$key» يجب أن يكون رقماً موجباً أكبر من صفر")
+        }
+        REQUIRED_ARRAYS[call.name]?.forEach { key ->
+            val arr = args.optJSONArray(key)
+            if (arr == null || arr.length() == 0) problems.add("«$key» مطلوب كمصفوفة غير فارغة")
+        }
+
+        when (call.name) {
+            "github_dispatch" -> {
+                val raw = args.opt("workflow_id")?.toString()?.trim().orEmpty()
+                val numeric = raw.toLongOrNull()
+                if (raw.isBlank() || (numeric != null && numeric <= 0L)) {
+                    problems.add("«workflow_id» مطلوب (معرّف رقمي موجب أو اسم ملف مثل \"build.yml\")")
+                }
+            }
+            "github_commit_files" -> {
+                val hasFiles = (args.optJSONArray("files")?.length() ?: 0) > 0 ||
+                    (args.optJSONObject("files")?.length() ?: 0) > 0
+                val hasDelete = (args.optJSONArray("delete")?.length() ?: 0) > 0 ||
+                    (args.optJSONArray("deletions")?.length() ?: 0) > 0
+                if (!hasFiles && !hasDelete) problems.add("يجب تحديد «files» أو «delete» غير فارغين")
+            }
+            "github_delete_branches" -> {
+                val hasBranches = (args.optJSONArray("branches")?.length() ?: 0) > 0
+                val hasPrefix = args.optString("prefix").trim().isNotBlank()
+                if (!hasBranches && !hasPrefix) problems.add("يجب تحديد «branches» أو «prefix»")
+            }
+            "code_translate", "code_translate_save" -> {
+                val hasCode = args.optString("code").trim().isNotBlank()
+                val hasPath = args.optString("path").trim().isNotBlank()
+                if (!hasCode && !hasPath) problems.add("يجب تمرير «code» أو «path»")
+                if (args.optString("to").trim().isBlank()) problems.add("«to» (اللغة الهدف) مطلوب")
+            }
+            "telegram_poll" -> {
+                val opts = args.optJSONArray("options")
+                if (opts == null || opts.length() < 2) problems.add("«options» مطلوب كمصفوفة بخيارين على الأقل")
+            }
+            "telegram_send_media" -> {
+                if (args.optString("path").isBlank() &&
+                    args.optString("url").isBlank() &&
+                    args.optString("file_id").isBlank()
+                ) problems.add("يجب تحديد «path» أو «url» أو «file_id»")
+            }
+            "whatsapp_media" -> {
+                if (args.optString("link").isBlank() && args.optString("media_id").isBlank()) {
+                    problems.add("يجب تحديد «link» أو «media_id»")
+                }
+            }
+            "firestore_set" -> {
+                val okObj = args.optJSONObject("data") != null ||
+                    runCatching { JSONObject(args.optString("data")) }.isSuccess
+                if (!okObj) problems.add("«data» مطلوب ككائن JSON")
+            }
+            "tools_schema" -> {
+                val raw = args.optString("group").trim().lowercase()
+                val ok = ToolGroup.values().any { it.id == raw || it.name.lowercase() == raw }
+                if (!ok) {
+                    problems.add(
+                        "«group» مطلوب من القيم: " + ToolGroup.values().joinToString(", ") { it.id }
+                    )
+                }
+            }
+        }
+
+        if (problems.isEmpty()) return null
+        return buildString {
+            append("معاملات ناقصة أو غير صالحة في «").append(call.name).append("»: ")
+            append(problems.joinToString("؛ ")).append('.')
+            append(" المفاتيح المرسلة: ").append(sentBefore.joinToString("، ").ifBlank { "لا شيء" }).append('.')
+            if (def.signature.isNotBlank()) {
+                append(" التوقيع المتوقع: ").append(def.signature)
+            }
         }
     }
 
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
-        normalizeArgs(call.args)
+        val sentBefore = call.args.keys().asSequence().toList()
+        normalizeArgs(call.args, call.name)
         if (isMutation(call) && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ لم تُنفذ العملية: يلزم طلب تعديل/تنفيذ صريح من المستخدم، إضافة إلى السماح بالكتابة في الإعدادات.", false)
         }
@@ -819,6 +1144,17 @@ object AiTools {
                 false
             )
         }
+        validateArgs(ToolCall(call.name, call.args))?.let { problem ->
+            val msg = if (sentBefore.isNotEmpty()) {
+                problem.replace(
+                    Regex("المفاتيح المرسلة: [^.]*\\."),
+                    "المفاتيح المرسلة: ${sentBefore.joinToString("، ")}."
+                )
+            } else problem
+            val err = ToolResult(call.name, "❌ $msg", false)
+            ToolAudit.add(call.name, false, err.output)
+            return err
+        }
         val result = try {
             val output = run(ctx, call.name, call.args)
             if (def.write && ctx.chatId.isNotBlank()) {
@@ -832,6 +1168,12 @@ object AiTools {
             ToolResult(call.name, "❌ GitHub ${e.status}: ${e.message}", false)
         } catch (e: McpException) {
             ToolResult(call.name, "❌ MCP: ${e.message}", false)
+        } catch (e: IllegalArgumentException) {
+            val base = e.message ?: "معاملات غير صالحة"
+            val withSig = if (def.signature.isNotBlank() && !base.contains("التوقيع المتوقع")) {
+                "$base (التوقيع المتوقع: ${def.signature})"
+            } else base
+            ToolResult(call.name, "❌ $withSig", false)
         } catch (e: Exception) {
             ToolResult(call.name, "❌ ${e.message ?: e.javaClass.simpleName}", false)
         }
@@ -1009,13 +1351,13 @@ object AiTools {
                 "✅ أُنشئ PR #${pr.number}: ${pr.title}\n${pr.htmlUrl}"
             }
             "github_search_repos" -> {
-                val repos = GitHubClient.searchRepos(token, task(args, "query"), int(args, "per_page", 10))
+                val repos = GitHubClient.searchRepos(token, req(args, "query"), int(args, "per_page", 10))
                 if (repos.isEmpty()) "لا نتائج." else repos.joinToString("\n") {
                     "• ${it.fullName} ⭐${it.stars} — ${it.description.take(90)}"
                 }
             }
             "github_search_code" -> {
-                val results = GitHubClient.searchCode(token, task(args, "query"), int(args, "per_page", 10))
+                val results = GitHubClient.searchCode(token, req(args, "query"), int(args, "per_page", 10))
                 if (results.isEmpty()) "لا نتائج." else results.joinToString("\n") { "• $it" }
             }
             "github_workflow_runs" -> {
@@ -1076,8 +1418,9 @@ object AiTools {
                 val inputs = args.optJSONObject("inputs")?.let { obj ->
                     obj.keys().asSequence().associateWith { obj.optString(it) }
                 }.orEmpty()
+                val wf = args.opt("workflow_id")?.toString()?.trim().orEmpty()
                 GitHubClient.dispatchWorkflow(
-                    token, owner, repo, args.optLong("workflow_id", 0L),
+                    token, owner, repo, wf,
                     args.optString("ref"), inputs
                 )
                 "✅ بدأ تنفيذ workflow"
@@ -1344,7 +1687,7 @@ object AiTools {
                 }
             }
             "web_search" -> {
-                val results = WebGrounding.search(task(args, "query"))
+                val results = WebGrounding.search(req(args, "query"))
                 if (results.isEmpty()) "لا نتائج." else results.joinToString("\n\n") {
                     "• ${it.title}\n${it.url}\n${it.snippet.take(240)}"
                 }
@@ -2861,9 +3204,6 @@ $code
         if (array == null) return emptyList()
         return (0 until array.length()).mapNotNull { array.optString(it).trim().takeIf { value -> value.isNotBlank() } }
     }
-
-    private fun task(args: JSONObject, key: String): String =
-        args.optString(key).trim().ifBlank { throw IllegalArgumentException("المعامل «$key» مطلوب") }
 
     private fun resolveWorkspace(ctx: ToolContext, path: String): java.io.File {
         val root = FileTools.root(ctx.context).canonicalFile

@@ -47,6 +47,32 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
         LlmClient.reloadOverrides(prefs)
         onActivate(id)
     }
+    fun testOneTools(id: String) {
+        testJob?.cancel()
+        prefs.edit().putBoolean("web_chat_enabled_$id", true).apply()
+        testJob = scope.launch {
+            testingId = id
+            val name = providerInfo(id).shortName
+            report = "🛠️ أختبر دورة الأدوات الكاملة على جلسة $name (4 مراحل آمنة)…"
+            try {
+                ensureActive()
+                val res = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    ToolSelfTest.run(
+                        context = context,
+                        prefs = prefs,
+                        provider = id,
+                        onStage = { stage -> scope.launch { report = stage } }
+                    )
+                }
+                report = res.detailedText()
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                report = "❌ تعذّر اختبار أدوات $name: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                testingId = null
+            }
+        }
+    }
     fun testOne(id: String) {
         testJob?.cancel()
         prefs.edit().putBoolean("web_chat_enabled_$id", true).apply()
@@ -113,6 +139,7 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                     Row {
                         TextButton(enabled = testingId == null && WebChatRuntime.available(prefs, info.id), onClick = { activate(info.id) }) { Text("اختيار للشات") }
                         TextButton(enabled = enabled && testingId == null, onClick = { testOne(info.id) }) { Text("فحص ${info.shortName} فقط") }
+                        TextButton(enabled = enabled && testingId == null, onClick = { testOneTools(info.id) }) { Text("🛠️ اختبار الأدوات") }
                         TextButton(enabled = !busy, onClick = { WebSessionTransport.open(info.id) }) { Text("الجلسة") }
                     }
                     Row {

@@ -689,14 +689,25 @@ object GitHubClient {
         workflowId: Long,
         ref: String,
         inputs: Map<String, String> = emptyMap()
+    ) = dispatchWorkflow(token, owner, repo, workflowId.toString(), ref, inputs)
+
+    fun dispatchWorkflow(
+        token: String,
+        owner: String,
+        repo: String,
+        workflow: String,
+        ref: String,
+        inputs: Map<String, String> = emptyMap()
     ) {
+        val wf = workflow.trim().removePrefix(".github/workflows/")
+        require(wf.isNotBlank() && wf != "0") { "حدد workflow_id (رقم أو اسم ملف مثل build.yml)" }
         val body = JSONObject().put("ref", ref.ifBlank { getRepo(token, owner, repo).defaultBranch })
         if (inputs.isNotEmpty()) {
             val obj = JSONObject()
             inputs.forEach { (key, value) -> obj.put(key, value) }
             body.put("inputs", obj)
         }
-        request("/repos/${encode(owner)}/${encode(repo)}/actions/workflows/$workflowId/dispatches", token, "POST", body)
+        request("/repos/${encode(owner)}/${encode(repo)}/actions/workflows/${encode(wf)}/dispatches", token, "POST", body)
     }
 
     fun listArtifacts(token: String, owner: String, repo: String, runId: Long): List<Artifact> {

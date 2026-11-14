@@ -364,7 +364,7 @@ object ToolAgent {
         var lastFailure = ""
         fun diagnoseFailure(err: String): String = when {
             err.contains("النص القديم غير موجود") -> "النص الذي أرسله المزود لا يطابق الملف. اقرأ المقطع الحالي بـ file_read ثم أعد file_edit بنصه حرفياً."
-            err.contains("مطلوب") && err.contains("المعامل") -> "المزود أرسل الأداة بمفاتيح غير صحيحة. يُعاد الاستدعاء بالمفتاح المذكور في الخطأ."
+            err.contains("مطلوب") && (err.contains("المعامل") || err.contains("معاملات ناقصة")) -> "المزود أرسل الأداة بمفاتيح ناقصة أو غير صحيحة. يُعاد الاستدعاء بالتوقيع المذكور في الخطأ."
             err.contains("SYNTAX_BALANCE") -> "فشل فحص توازن الأقواس؛ تحقق بـ code_doctor إن كان الخطأ حقيقياً قبل تعديل ملف سليم."
             err.contains("401") || err.contains("403") -> "رفض GitHub الصلاحية: تحقق من التوكن ونطاقاته (repo, workflow)."
             err.contains("404") -> "المسار أو المستودع غير موجود: تحقق من الاسم والفرع."
@@ -534,7 +534,9 @@ object ToolAgent {
         var cycle = 0
         var stepBudgetNow = maxSteps
         var lastExtensionOk = okCount
+        var loopStop: StopDecision? = null
         while (cycle < cycleCap) {
+        val cycleStartOk = okCount
         var stepIndex = 0
         while (stepIndex < stepBudgetNow) {
             // الزيادة أولاً حتى تبقى كل عبارات continue داخل الحلقة صحيحة.
@@ -549,12 +551,17 @@ object ToolAgent {
                     false, "قاطع المستخدم"
                 )
             }
-            if (System.currentTimeMillis() > deadline) {
-                session?.recordNote("انتهى وقت التنفيذ قبل اكتمال المهمة")
-                return finish(
-                    "انتهى وقت التنفيذ قبل اكتمال المهمة. حُفظ ما أُنجز ويمكن المتابعة من النقطة نفسها.",
-                    false, "انتهى الوقت المسموح"
-                )
+            val now = System.currentTimeMillis()
+            if (now > deadline) {
+                val hardExpired = now >= hardDeadline
+                val reason = if (hardExpired) "بلوغ السقف الزمني الأقصى للجلسة (3 ساعات)" else "انتهى الوقت المسموح"
+                val text = if (hardExpired) {
+                    "وصلت المهمة إلى السقف الزمني الأقصى للجلسة (3 ساعات). حُفظ ما أُنجز بالكامل ويمكن المتابعة من النقطة نفسها."
+                } else {
+                    "انتهى وقت التنفيذ قبل اكتمال المهمة. حُفظ ما أُنجز ويمكن المتابعة من النقطة نفسها."
+                }
+                session?.recordNote(reason)
+                return finish(text, false, reason)
             }
             compressHistory()
             publish("🧠 $label يخطط للخطوة ${step + 1}")
@@ -660,7 +667,7 @@ object ToolAgent {
             val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
             // كتلة [[TOOL]] وصلت لكن لم تُحلَّل (JSON معطوب أو اسم أداة غير معروف): لا ننهي المهمة بصمت،
             // نطلب إعادة الكتلة نفسها بصيغة صحيحة (مرتان كحد أقصى).
-            if (calls.isEmpty() && (reply.contains("[[TOOL") || reply.contains("DSML")) && repairNudges < 2 &&
+            if (calls.isEmpty() && (reply.contains("[[TOOL") || reply.contains("DSML") || reply.contains("<tool_call")) && repairNudges < 2 &&
                 System.currentTimeMillis() + 45_000 < deadline
             ) {
                 repairNudges++
@@ -1031,18 +1038,68 @@ object ToolAgent {
         }
 
         cycle++
-        if (cycle >= MAX_CYCLES || System.currentTimeMillis() + 45_000L > deadline) break
+        val decision = classifyLoopStop(
+            now = System.currentTimeMillis(),
+            deadline = deadline,
+            hardDeadline = hardDeadline,
+            autoExtend = autoExtend,
+            cycle = cycle,
+            maxCycles = cycleCap,
+            cycleProgressOk = okCount - cycleStartOk,
+            stepBudget = stepBudgetNow
+        )
+        if (decision != null) {
+            loopStop = decision
+            break
+        }
         current = "سجل مضغوط لمتابعة المهمة تلقائياً:\n" +
             statusReport(false, "متابعة تلقائية") + "\n" + current.take(2500) +
             "\n\nتابع من آخر نقطة. لا تكرر الخطوات الناجحة ولا تطلب أكمل."
         session?.recordNote("ضغط السياق لمتابعة المهمة")
         }
 
-        session?.recordNote("توقف مؤقت بعد عمل طويل")
-        return finish(
-            "توقف العمل مؤقتاً بعد مرحلة طويلة حتى لا تُفقد النتائج. أرسل أي رد لأواصل من النقطة نفسها.",
-            false, "توقف مؤقت بعد عمل طويل"
+        val stop = loopStop ?: StopDecision(
+            summary = "توقف العمل مؤقتاً بعد مرحلة طويلة حتى لا تُفقد النتائج. أرسل أي رد لأواصل من النقطة نفسها.",
+            reason = "بلوغ الحد الأقصى لدورات المتابعة ($cycleCap دورات)"
         )
+        session?.recordNote(stop.reason)
+        return finish(stop.summary, false, stop.reason)
+    }
+
+    internal data class StopDecision(val summary: String, val reason: String)
+
+    /** يصنّف سبب توقف حلقة الوكيل بدقة عند نهاية كل دورة بدلاً من رسالة مبهمة موحّدة. */
+    internal fun classifyLoopStop(
+        now: Long,
+        deadline: Long,
+        hardDeadline: Long,
+        autoExtend: Boolean,
+        cycle: Int,
+        maxCycles: Int,
+        cycleProgressOk: Int,
+        stepBudget: Int
+    ): StopDecision? = when {
+        now >= hardDeadline - 45_000L -> StopDecision(
+            summary = "وصلت المهمة إلى السقف الزمني الأقصى للجلسة (3 ساعات) وحُفظ كل ما أُنجز بأمان. أرسل أي رد للمتابعة من النقطة نفسها.",
+            reason = "بلوغ السقف الزمني الأقصى للجلسة (3 ساعات)"
+        )
+        now + 45_000L > deadline -> StopDecision(
+            summary = "انتهت المهلة الزمنية المتاحة لهذه الجولة قبل اكتمال بقية الخطوات، وحُفظ ما أُنجز. أرسل أي رد للمتابعة من النقطة نفسها.",
+            reason = "انتهاء المهلة الزمنية للجولة"
+        )
+        !autoExtend -> StopDecision(
+            summary = "وصلت المهمة إلى سقف الخطوات المحدد في الإعدادات ($stepBudget خطوة، والتمديد التلقائي معطّل). حُفظ ما أُنجز؛ فعّل «التمديد التلقائي للخطوات» أو أرسل أي رد للمتابعة.",
+            reason = "بلوغ سقف الخطوات اليدوي ($stepBudget خطوة)"
+        )
+        cycleProgressOk <= 0 -> StopDecision(
+            summary = "توقفت المهمة لأن الدورة الأخيرة استنفدت خطواتها دون نجاح أي أداة جديدة. راجع الأخطاء المسجّلة أعلاه أو بدّل المزود، ثم أرسل رداً للمتابعة.",
+            reason = "استنفاد الدورة دون تقدّم ناجح"
+        )
+        cycle >= maxCycles -> StopDecision(
+            summary = "وصلت المهمة إلى الحد الأقصى لدورات المتابعة التلقائية ($maxCycles دورات) وحُفظت جميع النتائج. أرسل أي رد لأواصل من النقطة نفسها.",
+            reason = "بلوغ الحد الأقصى لدورات المتابعة ($maxCycles دورات)"
+        )
+        else -> null
     }
 
     private val GATE_WRITE_TOOLS = setOf(

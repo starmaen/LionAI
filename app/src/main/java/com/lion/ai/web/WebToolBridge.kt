@@ -214,20 +214,30 @@ object WebToolBridge {
 
     private val FENCE = Regex("```[A-Za-z0-9_-]*[ \\t]*\\r?\\n?([\\s\\S]*?)```")
     private val BLOCK = Regex("\\[\\[TOOL]]([\\s\\S]*?)\\[\\[/TOOL]]")
+    private val TAG_BLOCK = Regex("<tool_call>([\\s\\S]*?)</tool_call>")
+
+    private fun straightenQuotes(s: String): String = s
+        .replace('“', '"').replace('”', '"').replace('„', '"').replace('‟', '"')
+        .replace('«', '"').replace('»', '"')
 
     /**
      * ما يعيده موقع ويب قد يُعدَّل في العرض: أسوار كود حول الكتلة، علامات اقتباس منحنية، أحرف خفية.
-     * نُرجعه لصيغة يفهمها محلّل ToolAgent قبل التحليل. لا يمسّ أسوار الكود الأخرى ولا ردوداً بلا كتل.
+     * نُرجعه لصيغة يفهمها محلّل ToolAgent قبل التحليل (سواء كانت [[TOOL]] أو DSML أو <tool_call>).
+     * لا يمسّ أسوار الكود العادية ولا ردوداً بلا كتل أدوات.
      */
     fun normalizeReply(reply: String): String {
-        if (!reply.contains("[[TOOL")) return reply
+        val hasTool = reply.contains("[[TOOL") || reply.contains("DSML") || reply.contains("<tool_call>")
+        if (!hasTool) return reply
         var t = reply.replace("\u200b", "").replace("\u200c", "").replace("\u200d", "").replace("\ufeff", "")
-        t = FENCE.replace(t) { m -> if (m.groupValues[1].contains("[[TOOL]]")) m.groupValues[1].trim() else m.value }
-        t = BLOCK.replace(t) { m ->
-            val json = m.groupValues[1]
-                .replace('“', '"').replace('”', '"').replace('„', '"').replace('‟', '"')
-                .replace('«', '"').replace('»', '"').trim()
-            "[[TOOL]]$json[[/TOOL]]"
+        t = FENCE.replace(t) { m ->
+            val inner = m.groupValues[1]
+            if (inner.contains("[[TOOL") || inner.contains("DSML") || inner.contains("<tool_call>")) inner.trim() else m.value
+        }
+        t = BLOCK.replace(t) { m -> "[[TOOL]]${straightenQuotes(m.groupValues[1]).trim()}[[/TOOL]]" }
+        t = TAG_BLOCK.replace(t) { m -> "<tool_call>${straightenQuotes(m.groupValues[1]).trim()}</tool_call>" }
+        if (t.contains("DSML")) {
+            val dsmlInvoke = Regex("<[^<>a-zA-Z/]*DSML[\\s\\S]*?</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*invoke\\s*>")
+            t = dsmlInvoke.replace(t) { m -> straightenQuotes(m.value) }
         }
         return t
     }

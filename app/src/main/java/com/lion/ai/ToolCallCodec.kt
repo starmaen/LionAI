@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** استدعاء أداة واحد بعد التحليل: الاسم المعياري + الوسائط + النص الخام. */
-data class ToolCall(val name: String, val args: JSONObject, val raw: String)
+data class ToolCall(val name: String, val args: JSONObject, val raw: String = "")
 
 /**
  * محلّل استدعاءات الأدوات الموحّد (صيغة نصية تعمل مع كل المزودات).
@@ -23,9 +23,20 @@ object ToolCallCodec {
     private val FENCE = Regex("```(?:tool|json|ai-tool)?\\s*(\\{.*?\\})\\s*```", RegexOption.DOT_MATCHES_ALL)
 
     // صيغة DSML (DeepSeek وأشباهه): <｜DSML｜invoke name="x"><｜DSML｜parameter name="args">{json}</｜DSML｜parameter>
-    // الفواصل | أو ｜ أو │ وقد تتخللها مسافات، لذلك نطابق بتسامح.
-    private val DSML_INVOKE = Regex("<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*invoke\\s+name\\s*=\\s*\"([^\"]+)\"\\s*>(.*?)</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*invoke\\s*>", RegexOption.DOT_MATCHES_ALL)
-    private val DSML_PARAM = Regex("<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*parameter\\s+name\\s*=\\s*\"([^\"]+)\"[^>]*>(.*?)</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*parameter\\s*>", RegexOption.DOT_MATCHES_ALL)
+    // الفواصل | أو ｜ أو │ وقد تتخللها مسافات أو سمات إضافية، لذلك نطابق بتسامح.
+    private val DSML_INVOKE = Regex(
+        "<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*invoke\\s+[^>]*?name\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*invoke\\s*>",
+        RegexOption.DOT_MATCHES_ALL
+    )
+    private val DSML_PARAM = Regex(
+        "<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*parameter\\s+[^>]*?name\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*parameter\\s*>",
+        RegexOption.DOT_MATCHES_ALL
+    )
+    /** مفاتيح نصية حرة يجب ألا تُحوَّل إلى JSONObject/JSONArray حتى لو احتوت JSON خاماً بداخلها. */
+    private val RAW_TEXT_KEYS = setOf(
+        "content", "text", "old", "new", "old_text", "new_text", "code", "patch",
+        "body", "json", "sql", "message", "query", "pattern", "replacement", "find", "replace"
+    )
 
     private fun parseDsml(text: String, known: Set<String>): List<ToolCall> {
         if (!text.contains("DSML")) return emptyList()
@@ -35,13 +46,21 @@ object ToolCallCodec {
             if (name.isEmpty()) return@forEach
             val args = JSONObject()
             DSML_PARAM.findAll(m.groupValues[2]).forEach { pm ->
-                val key = pm.groupValues[1]
-                val value = pm.groupValues[2].trim()
-                val asJson = runCatching { JSONObject(value) }.getOrNull()
-                if (key.equals("args", true) && asJson != null) {
-                    asJson.keys().forEach { k -> args.put(k, asJson.get(k)) }
-                } else {
-                    args.put(key, value)
+                val key = pm.groupValues[1].trim()
+                val rawVal = pm.groupValues[2]
+                val trimmed = rawVal.trim()
+                val asObj = if (trimmed.startsWith("{")) runCatching { JSONObject(trimmed) }.getOrNull() else null
+                val asArr = if (trimmed.startsWith("[")) runCatching { JSONArray(trimmed) }.getOrNull() else null
+                when {
+                    (key.equals("args", true) || key.equals("arguments", true) || key.equals("parameters", true)) && asObj != null ->
+                        asObj.keys().forEach { k -> args.put(k, asObj.get(k)) }
+                    key.lowercase() in RAW_TEXT_KEYS ->
+                        args.put(key, rawVal.removePrefix("\n").removeSuffix("\n"))
+                    asArr != null -> args.put(key, asArr)
+                    asObj != null -> args.put(key, asObj)
+                    trimmed.equals("true", true) -> args.put(key, true)
+                    trimmed.equals("false", true) -> args.put(key, false)
+                    else -> args.put(key, trimmed)
                 }
             }
             if (out.none { it.name == name && it.args.toString() == args.toString() }) out.add(ToolCall(name, args, m.value))
@@ -94,10 +113,17 @@ object ToolCallCodec {
             }
         }
         if (blocks.isEmpty()) {
-            // بعض النماذج ترسل JSON عارياً بلا سياج.
-            val start = text.indexOf('{')
-            val end = text.lastIndexOf('}')
-            if (start >= 0 && end > start) blocks.add(text.substring(start, end + 1))
+            // بعض النماذج ترسل JSON عارياً بلا سياج (واحداً أو أكثر وسط النص).
+            var cursor = text.indexOf('{')
+            while (cursor >= 0 && cursor < text.length) {
+                val balanced = ToolMarkup.balancedJson(text, cursor)
+                if (balanced != null) {
+                    blocks.add(balanced)
+                    cursor = text.indexOf('{', cursor + balanced.length)
+                } else {
+                    cursor = text.indexOf('{', cursor + 1)
+                }
+            }
         }
 
         val found = mutableListOf<ToolCall>()

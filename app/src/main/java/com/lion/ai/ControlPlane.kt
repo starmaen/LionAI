@@ -395,10 +395,25 @@ object ControlPlane {
         return issues
     }
 
-    private fun prevSignificant(text: String, index: Int): Char? {
+    private val REGEX_KEYWORDS = setOf(
+        "return", "case", "throw", "typeof", "void", "delete", "in", "of", "yield", "await", "else"
+    )
+
+    private fun canStartRegex(text: String, index: Int): Boolean {
         var k = index - 1
         while (k >= 0 && (text[k] == ' ' || text[k] == '\t')) k--
-        return if (k < 0 || text[k] == '\n') null else text[k]
+        if (k < 0 || text[k] == '\n') return true
+        val prev = text[k]
+        if (prev in "(,=:[!&|?{};+-*%<>~^") return true
+        if (prev.isLetter()) {
+            var start = k
+            while (start > 0 && (text[start - 1].isLetterOrDigit() || text[start - 1] == '_' || text[start - 1] == '$')) {
+                start--
+            }
+            val word = text.substring(start, k + 1)
+            if (word in REGEX_KEYWORDS) return true
+        }
+        return false
     }
 
     /** يفحص توازن الأقواس مع تجاهل النصوص والتعليقات لتقليل الإيجابيات الكاذبة. */
@@ -416,8 +431,8 @@ object ControlPlane {
                 0 -> when {
                     c == '/' && next == '/' -> { state = 1; i++ }
                     c == '/' && next == '*' -> { state = 2; i++ }
-                    // regex literal (JS/TS): بعد رمز يسبق التعبير عادةً؛ نتجاوزه كله كي لا تُعدّ أقواسه/علامات اقتباسه.
-                    c == '/' && prevSignificant(text, i).let { it == null || it in "(,=:[!&|?{};+-*%<>~^" } -> {
+                    // regex literal (JS/TS): بعد رمز أو كلمة مفتاحية مثل return؛ نتجاوزه كله كي لا تُعدّ أقواسه/علامات اقتباسه.
+                    c == '/' && canStartRegex(text, i) -> {
                         var j = i + 1
                         var inClass = false
                         while (j < text.length && text[j] != '\n') {
@@ -452,7 +467,10 @@ object ControlPlane {
                 5 -> if (c == tripleChar && next == tripleChar && text.getOrNull(i + 2) == tripleChar) {
                     state = 0; i += 2
                 }
-                6 -> if (c == '`') state = 0
+                6 -> if (c == '\\') {
+                    if (next == '\n') line++
+                    i++
+                } else if (c == '`') state = 0
             }
             i++
         }

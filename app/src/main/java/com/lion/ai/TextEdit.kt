@@ -48,7 +48,16 @@ object TextEdit {
                 if (first >= 0 && sb.indexOf(needle, first + needle.length) < 0) {
                     val from = keep[first]
                     val to = keep[first + needle.length - 1] + 1
-                    return Result(src.substring(0, from) + newN + src.substring(to), 1)
+                    val lineStart = src.lastIndexOf('\n', (from - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+                    val prefix = src.substring(lineStart, from)
+                    // إن بدأ التطابق عند أول المحارف غير البيضاء في السطر نحافظ على إزاحة الملف ولا نضاعفها.
+                    if (prefix.all { it == ' ' || it == '\t' }) {
+                        val trimmedNew = newN.trim('\n')
+                        val replacement = if (trimmedNew.isEmpty()) ""
+                        else reindent(trimmedNew.split("\n"), prefix).joinToString("\n")
+                        return Result(src.substring(0, lineStart) + replacement + src.substring(to), 1)
+                    }
+                    return Result(src.substring(0, from) + newN.trim() + src.substring(to), 1)
                 }
             }
         }

@@ -823,36 +823,60 @@ private fun ToolManagerTab(
             ) { Text("🧾 تشخيص", color = T_GOLD) }
         }
         Spacer(Modifier.height(6.dp))
-        Button(
-            enabled = !working,
-            onClick = {
-                working = true
-                providerReport = "⏳ أستدعي قوائم الموديلات من كل مزود متاح…"
-                scope.launch {
-                    providerReport = withContext(Dispatchers.IO) {
-                        val rows = mutableListOf<String>()
-                        val account = (prefs.getString("cf_account_id", "") ?: "").trim()
-                        PROVIDERS.filter { it.group == ProviderGroup.API }.take(14).forEach { info ->
-                            if (!SmartRouter.available(prefs, info.id)) {
-                                rows.add("⚪ " + info.shortName + ": غير متاح (مفتاح/إعداد ناقص)")
-                                return@forEach
-                            }
-                            val key = (prefs.getString("api_key_" + info.id, "") ?: "").trim()
-                            val list = runCatching { LlmClient.listModels(info.id, key, account) }
-                            val models = list.getOrNull().orEmpty()
-                            if (models.isNotEmpty()) ModelCatalog.saveCache(prefs, info.id, models)
-                            rows.add(
-                                if (list.isFailure) "❌ " + info.shortName + ": " + (list.exceptionOrNull()?.message ?: "خطأ").take(80)
-                                else "✅ " + info.shortName + ": " + models.size + " موديل — " + models.take(3).joinToString("، ")
-                            )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    val activeProvider = (prefs.getString("provider", "gemini") ?: "gemini").trim().ifBlank { "gemini" }
+                    providerReport = "⏳ أختبر دورة الأدوات (4 مراحل) على «${providerInfo(activeProvider).shortName}»…"
+                    scope.launch {
+                        providerReport = withContext(Dispatchers.IO) {
+                            runCatching {
+                                ToolSelfTest.run(
+                                    context = context,
+                                    prefs = prefs,
+                                    provider = activeProvider,
+                                    onStage = { s -> scope.launch { providerReport = s } }
+                                ).detailedText()
+                            }.getOrElse { "❌ فشل اختبار الأدوات: " + (it.message ?: "خطأ") }
                         }
-                        rows.joinToString("\n")
+                        working = false
                     }
-                    working = false
-                }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
-        ) { Text("📋 استدعاء الموديلات", color = T_GOLD) }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
+            ) { Text("🛠️ اختبار دورة الأدوات", color = T_GOLD) }
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    providerReport = "⏳ أستدعي قوائم الموديلات من كل مزود متاح…"
+                    scope.launch {
+                        providerReport = withContext(Dispatchers.IO) {
+                            val rows = mutableListOf<String>()
+                            val account = (prefs.getString("cf_account_id", "") ?: "").trim()
+                            PROVIDERS.filter { it.group == ProviderGroup.API }.take(14).forEach { info ->
+                                if (!SmartRouter.available(prefs, info.id)) {
+                                    rows.add("⚪ " + info.shortName + ": غير متاح (مفتاح/إعداد ناقص)")
+                                    return@forEach
+                                }
+                                val key = (prefs.getString("api_key_" + info.id, "") ?: "").trim()
+                                val list = runCatching { LlmClient.listModels(info.id, key, account) }
+                                val models = list.getOrNull().orEmpty()
+                                if (models.isNotEmpty()) ModelCatalog.saveCache(prefs, info.id, models)
+                                rows.add(
+                                    if (list.isFailure) "❌ " + info.shortName + ": " + (list.exceptionOrNull()?.message ?: "خطأ").take(80)
+                                    else "✅ " + info.shortName + ": " + models.size + " موديل — " + models.take(3).joinToString("، ")
+                                )
+                            }
+                            rows.joinToString("\n")
+                        }
+                        working = false
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
+            ) { Text("📋 استدعاء الموديلات", color = T_GOLD) }
+        }
         if (providerReport.isNotBlank()) {
             Spacer(Modifier.height(6.dp))
             Text(providerReport.take(4000), color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
