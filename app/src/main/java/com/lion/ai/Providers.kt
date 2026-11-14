@@ -55,14 +55,15 @@ val BUILTIN_PROVIDERS = listOf(
     ProviderInfo(
         id = "lion1",
         label = "🦁 Lion-1",
-        tagline = "نموذج الأسد: هوية ومهام متعددة، خادم محلي ثم البوابة تلقائياً",
-        docsUrl = "https://github.com/starmaen/LionAI/tree/main/model",
+        tagline = "محرّك مدمج على جهازك: llama.cpp + GGUF داخل التطبيق، بلا مزوّد خلفي، ويستخدم أدوات التطبيق",
+        docsUrl = "https://github.com/starmaen/LionAI/blob/main/docs/LION1_ENGINE_AR.md",
         defaultModel = "lion-1",
         shortName = "Lion-1",
         keyless = true,
-        modelHint = "جاهز دون إعداد: يجرّب رابطك (إن وضعته) ثم الخادم المحلي 127.0.0.1:44045 ثم بوابة الخادم الخارجي من إعدادات الاتصال. " +
+        modelHint = "يعمل بنفسه: «البيئة المحلية ← 🦁 محرّك Lion-1» ثبّت المحرّك ونزّل النموذج ثم شغّله، " +
+            "وبعدها لا حاجة لأي مزوّد أو مفتاح — الاستدلال على الجهاز وأدوات التطبيق تعمل بـ function calling. " +
             "اختر lion-1 للتوجيه التلقائي أو lion-1-code / teach / write / reason / translate / summary لمهمة محددة. " +
-            "لتشغيل نموذجك المضبوط محلياً ضع رابطه في «Base URL» (مثل http://127.0.0.1:8089/v1).",
+            "المسارات الاحتياطية عند تعذّر المحرّك: رابطك في «Base URL» ثم خادمك المحلي 127.0.0.1:44045 ثم بوابة الخادم الخارجي (إن فعّلتها).",
         models = listOf(
             "lion-1", "lion-1-code", "lion-1-teach", "lion-1-write",
             "lion-1-reason", "lion-1-translate", "lion-1-summary"

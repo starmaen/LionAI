@@ -149,3 +149,29 @@ Base URL (إن وُجد):
 - `WebGateway.shouldRoute` و`LlmClient` يمرّان الآن على `WebGateway.relays()` (كل خادم مفعّل بالترتيب) بدل خادم واحد. `KEY_MODE=off` ما زال يعني «مباشر بلا خوادم» (توافق مع الشريط السفلي والاختبارات).
 - «غرفة العمليات المركزية» صارت قائمة منسدلة داخل تبويب الاتصال أسفل الخوادم.
 - اختبارات جديدة: `ServerRegistryTest`.
+
+## جولة 2026-11-14: Lion-1 صار مزوّداً حقيقياً (محرّك على الجهاز، بلا مزوّد خلفي)
+**المشكلة:** lion-1 كان واجهة تمرير فقط — يجمع الهوية ثم يرسل النص إلى خادم 44045 (لم يكن التطبيق
+يشغّله) أو إلى بوابة worker. أي أنه لم يملك عقلاً ولا قدرة، ويتوقف كلياً إذا غاب المزوّد الخلفي.
+
+**الحل (`LionEngine.kt` + `LionEngineUi.kt` + إعادة كتابة `LionOne.kt`):**
+- `llama-server` (llama.cpp) يعمل داخل بيئة Alpine/proot الموجودة أصلاً في التطبيق على
+  `127.0.0.1:44045`، بنموذج GGUF في `workspace/models/lion/`. الحزمة تُثبَّت من مستودع Alpine
+  الرسمي (`apk add llama-server`، community) فلا NDK ولا مكتبات native جديدة.
+- بعد التثبيت: استدلال على الجهاز، بلا إنترنت وبلا مفتاح وبلا بوابة.
+- `--jinja` يفعّل tools الأصلية، و`LlmClient.askWithTools` يوجّه `provider == "lion1"` إلى
+  `callLionOneTools`، فيستعمل lion-1 أدوات التطبيق بـ function calling ثم يعود للبروتوكول النصي
+  تلقائياً إن رفض المسار الأدوات.
+- `ToolAgent`: lion-1 في `LOCAL_PROVIDERS` ويأخذ كل مجموعات الأدوات، بسقف تعليمات 12K حرف
+  (سياق النموذج المحلي محدود).
+- أداة تطبيق جديدة `lion_engine` (SHELL): status/models/install/download/start/stop/test —
+  الوكيل يدير محرّكه بنفسه.
+- مسارات lion-1 بالترتيب: المحرّك المدمج ← رابط المستخدم ← الخادم المحلي 44045 ← البوابة (احتياطي).
+- تنزيل GGUF قابل للاستئناف (`Range` + `.part` + تحقق حجم)، واختيار النموذج/السياق/الخيوط/
+  التشغيل التلقائي من بطاقة «🦁 محرّك Lion-1» داخل تبويب البيئة المحلية.
+- الاختبارات: `LionEngineRoutesTest` (الكتالوج، توجيه المهام، ترتيب المسارات وتجاوُز الفاشل).
+- التوثيق: `docs/LION1_ENGINE_AR.md` (+ تحديث README و`model/README_AR.md`).
+
+**التحقق المحلي في هذه الجولة:** لا JDK/Android SDK في بيئة العمل الكاملة (CI فقط)، لذا تم
+typecheck بـ kotlinc على `LionEngine.kt`/`LionOne.kt`/`LionEngineUi.kt` مقابل `android-35.jar`
+وjars Compose الحقيقية: **0 أخطاء أمامية**. يلزم تأكيد `:app:testDebugUnitTest` على GitHub Actions.

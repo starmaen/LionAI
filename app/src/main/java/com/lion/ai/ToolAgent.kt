@@ -142,7 +142,8 @@ object ToolAgent {
     }
 
     /** مزودات تعمل كخادم محلي: تُزوَّد بكل الأدوات وتُخاطَب بصيغة الأدوات المناسبة. */
-    private val LOCAL_PROVIDERS = setOf("custom", "local_proxy")
+    // lion-1 يعمل على الجهاز نفسه عبر المحرّك المدمج، فيُعامل كمزود محلي كامل الصلاحيات.
+    private val LOCAL_PROVIDERS = setOf("custom", "local_proxy", LionOne.ID)
 
     private val LOCAL_TOOL_HINT = """
 
@@ -262,13 +263,16 @@ object ToolAgent {
         val effectiveGroups = if (readOnly) groups.intersect(OperationsRoom.EVIDENCE_GROUPS)
         else if (!profile.allowTools) emptySet() else {
             val base = groups.filter { it in profile.groups }
-            // الخادم المحلي (custom) يملك الجهاز والملفات: زوّده بكل المجموعات لا بالمجموعة المرصودة للنص فقط.
-            val extra = if (provider == "custom") ToolGroup.values().toList() else emptyList()
+            // الخادم المحلي (custom) والمحرّك المدمج (lion-1) يملكان الجهاز والملفات:
+            // زوّدهما بكل المجموعات لا بالمجموعة المرصودة للنص فقط.
+            val extra = if (provider == "custom" || provider == LionOne.ID) ToolGroup.values().toList() else emptyList()
             (base + extra).toSet().let { g -> if (readOnly) g.intersect(OperationsRoom.EVIDENCE_GROUPS) else g }
         }
         // الخادم المحلي يوجّه الطلب لمزود قد لا يدعم أدوات OpenAI ولا يمرّرها،
         // فنستخدم بروتوكول الأدوات النصي معه لتبقى أدوات التطوير تعمل في وضع البرمجة.
-        val nativeTools = if (provider == "custom" && effectiveGroups.isNotEmpty()) {
+        // lion-1: المحرّك المدمج يمرّر tools أصلية (llama-server --jinja)، ولذلك يستخدم
+        // function calling مباشرة. بقية المسارات تُجرَّب ثم يعود للبروتوكول النصي تلقائياً.
+        val nativeTools = if ((provider == "custom" || provider == LionOne.ID) && effectiveGroups.isNotEmpty()) {
             AiTools.openAiTools(effectiveGroups, prefs)
         } else null
         // baseSystemPrompt (من LionApp) يحوي أصلاً promptSuffix وكتلة الجلسة؛ لا نكرّرهما.
@@ -284,7 +288,13 @@ object ToolAgent {
         // المزودات السحابية (خاصة المجانية) لها سقف سياق/معدّل: إن كبرت التعليمات نقلّص الأدوات للنواة
         // (والباقي متاح عبر tools_schema) بدل أن يفشل الطلب كاملاً.
         // custom = خادمك الشخصي (سياق كبير). local_proxy يمرّر الطلب لمزود سحابي بسياق محدود، فيأخذ السقف السحابي.
-        val maxSystemChars = if (provider == "custom") 90_000 else 16_000
+        // lion-1 المدمج: سياق النموذج المحلي محدود (8K رمز افتراضياً)، فنضغط التعليمات
+        // بدل إغراق المحرّك بمخطط 234 أداة كاملة.
+        val maxSystemChars = when (provider) {
+            "custom" -> 90_000
+            LionOne.ID -> 12_000
+            else -> 16_000
+        }
         var system = buildSystem(effectiveGroups)
         if (system.length > maxSystemChars) {
             val core = coreGroups(effectiveGroups)

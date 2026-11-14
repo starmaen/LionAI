@@ -536,6 +536,13 @@ object LlmClient {
         via: String = Channel.AUTO,
         chatId: String = ""
     ): ToolReply {
+        // lion-1 مزود مدمج: المحرّك المحلي يدعم tools أصلية، والمسارات الأخرى تُجرَّب بالترتيب.
+        if (provider == LionOne.ID && tools.length() > 0) {
+            val cap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
+            return withReadTimeout(cap) {
+                callLionOneTools(message, apiKey, modelOverride, history, systemPrompt, tools)
+            }
+        }
         if ((provider != "custom" && provider != "local_proxy") || tools.length() == 0) {
             return ToolReply(
                 ask(
