@@ -52,6 +52,22 @@ val BUILTIN_PROVIDERS = listOf(
         category = "lion",
         models = emptyList()
     ),
+    ProviderInfo(
+        id = "lion1",
+        label = "🦁 Lion-1",
+        tagline = "نموذج الأسد: هوية ومهام متعددة، خادم محلي ثم البوابة تلقائياً",
+        docsUrl = "https://github.com/starmaen/LionAI/tree/main/model",
+        defaultModel = "lion-1",
+        shortName = "Lion-1",
+        keyless = true,
+        modelHint = "جاهز دون إعداد: يجرّب رابطك (إن وضعته) ثم الخادم المحلي 127.0.0.1:44045 ثم بوابة الخادم الخارجي من إعدادات الاتصال. " +
+            "اختر lion-1 للتوجيه التلقائي أو lion-1-code / teach / write / reason / translate / summary لمهمة محددة. " +
+            "لتشغيل نموذجك المضبوط محلياً ضع رابطه في «Base URL» (مثل http://127.0.0.1:8089/v1).",
+        models = listOf(
+            "lion-1", "lion-1-code", "lion-1-teach", "lion-1-write",
+            "lion-1-reason", "lion-1-translate", "lion-1-summary"
+        )
+    ),
     // ===== مزودات API (مفتاح أو بدون مفتاح) =====
     ProviderInfo(
         id = "custom",

@@ -321,6 +321,10 @@ object LlmClient {
         val turns = normalize(history)
         val cap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
 
+        if (provider == LionOne.ID) {
+            return withReadTimeout(cap) { callLionOne(message, apiKey, model, turns, image, systemPrompt) }
+        }
+
         return withReadTimeout(cap) {
             // خيار الخادم الخارجي: لا يمنع الوضع المباشر ولا يلغيه.
             if (viaGateway) {
