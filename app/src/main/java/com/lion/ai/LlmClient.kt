@@ -261,10 +261,11 @@ object LlmClient {
             val ordered = if (provider == WebChatRuntime.HUB && prefs.getBoolean(WebChatRuntime.CENTRAL, true)) {
                 CentralBrain.rankRoutes(prefs, SmartRouter.classify(message, false, 0, null), routes, chatModeHint ?: ChatMode.GENERAL)
             } else routes
-            val deadline = System.currentTimeMillis() + (if (readTimeoutMs > 0) readTimeoutMs else 90_000)
+            val deadline = System.currentTimeMillis() +
+                (if (readTimeoutMs > 0) readTimeoutMs.toLong() else WebChatRuntime.timeoutMs(prefs, provider))
             val errors = mutableListOf<String>()
             for (route in ordered) {
-                val remaining = (deadline - System.currentTimeMillis()).coerceAtMost(180_000).toInt()
+                val remaining = (deadline - System.currentTimeMillis()).coerceAtMost(WebChatRuntime.MAX_TIMEOUT_MS).toInt()
                 if (remaining <= 0 || Thread.currentThread().isInterrupted) break
                 val started = System.currentTimeMillis()
                 // حدود المحادثة في الصفحة (وكيل ↔ دردشة عادية) وتشكيل رسالة الوكيل لكل موقع على حدة.

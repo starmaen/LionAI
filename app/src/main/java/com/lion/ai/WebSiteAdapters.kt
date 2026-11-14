@@ -16,12 +16,16 @@ data class WebSiteAdapter(
     /** How long the reply text must stay unchanged before it counts as finished (0 = default 2s). */
     val settleMs: Int = 0,
     /** Selector of the site's own error message (shown instead of a reply); empty = none known. */
-    val error: String = ""
+    val error: String = "",
+    /** مداخل بديلة لنفس الخدمة تُجرَّب آلياً عند فشل تحميل المدخل الأساسي (رفض/تحويل). */
+    val altUrls: List<String> = emptyList()
 ) {
     fun accepts(url: String): Boolean = runCatching {
         val uri = URI(url)
         uri.scheme == "https" && uri.host?.lowercase() in hosts && uri.userInfo == null
     }.getOrDefault(false)
+
+    fun entries(): List<String> = (listOf(url) + altUrls).distinct()
 
     fun json(): JSONObject = JSONObject().put("id", id).put("hosts", org.json.JSONArray(hosts.toList()))
         .put("input", input).put("send", send).put("answer", answer)
@@ -48,7 +52,8 @@ object WebSiteAdapters {
         val settleMs: Int = 0,
         /** true = use only this site's answer selector, not the generic assistant-role ones. */
         val exclusiveAnswer: Boolean = false,
-        val error: String = ""
+        val error: String = "",
+        val altUrls: List<String> = emptyList()
     )
 
     /** Site extras are UNIONED with the generic selectors so a narrow site rule cannot disable the shared bridge. */
@@ -84,14 +89,19 @@ object WebSiteAdapters {
         "copilot_web" to Spec(
             url = "https://copilot.com/",
             // تقرير المستخدم: copilot.microsoft.com يحوّل الآن إلى copilot.com (نطاق مايكروسوفت نفسه).
-            hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com"),
-            input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
-            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i]",
+            // مداخل بديلة تُجرَّب آلياً عند رفض المدخل الأساسي (403): سطح المستأجر السحابي، ثم دردشة Bing.
+            hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com", "bing.com", "www.bing.com"),
+            input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox'], " +
+                "cib-serp main[part='chat-input'] textarea, #searchboxroot textarea, #sb_form_q",
+            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i], " +
+                "button[data-testid='send-button'], button[aria-label*='Submit' i], button[aria-label*='اسأل' i]",
             // رد Copilot فقط (لا رسالة المستخدم data-content='user-message').
-            answer = "[data-content='ai-message'], [data-testid='ai-message'], div[data-testid='message-item'][data-author='ai'], [data-testid='copilot-response'], [class*='ai-message']",
+            answer = "[data-content='ai-message'], [data-testid='ai-message'], div[data-testid='message-item'][data-author='ai'], [data-testid='copilot-response'], [class*='ai-message'], " +
+                "cib-message[type='response'], .ac-textBlock, [class*='ac-textBlock']",
             stop = "button[data-testid='stop-button'], button[aria-label*='Stop' i], button[title*='Stop' i]",
             settleMs = 3500,
-            error = "[data-testid='error-message'], [role='alert']"
+            error = "[data-testid='error-message'], [role='alert']",
+            altUrls = listOf("https://copilot.cloud.microsoft", "https://www.bing.com/chat")
         ),
         "ptero_web" to Spec(
             url = "https://ptero.pro/",
@@ -225,7 +235,7 @@ object WebSiteAdapters {
             if (spec.exclusiveAnswer) spec.answer else union(spec.answer, ANSWER),
             union(spec.stop, STOP),
             union(spec.complete, COMPLETE),
-            spec.fallback, spec.joinAnswers, spec.settleMs, spec.error
+            spec.fallback, spec.joinAnswers, spec.settleMs, spec.error, spec.altUrls
         )
     }
     fun get(id: String, prefs: SharedPreferences? = null): WebSiteAdapter? {

@@ -34,6 +34,7 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
     val busy = testingId != null
     var consent by remember { mutableStateOf(false) }
     var configure by remember { mutableStateOf<String?>(null) }
+    var timeoutEditor by remember { mutableStateOf<String?>(null) }
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> revision++ }
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -124,6 +125,9 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                     }
                     Row {
                         TextButton(enabled = !busy, onClick = { configure = info.id }) { Text("محددات المطور") }
+                        TextButton(enabled = !busy, onClick = { timeoutEditor = info.id }) {
+                            Text("⏱️ ${WebChatRuntime.timeoutSeconds(prefs, info.id)}ث")
+                        }
                         TextButton(onClick = {
                             val sessionUrl = WebSiteAdapters.get(info.id, prefs)?.url ?: info.webviewUrl
                             context.startActivity(Intent(context, ArenaActivity::class.java).putExtra("ARENA_URL", sessionUrl))
@@ -142,6 +146,36 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
     configure?.let { id ->
         WebSelectorDialog(id, prefs, onClose = { configure = null })
     }
+    timeoutEditor?.let { id ->
+        TimeoutDialog(id, prefs, onClose = { timeoutEditor = null })
+    }
+}
+
+@Composable
+private fun TimeoutDialog(id: String, prefs: SharedPreferences, onClose: () -> Unit) {
+    var value by remember(id) { mutableStateOf(WebChatRuntime.timeoutSeconds(prefs, id).toString()) }
+    AlertDialog(onDismissRequest = onClose,
+        title = { Text("مهلة الرد • ${providerInfo(id).shortName}") },
+        text = {
+            Column {
+                Text("عدد الثواني الذي ينتظر التطبيق جواب الموقع قبل الاستسلام. مواقع التفكير العميق (Claude وGrok وGemini) تحتاج 180-240ث، والانتظار يتجدد تلقائياً بينما الصفحة تكتب فعلاً.", fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it.filter(Char::isDigit).take(3) },
+                    label = { Text("ثوانٍ (${WebChatRuntime.MIN_TIMEOUT_MS / 1000}-${WebChatRuntime.MAX_TIMEOUT_MS / 1000})") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                value.toLongOrNull()?.let { WebChatRuntime.setTimeoutSeconds(prefs, id, it) }
+                onClose()
+            }) { Text("حفظ") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("إلغاء") } })
 }
 
 @Composable

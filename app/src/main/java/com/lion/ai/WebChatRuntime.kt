@@ -36,12 +36,32 @@ object WebChatRuntime {
         val reply = LlmClient.ask(
             "أجب بكلمة واحدة: تم", "", id, emptyList(),
             systemPrompt = "",
-            readTimeoutMs = 90_000
+            readTimeoutMs = timeoutMs(prefs, id).toInt()
         )
         val ok = !LlmClient.isErrorReply(reply) && reply.isNotBlank()
         SmartRouter.record(Route(id, "web-session", Channel.WEB), ok, System.currentTimeMillis() - start)
         return (if (ok) "✅ " else "❌ ") + providerInfo(id).shortName + ": " + reply.take(240)
     }
+
+    /** مهلة الرد لكل موقع (ثوانٍ مخزنة في web_timeout_<id>). مواقع التفكير العميق تحتاج أكثر من 90ث،
+     *  وتمديد الانتظار بالنشاط (bump) يعمل فوقها بينما الصفحة تكتب فعلاً. */
+    const val DEFAULT_TIMEOUT_MS = 90_000L
+    const val MIN_TIMEOUT_MS = 15_000L
+    const val MAX_TIMEOUT_MS = 300_000L
+    fun timeoutMs(prefs: SharedPreferences, id: String): Long {
+        if (!handles(id)) return DEFAULT_TIMEOUT_MS
+        fun storedSeconds(key: String): Long? = runCatching {
+            if (prefs.contains(key)) prefs.getLong(key, -1L) else -1L
+        }.getOrNull()?.takeIf { it > 0 }
+        val seconds = storedSeconds("web_timeout_$id") ?: storedSeconds("web_timeout_$HUB")
+            ?: DEFAULT_TIMEOUT_MS / 1000L
+        return (seconds * 1000L).coerceIn(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
+    }
+    fun setTimeoutSeconds(prefs: SharedPreferences, id: String, seconds: Long) {
+        val clamped = seconds.coerceIn(MIN_TIMEOUT_MS / 1000L, MAX_TIMEOUT_MS / 1000L)
+        prefs.edit().putLong("web_timeout_$id", clamped).apply()
+    }
+    fun timeoutSeconds(prefs: SharedPreferences, id: String): Long = timeoutMs(prefs, id) / 1000L
 }
 
 val ProviderInfo.supportsAppChat: Boolean
