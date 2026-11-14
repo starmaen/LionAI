@@ -282,7 +282,16 @@ object ToolAgent {
             "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
             else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها مرة واحدة فقط."
         // Export compact task context to web composers.
+        val permWrite = memory.writeGranted && !readOnly
+        val permBasis = when {
+            readOnly -> "read_only"
+            !permWrite -> "none"
+            prefs.getBoolean("auto_grant_write", false) -> "auto_grant"
+            else -> "user_command"
+        }
         system += "\n" + WebToolBridge.CONTEXT_START +
+            "\n[LION_PERMISSIONS] write=${if (permWrite) "granted" else "denied"}; basis=$permBasis; " +
+            "settings_write=${profile.allowWrite && !readOnly}; verified_by=app" +
             "\nوضع القراءة فقط: $readOnly؛ الكتابة في الإعدادات: ${profile.allowWrite && !readOnly}؛ إذن المهمة: ${memory.writeGranted && !readOnly}" +
             "\n" + modeBlock.take(1_000) + AiTools.contextHint(contextText, prefs).take(2_000) +
             "\n" + resumeRaw.takeLast(2_000) + "\n" + WebToolBridge.CONTEXT_END

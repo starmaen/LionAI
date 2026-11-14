@@ -44,4 +44,14 @@ class WebBridgeFixesTest {
             WebSessionTransport.detach(host)
         }
     }
+
+    @Test fun directExecutiveCommandIsOfficialPermission() {
+        assertTrue(WriteIntent.isDirectCommand("ارجوك اصلح جسر الويب في الملف WebSessionTransport.kt"))
+        assertTrue(WriteIntent.isDirectCommand("قم بتعديل الملف app/build.gradle.kts"))
+        assertTrue(WriteIntent.isDirectCommand("المطلوب اصلاح الخطأ في المشروع"))
+        assertTrue(!WriteIntent.isDirectCommand("هل يمكنك تعديل الملف؟"))
+        assertTrue(!WriteIntent.isDirectCommand("كيف احذف ملفا؟"))
+        assertTrue(!WriteIntent.isDirectCommand("اكتب لي رسالة شكر"))
+        assertTrue(!WriteIntent.isDirectCommand("لا تعدل شيئا فقط افحص"))
+    }
 }

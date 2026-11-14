@@ -66,7 +66,7 @@ object WriteIntent {
         if (DENIAL.containsMatchIn(t)) return true
         return head(s) in setOf("لا", "كلا", "الغاء", "cancel", "stop", "no", "reject", "denied", "deny")
     }
-    private val IMPERATIVE = Regex("^(?:(?:صديقي|اخي|رجاء|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(اصلح|اصلاح|عدل|تعديل|غير|انشئ|انشاء|اصنع|صنع|اكتب|اضف|احذف|ارفع|نفذ|انفذ|ارسل|ارسل|برمج|طور|حول|ترجم|شغل|ثبت|صمم|اعمل|حسن|fix|repair|edit|modify|create|write|add|delete|implement|send|push|deploy|build|make|generate|refactor)(?:\\s|$)")
+    private val IMPERATIVE = Regex("^(?:(?:صديقي|يا صديقي|اخي|رجاء|ارجوك|ارجو|من فضلك|لو سمحت|لو تكرمت|المطلوب|اريدك ان|اريدك|اريد|ابغى|ابي|بدي|عايز|please)\\s+)*(قم|ابدا|حدث|تحديث|ابن|انسخ|انقل|امسح|ادمج|ضع|فعل|عطل|اصلح|اصلاح|عدل|تعديل|غير|انشئ|انشاء|اصنع|صنع|اكتب|اضف|احذف|ارفع|نفذ|انفذ|ارسل|ارسل|برمج|طور|حول|ترجم|شغل|ثبت|صمم|اعمل|حسن|fix|repair|edit|modify|create|write|add|delete|implement|send|push|deploy|build|make|generate|refactor|update|install|rename|remove|commit|merge|move|copy|run)(?:\\s|$)")
 
     /** الرسالة تبدأ بفعل أمر صريح (أنشئ/احذف/اكتب/شغّل…). */
     fun startsImperative(s: String): Boolean = IMPERATIVE.containsMatchIn(clean(s))
@@ -84,6 +84,19 @@ object WriteIntent {
         RegexOption.IGNORE_CASE
     )
     fun hasMutationIntent(s: String): Boolean = MUTATION_WORD.containsMatchIn(clean(s))
+
+    /**
+     * أمر تنفيذي مباشر من المستخدم نفسه (لا من نص صفحة ولا من نتيجة أداة) = إذن رسمي لهذه المهمة.
+     * الأسئلة وأسئلة القدرة («هل يمكنك…؟») لا تُمنح بها كتابة. «اكتب» بلا هدف ملف/كود تبقى صياغة نص.
+     */
+    fun isDirectCommand(s: String): Boolean {
+        val t = clean(s)
+        if (isReadOnlyRequest(t) || isApproval(t)) return false
+        if (UserIntent.classify(s) != UserIntent.Kind.REQUEST) return false
+        if (Regex("^(?:(?:صديقي|اخي|رجاء|ارجوك|من فضلك|لو سمحت|اريدك ان|اريد|please)\\s+)*(?:اكتب|write)\\s+", RegexOption.IGNORE_CASE)
+                .containsMatchIn(t) && !FILE_TARGET.containsMatchIn(t)) return false
+        return IMPERATIVE.containsMatchIn(t) || hasMutationIntent(t)
+    }
 
     fun permits(s: String): Boolean {
         val t = clean(s)
@@ -154,6 +167,7 @@ class TaskContinuity {
             WriteIntent.isReadOnlyRequest(userRequest) -> false
             WriteIntent.isExecute(userRequest) -> true
             WriteIntent.permits(userRequest) -> true
+            WriteIntent.isDirectCommand(userRequest) -> true
             approved -> true
             resume -> writeGranted || persistedWrite
             persistedWrite -> true

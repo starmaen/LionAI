@@ -195,7 +195,7 @@ internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode:
     // الاستثناء الوحيد: سؤال عن مشروع/خطأ فعلي في «المطوّر» يقرأ الواقع قبل أن يجيب.
     if (UserIntent.classify(text) != UserIntent.Kind.REQUEST) return projectRef
     // غير ذلك: تُفتح الأدوات فقط لفعل تنفيذي صريح؛ العبارة الخبرية أو الشكر أو المحادثة تُجاب مباشرة.
-    return ACTION_REQUEST.containsMatchIn(text) || DevTask.matches(text) || projectRef
+    return ACTION_REQUEST.containsMatchIn(text) || WriteIntent.isDirectCommand(text) || DevTask.matches(text) || projectRef
 }
 
 /**
