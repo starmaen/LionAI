@@ -138,7 +138,9 @@ fun LionEngineCard() {
                             LionEngine.applyRecommended(prefs, rec)
                             selected = rec.modelId
                             ctxSize = rec.ctx
-                            message = "✅ طُبّقت التركيبة الموصى بها."
+                            message = if (LionEngine.phase == LionEngine.Phase.RUNNING)
+                                "🔁 طُبّقت التركيبة. أوقف المحرّك ثم شغّله ليُطبَّق النموذج/السياق الجديد."
+                            else "✅ طُبّقت التركيبة الموصى بها."
                         }) { Text("طبّق", color = ENGINE_GOLD, fontSize = 10.sp) }
                     }
                 }
@@ -152,6 +154,10 @@ fun LionEngineCard() {
                         .clickable(enabled = !busy && selected != m.id) {
                             selected = m.id
                             LionEngine.setModel(prefs, m.id)
+                            // المحرّك يحمل النموذج في الذاكرة عند التشغيل: تغيير الملف يحتاج إعادة تشغيل.
+                            message = if (LionEngine.phase == LionEngine.Phase.RUNNING)
+                                "🔄 النموذج تغيّر إلى ${m.label}. اضغط «⏹️ إيقاف» ثم «▶️ تشغيل» ليُحمَّل النموذج الجديد."
+                            else "✅ سيُستخدم ${m.label} عند التشغيل."
                         }
                         .padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
