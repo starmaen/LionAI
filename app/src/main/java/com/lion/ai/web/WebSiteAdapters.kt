@@ -93,7 +93,7 @@ object WebSiteAdapters {
             // نفسه (قرار العزل: الموقع المسمّى هو ذاك فقط — لا bing.com).
             hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com"),
             input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
-            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i]",
+            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i], button[aria-label*='إرسال'], button[title*='إرسال'], button[aria-label*='Send' i], button[type='submit']",
             // رد Copilot فقط (لا رسالة المستخدم data-content='user-message').
             answer = "[data-content='ai-message'], [data-testid='ai-message'], div[data-testid='message-item'][data-author='ai'], [data-testid='copilot-response'], [class*='ai-message']",
             stop = "button[data-testid='stop-button'], button[aria-label*='Stop' i], button[title*='Stop' i]",

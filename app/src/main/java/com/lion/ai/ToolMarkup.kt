@@ -8,6 +8,8 @@ package com.lion.ai
 object ToolMarkup {
     private val CLOSED = Regex("\\[\\[TOOL\\]\\].*?\\[\\[/?TOOL\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val FENCED_EMPTY = Regex("```[a-zA-Z-]*\\s*```")
+    private val DSML_BLOCK = Regex("<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*(?:tool_)?calls\\s*>.*?</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*(?:tool_)?calls\\s*>", RegexOption.DOT_MATCHES_ALL)
+    private val DSML_STRAY = Regex("</?[^<>a-zA-Z/]*DSML[^<>]*>")
     private val STRAY = Regex("\\[\\[/?TOOL\\]\\]")
     private val TOOL_RESULTS_HEADER = Regex("^نتائج الأدوات.*$", RegexOption.MULTILINE)
 
@@ -41,8 +43,8 @@ object ToolMarkup {
 
     /** نص خالٍ من كل أثر لكتل الأدوات (مغلقة أو معطوبة أو غير مغلقة). */
     fun strip(text: String): String {
-        if (!text.contains("[[")) return text
-        var out = text.replace(CLOSED, "")
+        if (!text.contains("[[") && !text.contains("DSML")) return text
+        var out = text.replace(DSML_BLOCK, "").replace(DSML_STRAY, "").replace(CLOSED, "")
         // كتلة بلا إغلاق: نزيل [[TOOL]] مع JSON المتوازن الذي يليها.
         var guard = 0
         while (guard++ < 20) {
@@ -56,5 +58,5 @@ object ToolMarkup {
     }
 
     /** هل في النص أثر لبروتوكول الأدوات؟ */
-    fun hasMarkup(text: String): Boolean = text.contains("[[TOOL]]") || text.contains("[[/TOOL]]")
+    fun hasMarkup(text: String): Boolean = text.contains("[[TOOL]]") || text.contains("[[/TOOL]]") || text.contains("DSML")
 }

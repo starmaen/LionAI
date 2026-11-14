@@ -320,6 +320,9 @@ object ToolAgent {
         if (memory.trimmed) current += "\nتنبيه: جزء قديم من السياق تجاوز سعة الذاكرة؛ لا تفترض محتواه، وأعد قراءة ما تحتاج للتحقق فقط."
         var lastSignature = ""
         var repeated = 0
+        val failTally = mutableMapOf<String, Int>()
+        var failHint = ""
+        var failStopKey = ""
         var nudges = 0
         var endNudges = 0
         var lastNarration = ""
@@ -928,6 +931,15 @@ object ToolAgent {
                     }
                 } else {
                     failCount++
+                    // تعلّم من الفشل: نفس الأداة + نفس سبب الخطأ (بغض النظر عن اختلاف المدخلات الطفيف) = لا فائدة من إعادتها.
+                    val errLine = result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty()
+                        .replace(Regex("\\d+"), "#").take(70)
+                    val failKey = call.name + "|" + errLine
+                    val times = (failTally[failKey] ?: 0) + 1
+                    failTally[failKey] = times
+                    if (times >= 4) failStopKey = failKey
+                    else if (times >= 2) failHint = "⚠️ الأداة ${call.name} فشلت $times مرات بنفس السبب («${errLine.take(80)}»). " +
+                        "لا تُعد نفس المحاولة: اقرأ الملف/الحالة الفعلية من جديد (مع refresh=true)، أو استخدم أداة أخرى، أو اشرح للمستخدم العائق بوضوح."
                     failedSteps.add(call.name.removePrefix("github_") + if (target.isBlank()) "" else " ($target)")
                 }
                 publish(null)
@@ -940,6 +952,18 @@ object ToolAgent {
             }
             session?.let { CheckpointStore.save(prefs, it) }
             val extra = StringBuilder()
+            if (failStopKey.isNotBlank()) {
+                val tool = failStopKey.substringBefore('|')
+                val why = failStopKey.substringAfter('|')
+                session?.recordNote("توقف: فشلت $tool أربع مرات بنفس السبب ($why)")
+                return finish(
+                    "توقفت لأن الأداة «$tool» فشلت 4 مرات بنفس السبب ولم تنفع إعادة المحاولة.\n" +
+                        "السبب الظاهر: $why\n" +
+                        "ما أُنجز حتى الآن محفوظ في سجل الخطوات. للمتابعة: غيّر المزود/النموذج، أو أعطني توجيهاً مختلفاً (مثلاً مسار الملف الصحيح أو النص الحالي حرفياً).",
+                    false, "فشل متكرر بنفس السبب: $tool"
+                )
+            }
+            if (failHint.isNotBlank()) { extra.append("\n\n").append(failHint); failHint = "" }
             if (chatMode == ChatMode.CODE && session != null &&
                 calls.any { it.name in GATE_WRITE_TOOLS } && ManifestStore.read(prefs, session.chatId) != null
             ) {

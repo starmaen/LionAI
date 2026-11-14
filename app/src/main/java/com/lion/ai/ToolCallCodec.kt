@@ -22,6 +22,33 @@ object ToolCallCodec {
     private val TOOL_TAG = Regex("<tool_call>(.*?)</tool_call>", RegexOption.DOT_MATCHES_ALL)
     private val FENCE = Regex("```(?:tool|json|ai-tool)?\\s*(\\{.*?\\})\\s*```", RegexOption.DOT_MATCHES_ALL)
 
+    // صيغة DSML (DeepSeek وأشباهه): <｜DSML｜invoke name="x"><｜DSML｜parameter name="args">{json}</｜DSML｜parameter>
+    // الفواصل | أو ｜ أو │ وقد تتخللها مسافات، لذلك نطابق بتسامح.
+    private val DSML_INVOKE = Regex("<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*invoke\\s+name\\s*=\\s*\"([^\"]+)\"\\s*>(.*?)</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*invoke\\s*>", RegexOption.DOT_MATCHES_ALL)
+    private val DSML_PARAM = Regex("<[^<>a-zA-Z/]*DSML[^<>a-zA-Z]*parameter\\s+name\\s*=\\s*\"([^\"]+)\"[^>]*>(.*?)</[^<>a-zA-Z]*DSML[^<>a-zA-Z]*parameter\\s*>", RegexOption.DOT_MATCHES_ALL)
+
+    private fun parseDsml(text: String, known: Set<String>): List<ToolCall> {
+        if (!text.contains("DSML")) return emptyList()
+        val out = mutableListOf<ToolCall>()
+        DSML_INVOKE.findAll(text).forEach { m ->
+            val name = normalizeName(m.groupValues[1], known)
+            if (name.isEmpty()) return@forEach
+            val args = JSONObject()
+            DSML_PARAM.findAll(m.groupValues[2]).forEach { pm ->
+                val key = pm.groupValues[1]
+                val value = pm.groupValues[2].trim()
+                val asJson = runCatching { JSONObject(value) }.getOrNull()
+                if (key.equals("args", true) && asJson != null) {
+                    asJson.keys().forEach { k -> args.put(k, asJson.get(k)) }
+                } else {
+                    args.put(key, value)
+                }
+            }
+            if (out.none { it.name == name && it.args.toString() == args.toString() }) out.add(ToolCall(name, args, m.value))
+        }
+        return out
+    }
+
     private val NAME_KEYS = arrayOf("tool", "name", "tool_name", "toolname", "action", "call")
     private val ARG_KEYS = arrayOf("args", "arguments", "parameters", "params", "input")
 
@@ -53,6 +80,7 @@ object ToolCallCodec {
      */
     fun parse(text: String, known: Set<String>): List<ToolCall> {
         if (text.isBlank() || known.isEmpty()) return emptyList()
+        parseDsml(text, known).takeIf { it.isNotEmpty() }?.let { return it }
         val blocks = mutableListOf<String>()
         MARKER.findAll(text).forEach { blocks.add(it.groupValues[1]) }
         TOOL_TAG.findAll(text).forEach { blocks.add(it.groupValues[1]) }

@@ -24,6 +24,14 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -2507,6 +2515,9 @@ fun LionApp() {
         }
     ) {
         Scaffold(
+            // الشريط العلوي يعالج الـ status bar بنفسه، وصندوق الكتابة يعالج الـ nav bar والكيبورد بنفسه:
+            // تركه افتراضياً كان يضيف مسافة سفلية مضاعفة (فراغ تحت الصندوق وفوق الكيبورد).
+            contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
             topBar = {
                 TopAppBar(
                     title = {
@@ -2563,7 +2574,6 @@ fun LionApp() {
                     .padding(padding)
                     .fillMaxSize()
                     .background(Color(0xFF0D0D0D))
-                    .imePadding()
             ) {
                 if (tabs.size > 1) {
                     TabsBar(

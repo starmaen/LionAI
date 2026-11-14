@@ -596,7 +596,7 @@
       if (state.clicked) return result(state.tapped ? 'located' : (state.fromEnter ? 'entered' : 'clicked'));
       if (find(C.stop)) return result('site_busy');
       if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
-      const button = find(C.send);
+      const button = findSend();
       if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return result('needs_send');
       state.clicked = true; state.clickedAt = Date.now(); state.clicks++;
       button.click(); // Click is not delivery acknowledgement. Never click this token twice.
@@ -631,6 +631,21 @@
         if ((isNew && value) || explicitStop || postedInPage(input)) {
           state.sent = true;
         } else {
+          // النقر الأصلي لم يُرسل (الحقل ما زال يحمل نصنا حرفياً = لم يُسلَّم شيء بعد): جرّب بدائل
+          // آمنة بالترتيب، واحدة كل ~4 ثوانٍ: نقر JS على زر الإرسال (يدعم إرسال/Send/Submit بأي لغة)، ثم Enter.
+          // الشرط على بقاء النص في الحقل يمنع أي إرسال مكرر.
+          state.retries = state.retries || 0;
+          const stuck = input && inputText(input) && inputText(input) === expectedText();
+          if (stuck && state.retries < 2 && Date.now() - (state.retryAt || state.clickedAt) > 4000) {
+            state.retries++; state.retryAt = Date.now();
+            if (state.retries === 1) {
+              const b = findSend();
+              if (b) { try { b.click(); } catch (e) {} } else { pressEnter(input); }
+            } else {
+              pressEnter(input);
+            }
+            return result('awaiting_ack', {diag: info + ' retry=' + state.retries});
+          }
           return result(Date.now() - state.clickedAt > 45000 ? 'send_unconfirmed' : 'awaiting_ack', {diag: info});
         }
       }

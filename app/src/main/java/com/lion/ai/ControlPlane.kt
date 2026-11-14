@@ -395,6 +395,12 @@ object ControlPlane {
         return issues
     }
 
+    private fun prevSignificant(text: String, index: Int): Char? {
+        var k = index - 1
+        while (k >= 0 && (text[k] == ' ' || text[k] == '\t')) k--
+        return if (k < 0 || text[k] == '\n') null else text[k]
+    }
+
     /** يفحص توازن الأقواس مع تجاهل النصوص والتعليقات لتقليل الإيجابيات الكاذبة. */
     fun balance(text: String): Pair<String, Int>? {
         val stack = ArrayDeque<Char>()
@@ -410,6 +416,20 @@ object ControlPlane {
                 0 -> when {
                     c == '/' && next == '/' -> { state = 1; i++ }
                     c == '/' && next == '*' -> { state = 2; i++ }
+                    // regex literal (JS/TS): بعد رمز يسبق التعبير عادةً؛ نتجاوزه كله كي لا تُعدّ أقواسه/علامات اقتباسه.
+                    c == '/' && prevSignificant(text, i).let { it == null || it in "(,=:[!&|?{};+-*%<>~^" } -> {
+                        var j = i + 1
+                        var inClass = false
+                        while (j < text.length && text[j] != '\n') {
+                            val d = text[j]
+                            if (d == '\\') { j += 2; continue }
+                            if (d == '[') inClass = true
+                            else if (d == ']') inClass = false
+                            else if (d == '/' && !inClass) break
+                            j++
+                        }
+                        if (j < text.length && text[j] == '/') i = j
+                    }
                     c == '#' && (text.getOrNull(i - 1) == '\n' || i == 0) -> state = 1
                     c == '\'' -> { state = 3 }
                     c == '"' -> {
@@ -427,8 +447,8 @@ object ControlPlane {
                 }
                 1 -> if (c == '\n') state = 0
                 2 -> if (c == '*' && next == '/') { state = 0; i++ }
-                3 -> if (c == '\\') i++ else if (c == '\'') state = 0
-                4 -> if (c == '\\') i++ else if (c == '"') state = 0
+                3 -> if (c == '\n') state = 0 else if (c == '\\') i++ else if (c == '\'') state = 0
+                4 -> if (c == '\n') state = 0 else if (c == '\\') i++ else if (c == '"') state = 0
                 5 -> if (c == tripleChar && next == tripleChar && text.getOrNull(i + 2) == tripleChar) {
                     state = 0; i += 2
                 }
