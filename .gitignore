@@ -27,6 +27,10 @@ captures/
 /FETCH_HEAD
 /main
 /new_file.txt
+*.bak
+/node_modules/
+/package.json
+/pnpm-lock.yaml
 .lion-*
 
 # ====== Worker (Cloudflare) ======

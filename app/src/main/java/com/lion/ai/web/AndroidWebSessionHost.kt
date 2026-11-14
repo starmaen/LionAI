@@ -386,7 +386,7 @@ internal class AndroidWebSessionHost(
         show(view)
         load.start(adapter.url)
         view.loadUrl(adapter.url)
-        chatIds[adapter.id] = ActiveChat.id
+        // chatIds لا يُضبط هنا عمداً: أول طلب لأي محادثة يمرّ بمنطق launch (استعادة رابط محادثتها المحفوظ أو البدء من الصفر).
         return view
     }
     private fun show(view: WebView) {
@@ -473,7 +473,7 @@ internal class AndroidWebSessionHost(
             viewFor(adapter)
             display(true, "${providerInfo(provider).shortName} • سجّل الدخول هنا عند الحاجة")
             // فور فتح الجلسة: انعكس ما هو موجود في الصفحة من محادثة سابقة إلى الشات.
-            scheduleCapture(adapter, ActiveChat.id, 4_000L)
+            scheduleCapture(adapter, chatIds[adapter.id]?.takeIf { it.isNotBlank() } ?: ActiveChat.id, 4_000L)
         }
     }
     /** يفتح الصفحة الحالية في المتصفح العادي (تسجيل الدخول والتحقق يعملان فيه أفضل من WebView). */
