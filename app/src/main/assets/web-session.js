@@ -636,7 +636,7 @@
           // الشرط على بقاء النص في الحقل يمنع أي إرسال مكرر.
           state.retries = state.retries || 0;
           const stuck = input && inputText(input) && inputText(input) === expectedText();
-          if (stuck && state.retries < 2 && Date.now() - (state.retryAt || state.clickedAt) > 4000) {
+          if (stuck && state.retries < 2 && Date.now() - state.clickedAt <= 45000 && Date.now() - (state.retryAt || state.clickedAt) > 4000) {
             state.retries++; state.retryAt = Date.now();
             if (state.retries === 1) {
               const b = findSend();
