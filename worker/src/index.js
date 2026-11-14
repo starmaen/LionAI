@@ -565,7 +565,7 @@ export default {
 
     if (request.method === "GET" && path === "/v1/models") {
       if (!authOk(request, env)) return errorResponse(401, "Invalid relay token", "authentication_error", CORS);
-      return jsonResponse({ object: "list", data: await allModels(env) }, 200, CORS);
+      return jsonResponse({ object: "list", data: LION_MODELS.concat(await allModels(env)) }, 200, CORS);
     }
 
     if (request.method === "POST" && path === "/v1/chat/completions") {
@@ -575,6 +575,55 @@ export default {
     return errorResponse(404, "Not found", "not_found_error", CORS);
   }
 };
+
+
+// ===== Lion-1: نموذج افتراضي (هوية + توجيه مهام) فوق أي مزود مضبوط =====
+const LION_SYSTEM =
+  "أنت «أسد» (Lion-1)، مساعد ذكاء اصطناعي عربي متعدد المهام من Star Syria.\n" +
+  "- أجب بلغة المستخدم، وبدقة وإيجاز، وابدأ بالجواب مباشرة.\n" +
+  "- إن لم تكن متأكداً قل ذلك ولا تخترع معلومات.\n" +
+  "- لا تذكر اسم أي مزود أو نموذج خلفي. إن سُئلت عن هويتك فأنت Lion-1 من Star Syria.";
+const LION_TASKS = {
+  code:      { temp: 0.2, prompt: "المهمة: برمجة. أعطِ كوداً كاملاً يعمل داخل كتل كود، ثم شرحاً قصيراً." },
+  teach:     { temp: 0.4, prompt: "المهمة: تعليم. اشرح خطوة بخطوة بمثال عملي ثم اقترح تمريناً صغيراً." },
+  write:     { temp: 0.8, prompt: "المهمة: كتابة. اكتب نصاً سليماً ومنظماً يناسب الغرض." },
+  reason:    { temp: 0.3, prompt: "المهمة: تحليل. فكّر بخطوات واضحة وقارن الخيارات ثم قدّم خلاصة." },
+  translate: { temp: 0.2, prompt: "المهمة: ترجمة. ترجم بدقة وبأسلوب طبيعي دون إضافات." },
+  summary:   { temp: 0.3, prompt: "المهمة: تلخيص. لخّص النقاط الجوهرية فقط." },
+  general:   { temp: 0.6, prompt: "المهمة: محادثة عامة. كن ودوداً ومباشراً." }
+};
+const LION_RULES = [
+  ["code", /```|كود|برمج|خطأ|error|function|kotlin|python|gradle|bug/i],
+  ["teach", /اشرح|علمني|تعلم|explain|teach/i],
+  ["translate", /ترجم|translate/i],
+  ["summary", /لخص|تلخيص|summar/i],
+  ["write", /اكتب|صغ|رسالة|مقال|write|email/i],
+  ["reason", /حلل|قارن|لماذا|احسب|analy|why/i]
+];
+const LION_MODELS = ["lion-1"].concat(Object.keys(LION_TASKS).map((t) => "lion-1-" + t))
+  .map((id) => ({ id: id, object: "model", owned_by: "star-syria", created: 0 }));
+
+/** يحوّل طلب lion-1* إلى طلب للنموذج الافتراضي للبوابة مع هوية ومهمة؛ غيره يمرّ كما هو. */
+function lionRewrite(payload) {
+  const name = trim(payload && payload.model);
+  if (name !== "lion-1" && name.indexOf("lion-1-") !== 0) return payload;
+  const msgs = Array.isArray(payload.messages) ? payload.messages : [];
+  const clientSys = msgs.filter((m) => m && m.role === "system" && typeof m.content === "string").map((m) => m.content);
+  const rest = msgs.filter((m) => !(m && m.role === "system"));
+  const last = rest.slice().reverse().find((m) => m && m.role === "user");
+  const text = last && typeof last.content === "string" ? last.content : "";
+  const forced = name.slice(7);
+  let key = LION_TASKS[forced] ? forced : null;
+  if (!key) { const hit = LION_RULES.find((r) => r[1].test(text)); key = hit ? hit[0] : "general"; }
+  const task = LION_TASKS[key];
+  // تعليمات العميل (مثل بروتوكول الأدوات) تبقى كاملة؛ نضيف الهوية فقط. وإلا نضيف مهمة الرد أيضاً.
+  const system = clientSys.length
+    ? LION_SYSTEM + "\n\n" + clientSys.join("\n\n")
+    : LION_SYSTEM + "\n\n" + task.prompt;
+  const out = Object.assign({}, payload, { model: "auto", messages: [{ role: "system", content: system }].concat(rest) });
+  if (out.temperature === undefined) out.temperature = task.temp;
+  return out;
+}
 
 async function handleChat(request, env) {
   if (!authOk(request, env)) return errorResponse(401, "Invalid relay token", "authentication_error", CORS);
@@ -592,6 +641,7 @@ async function handleChat(request, env) {
     return errorResponse(400, "Body must be a JSON object", "invalid_request_error", CORS);
   }
 
+  payload = lionRewrite(payload);
   const conf = configured(env);
   const resolved = resolveModel(payload.model, conf, env);
   if (!resolved) {

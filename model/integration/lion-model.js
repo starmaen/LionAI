@@ -1,3 +1,4 @@
+// ملاحظة: هذا المنطق مدمج الآن مباشرة في worker/src/index.js (lionRewrite)؛ الملف هنا مرجع فقط.
 // Lion-1 على البوابة الخارجية (Cloudflare Worker).
 // الاستخدام داخل معالج /v1/chat/completions الحالي قبل التحويل للمزود:
 //   import { lionRewrite, LION_MODELS } from "./lion-model.js";

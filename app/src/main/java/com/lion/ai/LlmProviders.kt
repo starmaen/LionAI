@@ -14,7 +14,8 @@ internal fun LlmClient.callOpenAiCompatible(
         omitTemperature: Boolean = false,
         maxTokens: Int = LLM_MAX_TOKENS,
         image: ImageAttachment? = null,
-        systemPrompt: String = LLM_SYSTEM_PROMPT
+        systemPrompt: String = LLM_SYSTEM_PROMPT,
+        temperature: Double = LLM_TEMPERATURE
     ): String {
         val messages = JSONArray()
         messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
@@ -40,7 +41,7 @@ internal fun LlmClient.callOpenAiCompatible(
             .put("model", model)
             .put("messages", messages)
             .put(tokenParam, maxTokens)
-        if (!omitTemperature) body.put("temperature", LLM_TEMPERATURE)
+        if (!omitTemperature) body.put("temperature", temperature)
 
         val headers = mutableMapOf<String, String>()
         if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"
