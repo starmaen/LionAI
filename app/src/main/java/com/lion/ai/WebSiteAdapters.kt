@@ -89,19 +89,17 @@ object WebSiteAdapters {
         "copilot_web" to Spec(
             url = "https://copilot.com/",
             // تقرير المستخدم: copilot.microsoft.com يحوّل الآن إلى copilot.com (نطاق مايكروسوفت نفسه).
-            // مداخل بديلة تُجرَّب آلياً عند رفض المدخل الأساسي (403): سطح المستأجر السحابي، ثم دردشة Bing.
-            hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com", "bing.com", "www.bing.com"),
-            input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox'], " +
-                "cib-serp main[part='chat-input'] textarea, #searchboxroot textarea, #sb_form_q",
-            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i], " +
-                "button[data-testid='send-button'], button[aria-label*='Submit' i], button[aria-label*='اسأل' i]",
+            // مداخل بديلة تُجرَّب آلياً عند رفض المدخل الأساسي (403)؛ وتبقى كلها داخل نطاقات Copilot
+            // نفسه (قرار العزل: الموقع المسمّى هو ذاك فقط — لا bing.com).
+            hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com"),
+            input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
+            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i]",
             // رد Copilot فقط (لا رسالة المستخدم data-content='user-message').
-            answer = "[data-content='ai-message'], [data-testid='ai-message'], div[data-testid='message-item'][data-author='ai'], [data-testid='copilot-response'], [class*='ai-message'], " +
-                "cib-message[type='response'], .ac-textBlock, [class*='ac-textBlock']",
+            answer = "[data-content='ai-message'], [data-testid='ai-message'], div[data-testid='message-item'][data-author='ai'], [data-testid='copilot-response'], [class*='ai-message']",
             stop = "button[data-testid='stop-button'], button[aria-label*='Stop' i], button[title*='Stop' i]",
             settleMs = 3500,
             error = "[data-testid='error-message'], [role='alert']",
-            altUrls = listOf("https://copilot.cloud.microsoft", "https://www.bing.com/chat")
+            altUrls = listOf("https://copilot.microsoft.com", "https://copilot.cloud.microsoft")
         ),
         "ptero_web" to Spec(
             url = "https://ptero.pro/",
