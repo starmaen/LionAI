@@ -1,0 +1,9 @@
+# تدريب (يحتاج GPU: Colab/Kaggle المجانية T4 تكفي لنموذج 1.5B)
+torch
+transformers>=4.46
+datasets
+peft>=0.13
+trl>=0.12
+accelerate
+bitsandbytes
+sentencepiece
