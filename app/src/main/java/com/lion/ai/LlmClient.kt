@@ -68,6 +68,28 @@ object LlmClient {
 
     private fun currentReadTimeout(): Int = threadReadTimeout.get() ?: LLM_READ_TIMEOUT
 
+    /** Lion-1 owns failover: one HTTP attempt per route, with no nested retry sleeps. */
+    internal data class NetworkPolicy(
+        val connectTimeoutMs: Int = LLM_CONNECT_TIMEOUT,
+        val rateLimitRetries: Int = 2,
+        val transientRetries: Int = 2
+    )
+
+    private val threadNetworkPolicy = ThreadLocal<NetworkPolicy>()
+
+    internal fun currentNetworkPolicy(): NetworkPolicy = threadNetworkPolicy.get() ?: NetworkPolicy()
+
+    internal fun <T> withLionRoute(block: () -> T): T {
+        val previous = threadNetworkPolicy.get()
+        threadNetworkPolicy.set(NetworkPolicy(connectTimeoutMs = 3_000, rateLimitRetries = 0, transientRetries = 0))
+        return try {
+            block()
+        } finally {
+            if (previous == null) threadNetworkPolicy.remove() else threadNetworkPolicy.set(previous)
+        }
+    }
+
+
     fun reloadOverrides(prefs: android.content.SharedPreferences) {
         WebChatRuntime.load(prefs)
         val base = PROVIDERS.associate { it.id to (prefs.getString("endpoint_" + it.id, "") ?: "").trim() }
@@ -677,13 +699,16 @@ object LlmClient {
         headers: Map<String, String>,
         body: JSONObject
     ): JSONObject {
+        val policy = currentNetworkPolicy()
+        if (Thread.currentThread().isInterrupted) throw InterruptedException("Request cancelled")
         throttleFor(url)
         var attempt = 0
         var netRetries = 0
         while (true) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedException("Request cancelled")
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = LLM_CONNECT_TIMEOUT
+                connectTimeout = policy.connectTimeoutMs
                 readTimeout = currentReadTimeout()
                 doOutput = true
                 useCaches = false
@@ -701,13 +726,13 @@ object LlmClient {
                 val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 val json = runCatching { JSONObject(raw) }.getOrNull()
 
-                if (status == 429 && attempt < 2) {
+                if (status == 429 && attempt < policy.rateLimitRetries) {
                     val retryAfter = connection.getHeaderField("Retry-After")?.trim()?.toLongOrNull()?.times(1000)
                     attempt++
                     Thread.sleep((retryAfter ?: (4_000L * attempt)).coerceIn(1_000L, 20_000L))
                     continue
                 }
-                if (status in TRANSIENT_STATUS && netRetries < 2) {
+                if (status in TRANSIENT_STATUS && netRetries < policy.transientRetries) {
                     netRetries++
                     Thread.sleep(1_500L * netRetries)
                     continue
@@ -717,7 +742,7 @@ object LlmClient {
                 }
                 return json ?: throw LlmException(status, "رد غير صالح من المزود")
             } catch (e: java.io.IOException) {
-                if (netRetries < 2 && isTransientNetwork(e)) {
+                if (netRetries < policy.transientRetries && isTransientNetwork(e)) {
                     netRetries++
                     Thread.sleep(1_500L * netRetries)
                     continue

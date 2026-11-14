@@ -110,12 +110,16 @@ internal fun LlmClient.callLionOne(
             continue
         }
         try {
-            val reply = callOpenAiCompatible(
-                route.url, route.token, route.model, history, message,
-                extraHeaders = if (route.token.isBlank()) emptyMap() else mapOf("X-Api-Key" to route.token),
-                maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = system,
-                temperature = task.temp
-            )
+            // سياسة مسار Lion-1: محاولة HTTP واحدة لكل مسار بلا نوم إعادة محاولة متداخل،
+            // فالتبديل بين المسارات هو من يتولى التعافي وليس حلقات الانتظار.
+            val reply = withLionRoute {
+                callOpenAiCompatible(
+                    route.url, route.token, route.model, history, message,
+                    extraHeaders = if (route.token.isBlank()) emptyMap() else mapOf("X-Api-Key" to route.token),
+                    maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = system,
+                    temperature = task.temp
+                )
+            }
             if (!isErrorReply(reply)) {
                 LionOne.markGood(route)
                 recordSuccess(LionOne.ID, "lion-1 · ${route.label}")
