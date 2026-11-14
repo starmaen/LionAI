@@ -181,6 +181,8 @@ internal class AndroidWebSessionHost(
         var completeText: String = "",
         var outboundSent: Boolean = false,
         var busyTicks: Int = 0,
+        /** فرصة أخيرة واحدة: عند «النقرة غير المؤكدة» نكمل الفحص عبر poll قبل الاستسلام. */
+        var pollRetried: Boolean = false,
         /** السقف المطلق للطلب مهما تجددت المهلة. */
         val hardLimit: Long = System.currentTimeMillis() + 25 * 60_000L
     )
@@ -217,6 +219,8 @@ internal class AndroidWebSessionHost(
         pool.remove(adapter.id)?.let { pool[adapter.id] = it; show(it); return it }
         while (pool.size >= 3) {
             val entry = pool.entries.first()
+            // الطلب النشط لا يُخلّى ولا يُدمَّر أبداً؛ الإخلاء أثناء مهمة أدوات يقطع السلسلة.
+            if (pending?.view === entry.value) break
             pool.remove(entry.key)
             (entry.value.parent as? FrameLayout)?.removeView(entry.value)
             entry.value.destroy()
@@ -333,7 +337,31 @@ internal class AndroidWebSessionHost(
         loads[view]?.fail(message)
         reportLoad(adapter, "⚠️ $message")
         prefs.edit().putBoolean("web_session_verified_${adapter.id}", false).apply()
-        pending?.takeIf { it.view === view }?.let { fail(it, message) }
+        val pendingHere = pending?.takeIf { it.view === view }
+        if (pendingHere == null || !pendingHere.submitted) {
+            // فشل تحميل المدخل الأساسي لا يعني تعطل الخدمة: جرّب المداخل البديلة لنفس الموقع.
+            if (tryAlternate(adapter, view)) return
+        }
+        pendingHere?.let { fail(it, message) }
+    }
+
+    /** فشل مدخل الموقع → الانتقال للمدخل البديل التالي مرة واحدة لكل مدخل؛ كوكيز الجلسة تبقى. */
+    private fun tryAlternate(adapter: WebSiteAdapter, view: WebView): Boolean {
+        if (view.parent == null) return false
+        val entries = adapter.entries()
+        if (entries.size < 2) return false
+        val currentUrl = view.url.orEmpty()
+        val index = entries.indexOfFirst { currentUrl.startsWith(it) }.let { if (it < 0) 0 else it }
+        val next = entries[(index + 1) % entries.size]
+        if (next.isBlank() || currentUrl.startsWith(next)) return false
+        val key = "web_session_alt_${adapter.id}"
+        val tried = prefs.getStringSet(key, emptySet()).orEmpty()
+        if (next in tried || tried.size >= entries.size - 1) return false
+        prefs.edit().putStringSet(key, tried + next).apply()
+        loads[view]?.start(next)
+        view.loadUrl(next)
+        reportLoad(adapter, "⚠️ تعذّر ${WebPageLoad.originOf(currentUrl)}؛ أجرّب مدخلاً بديلاً لنفس الخدمة…")
+        return true
     }
     /** Reload only the page; never replay a message and never erase login cookies. */
     fun reloadCurrent() {
@@ -526,6 +554,18 @@ internal class AndroidWebSessionHost(
                 val cut = if (p.lastStatus == "streaming")
                     "\n\n⚠️ انتهت مهلة الانتظار والموقع ما زال يكتب؛ قد يكون الرد ناقصاً. افتح الجلسة لرؤية بقيته." else ""
                 finish(p, WebSessionTransport.Reply(p.lastText.trim() + cut, true, true))
+                return
+            }
+            // النقرة قد وصلت لكن إثبات التسليم تأخر: فرصة أخيرة واحدة عبر poll (إثبات الصفحة
+            // نفسها: ظهور الرسالة أو جواب جديد) قبل إعلان الفشل. الجواب المبكر الوهمي كان
+            // يظهر رغم أن الصفحة تعمل فعلاً.
+            if (!p.pollRetried && p.submitted && p.lastStatus in setOf("awaiting_ack", "clicked", "sent")) {
+                p.pollRetried = true
+                p.stage = "poll"
+                p.deadline = minOf(System.currentTimeMillis() + 45_000L, p.hardLimit)
+                WebSessionTransport.extend(p.request.token, p.deadline)
+                status(p, "لم يتأكد الإرسال بعد؛ أتابع فحص الصفحة 45ث إضافية قبل الاستسلام")
+                main.postDelayed({ tick(p) }, 700)
                 return
             }
             val message = when (p.lastStatus) {
