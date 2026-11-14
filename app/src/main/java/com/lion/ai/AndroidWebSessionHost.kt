@@ -72,7 +72,7 @@ internal class AndroidWebSessionHost(
             .replace("__LION_FILES__", files)
             .replace("__LION_PROMPT__", JSONObject.quote(prompt))
 
-    private fun keepAlive(on: Boolean) { WebSessionKeepAlive.set(activity, on) }
+    private fun keepAlive(on: Boolean) { if (on) WebSessionService.start(activity) else WebSessionService.stop(activity) }
     private fun chatUrlKey(provider: String, chat: String) = "web_chat_url_${provider}_$chat"
     private fun saveChatUrl(p: Pending) {
         val url = p.view.url.orEmpty().substringBefore('#')
