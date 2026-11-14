@@ -71,7 +71,9 @@
 
 | المسار | ما هو |
 |---|---|
-| `app/` | تطبيق أندرويد (Kotlin + Jetpack Compose) — كل الكود في `app/src/main/java/com/lion/ai/` |
+| `app/` | تطبيق أندرويد (Kotlin + Jetpack Compose) — الكود في `app/src/main/java/com/lion/ai/`، وجسر صفحات الويب في `.../ai/web/` (واختباراته في `app/src/test/java/com/lion/ai/web/`) |
+| `scripts/` | اختبارات سكربت الصفحة `web-session.js` (jsdom + Chromium حقيقي في CI) و`fetch-proot.sh` |
+| `gateway/` | خادم بوابة اختياري بلغة Python يُنشر على Render — خارج التطبيق نفسه |
 | `worker/` | بوابة الويب الخارجية على Cloudflare Workers (`src/index.js`) — يُنشر تلقائياً عبر `.github/workflows/deploy-worker.yml` |
 | `docs/` | `PLAYBOOK.md` (منهجية التطوير والربط) و`CONNECTIONS.md` و`PLATFORM_STUDY_AR.md` |
 | `keystore/` | مفتاح التوقيع الثابت — **متعمّد رفعه** حتى تُثبَّت التحديثات فوق القديمة دون حذف |
