@@ -37,6 +37,21 @@ object TextEdit {
             }
             return Result(out.joinToString("\n"), hits.size)
         }
+        if (hits.isEmpty()) {
+            // آخر محاولة: تجاهل كل المسافات والأسطر الجديدة (النماذج كثيراً ما تغيّر التفاف السطور).
+            val keep = ArrayList<Int>(src.length)
+            val sb = StringBuilder(src.length)
+            src.forEachIndexed { i, ch -> if (!ch.isWhitespace()) { keep.add(i); sb.append(ch) } }
+            val needle = oldN.filter { !it.isWhitespace() }
+            if (needle.length >= 12) {
+                val first = sb.indexOf(needle)
+                if (first >= 0 && sb.indexOf(needle, first + needle.length) < 0) {
+                    val from = keep[first]
+                    val to = keep[first + needle.length - 1] + 1
+                    return Result(src.substring(0, from) + newN + src.substring(to), 1)
+                }
+            }
+        }
         require(hits.isEmpty()) { "النص القديم يطابق ${hits.size} مواضع بعد تطبيع المسافات؛ أضف سطراً مجاوراً ليصير فريداً." }
         throw IllegalArgumentException(notFoundHint(lines, oldLines))
     }

@@ -195,6 +195,14 @@ object ToolAgent {
           (كل سطر يبدأ بـ «- » يظهر للمستخدم زراً في بطاقة قرار مع حقل ملاحظات؛ اجعل الخيارات قصيرة وواضحة.)
         5) بعد كل وحدة منجزة لخّص بالعربية ما تم، ثم تابع أو اسأل. لا تُعلن الاكتمال قبل تحقق فعلي.
 
+        منهج التشخيص والإصلاح (اعمل كمهندس يتتبّع السبب لا كمن يجرّب عشوائياً):
+        1) اقرأ الخطأ كاملاً أولاً (نص الرسالة، الملف، السطر) واكتب لنفسك فرضية واحدة عن السبب الجذري قبل أي تعديل.
+        2) تحقق من الفرضية بدليل مستقل قبل التعديل: اقرأ الأسطر المعنية، أو شغّل فحصاً (code_doctor، أو execute_command مثل node --check / grep). لا تعدّل ملفاً لمجرد أن فاحصاً اعترض؛ قد يكون الفاحص نفسه مخطئاً (إيجابية كاذبة) فاثبت وجود العلّة فعلاً.
+        3) عدّل أصغر موضع يعالج السبب الجذري لا العَرَض، ثم أعد التحقق بنفس الفحص الذي أظهر الخطأ للتأكد أنه زال ولم يظهر خطأ جديد.
+        4) إن فشلت الأداة مرتين بنفس السبب فالمشكلة في طريقتك لا في الأداة: غيّر الأسلوب (أعد قراءة المقطع الحالي، استخدم أداة أخرى، قلّص الخطوة) ولا تكرر المحاولة نفسها بتغيير شكلي. بعد محاولتين أخريين توقف.
+        5) عند التوقف اشرح بوضوح: ما جرّبته، ماذا كانت النتيجة، ما السبب الأرجح، ما الذي ما زال معطلاً، وما الخطوة الأنسب التالية. لا تكتفِ بقول «فشلت».
+        6) بعد كل بناء فاشل استخرج الأخطاء الحقيقية بـ build_diagnose، وأصلحها كلها معاً في دفعة واحدة إن كانت مستقلة، لا واحداً في كل دورة.
+
         التفاعل مع المستخدم (مهم):
         - إذا احتجت معلومة ناقصة أو تأكيداً قبل تنفيذ خطوة خطرة، اسأل سؤالاً واحداً محدداً بـ [[ASK]]…[[/ASK]] ثم توقف.
         - عندما يجيبك المستخدم تُستأنف المهمة تلقائياً بنفس السياق والأدوات. لا تخترع إجابة عن سؤالك.
@@ -353,6 +361,17 @@ object ToolAgent {
         var failCount = 0
         // آخر نص جوهري كتبه المزود: يُعرض مع أي توقف أو ملخص بدل أن يضيع الجواب خلف سجل الإجراءات.
         var lastSubstantive = ""
+        var lastFailure = ""
+        fun diagnoseFailure(err: String): String = when {
+            err.contains("النص القديم غير موجود") -> "النص الذي أرسله المزود لا يطابق الملف. اقرأ المقطع الحالي بـ file_read ثم أعد file_edit بنصه حرفياً."
+            err.contains("مطلوب") && err.contains("المعامل") -> "المزود أرسل الأداة بمفاتيح غير صحيحة. يُعاد الاستدعاء بالمفتاح المذكور في الخطأ."
+            err.contains("SYNTAX_BALANCE") -> "فشل فحص توازن الأقواس؛ تحقق بـ code_doctor إن كان الخطأ حقيقياً قبل تعديل ملف سليم."
+            err.contains("401") || err.contains("403") -> "رفض GitHub الصلاحية: تحقق من التوكن ونطاقاته (repo, workflow)."
+            err.contains("404") -> "المسار أو المستودع غير موجود: تحقق من الاسم والفرع."
+            err.contains("⛔") -> "رُفضت العملية بسبب الإذن/الحوكمة: امنح الإذن أو اعتمد Manifest ثم أعد."
+            err.contains("مهلة") || err.contains("timeout", true) -> "انتهت مهلة المزود أو الأداة: أعد المحاولة أو بدّل المزود."
+            else -> "راجع سجل الخطوات أعلاه وبدّل المزود/النموذج أو أعطني توجيهاً محدداً."
+        }
         fun statusReport(complete: Boolean, why: String): String {
             val neutral = why.isBlank() || why.contains("المزود")
             val status = when {
@@ -377,6 +396,20 @@ object ToolAgent {
             }
             if (failedSteps.isNotEmpty()) {
                 sb.append("- خطوات تعذّرت: ").append(failedSteps.takeLast(3).joinToString("، ")).append('\n')
+            }
+            if (!complete) {
+                val last = lastFailure
+                val remaining = when {
+                    failedSteps.isNotEmpty() -> "الخطوات التي تعذّرت: " + failedSteps.takeLast(3).joinToString("، ")
+                    else -> "إكمال بقية المهمة من نقطة التوقف"
+                }
+                sb.append("- المتبقي: ").append(remaining).append('\n')
+                if (last.isNotBlank()) {
+                    sb.append("- آخر خطأ: ").append(last.take(160)).append('\n')
+                    sb.append("- السبب المرجّح والخطوة التالية: ").append(diagnoseFailure(last)).append('\n')
+                } else if (!neutral) {
+                    sb.append("- سبب التوقف: ").append(why).append('\n')
+                }
             }
             // سجل الخطوات يبقى في الشات بعد انتهاء المهمة (كان يظهر مؤقتاً أثناء العمل ثم يختفي) ومعه سبب كل فشل.
             if (workLog.isNotEmpty() && !(complete && failCount == 0)) {
@@ -627,7 +660,7 @@ object ToolAgent {
             val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
             // كتلة [[TOOL]] وصلت لكن لم تُحلَّل (JSON معطوب أو اسم أداة غير معروف): لا ننهي المهمة بصمت،
             // نطلب إعادة الكتلة نفسها بصيغة صحيحة (مرتان كحد أقصى).
-            if (calls.isEmpty() && reply.contains("[[TOOL") && repairNudges < 2 &&
+            if (calls.isEmpty() && (reply.contains("[[TOOL") || reply.contains("DSML")) && repairNudges < 2 &&
                 System.currentTimeMillis() + 45_000 < deadline
             ) {
                 repairNudges++
@@ -931,6 +964,7 @@ object ToolAgent {
                     }
                 } else {
                     failCount++
+                    lastFailure = result.output.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.take(2).joinToString(" ")
                     // تعلّم من الفشل: نفس الأداة + نفس سبب الخطأ (بغض النظر عن اختلاف المدخلات الطفيف) = لا فائدة من إعادتها.
                     val errLine = result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty()
                         .replace(Regex("\\d+"), "#").take(70)

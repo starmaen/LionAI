@@ -779,8 +779,25 @@ object AiTools {
         return null
     }
 
+    /** نماذج مختلفة تسمّي المعامل نفسه بأسماء مختلفة؛ نكمل المفتاح المعياري الناقص فقط ولا نغيّر الموجود. */
+    private val ARG_ALIASES = mapOf(
+        "path" to listOf("file_path", "filepath", "filename", "file_name", "file", "target_path", "filePath"),
+        "old" to listOf("old_text", "old_string", "old_str", "search", "find", "original", "oldText"),
+        "new" to listOf("new_text", "new_string", "new_str", "replace", "replacement", "newText"),
+        "content" to listOf("text", "contents", "data", "body", "file_content"),
+        "command" to listOf("cmd", "shell", "script")
+    )
+
+    internal fun normalizeArgs(args: JSONObject) {
+        ARG_ALIASES.forEach { (canonical, aliases) ->
+            if (args.has(canonical) && !args.isNull(canonical)) return@forEach
+            aliases.firstOrNull { args.has(it) && !args.isNull(it) }?.let { args.put(canonical, args.get(it)) }
+        }
+    }
+
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
         val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
+        normalizeArgs(call.args)
         if (isMutation(call) && !ctx.allowWrite) {
             return ToolResult(call.name, "⛔ لم تُنفذ العملية: يلزم طلب تعديل/تنفيذ صريح من المستخدم، إضافة إلى السماح بالكتابة في الإعدادات.", false)
         }
@@ -835,7 +852,7 @@ object AiTools {
     }
 
     private fun req(args: JSONObject, key: String): String =
-        args.optString(key).trim().ifBlank { throw IllegalArgumentException("المعامل «$key» مطلوب") }
+        args.optString(key).trim().ifBlank { throw IllegalArgumentException("المعامل «$key» مطلوب. المفاتيح المرسلة: ${args.keys().asSequence().toList().joinToString("، ").ifBlank { "لا شيء" }}. أعد الاستدعاء بالمفتاح \"$key\" بالضبط.") }
 
     private fun int(args: JSONObject, key: String, default: Int): Int =
         if (args.has(key) && !args.isNull(key)) args.optInt(key, default) else default
