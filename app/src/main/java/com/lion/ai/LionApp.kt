@@ -632,21 +632,63 @@ fun LionApp() {
         }
     }
 
-    fun shareChat(meta: ChatMeta) {
-        val text = buildString {
-            append(meta.title).append("\n\n")
-            ChatRepository.load(prefs, meta.id).forEach {
-                append(if (it.isUser) "👤 " else "🦁 ").append(it.text).append("\n\n")
-            }
-        }
+    fun toast(message: String) =
+        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+
+    fun sendText(subject: String, text: String, chooserTitle: String) {
         runCatching {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, meta.title)
+                putExtra(Intent.EXTRA_SUBJECT, subject)
                 putExtra(Intent.EXTRA_TEXT, text)
             }
-            context.startActivity(Intent.createChooser(send, "مشاركة المحادثة"))
+            context.startActivity(Intent.createChooser(send, chooserTitle))
+        }.onFailure { toast("تعذّرت المشاركة: ${it.message ?: it.javaClass.simpleName}") }
+    }
+
+    fun shareChat(meta: ChatMeta) {
+        val body = buildString {
+            ChatRepository.load(prefs, meta.id).forEach {
+                val t = WebToolBridge.redact(ToolMarkup.strip(FileDelivery.strip(it.text)))
+                if (t.isNotBlank()) append(if (it.isUser) "👤 " else "🦁 ").append(t).append("\n\n")
+            }
         }
+        // حد آمن لحمولة Intent؛ نحذف الأقدم ونُعلم بذلك بدل فشل صامت.
+        val cap = 120_000
+        val text = meta.title + "\n\n" + if (body.length > cap) "(اقتُطعت الرسائل الأقدم لضيق الحجم)\n\n" + body.takeLast(cap) else body
+        sendText(meta.title, text, "مشاركة المحادثة")
+    }
+
+    fun handoffText(meta: ChatMeta): String {
+        val messages = ChatRepository.load(prefs, meta.id).map { it.isUser to it.text }
+        val block = runCatching { AgentSessions.of(prefs, meta.id).contextBlock(6_000) }.getOrDefault("")
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date())
+        return HandoffBuilder.build(meta.title, messages, block, now)
+    }
+
+    /** ملخص ترحيل: يُنسخ للحافظة ويُشارك، لتلصقه في أي مزود أو صفحة ويب أو تطبيق آخر. */
+    fun handoffChat(meta: ChatMeta) {
+        val text = handoffText(meta)
+        runCatching {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Lion handoff", text))
+            toast("نُسخت حزمة الترحيل؛ الصقها في أي مزود أو تطبيق")
+        }
+        sendText("ترحيل: ${meta.title}", text, "ترحيل المحادثة")
+    }
+
+    /** محادثة جديدة تُعبّأ فيها الحزمة جاهزة للإرسال لأي مزود (اختر المزود ثم أرسل). */
+    fun continueChat(meta: ChatMeta) {
+        val text = handoffText(meta)
+        val before = tabs.size
+        addTab()
+        if (tabs.size == before) {
+            toast("وصلت الحد الأقصى للتبويبات؛ أغلق تبويباً ثم أعد المحاولة")
+            return
+        }
+        input = text
+        scope.launch { drawerState.close() }
+        toast("جاهزة: اختر المزود ثم أرسل لمتابعة المحادثة")
     }
 
     fun requestContacts() {
@@ -2457,7 +2499,9 @@ fun LionApp() {
                         refreshChats()
                     },
                     onDelete = { meta -> deleteTarget = meta },
-                    onShare = { meta -> shareChat(meta) }
+                    onShare = { meta -> shareChat(meta) },
+                    onHandoff = { meta -> handoffChat(meta) },
+                    onContinue = { meta -> continueChat(meta) }
                 )
             }
         }

@@ -481,7 +481,9 @@ fun ChatRow(
     onAutoTitle: () -> Unit,
     onArchiveToggle: () -> Unit,
     onDelete: () -> Unit,
-    onShare: () -> Unit = {}
+    onShare: () -> Unit = {},
+    onHandoff: () -> Unit = {},
+    onContinue: () -> Unit = {}
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -523,6 +525,20 @@ fun ChatRow(
                     onClick = {
                         menu = false
                         onShare()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("🔁 ترحيل المحادثة (ملخص)") },
+                    onClick = {
+                        menu = false
+                        onHandoff()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("➡️ متابعة في محادثة جديدة") },
+                    onClick = {
+                        menu = false
+                        onContinue()
                     }
                 )
                 DropdownMenuItem(

@@ -34,7 +34,9 @@ internal fun LionDrawerContent(
     onArchive: (ChatMeta) -> Unit,
     onUnarchive: (ChatMeta) -> Unit,
     onDelete: (ChatMeta) -> Unit,
-    onShare: (ChatMeta) -> Unit
+    onShare: (ChatMeta) -> Unit,
+    onHandoff: (ChatMeta) -> Unit = {},
+    onContinue: (ChatMeta) -> Unit = {}
 ) {
     val generalChats = activeChats.filter { it.mode != ChatMode.CODE.id }
     val codeChats = activeChats.filter { it.mode == ChatMode.CODE.id }
@@ -122,7 +124,9 @@ internal fun LionDrawerContent(
                         onAutoTitle = { onAutoTitle(meta.id) },
                         onArchiveToggle = { onArchive(meta) },
                         onDelete = { onDelete(meta) },
-                        onShare = { onShare(meta) }
+                        onShare = { onShare(meta) },
+                        onHandoff = { onHandoff(meta) },
+                        onContinue = { onContinue(meta) }
                     )
                 }
             }
@@ -145,7 +149,9 @@ internal fun LionDrawerContent(
                         onAutoTitle = { onAutoTitle(meta.id) },
                         onArchiveToggle = { onArchive(meta) },
                         onDelete = { onDelete(meta) },
-                        onShare = { onShare(meta) }
+                        onShare = { onShare(meta) },
+                        onHandoff = { onHandoff(meta) },
+                        onContinue = { onContinue(meta) }
                     )
                 }
             }
@@ -171,7 +177,9 @@ internal fun LionDrawerContent(
                             onAutoTitle = { onAutoTitle(meta.id) },
                             onArchiveToggle = { onUnarchive(meta) },
                             onDelete = { onDelete(meta) },
-                            onShare = { onShare(meta) }
+                            onShare = { onShare(meta) },
+                        onHandoff = { onHandoff(meta) },
+                        onContinue = { onContinue(meta) }
                         )
                     }
                 }
