@@ -7,3 +7,5 @@ trl>=0.12
 accelerate
 bitsandbytes
 sentencepiece
+# نشر النموذج على Hugging Face Hub (رفع GGUF آلياً من Colab)
+huggingface_hub>=0.26
