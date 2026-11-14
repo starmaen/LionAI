@@ -186,3 +186,22 @@ typecheck بـ kotlinc على `LionEngine.kt`/`LionOne.kt`/`LionEngineUi.kt` م�
 - الرام الافتراضية (Memory Fusion مثل 4+3GB) **لا تُحسب** لأنها تخزين بطيء ينهار مع النموذج.
 - اختبارات: `recommendationFollowsRealRamNotVirtualRam`، `everyRecommendedModelExistsInCatalog`،
   `memoryRequirementGrowsWithModelAndContext`.
+
+## جولة 2026-11-14 (٢): خط تدريب Lion-1 كامل وقابل للتشغيل
+**الطلب:** «أريد تحسين الأسلوب والأدوات» + خط LoRA كامل على Colab.
+- `model/data/import_tools.py` (جديد): يقرأ `AiTools.kt` ويولّد `data/tools.json` و
+  `data/tools_catalog.json` (236 أداة، مع **وسائط نموذجية حقيقية** من الكود). `--check` يفشل
+  إذا كان الكتالوج قديماً. (أُصلحت مطابقة Def: صيغة `"{}"` المفردة والحقول المسماة `connector =`.)
+- `data/generate_dataset.py`: قسم `catalog_tools()` + `catalog_followups()` يولّد أمثلة أدوات من
+  الكتالوج الحقيقي (اسم الأداة + مفاتيح وسائطها الصحيحة) بدل أسماء مكتوبة يدوياً. الناتج الآن
+  182 مثالاً (منها 118 فيها استدعاء أداة) و0 مشكلة في `eval_lion.py data`.
+- `train_lora.py`: أُعيد بناؤه ليتكيّف مع إصدار TRL المثبّت (`max_length`/`max_seq_length`،
+  `eval_strategy`/`evaluation_strategy`، `processing_class`/`tokenizer`)، + `--dry_run` (12 خطوة)،
+  + gradient checkpointing + بذرة ثابتة + رسائل أخطاء عربية.
+- `export_gguf.py` (جديد): يجلب llama.cpp ويحوّل HF→GGUF ثم يكمّم (Q4_K_M افتراضياً) ويطبع
+  الحجم وSHA-256 وخطوات الاستخدام في التطبيق — بلا أوامر يدوية.
+- `Lion1_LoRA_Colab.ipynb` (جديد): 8 خلايا تنفيذية بالترتيب (جلب ← تثبيت ← بيانات ← فحص ←
+  تجربة ← تدريب ← دمج ← GGUF ← تنزيل) + تحذيرات overfit والحقوق.
+- CI: خطوة «Validate Lion-1 training data» تشغّل `import_tools.py --check` و`eval_lion.py data`
+  على كل بناء، فلا تُدمج بيانات قديمة أو صيغة أدوات مكسورة.
+- التوثيق: `docs/LION1_TRAINING_AR.md` (دليل كامل + جدول أخطاء) وتحديث `model/README_AR.md`.

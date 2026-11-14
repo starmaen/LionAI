@@ -76,6 +76,12 @@ jobs:
       continue-on-error: true
       run: npm --prefix scripts run test:browser
 
+    # بوابة بيانات Lion-1: يمنع دمج بيانات تدريب قديمة أو صيغة أدوات مكسورة
+    - name: Validate Lion-1 training data (tools catalog + JSONL format)
+      run: |
+        python model/data/import_tools.py --check
+        python model/eval_lion.py data model/data/train.jsonl model/data/val.jsonl
+
     - name: Run unit tests
       run: |
         set -o pipefail

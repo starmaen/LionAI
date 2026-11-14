@@ -27,6 +27,10 @@ def conv(user, assistant):
 def tool(name, **args):
     return "[[TOOL]]" + json.dumps({"name": name, "args": args}, ensure_ascii=False) + "[[/TOOL]]"
 
+def tool_json(name, args):
+    """مثل tool() لكن بوسائط dict جاهزة — بعض الأدوات فيها مفتاح اسمه "name" فيتعارض مع المعامل."""
+    return "[[TOOL]]" + json.dumps({"name": name, "args": args}, ensure_ascii=False) + "[[/TOOL]]"
+
 def result(name, text):
     return f"نتائج الأدوات:\n[{name}] {text}"
 
@@ -154,6 +158,115 @@ def trajectories():
         [("[[ASK]]ما أنجزته: لم أنفّذ شيئاً.\nما أحتاجه منك: حذف main عملية خطرة وقد يكسر المستودع. هل تقصد فرعاً آخر، أم تؤكد الحذف فعلاً؟[[/ASK]]", None)]))
     return out
 
+
+# ---------- 4) أمثلة أدوات مولّدة من كتالوج التطبيق الحقيقي ----------
+# الهدف: يتعلّم النموذج **اسم الأداة الصحيح ومفاتيح وسائطها** كما هي في AiTools.kt، لا أسماء مخترعة.
+# الكتالوج يأتي من data/import_tools.py (يُقرأ من الكود مباشرة)، فإن أضفت أداة في التطبيق
+# وأعدت توليد البيانات صار النموذج يعرفها.
+CATALOG_PATH = os.path.join(HERE, "tools_catalog.json")
+
+# أدوات أساسية يتكرر استخدامها + صياغات المستخدم التي تستدعيها (٢ لكل أداة على الأقل).
+CORE_INTENTS = {
+    "file_read": ["اقرأ الملف src/Main.kt وأخبرني ماذا يفعل", "افتح app/build.gradle.kts واعرض محتواه"],
+    "read_file": ["اقرأ لي محتوى README.md", "اعرض ملف src/Utils.kt"],
+    "file_write": ["اكتب ملف notes.txt فيه سطر ترحيب", "أنشئ ملف src/Config.kt بمحتوى إعدادات بسيط"],
+    "file_append": ["أضف سطراً في نهاية CHANGELOG.md", "ألحق ملاحظة بملف notes.txt"],
+    "file_search": ["ابحث عن TODO في المشروع", "أين استُخدمت الدالة fetchUser؟"],
+    "file_tree": ["اعرض شجرة ملفات المشروع", "كم ملف Kotlin في app/src؟"],
+    "file_stat": ["ما حجم مجلد src وعدد ملفاته؟", "أعطني إحصاء ملف app.apk"],
+    "file_delete": ["احذف old.txt", "امسح مجلد build المؤقت"],
+    "file_present": ["سلّمني ملف dist/app.zip", "أرسل لي مجلد المخرجات كملف مضغوط"],
+    "file_diff": ["قارن old.kt وnew.kt", "ما الفرق بين النسختين قبل التعديل وبعده؟"],
+    "file_checksum": ["احسب sha256 لملف app.apk", "أعطني بصمة MD5 للنسخة المرفوعة"],
+    "file_verify": ["افحص سلامة ملفات المشروع", "هل توجد ملفات فارغة أو مكررة في المشروع؟"],
+    "shell_exec": ["نفّذ git status وأخبرني بالنتيجة", "شغّل ./gradlew test وأعطني الخلاصة", "نفّذ ls -la في مساحة العمل"],
+    "execute_command": ["نفّذ الأمر git log --oneline -5", "شغّل python --version وتحقق من الإصدار"],
+    "code_run": ["شغّل هذا الكود JavaScript وقل لي المخرجات", "نفّذ استعلام SQL على قاعدة app"],
+    "shell_which": ["هل git مثبّت على الجهاز؟", "تحقق من وجود node"],
+    "toolchain_status": ["ما حالة أدوات التطوير على الجهاز؟", "هل Python وGradle جاهزان؟"],
+    "lion_engine": ["ما حالة محرّك Lion-1 المدمج؟", "شغّل المحرّك المدمج واختبره على الجهاز"],
+    "toolchain_install": ["ثبّت git على الجهاز", "ثبّت حزمة jq"],
+    "android_build": ["ابنِ APK للتطبيق", "شغّل :app:assembleDebug وأخبرني بالنتيجة"],
+    "android_logcat": ["اعرض آخر أخطاء logcat", "ما سبب انهيار التطبيق في السجل؟"],
+    "web_fetch": ["اجلب صفحة https://example.com واستخرج النص والروابط", "افتح هذا الرابط ولخّص محتواه"],
+    "web_search": ["ابحث في الويب عن أحدث إصدار Kotlin", "ابحث عن حل خطأ Gradle: Unsupported class file major version"],
+    "web_api": ["استدعِ https://api.github.com/repos/starmaen/LionAI وأعطني stars", "نفّذ طلب POST على هذا الرابط بجسم JSON"],
+    "web_download": ["نزّل هذا الملف إلى مساحة العمل", "حمّل صورة من الرابط واحفظها باسم logo.png"],
+    "site_probe": ["افحص موقع example.com قبل أن أربطه", "هل هذا الـ API يحتاج مصادقة؟"],
+    "github_get_repo": ["اعطني بيانات مستودع starmaen/LionAI", "كم نجمة لمستودع starmaen/LionAI؟"],
+    "github_read_file": ["اقرأ README.md من starmaen/LionAI", "اعرض ملف app/build.gradle.kts من المستودع"],
+    "github_list_tree": ["اعرض شجرة ملفات starmaen/LionAI", "كم ملف اختبار في المستودع؟"],
+    "github_list_commits": ["ما آخر التعديلات في starmaen/LionAI؟", "اعرض آخر 5 commits"],
+    "github_write_file": ["عدّل README.md في مستودع starmaen/LionAI وأضف قسماً جديداً", "أنشئ ملف docs/note.md في الفرع docs"],
+    "github_create_branch": ["أنشئ فرع feature/login من main", "افتح فرعاً جديداً للتعديل"],
+    "github_create_pr": ["افتح Pull Request من feature/login إلى main", "أنشئ PR يشرح التعديلات"],
+    "github_list_prs": ["ما الـ Pull Requests المفتوحة؟", "اعرض طلبات الدمج"],
+    "github_workflow_runs": ["ما نتيجة آخر عملية بناء على GitHub؟", "هل نجح البناء الأخير؟"],
+    "github_job_log": ["اعرض سجل الوظيفة 456 لمعرفة سبب الفشل", "أعطني سجل البناء الكامل"],
+    "github_clone": ["نزّل مستودع starmaen/LionAI إلى مساحة العمل", "استنسخ المستودع كاملاً"],
+    "code_analyze_file": ["حلّل ملف src/Main.kt", "افحص جودة ملف Kotlin هذا"],
+    "code_review": ["راجع المشروع سريعاً واكتشف المخاطر", "أعطني مراجعة كود للمشروع"],
+    "code_patch": ["عدّل Main.kt: استبدل foo بـ bar", "طبّق تعديلاً دقيقاً في ملف Utils.kt"],
+    "code_doctor": ["أعطني تقرير جاهزية المشروع", "هل المشروع جاهز للإصدار؟"],
+    "dependency_audit": ["دقّق مكتبات المشروع عن ثغرات", "هل توجد مكتبات قديمة أو متعارضة؟"],
+    "build_diagnose": ["شخّص فشل البناء في starmaen/LionAI", "لماذا فشل آخر بناء؟"],
+    "db_query": ["نفّذ استعلاماً على قاعدة app", "اعرض أول 20 صفاً من جدول notes"],
+    "db_schema": ["اعرض مخطط قاعدة app", "ما جداول قاعدة البيانات؟"],
+    "secret_scan": ["افحص المشروع بحثاً عن مفاتيح مسرّبة", "هل يوجد توكن في الكود قبل الدفع؟"],
+    "pdf_read": ["اقرأ صفحات 1-5 من uploads/a.pdf", "لخّص ملف PDF المرفق"],
+    "memory_save": ["احفظ قراراً معمارياً: استخدام Compose للواجهة", "سجّل درساً: تجنّب proot مع SELinux"],
+    "tools_schema": ["ما مخطط أدوات مجموعة الملفات؟", "أعطني وسائط أدوات GitHub"],
+    "calendar_create": ["أنشئ موعداً غداً الساعة 10", "أضف اجتماعاً في التقويم"],
+    "gmail_send": ["أرسل بريداً إلى a@b.com بعنوان تجربة", "أرسل رسالة بريد إلكتروني"],
+}
+
+# أمثلة تستخدم أسماء أدوات غير موجودة: تُمنع صراحةً كسلوك خاطئ في التقييم، ولا نولّدها.
+def load_catalog():
+    if not os.path.exists(CATALOG_PATH):
+        return {}
+    return {t["name"]: t for t in json.load(open(CATALOG_PATH, encoding="utf-8"))}
+
+def catalog_tools():
+    """مثال «طلب مستخدم ← استدعاء أداة واحدة بصيغة صحيحة» من الكتالوج الحقيقي."""
+    cat = load_catalog()
+    if not cat:
+        print("⚠️ tools_catalog.json غير موجود — شغّل data/import_tools.py لتحسين أمثلة الأدوات.")
+        return []
+    out = []
+    for name, prompts in CORE_INTENTS.items():
+        tool_def = cat.get(name)
+        if not tool_def:
+            continue  # أداة غير موجودة في هذا الإصدار من التطبيق
+        args = tool_def.get("args") or {}
+        for p in prompts:
+            out.append(conv(p, tool_json(name, args)))
+    return out
+
+def catalog_followups():
+    """استدعاء ← نتيجة ← جواب عربي نهائي (يتعلّم أن يقرأ نتيجة الأداة ولا يخترعها)."""
+    cat = load_catalog()
+    if not cat:
+        return []
+    plans = [
+        ("كم نجمة لمستودع starmaen/LionAI؟", "github_get_repo", {"repo": "starmaen/LionAI"},
+         "starmaen/LionAI: Kotlin، 41 نجمة، آخر تحديث اليوم",
+         "مستودع starmaen/LionAI مكتوب بـ Kotlin ولديه 41 نجمة، وآخر تحديث اليوم."),
+        ("هل git مثبّت؟", "shell_which", {"name": "git"},
+         "/usr/bin/git", "نعم، git مثبّت في المسار /usr/bin/git."),
+        ("ما حالة محرّك Lion-1؟", "lion_engine", {"action": "status"},
+         "الحالة: يعمل — الاستدلال على الجهاز · النموذج: lion-1-mini (940MB) · السياق 4096",
+         "المحرّك يعمل على جهازك بنموذج lion-1-mini وسياق 4096 رمز، أي أن الاستدلال محلي بلا إنترنت."),
+        ("اخلص لي: هل المشروع جاهز؟", "code_doctor", {"path": "", "online": False, "max_files": 3000},
+         "البنية: سليمة · الاختبارات: 131 ناجحاً · الاعتماديات: 4 تحذيرات · الحكم: جاهز مع ملاحظات",
+         "المشروع جاهز مع ملاحظات: البنية سليمة و131 اختباراً ناجحاً، وهناك 4 تحذيرات في الاعتماديات يُستحسن معالجتها قبل الإصدار."),
+    ]
+    out = []
+    for user, name, args, result_text, final in plans:
+        if name not in cat:
+            continue
+        out.append(traj(user, [(tool_json(name, args), result(name, result_text)), (final, None)]))
+    return out
+
 def extra():
     p = os.path.join(HERE, "seed_extra.jsonl")
     if not os.path.exists(p):
@@ -169,7 +282,7 @@ def extra():
     return rows
 
 def main():
-    rows = identity() + tasks() + trajectories() + extra()
+    rows = identity() + tasks() + trajectories() + catalog_tools() + catalog_followups() + extra()
     seen, uniq = set(), []
     for r in rows:
         k = json.dumps(r, ensure_ascii=False, sort_keys=True)
