@@ -76,7 +76,7 @@
 | `scripts/` | اختبارات سكربت الصفحة `web-session.js` (jsdom + Chromium حقيقي في CI) و`fetch-proot.sh` |
 | `gateway/` | خادم بوابة اختياري بلغة Python يُنشر على Render — خارج التطبيق نفسه |
 | `worker/` | بوابة الويب الخارجية على Cloudflare Workers (`src/index.js`) — يُنشر تلقائياً عبر `.github/workflows/deploy-worker.yml` |
-| `docs/` | `PLAYBOOK.md` (منهجية التطوير والربط) و`CONNECTIONS.md` و`LION1_ENGINE_AR.md` (المحرّك المدمج لـ Lion-1) و`PLATFORM_STUDY_AR.md` |
+| `docs/` | `PLAYBOOK.md` (منهجية التطوير والربط) و`CONNECTIONS.md` و`LION1_ENGINE_AR.md` (المحرّك المدمج لـ Lion-1) و`LION1_TRAINING_AR.md` / `LION1_COLAB_STEPBYSTEP_AR.md` (تدريب LoRA وGGUF) و`PLATFORM_STUDY_AR.md` |
 | `keystore/` | مفتاح التوقيع الثابت — **متعمّد رفعه** حتى تُثبَّت التحديثات فوق القديمة دون حذف |
 | `.github/workflows/` | `build.yml` (بناء + اختبارات عند الدفع إلى `main`)، `release.yml` (إصدار APK عند وسم `v*`)، `deploy-worker.yml` (نشر البوابة)، `make-keystore.yml` (توليد المفتاح — لمرة واحدة) |
 

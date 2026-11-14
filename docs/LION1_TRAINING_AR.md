@@ -34,6 +34,9 @@ python export_gguf.py --merged out/lion-1-merged --quant Q4_K_M     # 5) GGUF ج
 
 أو افتح الدفتر جاهزاً: `model/Lion1_LoRA_Colab.ipynb` (كل الخلايا بالترتيب، وفيه خلية تنزيل الملف).
 
+> **أول مرة تستخدم Colab؟** ابدأ من `docs/LION1_COLAB_STEPBYSTEP_AR.md` — دليل بالنقرات:
+> ماذا ترفع (الدفتر فقط)، وأين يُنشأ LoRA، وأين تجد الملف النهائي، ورفعه إلى HuggingFace.
+
 ## ١) كتالوج الأدوات: لا تكتب أسماء الأدوات بيدك
 
 `model/data/import_tools.py` يقرأ `app/src/main/java/com/lion/ai/AiTools.kt` ويولّد:

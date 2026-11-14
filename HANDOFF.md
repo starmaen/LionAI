@@ -205,3 +205,11 @@ typecheck بـ kotlinc على `LionEngine.kt`/`LionOne.kt`/`LionEngineUi.kt` م�
 - CI: خطوة «Validate Lion-1 training data» تشغّل `import_tools.py --check` و`eval_lion.py data`
   على كل بناء، فلا تُدمج بيانات قديمة أو صيغة أدوات مكسورة.
 - التوثيق: `docs/LION1_TRAINING_AR.md` (دليل كامل + جدول أخطاء) وتحديث `model/README_AR.md`.
+
+### ملحق (٢): دليل Colab بالنقرات
+- `docs/LION1_COLAB_STEPBYSTEP_AR.md`: من تنزيل الدفتر إلى تشغيل النموذج في التطبيق، بالنقرات
+  والزمن المتوقع والمخرجات الحرفية لكل خلية، وجدول أعطال.
+- توضيح صريح: **لا يوجد ملف LoRA يُرفع** — الدفتر يصنعه (الخلية ٥)، ويُدمج (٦) ويُحوَّل GGUF (٨)؛
+  يُرفع إلى HuggingFace ملف GGUF النهائي فقط.
+- الدفتر: خلية ١ تدعم مستودعاً خاصاً (توكن)، وأُضيفت خلية حفظ على Google Drive كاحتياط
+  ضد انقطاع الجلسة، وأُعيد ترقيم الخلايا ١→٩.
