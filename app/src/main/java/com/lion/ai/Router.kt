@@ -465,7 +465,10 @@ object SmartRouter {
         }
         val webFirst = strict || kind == TaskKind.DEV
         val merged = if (webFirst) webRoutes + candidates(kind) else candidates(kind) + webRoutes
-        val availableRoutes = merged.filter { available(prefs, it.provider) }.map {
+        // مزود نفدت حصته/يُبرَّد: لا نضيّع محاولة عليه إن وُجد بديل (يُستبعد حتى ينتهي تبريده).
+        val usable = merged.filter { available(prefs, it.provider) }
+        val notCooling = usable.filterNot { QuotaGuard.isCooling(it.provider) }
+        val availableRoutes = (if (notCooling.isNotEmpty()) notCooling else usable).map {
             if (kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT) it else withUserModel(prefs, it)
         }
         val reliableRoutes = availableRoutes.filter { isReliableModel(it.provider, it.model) }
@@ -483,6 +486,8 @@ object SmartRouter {
         val maxAttempts = when {
             fastOnly -> 2
             kind == TaskKind.VISION || kind == TaskKind.IMAGE_EDIT -> 3
+            // مهام التطوير بجلسة محفوظة تنتقل بين المزودات بلا فقدان: نسمح بمحاولات أكثر عند نفاد الحصص.
+            kind == TaskKind.DEV -> 8
             else -> 4
         }
         val (healthy, failing) = routes.partition { (failures[it.provider] ?: 0) < 2 }

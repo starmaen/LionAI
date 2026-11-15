@@ -69,6 +69,7 @@ object ProviderProbe {
         val clean = note.removePrefix("⚠️").removePrefix("🔑").trim()
         val stored = if (s == State.LIMITED && !clean.startsWith("⏳")) "⏳ $clean" else clean
         ProviderHealth.record(prefs, id, s == State.OK, stored)
+        if (s == State.OK) QuotaGuard.clear(id) else QuotaGuard.mark(id, if (s == State.LIMITED) QuotaGuard.Kind.RATE else QuotaGuard.classify(clean))
         return Result(s, stored, System.currentTimeMillis())
     }
 
