@@ -299,16 +299,28 @@ object GitHubClient {
         sha: String? = null
     ): JSONObject {
         val targetBranch = branch.ifBlank { getRepo(token, owner, repo).defaultBranch }
-        val existingSha = sha ?: runCatching {
+        // 404 فقط يعني «ملف جديد»؛ أي خطأ آخر في القراءة (شبكة/صلاحية) لا يُفسَّر ملفاً جديداً
+        // وإلا أُرسل PUT بلا sha لملف موجود فيفشل بـ 422 مضلل.
+        fun currentSha(): String = try {
             readFile(token, owner, repo, path, targetBranch).sha
-        }.getOrDefault("")
-        val body = JSONObject()
-            .put("message", message.ifBlank { "تحديث من Lion AI" })
-            .put("content", Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
-            .put("branch", targetBranch)
-        if (existingSha.isNotBlank() && existingSha != "null") body.put("sha", existingSha)
-        val url = "/repos/${encode(owner)}/${encode(repo)}/contents/" + encodePath(path)
-        return JSONObject(request(url, token, "PUT", body))
+        } catch (e: GitHubException) {
+            if (e.status == 404) "" else throw e
+        }
+        fun put(existing: String): JSONObject {
+            val body = JSONObject()
+                .put("message", message.ifBlank { "تحديث من Lion AI" })
+                .put("content", Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+                .put("branch", targetBranch)
+            if (existing.isNotBlank() && existing != "null") body.put("sha", existing)
+            val url = "/repos/${encode(owner)}/${encode(repo)}/contents/" + encodePath(path)
+            return JSONObject(request(url, token, "PUT", body))
+        }
+        return try {
+            put(sha ?: currentSha())
+        } catch (e: GitHubException) {
+            // الملف تغيّر بين القراءة والكتابة: نعيد القراءة ونكتب مرة واحدة فقط (لا حلقة).
+            if (sha == null && GitHubErrorHint.isShaConflict(e.status, e.message.orEmpty())) put(currentSha()) else throw e
+        }
     }
 
     fun deleteFile(

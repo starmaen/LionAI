@@ -1166,7 +1166,8 @@ object AiTools {
             }
             ToolResult(call.name, output.take(16_000), true)
         } catch (e: GitHubException) {
-            ToolResult(call.name, "❌ GitHub ${e.status}: ${e.message}", false)
+            val hint = GitHubErrorHint.explain(e.status, e.message.orEmpty())
+            ToolResult(call.name, "❌ GitHub ${e.status}: ${e.message}" + if (hint.isBlank()) "" else "\n💡 $hint", false)
         } catch (e: McpException) {
             ToolResult(call.name, "❌ MCP: ${e.message}", false)
         } catch (e: IllegalArgumentException) {
