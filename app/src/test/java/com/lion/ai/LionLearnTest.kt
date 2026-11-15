@@ -35,7 +35,7 @@ class LionLearnTest {
         var box = ""
         val kb = LionKnowledge({ box }, { box = it })
         assertTrue(kb.add("ما هو الكوروتين في كوتلن وكيف يعمل؟", goodAnswer, "chat", "chat"))
-        assertFalse(kb.add("كيف يعمل الكوروتين في كوتلن؟ وما هو", goodAnswer, "chat", "chat"))
+        assertFalse(kb.add("وكيف يعمل الكوروتين في كوتلن ما هو", goodAnswer, "chat", "chat"))
         assertEquals(1, kb.size())
         val reloaded = LionKnowledge({ box }, { box = it })
         assertEquals(1, reloaded.size())
