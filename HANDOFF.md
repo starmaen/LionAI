@@ -149,3 +149,67 @@ Base URL (إن وُجد):
 - `WebGateway.shouldRoute` و`LlmClient` يمرّان الآن على `WebGateway.relays()` (كل خادم مفعّل بالترتيب) بدل خادم واحد. `KEY_MODE=off` ما زال يعني «مباشر بلا خوادم» (توافق مع الشريط السفلي والاختبارات).
 - «غرفة العمليات المركزية» صارت قائمة منسدلة داخل تبويب الاتصال أسفل الخوادم.
 - اختبارات جديدة: `ServerRegistryTest`.
+
+## جولة 2026-11-14: Lion-1 صار مزوّداً حقيقياً (محرّك على الجهاز، بلا مزوّد خلفي)
+**المشكلة:** lion-1 كان واجهة تمرير فقط — يجمع الهوية ثم يرسل النص إلى خادم 44045 (لم يكن التطبيق
+يشغّله) أو إلى بوابة worker. أي أنه لم يملك عقلاً ولا قدرة، ويتوقف كلياً إذا غاب المزوّد الخلفي.
+
+**الحل (`LionEngine.kt` + `LionEngineUi.kt` + إعادة كتابة `LionOne.kt`):**
+- `llama-server` (llama.cpp) يعمل داخل بيئة Alpine/proot الموجودة أصلاً في التطبيق على
+  `127.0.0.1:44045`، بنموذج GGUF في `workspace/models/lion/`. الحزمة تُثبَّت من مستودع Alpine
+  الرسمي (`apk add llama-server`، community) فلا NDK ولا مكتبات native جديدة.
+- بعد التثبيت: استدلال على الجهاز، بلا إنترنت وبلا مفتاح وبلا بوابة.
+- `--jinja` يفعّل tools الأصلية، و`LlmClient.askWithTools` يوجّه `provider == "lion1"` إلى
+  `callLionOneTools`، فيستعمل lion-1 أدوات التطبيق بـ function calling ثم يعود للبروتوكول النصي
+  تلقائياً إن رفض المسار الأدوات.
+- `ToolAgent`: lion-1 في `LOCAL_PROVIDERS` ويأخذ كل مجموعات الأدوات، بسقف تعليمات 12K حرف
+  (سياق النموذج المحلي محدود).
+- أداة تطبيق جديدة `lion_engine` (SHELL): status/models/install/download/start/stop/test —
+  الوكيل يدير محرّكه بنفسه.
+- مسارات lion-1 بالترتيب: المحرّك المدمج ← رابط المستخدم ← الخادم المحلي 44045 ← البوابة (احتياطي).
+- تنزيل GGUF قابل للاستئناف (`Range` + `.part` + تحقق حجم)، واختيار النموذج/السياق/الخيوط/
+  التشغيل التلقائي من بطاقة «🦁 محرّك Lion-1» داخل تبويب البيئة المحلية.
+- الاختبارات: `LionEngineRoutesTest` (الكتالوج، توجيه المهام، ترتيب المسارات وتجاوُز الفاشل).
+- التوثيق: `docs/LION1_ENGINE_AR.md` (+ تحديث README و`model/README_AR.md`).
+
+**التحقق المحلي في هذه الجولة:** لا JDK/Android SDK في بيئة العمل الكاملة (CI فقط)، لذا تم
+typecheck بـ kotlinc على `LionEngine.kt`/`LionOne.kt`/`LionEngineUi.kt` مقابل `android-35.jar`
+وjars Compose الحقيقية: **0 أخطاء أمامية**. يلزم تأكيد `:app:testDebugUnitTest` على GitHub Actions.
+
+### ملحق (نفس الجولة): تركيبة تلقائية حسب الجهاز + نموذج Nano
+- أُضيف `lion-1-nano` (Qwen2.5 0.5B · Q4_K_M ≈ 380MB) للأجهزة الضعيفة.
+- `LionEngine.recommendFor(totalRamMb)` دالة صرفة: ≤3.5GB → nano/4096، 4GB → mini/4096،
+  6–8GB → mini/8192، 12GB+ → base/8192. تُطبَّق مرة واحدة (`lion_engine_profile_set`)
+  ولا تُلغي اختيار المستخدم اليدوي بعدها.
+- `deviceProfile` + `preflight` + `ramWarning`: أرقام فعلية (رام متاحة/مساحة حرة) ورسالة صريحة
+  قبل التنزيل والتشغيل، مع قاعدة: حاجة الذاكرة = حجم النموذج + (السياق÷1024×40MB) + 350MB.
+- الرام الافتراضية (Memory Fusion مثل 4+3GB) **لا تُحسب** لأنها تخزين بطيء ينهار مع النموذج.
+- اختبارات: `recommendationFollowsRealRamNotVirtualRam`، `everyRecommendedModelExistsInCatalog`،
+  `memoryRequirementGrowsWithModelAndContext`.
+
+## جولة 2026-11-14 (٢): خط تدريب Lion-1 كامل وقابل للتشغيل
+**الطلب:** «أريد تحسين الأسلوب والأدوات» + خط LoRA كامل على Colab.
+- `model/data/import_tools.py` (جديد): يقرأ `AiTools.kt` ويولّد `data/tools.json` و
+  `data/tools_catalog.json` (236 أداة، مع **وسائط نموذجية حقيقية** من الكود). `--check` يفشل
+  إذا كان الكتالوج قديماً. (أُصلحت مطابقة Def: صيغة `"{}"` المفردة والحقول المسماة `connector =`.)
+- `data/generate_dataset.py`: قسم `catalog_tools()` + `catalog_followups()` يولّد أمثلة أدوات من
+  الكتالوج الحقيقي (اسم الأداة + مفاتيح وسائطها الصحيحة) بدل أسماء مكتوبة يدوياً. الناتج الآن
+  182 مثالاً (منها 118 فيها استدعاء أداة) و0 مشكلة في `eval_lion.py data`.
+- `train_lora.py`: أُعيد بناؤه ليتكيّف مع إصدار TRL المثبّت (`max_length`/`max_seq_length`،
+  `eval_strategy`/`evaluation_strategy`، `processing_class`/`tokenizer`)، + `--dry_run` (12 خطوة)،
+  + gradient checkpointing + بذرة ثابتة + رسائل أخطاء عربية.
+- `export_gguf.py` (جديد): يجلب llama.cpp ويحوّل HF→GGUF ثم يكمّم (Q4_K_M افتراضياً) ويطبع
+  الحجم وSHA-256 وخطوات الاستخدام في التطبيق — بلا أوامر يدوية.
+- `Lion1_LoRA_Colab.ipynb` (جديد): 8 خلايا تنفيذية بالترتيب (جلب ← تثبيت ← بيانات ← فحص ←
+  تجربة ← تدريب ← دمج ← GGUF ← تنزيل) + تحذيرات overfit والحقوق.
+- CI: خطوة «Validate Lion-1 training data» تشغّل `import_tools.py --check` و`eval_lion.py data`
+  على كل بناء، فلا تُدمج بيانات قديمة أو صيغة أدوات مكسورة.
+- التوثيق: `docs/LION1_TRAINING_AR.md` (دليل كامل + جدول أخطاء) وتحديث `model/README_AR.md`.
+
+### ملحق (٢): دليل Colab بالنقرات
+- `docs/LION1_COLAB_STEPBYSTEP_AR.md`: من تنزيل الدفتر إلى تشغيل النموذج في التطبيق، بالنقرات
+  والزمن المتوقع والمخرجات الحرفية لكل خلية، وجدول أعطال.
+- توضيح صريح: **لا يوجد ملف LoRA يُرفع** — الدفتر يصنعه (الخلية ٥)، ويُدمج (٦) ويُحوَّل GGUF (٨)؛
+  يُرفع إلى HuggingFace ملف GGUF النهائي فقط.
+- الدفتر: خلية ١ تدعم مستودعاً خاصاً (توكن)، وأُضيفت خلية حفظ على Google Drive كاحتياط
+  ضد انقطاع الجلسة، وأُعيد ترقيم الخلايا ١→٩.

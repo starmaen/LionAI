@@ -65,6 +65,7 @@
 - 🩺 **طبيب المشروع وتدقيق المكتبات (جديد)**: `code_doctor` يعطي تقرير جاهزية واحداً (بنية، صحة كود، اختبارات، سلسلة بناء، Manifest، وحكم نهائي)، و`dependency_audit` يقرأ Gradle/Maven/npm/Python/Dart/Rust/Go ويكشف النطاقات المفتوحة وتعارض الإصدارات وثغرات OSV المعروفة.
 - 💾 **Checkpoints وذاكرة طويلة المدى (جديد)**: حفظ/استئناف الجلسة بعد كل خطوة، وذاكرة مشروع قابلة للبحث تُستعاد عند تبديل المزود أو إعادة التشغيل.
 - 👥 **أدوار هندسية (جديد)**: Planner/Implementer/Reviewer/QA/Repo Manager/Android Engineer لتقسيم المهام في الـ DAG.
+- 🦁 **Lion-1 كمزوّد حقيقي يعتمد على نفسه (جديد)**: نموذج GGUF يعمل بمحرّك `llama.cpp` داخل بيئة Alpine/proot التي يملكها التطبيق على `127.0.0.1:44045`. بعد تثبيت المحرّك وتنزيل النموذج يعمل الاستدلال **على الجهاز بلا إنترنت وبلا أي مفتاح ولا مزوّد خلفي**، ويستعمل أدوات التطبيق بـ function calling أصلي (`--jinja`) لا ببروتوكول نصي فقط. البوابة الخارجية تبقى مساراً احتياطياً وحده. التفاصيل: `docs/LION1_ENGINE_AR.md`.
 - 🧱 Kotlin + Jetpack Compose فقط (بدون Python أو Chaquopy).
 
 ## بنية المستودع
@@ -75,7 +76,7 @@
 | `scripts/` | اختبارات سكربت الصفحة `web-session.js` (jsdom + Chromium حقيقي في CI) و`fetch-proot.sh` |
 | `gateway/` | خادم بوابة اختياري بلغة Python يُنشر على Render — خارج التطبيق نفسه |
 | `worker/` | بوابة الويب الخارجية على Cloudflare Workers (`src/index.js`) — يُنشر تلقائياً عبر `.github/workflows/deploy-worker.yml` |
-| `docs/` | `PLAYBOOK.md` (منهجية التطوير والربط) و`CONNECTIONS.md` و`PLATFORM_STUDY_AR.md` |
+| `docs/` | `PLAYBOOK.md` (منهجية التطوير والربط) و`CONNECTIONS.md` و`LION1_ENGINE_AR.md` (المحرّك المدمج لـ Lion-1) و`LION1_TRAINING_AR.md` / `LION1_COLAB_STEPBYSTEP_AR.md` (تدريب LoRA وGGUF) و`PLATFORM_STUDY_AR.md` |
 | `keystore/` | مفتاح التوقيع الثابت — **متعمّد رفعه** حتى تُثبَّت التحديثات فوق القديمة دون حذف |
 | `.github/workflows/` | `build.yml` (بناء + اختبارات عند الدفع إلى `main`)، `release.yml` (إصدار APK عند وسم `v*`)، `deploy-worker.yml` (نشر البوابة)، `make-keystore.yml` (توليد المفتاح — لمرة واحدة) |
 

@@ -352,6 +352,7 @@ object AiTools {
         Def("code_run", ToolGroup.SHELL, """{"language":"javascript","code":"console.log('ok')","timeout_sec":30}""", "تشغيل JavaScript/TypeScript أو Shell أو SQL وإرجاع stdout/stderr", true),
         Def("shell_which", ToolGroup.SHELL, """{"name":"git"}""", "التحقق من وجود أداة على الجهاز"),
         Def("toolchain_status", ToolGroup.SHELL, "{}", "حالة الحزم الأساسية (git/java/gradle/node/python/jq...) على الجهاز/الخادم"),
+        Def("lion_engine", ToolGroup.SHELL, """{"action":"status|models|install|download|start|stop|test"}""", "محرّك Lion-1 المدمج داخل جهاز المستخدم (llama.cpp + GGUF): الحالة، النماذج، التثبيت، تنزيل النموذج، التشغيل/الإيقاف، واختبار فعلي. يعمل بلا مزوّد خلفي."),
         Def("toolchain_install", ToolGroup.SHELL, """{"package":"git"}""", "تثبيت أداة تطوير من قائمة بيضاء عبر pkg/apt، أو من الإنترنت اختيارياً بصيغة pip:ruff أو npm:typescript", true),
         Def("android_build", ToolGroup.SHELL, """{"root":"","task":":app:assembleDebug","timeout_sec":600}""", "بناء Gradle محلي وأخطاء محللة file:line (يتطلب JDK/SDK)", true),
         Def("android_install_run", ToolGroup.SHELL, """{"apk":"downloads/app.apk","package_name":"com.example.app","activity":".MainActivity"}""", "تثبيت APK وتشغيله عبر adb", true),
@@ -1956,6 +1957,7 @@ object AiTools {
             "site_probe" -> WebTools.probe(req(args, "url"))
 
             "toolchain_status" -> AiTools.toolchainReport(ctx)
+            "lion_engine" -> LionEngine.toolAction(ctx, args)
             "toolchain_install" -> {
                 if (!ctx.allowWrite) throw IllegalArgumentException("تثبيت الحزم يحتاج «السماح بالكتابة».")
                 val pkg = req(args, "package")

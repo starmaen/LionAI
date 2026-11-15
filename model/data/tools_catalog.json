@@ -1,0 +1,2700 @@
+[
+ {
+  "name": "github_whoami",
+  "group": "github",
+  "args": {},
+  "description": "حساب GitHub الحالي",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_list_repos",
+  "group": "github",
+  "args": {
+   "per_page": 30
+  },
+  "description": "مستودعات الحساب",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_get_repo",
+  "group": "github",
+  "args": {
+   "repo": "owner/name"
+  },
+  "description": "بيانات مستودع",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_repo_overview",
+  "group": "github",
+  "args": {
+   "repo": "owner/name"
+  },
+  "description": "نظرة شاملة: بيانات + لغات + README + شجرة + آخر commits",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_create_repo",
+  "group": "github",
+  "args": {
+   "name": "repo",
+   "description": "",
+   "private": true
+  },
+  "description": "إنشاء مستودع جديد",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_list_tree",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branch": "main",
+   "prefix": "app/src/test",
+   "count_suffix": "Test.kt",
+   "max_entries": 300
+  },
+  "description": "شجرة الملفات (prefix لتضييق المجلد، وcount_suffix يعيد عدداً محسوباً بدقة؛ لا تعدّ بنفسك)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_list_dir",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "path": "",
+   "branch": ""
+  },
+  "description": "محتويات مجلد",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_read_file",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "path": "README.md",
+   "branch": ""
+  },
+  "description": "قراءة ملف",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_write_file",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "path": "file.txt",
+   "content": "...",
+   "message": "...",
+   "branch": ""
+  },
+  "description": "إنشاء أو تعديل ملف (commit)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_delete_file",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "path": "file.txt",
+   "message": "...",
+   "branch": ""
+  },
+  "description": "حذف ملف",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_list_branches",
+  "group": "github",
+  "args": {
+   "repo": "owner/name"
+  },
+  "description": "الفروع",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_create_branch",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branch": "feature",
+   "from": "main"
+  },
+  "description": "إنشاء فرع",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_list_commits",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branch": "",
+   "path": ""
+  },
+  "description": "آخر التغييرات",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_list_issues",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "state": "open"
+  },
+  "description": "Issues",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_create_issue",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "title": "...",
+   "body": "...",
+   "labels": [
+    "bug"
+   ]
+  },
+  "description": "إنشاء Issue",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_comment_issue",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1,
+   "body": "..."
+  },
+  "description": "تعليق على Issue/PR",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_list_prs",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "state": "open"
+  },
+  "description": "Pull Requests",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_create_pr",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "title": "...",
+   "head": "feature",
+   "base": "main",
+   "body": ""
+  },
+  "description": "إنشاء Pull Request",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_search_repos",
+  "group": "github",
+  "args": {
+   "query": "kotlin android",
+   "per_page": 10
+  },
+  "description": "بحث المستودعات",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_search_code",
+  "group": "github",
+  "args": {
+   "query": "repo:owner/name keyword"
+  },
+  "description": "بحث داخل الكود",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_workflow_runs",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "per_page": 10
+  },
+  "description": "أحدث عمليات GitHub Actions",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_list_workflows",
+  "group": "github",
+  "args": {
+   "repo": "owner/name"
+  },
+  "description": "ملفات workflows ومعرّفاتها",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_workflow_jobs",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 123
+  },
+  "description": "وظائف وخطوات عملية بناء",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_job_log",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "job_id": 456,
+   "max_chars": 12000
+  },
+  "description": "سجل وظيفة بناء لمعرفة سبب الفشل",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_rerun",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 123
+  },
+  "description": "إعادة تشغيل عملية بناء",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_cancel",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 123
+  },
+  "description": "إلغاء عملية بناء جارية",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_dispatch",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "workflow_id": 123,
+   "ref": "main",
+   "inputs": {}
+  },
+  "description": "بدء workflow يدوياً (بناء الآن)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_list_artifacts",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 123
+  },
+  "description": "مخرجات البناء (APK وغيرها)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_download_artifact",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "artifact_id": 123,
+   "name": "LionAI.zip"
+  },
+  "description": "تنزيل مخرج بناء إلى مساحة العمل",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_clone",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "ref": "main",
+   "target": "repos/owner/name"
+  },
+  "description": "تنزيل المستودع كامل وفك ضغطه في مساحة العمل",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_commit_files",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branch": "main",
+   "message": "...",
+   "files": [
+    {
+     "path": "a.kt",
+     "content": "..."
+    }
+   ],
+   "delete": [
+    "old.txt"
+   ]
+  },
+  "description": "commit واحد لعدة ملفات (تعديل/إنشاء/حذف)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_bootstrap_project",
+  "group": "github",
+  "args": {
+   "name": "my-app",
+   "description": "",
+   "private": true,
+   "base": "main",
+   "branch": "feature/setup",
+   "files": [
+    {
+     "path": "README.md",
+     "content": "# ..."
+    }
+   ],
+   "gitignore": "Kotlin",
+   "license": "mit",
+   "open_pr": false
+  },
+  "description": "إنشاء مشروع GitHub كامل: مستودع + ملفات أولية + فرع + Pull Request اختياري",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_create_repo_from_template",
+  "group": "github",
+  "args": {
+   "template": "owner/template-repo",
+   "name": "my-app",
+   "description": "",
+   "private": true
+  },
+  "description": "إنشاء مستودع من قالب GitHub جاهز",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "web_fetch",
+  "group": "web",
+  "args": {
+   "url": "https://...",
+   "links": true,
+   "max_chars": 12000
+  },
+  "description": "جلب صفحة واستخراج النص والروابط والصور",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "web_search",
+  "group": "web",
+  "args": {
+   "query": "..."
+  },
+  "description": "بحث ويب سريع بمصادر",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "web_api",
+  "group": "web",
+  "args": {
+   "url": "https://...",
+   "method": "GET",
+   "body": "",
+   "content_type": "application/json"
+  },
+  "description": "استدعاء API وإرجاع JSON/نص",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "web_download",
+  "group": "web",
+  "args": {
+   "url": "https://...",
+   "name": "file.bin"
+  },
+  "description": "تنزيل ملف إلى مساحة العمل",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_list",
+  "group": "files",
+  "args": {
+   "path": ""
+  },
+  "description": "عرض ملفات مساحة العمل",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_search",
+  "group": "files",
+  "args": {
+   "query": "TODO",
+   "path": "",
+   "max_results": 50
+  },
+  "description": "بحث نصي في مساحة العمل (اسم/مسار/محتوى)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_read",
+  "group": "files",
+  "args": {
+   "path": "src/Main.kt",
+   "max_chars": 12000
+  },
+  "description": "قراءة ملف من مساحة العمل",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "boot_info",
+  "group": "files",
+  "args": {
+   "path": "uploads/boot.img"
+  },
+  "description": "تحليل ترويسة boot/recovery.img (إصدار، أحجام، cmdline)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "boot_unpack",
+  "group": "files",
+  "args": {
+   "path": "uploads/boot.img",
+   "out_dir": "boot_unpacked"
+  },
+  "description": "فك boot/recovery.img: kernel وramdisk (إلى مجلد) وdtb وheader.json",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "boot_repack",
+  "group": "files",
+  "args": {
+   "dir": "boot_unpacked",
+   "target": "deliverables/boot-new.img"
+  },
+  "description": "إعادة تركيب boot/recovery.img من مجلد الفك بعد التعديل (غير موقّعة)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "pdf_info",
+  "group": "files",
+  "args": {
+   "path": "uploads/a.pdf"
+  },
+  "description": "عدد صفحات PDF وبياناته",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "pdf_read",
+  "group": "files",
+  "args": {
+   "path": "uploads/a.pdf",
+   "pages": "1-5",
+   "max_chars": 12000
+  },
+  "description": "قراءة نص PDF (كل الصفحات أو نطاق)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "pdf_merge",
+  "group": "files",
+  "args": {
+   "paths": [
+    "uploads/a.pdf",
+    "uploads/b.pdf"
+   ],
+   "target": "deliverables/merged.pdf"
+  },
+  "description": "دمج عدة ملفات PDF في ملف واحد",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "pdf_split",
+  "group": "files",
+  "args": {
+   "path": "uploads/a.pdf",
+   "pages": "1-3,7",
+   "target": "deliverables/part.pdf"
+  },
+  "description": "استخراج صفحات محددة من PDF",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "pdf_create",
+  "group": "files",
+  "args": {
+   "text": "...",
+   "target": "deliverables/doc.pdf"
+  },
+  "description": "إنشاء PDF من نص (يدعم العربية)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_read_many",
+  "group": "files",
+  "args": {
+   "paths": [
+    "src/Main.kt",
+    "README.md"
+   ],
+   "max_chars": 6000
+  },
+  "description": "قراءة عدة ملفات في طلب واحد",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_stat",
+  "group": "files",
+  "args": {
+   "path": "src"
+  },
+  "description": "حجم/نوع/أسطر ملف أو إحصاء مجلد",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_write",
+  "group": "files",
+  "args": {
+   "path": "src/Main.kt",
+   "content": "..."
+  },
+  "description": "إنشاء/تعديل ملف",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_delete",
+  "group": "files",
+  "args": {
+   "path": "old.txt",
+   "recursive": false
+  },
+  "description": "حذف ملف/مجلد",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_mkdir",
+  "group": "files",
+  "args": {
+   "path": "src"
+  },
+  "description": "إنشاء مجلد",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_zip_list",
+  "group": "files",
+  "args": {
+   "path": "project.zip"
+  },
+  "description": "محتويات أرشيف ZIP",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_zip_read",
+  "group": "files",
+  "args": {
+   "path": "project.zip",
+   "entry": "README.md"
+  },
+  "description": "قراءة مدخل من ZIP",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_present",
+  "group": "files",
+  "args": {
+   "path": "dist/app.zip"
+  },
+  "description": "تسليم ملف أو مجلد للمستخدم كبطاقة تنزيل في الشات (المجلد يُضغط ZIP تلقائياً). استدعِها بعد إنشاء أي ملف مطلوب",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_zip_create",
+  "group": "files",
+  "args": {
+   "target": "project.zip",
+   "sources": [
+    "src",
+    "README.md"
+   ]
+  },
+  "description": "إنشاء ZIP",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_unzip",
+  "group": "files",
+  "args": {
+   "path": "project.zip",
+   "target": "project",
+   "overwrite": false
+  },
+  "description": "فك ضغط ZIP داخل مساحة العمل",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_append",
+  "group": "files",
+  "args": {
+   "path": "notes.txt",
+   "content": "..."
+  },
+  "description": "إضافة نص إلى نهاية ملف",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_move",
+  "group": "files",
+  "args": {
+   "from": "old.txt",
+   "to": "new.txt",
+   "overwrite": false
+  },
+  "description": "نقل/إعادة تسمية ملف أو مجلد",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_copy",
+  "group": "files",
+  "args": {
+   "from": "a.kt",
+   "to": "b.kt",
+   "overwrite": false
+  },
+  "description": "نسخ ملف أو مجلد",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_tree",
+  "group": "files",
+  "args": {
+   "path": "",
+   "max_files": 300,
+   "count_suffix": ".kt"
+  },
+  "description": "شجرة ملفات المشروع (count_suffix يعيد عدداً محسوباً بدقة؛ لا تعدّ بنفسك)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_checksum",
+  "group": "files",
+  "args": {
+   "path": "app.apk",
+   "algorithm": "sha256"
+  },
+  "description": "بصمة MD5/SHA1/SHA256 لملف",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_verify",
+  "group": "files",
+  "args": {
+   "path": "",
+   "algorithm": "sha256",
+   "baseline": "integrity-baseline.json",
+   "max_files": 5000
+  },
+  "description": "فحص سلامة المشروع: بصمات كل الملفات، الفارغة، المكررة، والمقارنة بخط أساس",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_integrity_save",
+  "group": "files",
+  "args": {
+   "path": "",
+   "output": "integrity-baseline.json",
+   "algorithm": "sha256"
+  },
+  "description": "حفظ خط أساس لبصمات ملفات المشروع للتحقق لاحقاً",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_diff",
+  "group": "files",
+  "args": {
+   "first": "old.kt",
+   "second": "new.kt"
+  },
+  "description": "مقارنة ملفين وإظهار الفروق",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "read_file",
+  "group": "files",
+  "args": {
+   "path": "src/Main.kt",
+   "max_chars": 12000
+  },
+  "description": "قراءة ملف من مساحة العمل (اسم متوافق مع OpenCode)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "write_file",
+  "group": "files",
+  "args": {
+   "path": "src/Main.kt",
+   "content": "..."
+  },
+  "description": "إنشاء/تعديل ملف داخل مساحة العمل",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "list_dir",
+  "group": "files",
+  "args": {
+   "path": ""
+  },
+  "description": "استعراض محتويات مجلد في مساحة العمل",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "db_list",
+  "group": "database",
+  "args": {},
+  "description": "قواعد SQLite الموجودة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "db_schema",
+  "group": "database",
+  "args": {
+   "db": "app"
+  },
+  "description": "مخطط الجداول",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "db_query",
+  "group": "database",
+  "args": {
+   "db": "app",
+   "sql": "SELECT * FROM t LIMIT 20"
+  },
+  "description": "تنفيذ استعلام SQL",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "db_import_json",
+  "group": "database",
+  "args": {
+   "db": "app",
+   "table": "items",
+   "json": "[{\"name\":\"A\"}]",
+   "replace": false
+  },
+  "description": "استيراد JSON إلى جدول",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "db_export_json",
+  "group": "database",
+  "args": {
+   "db": "app",
+   "table": "items"
+  },
+  "description": "تصدير جدول JSON",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "db_delete",
+  "group": "database",
+  "args": {
+   "db": "old"
+  },
+  "description": "حذف قاعدة بيانات",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "firebase_status",
+  "group": "firebase",
+  "args": {},
+  "description": "حالة إعداد Firebase (Project/API key/Token) دون كشف الأسرار",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "firestore_get",
+  "group": "firebase",
+  "args": {
+   "path": "users/uid"
+  },
+  "description": "قراءة مستند Firestore",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "firestore_query",
+  "group": "firebase",
+  "args": {
+   "collection": "users",
+   "limit": 20,
+   "page_token": ""
+  },
+  "description": "سرد مستندات مجموعة Firestore",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "firestore_set",
+  "group": "firebase",
+  "args": {
+   "path": "users/uid",
+   "data": {
+    "name": "A"
+   },
+   "merge": true
+  },
+  "description": "كتابة/تحديث مستند Firestore",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "storage_list",
+  "group": "firebase",
+  "args": {
+   "bucket": "my-app.appspot.com",
+   "prefix": "",
+   "limit": 20
+  },
+  "description": "سرد ملفات Firebase Storage",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "secret_scan",
+  "group": "quality",
+  "args": {
+   "path": ""
+  },
+  "description": "فحص مساحة العمل بحثاً عن مفاتيح/أسرار قبل الدفع",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "site_probe",
+  "group": "web",
+  "args": {
+   "url": "https://example.com"
+  },
+  "description": "فحص موقع/API: الحالة والرؤوس الأمنية ومتطلبات المصادقة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "code_analyze",
+  "group": "code",
+  "args": {
+   "name": "Main.kt",
+   "code": "..."
+  },
+  "description": "تحليل كود نصي: مقاييس/تعقيد/TODO/اعتماديات",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "code_analyze_file",
+  "group": "code",
+  "args": {
+   "path": "src/Main.kt"
+  },
+  "description": "تحليل ملف من مساحة العمل",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "code_project_analyze",
+  "group": "code",
+  "args": {
+   "path": "",
+   "max_files": 80
+  },
+  "description": "تحليل مشروع كامل في مساحة العمل",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "code_patch",
+  "group": "code",
+  "args": {
+   "path": "Main.kt",
+   "find": "...",
+   "replace": "...",
+   "all": false
+  },
+  "description": "تعديل دقيق: استبدال نص داخل ملف (مع نسخة احتياطية)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "code_review",
+  "group": "code",
+  "args": {
+   "path": "",
+   "max_files": 30
+  },
+  "description": "مراجعة آلية سريعة للمشروع واكتشاف المخاطر",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "code_translate",
+  "group": "code",
+  "args": {
+   "path": "Main.kt",
+   "text": "",
+   "name": "",
+   "to": "Kotlin",
+   "notes": ""
+  },
+  "description": "ترجمة ملف/كود إلى لغة أخرى عبر النموذج النشط (معاينة دون حفظ)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "code_translate_save",
+  "group": "code",
+  "args": {
+   "path": "a.py",
+   "text": "",
+   "name": "",
+   "to": "Kotlin",
+   "out": "",
+   "notes": ""
+  },
+  "description": "ترجمة كود إلى لغة أخرى وحفظ الناتج داخل مساحة العمل",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "dependency_audit",
+  "group": "code",
+  "args": {
+   "path": "",
+   "online": true,
+   "max_files": 5000
+  },
+  "description": "تدقيق المكتبات: Gradle/Maven/npm/Python/Dart/Rust/Go + ثغرات OSV + تعارض الإصدارات",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "library_versions",
+  "group": "code",
+  "args": {
+   "path": "",
+   "name": "react",
+   "ecosystem": "npm",
+   "current_version": "18.0.0",
+   "max": 12,
+   "online": true
+  },
+  "description": "أحدث إصدار وترخيص للمكتبات + مقارنة المثبّت (تقفّي الترقيات)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "build_diagnose",
+  "group": "code",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 0,
+   "file": "",
+   "text": ""
+  },
+  "description": "تشخيص فشل البناء: يجلب سجل آخر عملية فاشلة (أو run_id أو ملف سجل أو نص) ويستخرج المهمة والسبب والأخطاء ملف:سطر مع مقتطف الكود",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "code_doctor",
+  "group": "code",
+  "args": {
+   "path": "",
+   "online": false,
+   "max_files": 3000
+  },
+  "description": "تقرير جاهزية شامل: بنية، صحة كود، اختبارات، سلسلة بناء، اعتماديات، وحكم نهائي",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_json",
+  "group": "util",
+  "args": {
+   "text": "{...}",
+   "indent": 2
+  },
+  "description": "تنسيق/التحقق من JSON",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_base64",
+  "group": "util",
+  "args": {
+   "text": "...",
+   "mode": "encode|decode"
+  },
+  "description": "Base64",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_hash",
+  "group": "util",
+  "args": {
+   "text": "...",
+   "algorithm": "sha256|md5|sha1"
+  },
+  "description": "تجزئة Hash",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_url",
+  "group": "util",
+  "args": {
+   "text": "...",
+   "mode": "encode|decode"
+  },
+  "description": "URL encode/decode",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_regex",
+  "group": "util",
+  "args": {
+   "pattern": "\\\\d+",
+   "text": "...",
+   "ignore_case": false
+  },
+  "description": "اختبار تعبير نمطي",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_uuid",
+  "group": "util",
+  "args": {},
+  "description": "UUID جديد",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_timestamp",
+  "group": "util",
+  "args": {},
+  "description": "الوقت الحالي Unix/ISO",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_jwt",
+  "group": "util",
+  "args": {
+   "token": "..."
+  },
+  "description": "فك JWT وقراءة الحقول والانتهاء (بدون تحقق)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_cron",
+  "group": "util",
+  "args": {
+   "cron": "0 9 * * *"
+  },
+  "description": "شرح تعبير Cron وتوقع التنفيذ القادم",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_diff",
+  "group": "util",
+  "args": {
+   "first": "...",
+   "second": "..."
+  },
+  "description": "مقارنة نصين وإظهار الفروق",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_csv",
+  "group": "util",
+  "args": {
+   "text": "a,b\n1,2",
+   "query": "SELECT * LIMIT 10"
+  },
+  "description": "تحليل CSV واستعلام بسيط",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_slug",
+  "group": "util",
+  "args": {
+   "text": "..."
+  },
+  "description": "إنشاء slug آمن من نص",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_color",
+  "group": "util",
+  "args": {
+   "color": "#FFB800"
+  },
+  "description": "تحويل لون HEX إلى RGB/HSL",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "util_regex_replace",
+  "group": "util",
+  "args": {
+   "pattern": "\\d+",
+   "text": "a1b2",
+   "replacement": "#",
+   "ignore_case": false
+  },
+  "description": "استبدال بتعبير نمطي",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "connectors_status",
+  "group": "connectors",
+  "args": {},
+  "description": "حالة الموصلات والحسابات المربوطة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "connectors_test",
+  "group": "connectors",
+  "args": {},
+  "description": "اختبار فعلي لصلاحية كل الموصلات المربوطة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "drive_search",
+  "group": "connectors",
+  "args": {
+   "query": "تقرير",
+   "max": 10
+  },
+  "description": "بحث في ملفات Google Drive",
+  "write": false,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_open",
+  "group": "connectors",
+  "args": {
+   "url_or_id": "https://drive.google.com/drive/folders/...",
+   "max_chars": 12000
+  },
+  "description": "فتح رابط/معرّف ملف أو مجلد Drive وعرض محتواه",
+  "write": false,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_list",
+  "group": "connectors",
+  "args": {
+   "max": 50,
+   "folder_id": ""
+  },
+  "description": "أحدث ملفات Drive أو محتويات مجلد",
+  "write": false,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_read",
+  "group": "connectors",
+  "args": {
+   "file_id": "...",
+   "max_chars": 12000
+  },
+  "description": "قراءة محتوى ملف نصي من Drive",
+  "write": false,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_download",
+  "group": "connectors",
+  "args": {
+   "file_id": "...",
+   "name": "file.pdf"
+  },
+  "description": "تنزيل ملف من Drive إلى مساحة العمل",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_upload",
+  "group": "connectors",
+  "args": {
+   "name": "report.txt",
+   "path": "",
+   "content": "...",
+   "mime": "text/plain",
+   "folder_id": ""
+  },
+  "description": "رفع ملف/نص إلى Drive",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_update",
+  "group": "connectors",
+  "args": {
+   "file_id": "...",
+   "content": "...",
+   "path": "",
+   "mime": "text/plain"
+  },
+  "description": "تعديل محتوى ملف نصي موجود",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_mkdir",
+  "group": "connectors",
+  "args": {
+   "name": "مجلد",
+   "folder_id": ""
+  },
+  "description": "إنشاء مجلد في Drive",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_move",
+  "group": "connectors",
+  "args": {
+   "file_id": "...",
+   "folder_id": "...",
+   "name": ""
+  },
+  "description": "نقل ملف إلى مجلد آخر",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_rename",
+  "group": "connectors",
+  "args": {
+   "file_id": "...",
+   "name": "الاسم الجديد"
+  },
+  "description": "إعادة تسمية ملف",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_copy",
+  "group": "connectors",
+  "args": {
+   "file_id": "...",
+   "name": "نسخة",
+   "folder_id": ""
+  },
+  "description": "نسخ ملف",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_trash",
+  "group": "connectors",
+  "args": {
+   "file_id": "...",
+   "permanent": false
+  },
+  "description": "نقل ملف إلى السلة أو حذفه نهائياً",
+  "write": true,
+  "connector": "google_drive"
+ },
+ {
+  "name": "drive_meta",
+  "group": "connectors",
+  "args": {
+   "file_id": "..."
+  },
+  "description": "بيانات ملف Drive والمالك والصلاحيات",
+  "write": false,
+  "connector": "google_drive"
+ },
+ {
+  "name": "gmail_search",
+  "group": "connectors",
+  "args": {
+   "query": "from:someone",
+   "max": 10
+  },
+  "description": "بحث في Gmail",
+  "write": false,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_read",
+  "group": "connectors",
+  "args": {
+   "message_id": "...",
+   "max_chars": 12000
+  },
+  "description": "قراءة رسالة بريد كاملة مع قائمة المرفقات",
+  "write": false,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_send",
+  "group": "connectors",
+  "args": {
+   "to": "a@b.com",
+   "subject": "...",
+   "body": "...",
+   "cc": "",
+   "bcc": "",
+   "html": false,
+   "from": "",
+   "attachments": [
+    "downloads/a.pdf"
+   ],
+   "thread_id": "",
+   "in_reply_to": ""
+  },
+  "description": "إرسال بريد إلكتروني (يدعم المرفقات والرد على محادثة)",
+  "write": true,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_draft",
+  "group": "connectors",
+  "args": {
+   "to": "a@b.com",
+   "subject": "...",
+   "body": "...",
+   "cc": "",
+   "bcc": "",
+   "html": false,
+   "from": "",
+   "attachments": []
+  },
+  "description": "حفظ رسالة كمسودة بدل إرسالها",
+  "write": true,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_labels",
+  "group": "connectors",
+  "args": {},
+  "description": "تسميات Gmail ومعرّفاتها",
+  "write": false,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_modify",
+  "group": "connectors",
+  "args": {
+   "message_id": "...",
+   "add": [
+    "UNREAD"
+   ],
+   "remove": [
+    "INBOX"
+   ]
+  },
+  "description": "تعديل تسميات رسالة (قراءة/أرشفة/نجمة)",
+  "write": true,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_trash",
+  "group": "connectors",
+  "args": {
+   "message_id": "...",
+   "permanent": false
+  },
+  "description": "نقل رسالة إلى المهملات أو حذفها نهائياً",
+  "write": true,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_attachment",
+  "group": "connectors",
+  "args": {
+   "message_id": "...",
+   "attachment_id": "...",
+   "name": "file.pdf"
+  },
+  "description": "تنزيل مرفق Gmail إلى مساحة العمل",
+  "write": true,
+  "connector": "gmail"
+ },
+ {
+  "name": "gmail_profile",
+  "group": "connectors",
+  "args": {},
+  "description": "بيانات حساب Gmail وإحصاءات الرسائل",
+  "write": false,
+  "connector": "gmail"
+ },
+ {
+  "name": "calendar_list",
+  "group": "connectors",
+  "args": {
+   "days": 7,
+   "max": 20,
+   "calendar_id": "primary"
+  },
+  "description": "المواعيد القادمة",
+  "write": false,
+  "connector": "google_calendar"
+ },
+ {
+  "name": "calendar_calendars",
+  "group": "connectors",
+  "args": {},
+  "description": "قائمة التقاويم ومعرّفاتها",
+  "write": false,
+  "connector": "google_calendar"
+ },
+ {
+  "name": "calendar_create",
+  "group": "connectors",
+  "args": {
+   "summary": "اجتماع",
+   "start": "2026-10-27T10:00:00+03:00",
+   "end": "",
+   "description": "",
+   "location": "",
+   "timezone": "Asia/Riyadh",
+   "attendees": [
+    "a@b.com"
+   ],
+   "calendar_id": "primary"
+  },
+  "description": "إنشاء موعد",
+  "write": true,
+  "connector": "google_calendar"
+ },
+ {
+  "name": "calendar_update",
+  "group": "connectors",
+  "args": {
+   "event_id": "...",
+   "summary": "",
+   "start": "",
+   "end": "",
+   "description": "",
+   "location": "",
+   "timezone": "",
+   "calendar_id": "primary"
+  },
+  "description": "تعديل موعد موجود",
+  "write": true,
+  "connector": "google_calendar"
+ },
+ {
+  "name": "calendar_delete",
+  "group": "connectors",
+  "args": {
+   "event_id": "...",
+   "calendar_id": "primary"
+  },
+  "description": "حذف موعد",
+  "write": true,
+  "connector": "google_calendar"
+ },
+ {
+  "name": "calendar_quick_add",
+  "group": "connectors",
+  "args": {
+   "text": "اجتماع غداً الساعة 10"
+  },
+  "description": "إنشاء موعد بلغة طبيعية",
+  "write": true,
+  "connector": "google_calendar"
+ },
+ {
+  "name": "notion_search",
+  "group": "connectors",
+  "args": {
+   "query": "...",
+   "max": 10
+  },
+  "description": "بحث في Notion",
+  "write": false,
+  "connector": "notion"
+ },
+ {
+  "name": "notion_read",
+  "group": "connectors",
+  "args": {
+   "page_id": "...",
+   "max_chars": 12000
+  },
+  "description": "قراءة صفحة Notion",
+  "write": false,
+  "connector": "notion"
+ },
+ {
+  "name": "notion_create",
+  "group": "connectors",
+  "args": {
+   "parent_page": "...",
+   "title": "...",
+   "content": "..."
+  },
+  "description": "إنشاء صفحة Notion",
+  "write": true,
+  "connector": "notion"
+ },
+ {
+  "name": "notion_append",
+  "group": "connectors",
+  "args": {
+   "page_id": "...",
+   "content": "..."
+  },
+  "description": "إضافة محتوى إلى صفحة Notion",
+  "write": true,
+  "connector": "notion"
+ },
+ {
+  "name": "slack_channels",
+  "group": "connectors",
+  "args": {
+   "max": 50
+  },
+  "description": "قنوات Slack",
+  "write": false,
+  "connector": "slack"
+ },
+ {
+  "name": "slack_post",
+  "group": "connectors",
+  "args": {
+   "channel": "general",
+   "text": "..."
+  },
+  "description": "إرسال رسالة Slack",
+  "write": true,
+  "connector": "slack"
+ },
+ {
+  "name": "slack_history",
+  "group": "connectors",
+  "args": {
+   "channel": "general",
+   "max": 20
+  },
+  "description": "آخر رسائل قناة Slack",
+  "write": false,
+  "connector": "slack"
+ },
+ {
+  "name": "connector_get",
+  "group": "connectors",
+  "args": {
+   "path": "/items"
+  },
+  "description": "GET من خدمة REST المخصّصة",
+  "write": false,
+  "connector": "generic"
+ },
+ {
+  "name": "connector_request",
+  "group": "connectors",
+  "args": {
+   "path": "/items",
+   "method": "POST",
+   "body": "{}"
+  },
+  "description": "طلب GET/POST/PUT/PATCH إلى خدمة REST المخصّصة",
+  "write": true,
+  "connector": "generic"
+ },
+ {
+  "name": "github_push_workspace",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "path": "repos/owner/name",
+   "branch": "main",
+   "message": "...",
+   "delete_missing": false,
+   "dry_run": true,
+   "confirm_large": false
+  },
+  "description": "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_get_run",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 123
+  },
+  "description": "حالة عملية بناء واحدة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_wait_run",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branch": "main",
+   "run_id": 0,
+   "timeout_sec": 420
+  },
+  "description": "انتظار انتهاء أحدث بناء ثم إرجاع سجل الفشل تلقائياً",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_run_logs",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 123,
+   "max_chars": 12000
+  },
+  "description": "سجل وظائف عملية بناء كامل (للفشل والنجاح)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_compare",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "base": "main",
+   "head": "feature"
+  },
+  "description": "مقارنة فرعين: commits والملفات والفروق",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_pr_files",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1
+  },
+  "description": "ملفات PR وتغييراتها",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_merge_pr",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1,
+   "method": "squash",
+   "commit_title": ""
+  },
+  "description": "دمج Pull Request",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_review_pr",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1,
+   "event": "APPROVE|REQUEST_CHANGES|COMMENT",
+   "body": "..."
+  },
+  "description": "مراجعة PR واعتماده أو طلب تعديلات",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_close_issue",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1
+  },
+  "description": "إغلاق Issue",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_list_tags",
+  "group": "github",
+  "args": {
+   "repo": "owner/name"
+  },
+  "description": "وسوم الإصدارات",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_create_tag",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "name": "v1.0.0",
+   "from": "main"
+  },
+  "description": "إنشاء وسم إصدار",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_create_release",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "tag": "v1.0.0",
+   "name": "",
+   "body": "",
+   "draft": false,
+   "prerelease": false
+  },
+  "description": "إنشاء Release",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_delete_branch",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branch": "feature"
+  },
+  "description": "حذف فرع واحد (لا يحذف الفرع الافتراضي عادةً)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_delete_branches",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branches": [
+    "feature/x",
+    "tmp/y"
+   ],
+   "prefix": "feature/",
+   "pattern": "^tmp-.*",
+   "keep": [
+    "dev"
+   ],
+   "dry_run": false
+  },
+  "description": "حذف فروع مجمّعة دفعة واحدة: بأسماء صريحة (branches) أو ببادئة (prefix) أو نمط (pattern)، مع استثناء الفرع الافتراضي والمستثنى في keep تلقائياً",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_edit",
+  "group": "files",
+  "args": {
+   "path": "src/Main.kt",
+   "old": "النص الحالي حرفياً",
+   "new": "النص الجديد",
+   "replace_all": false
+  },
+  "description": "تعديل ملف باستبدال نصي (الأوثق والأسهل؛ فضّله على file_apply_patch)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "file_apply_patch",
+  "group": "files",
+  "args": {
+   "path": "src/Main.kt",
+   "patch": "@@ -1,2 +1,2 @@\n ...",
+   "backup": true
+  },
+  "description": "تطبيق unified diff بدقة ورفض عدم التطابق",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "tools_schema",
+  "group": "meta",
+  "args": {
+   "group": "github|files|code|comms|web|database|util|connectors"
+  },
+  "description": "تحميل مخطط أدوات مجموعة لم تظهر في السياق",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "tools_request_access",
+  "group": "meta",
+  "args": {
+   "resource": "github|files|shell|connector|android permission",
+   "reason": "سبب الحاجة للوصول"
+  },
+  "description": "طلب الوصول عبر بطاقة القرار؛ لا يمنح صلاحيات تلقائياً",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "tools_groups",
+  "group": "meta",
+  "args": {},
+  "description": "حالة مجموعات الأدوات والموصلات والصلاحيات",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "telegram_status",
+  "group": "comms",
+  "args": {},
+  "description": "بيانات البوت وقدراته",
+  "write": false,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_updates",
+  "group": "comms",
+  "args": {
+   "offset": 0,
+   "limit": 50
+  },
+  "description": "أحدث تحديثات البوت (رسائل/أزرار) مع تحديث offset تلقائياً",
+  "write": false,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_send",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "text": "...",
+   "parse_mode": "Markdown",
+   "reply_to": 0,
+   "thread_id": 0
+  },
+  "description": "إرسال رسالة Telegram",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_send_media",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "type": "photo",
+   "path": "downloads/a.jpg",
+   "url": "",
+   "caption": ""
+  },
+  "description": "إرسال صورة/ملف/فيديو/صوت من مساحة العمل أو رابط",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_edit",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "message_id": 1,
+   "text": "...",
+   "parse_mode": "Markdown"
+  },
+  "description": "تعديل رسالة بوت",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_delete",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "message_id": 1
+  },
+  "description": "حذف رسالة",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_forward",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "from_chat_id": "...",
+   "message_id": 1
+  },
+  "description": "تحويل رسالة",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_pin",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "message_id": 1,
+   "notify": false
+  },
+  "description": "تثبيت رسالة",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_chat_info",
+  "group": "comms",
+  "args": {
+   "chat_id": "..."
+  },
+  "description": "بيانات محادثة/قناة/مجموعة",
+  "write": false,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_members",
+  "group": "comms",
+  "args": {
+   "chat_id": "..."
+  },
+  "description": "مشرفو المجموعة/القناة",
+  "write": false,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_file_download",
+  "group": "comms",
+  "args": {
+   "file_id": "...",
+   "name": "file.bin"
+  },
+  "description": "تنزيل ملف أرسله البوت إلى مساحة العمل",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_webhook_set",
+  "group": "comms",
+  "args": {
+   "url": "https://...",
+   "secret": ""
+  },
+  "description": "ضبط Webhook للبوت",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_webhook_delete",
+  "group": "comms",
+  "args": {},
+  "description": "حذف Webhook (لتفعيل polling)",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_webhook_info",
+  "group": "comms",
+  "args": {},
+  "description": "حالة Webhook",
+  "write": false,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_poll",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "question": "...",
+   "options": [
+    "أ",
+    "ب"
+   ]
+  },
+  "description": "إرسال استطلاع",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_commands",
+  "group": "comms",
+  "args": {
+   "commands": [
+    "start:ابدأ",
+    "help:مساعدة"
+   ]
+  },
+  "description": "ضبط أوامر البوت",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_invite",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "name": "",
+   "member_limit": 0
+  },
+  "description": "إنشاء رابط دعوة",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "telegram_admin",
+  "group": "comms",
+  "args": {
+   "chat_id": "...",
+   "user_id": 123,
+   "action": "ban|unban|promote"
+  },
+  "description": "إدارة عضو (حظر/رفع حظر/ترقية)",
+  "write": true,
+  "connector": "telegram"
+ },
+ {
+  "name": "whatsapp_status",
+  "group": "comms",
+  "args": {},
+  "description": "بيانات رقم WhatsApp Business وجودته",
+  "write": false,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_send",
+  "group": "comms",
+  "args": {
+   "to": "9665...",
+   "text": "...",
+   "preview_url": false
+  },
+  "description": "إرسال رسالة نصية WhatsApp Business",
+  "write": true,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_template",
+  "group": "comms",
+  "args": {
+   "to": "9665...",
+   "name": "hello_world",
+   "language": "ar",
+   "components": []
+  },
+  "description": "إرسال قالب معتمد",
+  "write": true,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_media",
+  "group": "comms",
+  "args": {
+   "to": "9665...",
+   "type": "image",
+   "link": "",
+   "path": "downloads/a.jpg",
+   "caption": ""
+  },
+  "description": "إرسال وسائط (رابط أو ملف)",
+  "write": true,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_mark_read",
+  "group": "comms",
+  "args": {
+   "message_id": "wamid..."
+  },
+  "description": "تعليم رسالة كمقروءة",
+  "write": true,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_templates",
+  "group": "comms",
+  "args": {
+   "waba_id": "..."
+  },
+  "description": "قوالب WhatsApp Business",
+  "write": false,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_profile",
+  "group": "comms",
+  "args": {},
+  "description": "ملف نشاط WhatsApp Business",
+  "write": false,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_numbers",
+  "group": "comms",
+  "args": {
+   "waba_id": "..."
+  },
+  "description": "أرقام WABA",
+  "write": false,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "whatsapp_download",
+  "group": "comms",
+  "args": {
+   "media_id": "...",
+   "name": "file.bin"
+  },
+  "description": "تنزيل وسائط WhatsApp إلى مساحة العمل",
+  "write": true,
+  "connector": "whatsapp"
+ },
+ {
+  "name": "notifications_status",
+  "group": "comms",
+  "args": {},
+  "description": "حالة صلاحية الإشعارات وعدد الرسائل المحفوظة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "notifications_list",
+  "group": "comms",
+  "args": {
+   "app": "whatsapp|telegram|",
+   "query": "",
+   "since_minutes": 1440,
+   "limit": 50
+  },
+  "description": "قراءة إشعارات WhatsApp/Telegram المحفوظة محلياً",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "notifications_chats",
+  "group": "comms",
+  "args": {
+   "since_minutes": 1440
+  },
+  "description": "ملخص المحادثات من الإشعارات",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "notifications_reply",
+  "group": "comms",
+  "args": {
+   "key": "...",
+   "text": "..."
+  },
+  "description": "رد مباشر على إشعار نشط (RemoteInput)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "notifications_dismiss",
+  "group": "comms",
+  "args": {
+   "key": "..."
+  },
+  "description": "إغلاق إشعار",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "notifications_clear",
+  "group": "comms",
+  "args": {},
+  "description": "مسح سجل الإشعارات المحلي",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "manifest_create",
+  "group": "control",
+  "args": {
+   "project": "my-app",
+   "root": "",
+   "entry_points": [
+    "app/src/main/java/.../MainActivity.kt"
+   ],
+   "files": [
+    {
+     "path": "README.md",
+     "purpose": "...",
+     "contract": "..."
+    }
+   ],
+   "tasks": [
+    {
+     "id": "t1",
+     "role": "implementer",
+     "title": "...",
+     "depends_on": [],
+     "files": [
+      "..."
+     ]
+    }
+   ]
+  },
+  "description": "إنشاء Manifest إجباري: شجرة ملفات وعقود ومهام DAG (لا كتابة كود قبله)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "manifest_read",
+  "group": "control",
+  "args": {},
+  "description": "قراءة Manifest المحادثة الحالية",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "manifest_update",
+  "group": "control",
+  "args": {
+   "path": "src/Main.kt",
+   "status": "written",
+   "purpose": "",
+   "contract": ""
+  },
+  "description": "تحديث حالة ملف في Manifest",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "manifest_validate",
+  "group": "control",
+  "args": {
+   "root": ""
+  },
+  "description": "فحص بنيوي قبل الاعتماد، وبوابة كاملة بعده",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "gate_run",
+  "group": "quality",
+  "args": {
+   "root": ""
+  },
+  "description": "بوابة الجودة الميكانيكية: Manifest + ملفات + lint + Root Reachability + HMAC",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "root_reachability",
+  "group": "quality",
+  "args": {
+   "root": ""
+  },
+  "description": "فحص وصول كل ملف مصدري إلى نقطة دخول وكشف الملفات اليتيمة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "gate_sign_tests",
+  "group": "quality",
+  "args": {
+   "root": ""
+  },
+  "description": "توقيع ملفات الاختبار الحالية بـ HMAC-SHA256",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "gate_verify_tests",
+  "group": "quality",
+  "args": {
+   "root": ""
+  },
+  "description": "التحقق من عدم العبث بملفات الاختبار الموقّعة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "pipeline_start",
+  "group": "control",
+  "args": {
+   "project": "my-app",
+   "root": ""
+  },
+  "description": "بدء دورة DAG: تخطيط ← Manifest ← تنفيذ ← بوابة ← مراجعة ← QA ← بناء",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "pipeline_status",
+  "group": "control",
+  "args": {},
+  "description": "حالة دورة التطوير الحالية والمرحلة التالية",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "pipeline_approve",
+  "group": "control",
+  "args": {},
+  "description": "اعتماد Manifest بعد التحقق البنيوي والانتقال للتنفيذ",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "pipeline_advance",
+  "group": "control",
+  "args": {
+   "note": ""
+  },
+  "description": "الانتقال للمرحلة التالية مع فحص البوابة عند اللزوم",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "pipeline_reset",
+  "group": "control",
+  "args": {},
+  "description": "إعادة ضبط دورة التطوير لهذه المحادثة",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "checkpoint_save",
+  "group": "memory",
+  "args": {
+   "note": ""
+  },
+  "description": "حفظ نقطة استئناف دائمة بعد خطوة فرعية",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "checkpoint_resume",
+  "group": "memory",
+  "args": {},
+  "description": "استئناف آخر نقطة محفوظة لهذه المحادثة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "checkpoint_list",
+  "group": "memory",
+  "args": {},
+  "description": "قائمة نقاط الاستئناف المحفوظة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "checkpoint_clear",
+  "group": "memory",
+  "args": {},
+  "description": "حذف نقطة الاستئناف الحالية",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "memory_save",
+  "group": "memory",
+  "args": {
+   "project": "",
+   "title": "قرار معماري",
+   "body": "...",
+   "tags": [
+    "architecture"
+   ]
+  },
+  "description": "حفظ قرار/درس معماري في الذاكرة طويلة المدى",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "memory_search",
+  "group": "memory",
+  "args": {
+   "query": "...",
+   "limit": 10
+  },
+  "description": "البحث في قرارات المشاريع السابقة",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "memory_list",
+  "group": "memory",
+  "args": {
+   "limit": 20
+  },
+  "description": "أحدث قرارات الذاكرة طويلة المدى",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "memory_delete",
+  "group": "memory",
+  "args": {
+   "id": ""
+  },
+  "description": "حذف قرار من الذاكرة",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "shell_exec",
+  "group": "shell",
+  "args": {
+   "command": "git status",
+   "cwd": "",
+   "timeout_sec": 120
+  },
+  "description": "تنفيذ أمر مسموح داخل مساحة العمل مع مهلة وسقف مخرجات",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "execute_command",
+  "group": "shell",
+  "args": {
+   "command": "node --version",
+   "cwd": "",
+   "timeout_sec": 30
+  },
+  "description": "تنفيذ أمر داخل Alpine/مساحة العمل بمهلة قصوى 30 ثانية",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "code_run",
+  "group": "shell",
+  "args": {
+   "language": "javascript",
+   "code": "console.log('ok')",
+   "timeout_sec": 30
+  },
+  "description": "تشغيل JavaScript/TypeScript أو Shell أو SQL وإرجاع stdout/stderr",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "shell_which",
+  "group": "shell",
+  "args": {
+   "name": "git"
+  },
+  "description": "التحقق من وجود أداة على الجهاز",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "toolchain_status",
+  "group": "shell",
+  "args": {},
+  "description": "حالة الحزم الأساسية (git/java/gradle/node/python/jq...) على الجهاز/الخادم",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "lion_engine",
+  "group": "shell",
+  "args": {
+   "action": "status|models|install|download|start|stop|test"
+  },
+  "description": "محرّك Lion-1 المدمج داخل جهاز المستخدم (llama.cpp + GGUF): الحالة، النماذج، التثبيت، تنزيل النموذج، التشغيل/الإيقاف، واختبار فعلي. يعمل بلا مزوّد خلفي.",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "toolchain_install",
+  "group": "shell",
+  "args": {
+   "package": "git"
+  },
+  "description": "تثبيت أداة تطوير من قائمة بيضاء عبر pkg/apt، أو من الإنترنت اختيارياً بصيغة pip:ruff أو npm:typescript",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "android_build",
+  "group": "shell",
+  "args": {
+   "root": "",
+   "task": ":app:assembleDebug",
+   "timeout_sec": 600
+  },
+  "description": "بناء Gradle محلي وأخطاء محللة file:line (يتطلب JDK/SDK)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "android_install_run",
+  "group": "shell",
+  "args": {
+   "apk": "downloads/app.apk",
+   "package_name": "com.example.app",
+   "activity": ".MainActivity"
+  },
+  "description": "تثبيت APK وتشغيله عبر adb",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "android_logcat",
+  "group": "shell",
+  "args": {
+   "filter": "",
+   "lines": 300
+  },
+  "description": "قراءة logcat مفلتر",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "tools_catalog",
+  "group": "meta",
+  "args": {},
+  "description": "جرد كل الأدوات وحالتها: متاح/يحتاج ربط/يحتاج كتابة/يحتاج تثبيت",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "mcp_servers",
+  "group": "mcp",
+  "args": {},
+  "description": "خوادم MCP المضافة وحالتها",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "mcp_add_server",
+  "group": "mcp",
+  "args": {
+   "id": "files",
+   "name": "Filesystem MCP",
+   "url": "http://127.0.0.1:3001/mcp",
+   "token": "",
+   "enabled": true
+  },
+  "description": "إضافة خادم MCP عبر Streamable HTTP",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "mcp_remove_server",
+  "group": "mcp",
+  "args": {
+   "id": "files"
+  },
+  "description": "حذف خادم MCP",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "mcp_list_tools",
+  "group": "mcp",
+  "args": {
+   "server": "files"
+  },
+  "description": "سرد أدوات خادم MCP",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "mcp_call",
+  "group": "mcp",
+  "args": {
+   "server": "files",
+   "tool": "read_file",
+   "args": {
+    "path": "README.md"
+   }
+  },
+  "description": "استدعاء أداة من خادم MCP",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "mcp_ping",
+  "group": "mcp",
+  "args": {
+   "server": "files"
+  },
+  "description": "اختبار اتصال خادم MCP",
+  "write": false,
+  "connector": null
+ }
+]
