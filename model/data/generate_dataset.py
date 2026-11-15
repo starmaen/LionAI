@@ -30,7 +30,7 @@ def tool(name, **args):
 def result(name, text):
     return f"نتائج الأدوات:\n[{name}] {text}"
 
-# ---------- 1) الهوية ----------
+# ---------- 1 الهوية ----------
 IDENT_Q = ["من أنت؟", "ما اسمك؟", "عرّفني بنفسك", "من صنعك؟", "ما هو النموذج الذي تعمل عليه؟",
            "هل أنت ChatGPT؟", "هل أنت Gemini أو Claude؟", "who are you?", "what model are you?", "who made you?"]
 IDENT_A_AR = ("أنا «أسد» (Lion-1)، مساعد ذكاء اصطناعي عربي متعدد المهام من Star Syria. "
@@ -45,7 +45,7 @@ def identity():
         out.append(conv(q, IDENT_A_EN if en else IDENT_A_AR))
     return out
 
-# ---------- 2) مهام نصية (إجابات مكتوبة يدوياً وصحيحة) ----------
+# ---------- 2 مهام نصية إجابات مكتوبة يدوياً وصحيحة ----------
 TASKS = [
  # برمجة
  ("اكتب دالة Kotlin تعكس نصاً",
@@ -101,7 +101,7 @@ def tasks():
             out.append(conv(p + q, a))
     return out
 
-# ---------- 3) مسارات أدوات (بصيغة LionAI) ----------
+# ---------- 3 مسارات أدوات بصيغة LionAI ----------
 REPOS = ["starmaen/LionAI", "starmaen/star-cloud", "starmaen/wolf-browser", "starmaen/demo-app"]
 FILES = ["app/src/main/java/com/lion/ai/Main.kt", "src/Utils.kt", "app/build.gradle.kts", "scripts/build.sh"]
 
@@ -118,23 +118,23 @@ def trajectories():
     out = []
     for repo in REPOS:
         f = random.choice(FILES)
-        # أ) استكشاف قبل الإصلاح
+        # أ استكشاف قبل الإصلاح
         out.append(traj(f"افحص مشروع {repo} وقل لي ما بنيته",
             [(tool("github_repo_overview", repo=repo),
               result("github_repo_overview", f"{repo}: Kotlin, 120 ملفاً، آخر commit قبل يومين")),
              ("المشروع {0} مكتوب بـ Kotlin ويضم نحو 120 ملفاً، وآخر تعديل قبل يومين. هل تريد مراجعة ملف محدد أو فحص البناء؟".format(repo), None)]))
-        # ب) قراءة ثم تحليل
+        # ب قراءة ثم تحليل
         out.append(traj(f"اقرأ الملف {f} وحلله",
             [(tool("file_read", path=f, max_chars=12000), result("file_read", "(محتوى الملف: 85 سطراً)")),
              (tool("code_analyze_file", path=f), result("code_analyze_file", "0 أخطاء، تحذيران: متغير غير مستخدم في السطرين 12 و40")),
              (f"الملف {f} سليم بنيوياً (0 أخطاء). وُجد تحذيران: متغير غير مستخدم في السطرين 12 و40. أقترح حذفهما، هل أنفّذ ذلك؟", None)]))
-        # ج) فشل بناء → تشخيص → سجل
+        # ج فشل بناء → تشخيص → سجل
         out.append(traj(f"فشل البناء في {repo}، أصلحه",
             [(tool("build_diagnose", repo=repo), result("build_diagnose", "أول خطأ: Unresolved reference: foo في Main.kt:34، job_id=456")),
              (tool("github_job_log", repo=repo, job_id=456, max_chars=12000), result("github_job_log", "e: Main.kt:34 Unresolved reference: foo")),
              (tool("file_search", query="foo", path="", max_results=50), result("file_search", "Main.kt:34 foo(); Helper.kt:3 fun bar()")),
              ("السبب الجذري: استدعاء دالة `foo` غير معرّفة في Main.kt:34، والموجود في Helper.kt هو `bar`. سأصحح الاستدعاء إلى `bar` ثم أتحقق بالبناء.", None)]))
-        # د) كتابة آمنة على فرع (لا main مباشرة)
+        # د كتابة آمنة على فرع لا main مباشرة
         out.append(traj(f"أضف ملف CHANGELOG.md إلى {repo}",
             [(tool("github_create_branch", repo=repo, branch="docs/changelog", **{"from": "main"}),
               result("github_create_branch", "تم إنشاء الفرع docs/changelog")),
@@ -143,13 +143,13 @@ def trajectories():
              (tool("github_create_pr", repo=repo, title="docs: add changelog", head="docs/changelog", base="main", body="إضافة CHANGELOG.md"),
               result("github_create_pr", "PR #12")),
              (f"أنشأت الفرع docs/changelog وأضفت CHANGELOG.md وفتحت PR #12 على main. لم أدفع إلى main مباشرة. الدمج بانتظار موافقتك.", None)]))
-        # هـ) فحص أسرار قبل الدفع
+        # هـ فحص أسرار قبل الدفع
         out.append(traj("افحص المشروع بحثاً عن مفاتيح مسرّبة قبل الدفع",
             [(tool("secret_scan", path=""), result("secret_scan", "وُجد مفتاح محتمل في scripts/build.sh:7 (نمط ghp_)")),
              ("وُجد مفتاح محتمل في scripts/build.sh:7. لا تدفع قبل إزالته واستبداله بسر في GitHub Actions، وبعدها اعتبر المفتاح مكشوفاً فألغِه وأنشئ بديلاً.", None)]))
-    # و) طلب بلا أداة: لا نستدعي أداة لسؤال معرفي
+    # و طلب بلا أداة: لا نستدعي أداة لسؤال معرفي
     out.append(conv("ما الفرق بين HTTP و HTTPS؟", "HTTPS هو HTTP مع تشفير TLS: يحمي البيانات من التنصت والتعديل أثناء النقل ويتحقق من هوية الخادم بالشهادة. استخدمه دائماً للمفاتيح وكلمات المرور."))
-    # ز) سؤال قبل عملية خطرة
+    # ز سؤال قبل عملية خطرة
     out.append(traj("احذف الفرع main من المستودع",
         [("[[ASK]]ما أنجزته: لم أنفّذ شيئاً.\nما أحتاجه منك: حذف main عملية خطرة وقد يكسر المستودع. هل تقصد فرعاً آخر، أم تؤكد الحذف فعلاً؟[[/ASK]]", None)]))
     return out

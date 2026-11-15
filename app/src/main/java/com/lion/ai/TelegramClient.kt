@@ -262,6 +262,7 @@ object TelegramClient {
     ): JSONObject {
         val boundary = "LionAI" + System.nanoTime().toString(16)
         val output = ByteArrayOutputStream()
+        val safeName = file.name.replace("\"", "")
         fun write(text: String) = output.write(text.toByteArray(Charsets.UTF_8))
         fields.forEach { (key, value) ->
             write("--$boundary\r\n")
@@ -270,7 +271,7 @@ object TelegramClient {
         }
         write("--$boundary\r\n")
         write(
-            "Content-Disposition: form-data; name=\"$fileField\"; filename=\"${file.name.replace("\"", "")}\"\r\n"
+            "Content-Disposition: form-data; name=\"$fileField\"; filename=\"${safeName}\"\r\n"
         )
         write("Content-Type: application/octet-stream\r\n\r\n")
         file.inputStream().use { input -> input.copyTo(output) }

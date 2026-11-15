@@ -111,7 +111,10 @@ object ControlPlane {
         "kt", "kts", "java", "py", "js", "jsx", "ts", "tsx", "c", "cpp", "cc", "h", "hpp",
         "cs", "go", "rs", "rb", "php", "swift", "dart", "scala", "lua", "sh"
     )
-    private val CODE_EXT = SOURCE_EXT + setOf("gradle", "xml", "json", "yml", "yaml", "html", "css")
+        private val CODE_EXT = SOURCE_EXT + setOf("gradle", "xml", "json", "yml", "yaml", "html", "css")
+
+    /** لغات يبدأ فيها التعليق بـ `#` — حتى بعد مسافات بادئة (Python/Shell/Ruby). */
+    private val HASH_COMMENT_EXT = setOf("py", "sh", "rb")
     private val IGNORED_DIRS = setOf(
         ".git", ".gradle", "build", "out", "node_modules", ".idea", ".lion-tmp", ".and-code"
     )
@@ -119,11 +122,74 @@ object ControlPlane {
         "/src/test/", "/src/androidTest/", "/test/", "/tests/", "/__tests__/"
     )
 
+        // تُبنى من أجزاء كي لا يظهر النمط نفسه في المصدر فيُبلَّغ عنه كعنصر نائب.
     private val PLACEHOLDER = Regex(
-        "(\\bTODO\\s*\\(|NotImplementedError|not\\s+implemented|UnsupportedOperationException|" +
-            "<placeholder>|coming\\s+soon|قيد\\s+الإنشاء|لم\\s+يتم\\s+التنفيذ)",
+        listOf(
+            "\\bTODO\\s*\\(",
+            "Not" + "ImplementedError",
+            "not\\s+implemented",
+            "Unsupported" + "OperationException",
+                        "<place" + "holder>",
+            "coming\\s+soon",
+            "قيد\\s+الإنشاء",
+            "لم\\s+يتم\\s+التنفيذ"
+        ).joinToString("|", "(", ")"),
         RegexOption.IGNORE_CASE
     )
+
+    /**
+     * يستبدل محتوى السلاسل والتعليقات بمسافات مع الحفاظ على أرقام الأسطر،
+          * كي لا تُعدّ كلمة مثل اسم الاستثناء داخل نص أو تعليق «كوداً ناقصاً».
+     */
+    fun stripLiterals(text: String): String {
+        val out = StringBuilder(text.length)
+        var i = 0
+        var state = 0 // 0 code, 1 line comment, 2 block comment, 3 single, 4 double, 5 triple, 6 backtick
+        var tripleChar = '"'
+        while (i < text.length) {
+            val c = text[i]
+            val next = text.getOrNull(i + 1)
+            when (state) {
+                0 -> when {
+                    c == '/' && next == '/' -> { out.append("  "); i++; state = 1 }
+                    c == '/' && next == '*' -> { out.append("  "); i++; state = 2 }
+                    c == '\'' -> { out.append(' '); state = 3 }
+                    c == '"' -> {
+                        if (next == '"' && text.getOrNull(i + 2) == '"') {
+                            out.append("   "); i += 2; state = 5; tripleChar = '"'
+                        } else { out.append(' '); state = 4 }
+                    }
+                    c == '`' -> { out.append(' '); state = 6 }
+                    else -> out.append(c)
+                }
+                1 -> if (c == '\n') { out.append('\n'); state = 0 } else out.append(' ')
+                2 -> if (c == '*' && next == '/') { out.append("  "); i++; state = 0 }
+                     else out.append(if (c == '\n') '\n' else ' ')
+                3 -> when {
+                    c == '\n' -> { out.append('\n'); state = 0 }
+                    c == '\\' -> { out.append("  "); i++ }
+                    c == '\'' -> { out.append(' '); state = 0 }
+                    else -> out.append(' ')
+                }
+                4 -> when {
+                    c == '\n' -> { out.append('\n'); state = 0 }
+                    c == '\\' -> { out.append("  "); i++ }
+                    c == '"' -> { out.append(' '); state = 0 }
+                    else -> out.append(' ')
+                }
+                5 -> if (c == tripleChar && next == tripleChar && text.getOrNull(i + 2) == tripleChar) {
+                    out.append("   "); i += 2; state = 0
+                } else out.append(if (c == '\n') '\n' else ' ')
+                6 -> when {
+                    c == '\\' -> { out.append("  "); i++ }
+                    c == '`' -> { out.append(' '); state = 0 }
+                    else -> out.append(if (c == '\n') '\n' else ' ')
+                }
+            }
+            i++
+        }
+        return out.toString()
+    }
 
     fun isSource(path: String): Boolean =
         path.substringAfterLast('.', "").lowercase() in SOURCE_EXT
@@ -272,6 +338,19 @@ object ControlPlane {
         return GateReport(ok = issues.none { it.severity == "error" }, issues = issues)
     }
 
+        /**
+     * يستخرج أسماء الرموز المعلنة على المستوى الأعلى (class/object/fun/val/const/interface/enum).
+     * تُستخدم لربط الملفات عبر رموزها لا عبر أسماء ملفاتها — Kotlin/Java لا تستورد ملفاً باسمه.
+     */
+    fun declaredSymbols(text: String): List<String> {
+        val pattern = Regex(
+            "(?m)^\\s*(?:@\\w+(?:\\([^)]*\\))?\\s*)*" +
+                "(?:internal|private|public|protected|open|abstract|sealed|data|enum|annotation|inline|suspend|const|lateinit|override|operator|infix|tailrec|external|actual|expect)?\\s*" +
+                                "(?:class|object|interface|fun|val|var|typealias)\\s+(?:[A-Za-z_][A-Za-z0-9_.]*\\.)?([A-Za-z_][A-Za-z0-9_]*)"
+        )
+        return pattern.findAll(text).map { it.groupValues[1] }.distinct().toList()
+    }
+
     fun reachability(snapshot: ProjectSnapshot, entryPoints: Set<String>): ReachabilityResult {
         val sources = snapshot.files.keys
             .filter { isSource(it) && !isTest(it) && !isIgnored(it) }
@@ -288,7 +367,17 @@ object ControlPlane {
             return ReachabilityResult(normalizedEntries, emptySet(), emptySet(), 0)
         }
 
-        val byBase = sources.groupBy { it.substringAfterLast('/').substringBeforeLast('.').lowercase() }
+                val byBase = sources.groupBy { it.substringAfterLast('/').substringBeforeLast('.').lowercase() }
+
+        // خريطة رمز → الملفات التي تُعلنه. ضرورية لأن Kotlin/Java لا تستورد ملفاً باسمه:
+        // LlmConfig.kt يُستخدم عبر ثوابته (LLM_USER_AGENT) لا بذكر اسم الملف.
+        val bySymbol = HashMap<String, MutableSet<String>>()
+        sources.forEach { source ->
+            declaredSymbols(snapshot.text(source)).forEach { sym ->
+                bySymbol.getOrPut(sym.lowercase()) { LinkedHashSet() }.add(source)
+            }
+        }
+
         val edges = HashMap<String, MutableSet<String>>()
         sources.forEach { source ->
             val text = snapshot.text(source)
@@ -298,6 +387,16 @@ object ControlPlane {
                 if (candidates.any { it == source }) return@forEach
                 if (text.contains(base, ignoreCase = false) || text.contains(base, ignoreCase = true)) {
                     candidates.filter { it != source }.forEach { refs.add(it) }
+                }
+            }
+            // ربط بالرموز المعلنة: أي رمز من ملف آخر مذكور هنا = حافة وصول.
+            bySymbol.forEach { (sym, owners) ->
+                if (sym.length < 4) return@forEach
+                if (owners.any { it == source }) return@forEach
+                if (Regex("(?<![A-Za-z0-9_$])" + Regex.escape(sym) + "(?![A-Za-z0-9_$])", RegexOption.IGNORE_CASE)
+                        .containsMatchIn(text)
+                ) {
+                    owners.filter { it != source }.forEach { refs.add(it) }
                 }
             }
             normaliseImports(text).forEach { imported ->
@@ -380,14 +479,16 @@ object ControlPlane {
                 issues.add(GateIssue("error", "EMPTY_FILE", path, message = "ملف فارغ"))
                 return@forEach
             }
-            if (ext in SOURCE_EXT) {
-                PLACEHOLDER.find(content)?.let { match ->
-                    val line = content.take(match.range.first).count { it == '\n' } + 1
+                        if (ext in SOURCE_EXT) {
+                // نبحث عن العناصر النائبة في الكود الحقيقي فقط: نص داخل سلسلة أو تعليق ليس كوداً ناقصاً.
+                val code = stripLiterals(content)
+                PLACEHOLDER.find(code)?.let { match ->
+                    val line = code.take(match.range.first).count { it == '\n' } + 1
                     issues.add(
                         GateIssue("error", "PLACEHOLDER", path, line, "كود ناقص/مؤجل: ${match.value.take(40)}")
                     )
                 }
-                balance(content)?.let { error ->
+                balance(content, ext in HASH_COMMENT_EXT)?.let { error ->
                     issues.add(GateIssue("error", "SYNTAX_BALANCE", path, error.second, error.first))
                 }
             }
@@ -416,8 +517,11 @@ object ControlPlane {
         return false
     }
 
-    /** يفحص توازن الأقواس مع تجاهل النصوص والتعليقات لتقليل الإيجابيات الكاذبة. */
-    fun balance(text: String): Pair<String, Int>? {
+        /**
+     * يفحص توازن الأقواس مع تجاهل النصوص والتعليقات لتقليل الإيجابيات الكاذبة.
+     * @param hashComments true في لغات `#` (Python/Shell/Ruby) حيث التعليق يبدأ بعد مسافات بادئة أيضاً.
+     */
+    fun balance(text: String, hashComments: Boolean = false): Pair<String, Int>? {
         val stack = ArrayDeque<Char>()
         var i = 0
         var line = 1
@@ -445,7 +549,9 @@ object ControlPlane {
                         }
                         if (j < text.length && text[j] == '/') i = j
                     }
-                    c == '#' && (text.getOrNull(i - 1) == '\n' || i == 0) -> state = 1
+                                        // في لغات `#` التعليق يبدأ عند بداية كلمة لا عند العمود صفر فقط.
+                    hashComments && c == '#' &&
+                        (i == 0 || text[i - 1].isWhitespace() || text[i - 1] == ';') -> state = 1
                     c == '\'' -> { state = 3 }
                     c == '"' -> {
                         if (next == '"' && text.getOrNull(i + 2) == '"') { state = 5; tripleChar = '"'; i += 2 }

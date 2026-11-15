@@ -102,14 +102,14 @@ def main():
     ap.add_argument('--no-card', action='store_true', help='لا ترفع بطاقة النموذج')
     a = ap.parse_args()
 
-    # 1) التحقق من الملف
+    # 1 التحقق من الملف
     if not os.path.isfile(a.gguf):
         fail('لم أجد ملف GGUF: ' + a.gguf + '\n   نفّذ أولاً: python export_gguf.py --merged out/lion-1-merged')
     size = os.path.getsize(a.gguf)
     if size < 1024 * 1024:
         fail('الملف صغير جداً (' + human(size) + ') — ليس GGUF صالحاً على الأرجح.')
 
-    # 2) التحقق من التوكن
+    # 2 التحقق من التوكن
     token = (a.token or os.environ.get('HF_TOKEN', '')).strip()
     if not token:
         fail('لا يوجد توكن Hugging Face.\n'
@@ -117,7 +117,7 @@ def main():
              '   محلياً: export HF_TOKEN=hf_xxx\n'
              '   أنشئ توكن كتابة من: https://huggingface.co/settings/tokens')
 
-    # 3) المكتبة
+    # 3 المكتبة
     try:
         from huggingface_hub import HfApi, create_repo
         from huggingface_hub.utils import HfHubHTTPError
@@ -133,21 +133,21 @@ def main():
 
     api = HfApi(token=token)
 
-    # 4) التحقق من الهوية أولاً — رسالة أوضح من خطأ 401 لاحقاً
+    # 4 التحقق من الهوية أولاً — رسالة أوضح من خطأ 401 لاحقاً
     try:
         who = api.whoami()
     except HfHubHTTPError as e:
         fail('التوكن مرفوض (' + str(e.response.status_code) + '). تحقق من صلاحية write في https://huggingface.co/settings/tokens')
     print('👤 مسجّل الدخول: ' + who.get('name', '?'))
 
-    # 5) إنشاء المستودع إن لم يوجد
+    # 5 إنشاء المستودع إن لم يوجد
     print('📦 المستودع: ' + a.repo + (' (خاص)' if a.private else ' (عام)'))
     try:
         create_repo(a.repo, repo_type='model', private=a.private, exist_ok=True, token=token)
     except HfHubHTTPError as e:
         fail('تعذّر إنشاء المستودع: ' + str(e))
 
-    # 6) بطاقة النموذج
+    # 6 بطاقة النموذج
     if not a.no_card:
         card = model_card(a.repo, filename, quant, a.base)
         api.upload_file(
@@ -159,7 +159,7 @@ def main():
         )
         print('📝 رُفعت بطاقة النموذج (README.md)')
 
-    # 7) رفع GGUF
+    # 7 رفع GGUF
     print('⬆️  رفع ' + filename + ' (' + human(size) + ') … قد يستغرق دقائق')
     try:
         api.upload_file(
@@ -172,7 +172,7 @@ def main():
     except HfHubHTTPError as e:
         fail('فشل الرفع: ' + str(e))
 
-    # 8) الرابط الجاهز للتطبيق
+    # 8 الرابط الجاهز للتطبيق
     url = 'https://huggingface.co/' + a.repo + '/resolve/main/' + filename
     print('\n✅ تم النشر')
     print('   الصفحة: https://huggingface.co/' + a.repo)
