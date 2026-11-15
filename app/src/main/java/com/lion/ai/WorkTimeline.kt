@@ -1,7 +1,14 @@
 package com.lion.ai
 
 internal enum class WorkVisualState { RUNNING, SUCCESS, ERROR, PERMISSION, PROVIDER }
-internal data class WorkVisual(val title: String, val detail: String, val state: WorkVisualState)
+
+/** [glyph] أيقونة الحالة التقنية (تفكير/كتابة/ملف...) تُرسم بدل الرمز التعبيري التقليدي. */
+internal data class WorkVisual(
+    val title: String,
+    val detail: String,
+    val state: WorkVisualState,
+    val glyph: StateGlyph = StateGlyph.GENERIC
+)
 
 internal fun toolDisplayName(tool: String): String {
     val t = tool.lowercase()
@@ -29,22 +36,45 @@ internal fun buildWorkVisuals(lines: List<String>, steps: List<AgentStep>): List
         val permission = step.summary.contains("بانتظار رد") || step.summary.contains("إذن") || step.summary.contains("موافقة")
         WorkVisual(
             toolDisplayName(step.tool),
-            (step.path.takeIf { it.isNotBlank() }?.let { "$it — " }.orEmpty() + step.summary).take(180),
+            StateGlyphs.removePictographs(
+                (step.path.takeIf { it.isNotBlank() }?.let { "$it — " }.orEmpty() + step.summary).take(180)
+            ),
             when {
                 permission -> WorkVisualState.PERMISSION
                 step.tool == "provider" -> WorkVisualState.PROVIDER
                 !step.ok -> WorkVisualState.ERROR
                 else -> WorkVisualState.SUCCESS
+            },
+            when {
+                permission -> StateGlyph.ASK
+                !step.ok -> StateGlyph.ERROR
+                else -> StateGlyphs.forTool(step.tool)
             }
         )
     }.toMutableList()
-    val active = lines.lastOrNull { !it.startsWith("✅") && !it.startsWith("❌") }
+    val active = lines.lastOrNull { line ->
+        val head = StateGlyphs.leadingSymbols(line).firstOrNull()
+        // ✅ و❌ نتائج منتهية؛ ما سواها عملية جارية (⏳ 🧠 🛠️ 💬 ...).
+        head != 0x2705 && head != 0x274C
+    }
     if (active != null) {
-        val clean = active.removePrefix("⏳").trim().removePrefix("🛠️").trim()
-        items += WorkVisual(clean.ifBlank { "تنفيذ المهمة" }, "العملية جارية؛ تُحفظ النتيجة عند اكتمالها", WorkVisualState.RUNNING)
+        val clean = StateGlyphs.removePictographs(StateGlyphs.clean(active))
+        items += WorkVisual(
+            clean.ifBlank { "تنفيذ المهمة" },
+            "العملية جارية؛ تُحفظ النتيجة عند اكتمالها",
+            WorkVisualState.RUNNING,
+            StateGlyphs.forLine(active)
+        )
     } else if (items.isEmpty()) {
         lines.takeLast(5).forEach { line ->
-            items += WorkVisual(line.removePrefix("✅").removePrefix("❌").trim(), "", if (line.startsWith("❌")) WorkVisualState.ERROR else WorkVisualState.SUCCESS)
+            val failed = StateGlyphs.leadingSymbols(line).firstOrNull() == 0x274C
+            items += WorkVisual(
+                StateGlyphs.removePictographs(StateGlyphs.clean(line)),
+                "",
+                if (failed) WorkVisualState.ERROR else WorkVisualState.SUCCESS,
+                if (failed) StateGlyph.ERROR else StateGlyphs.forLine(line).takeIf { it != StateGlyph.GENERIC }
+                    ?: StateGlyph.SUCCESS
+            )
         }
     }
     return items.takeLast(6)
