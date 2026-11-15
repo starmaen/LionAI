@@ -3,16 +3,24 @@ package com.lion.ai
 internal enum class WorkVisualState { RUNNING, SUCCESS, ERROR, PERMISSION, PROVIDER }
 internal data class WorkVisual(val title: String, val detail: String, val state: WorkVisualState)
 
-internal fun toolDisplayName(tool: String): String = when (tool) {
-    "provider" -> "متابعة مع مزود بديل"
-    "file_read", "read_file", "github_read_file" -> "قراءة ملف"
-    "file_write", "write_file", "github_write_file" -> "كتابة ملف"
-    "file_tree", "file_list", "list_dir" -> "فحص مساحة العمل"
-    "shell_exec", "execute_command" -> "تنفيذ أمر"
-    "code_run" -> "تشغيل الكود"
-    "file_present" -> "تجهيز المخرجات"
-    "note" -> "ملاحظة تنفيذية"
-    else -> tool.removePrefix("github_").replace('_', ' ').ifBlank { "خطوة عمل" }
+internal fun toolDisplayName(tool: String): String {
+    val t = tool.lowercase()
+    return when {
+        tool == "provider" -> "متابعة مع مزود بديل"
+        tool == "note" -> "ملاحظة تنفيذية"
+        tool == "file_present" -> "تجهيز المخرجات"
+        tool == "code_run" -> "تشغيل الكود"
+        "tree" in t || "list" in t || "glob" in t || "grep" in t || "search" in t -> "فحص مساحة العمل"
+        "read" in t || "view" in t || "cat" == t || "open" in t -> "قراءة ملف"
+        "patch" in t || "edit" in t || "replace" in t -> "تعديل ملف"
+        "write" in t || "create" in t || "save" in t -> "كتابة ملف"
+        "push" in t || "commit" in t || "upload" in t || "release" in t || "merge" in t || "pull_request" in t -> "رفع التعديلات"
+        "build" in t || "workflow" in t || "gradle" in t || "run_status" in t || "actions" in t -> "متابعة البناء"
+        "fix" in t || "heal" in t || "doctor" in t || "diagnose" in t || "repair" in t -> "إصلاح أخطاء"
+        "shell" in t || "exec" in t || "command" in t || "bash" in t -> "تنفيذ أمر"
+        "zip" in t || "unzip" in t || "archive" in t -> "ضغط/فك ملفات"
+        else -> tool.removePrefix("github_").replace('_', ' ').ifBlank { "خطوة عمل" }
+    }
 }
 
 /** يبني العرض من السجل الدائم أولاً، ثم يضيف العملية الجارية فقط؛ لا يكرر آخر النتائج. */

@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 internal object LionOne {
     const val ID = "lion1"
     @Volatile var warmed: Boolean = false
-    private val expInstance = LionExperience.inMemory()
+    private val expInstance: LionExperience by lazy { LionLearn.experienceStore() }
     fun experience(): LionExperience = expInstance
     const val LOCAL_URL = "http://127.0.0.1:44045/v1/chat/completions"
     private const val COOLDOWN_MS = 60_000L
@@ -134,6 +134,12 @@ internal object LionOne {
         java.net.Socket().use { it.connect(java.net.InetSocketAddress(u.host, if (u.port > 0) u.port else 80), 500); true }
     } catch (e: Exception) { false }
 
+    /** يضغط التاريخ ضمن سياق المحرّك المدمج (نموذج صغير على الجهاز) مع ملخص لما حُذف. */
+    fun fitHistory(history: List<ChatTurn>, system: String, message: String): List<ChatTurn> = runCatching {
+        val ctx = ContextHolder.peek()?.let { LionEngine.ctx(SecurePrefs.get(it)) } ?: LionEngine.DEFAULT_CTX
+        LionContext.fit(history, LionContext.historyBudget(ctx, system, message, 0))
+    }.getOrDefault(history)
+
     fun markGood(r: Route) { lastGood = r.key; badUntil.remove(r.key) }
     fun markBad(r: Route) { badUntil[r.key] = System.currentTimeMillis() + COOLDOWN_MS; if (lastGood == r.key) lastGood = null }
 
@@ -153,7 +159,8 @@ internal fun LlmClient.callLionOne(
     systemPrompt: String
 ): String {
     val task = LionOne.task(model, message)
-    val system = LionOne.systemFor(systemPrompt, task)
+    // معارف تعلّمها Lion-1 من المزودين والمصادر (فارغة إن لم يوجد ما يناسب السؤال).
+    val system = LionOne.systemFor(systemPrompt, task) + LionLearn.contextFor(message)
     val errors = mutableListOf<String>()
     for (route in LionOne.routes(apiKey)) {
         if (route.key == "engine" && !LionEngine.ensureReady()) {
@@ -165,18 +172,23 @@ internal fun LlmClient.callLionOne(
             errors += "${route.label}: غير متاح"
             continue
         }
+        val startedAt = System.currentTimeMillis()
         try {
             val reply = callOpenAiCompatible(
-                route.url, route.token, route.model, history, message,
+                route.url, route.token, route.model,
+                if (route.key == "engine" || route.key == "local") LionOne.fitHistory(history, system, message) else history,
+                message,
                 extraHeaders = if (route.token.isBlank()) emptyMap() else mapOf("X-Api-Key" to route.token),
                 maxTokens = LLM_OPENAI_MAX_TOKENS, image = image, systemPrompt = system,
                 temperature = task.temp
             )
             if (!isErrorReply(reply)) {
                 LionOne.markGood(route)
+                runCatching { LionOne.experience().recordRoute(route.key, true, System.currentTimeMillis() - startedAt) }
                 recordSuccess(LionOne.ID, "lion-1 · ${route.label}")
                 return reply
             }
+            runCatching { LionOne.experience().recordRoute(route.key, false, System.currentTimeMillis() - startedAt) }
             LionOne.markBad(route)
             errors += "${route.label}: ${reply.take(80)}"
         } catch (e: Exception) {
@@ -204,7 +216,7 @@ internal fun LlmClient.callLionOneTools(
     tools: JSONArray
 ): LlmClient.ToolReply {
     val task = LionOne.task(model, message)
-    val system = LionOne.systemFor(systemPrompt, task)
+    val system = LionOne.systemFor(systemPrompt, task) + LionLearn.contextFor(message)
     for (route in LionOne.routes(apiKey)) {
         // البوابة لا تعيد tool_calls موثوقة في كل مزوداتها؛ الأدوات تُطلب من المسارات المحلية.
         if (route.key.startsWith("gw:")) continue

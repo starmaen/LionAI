@@ -135,6 +135,7 @@ fun LocalEnvTab() {
         Spacer(Modifier.height(8.dp))
         // محرّك Lion-1 المدمج: نفس بيئة Alpine تشغّل llama-server، فلا حاجة لخادم خلفي.
         LionEngineCard()
+        LionLearnCard()
         Spacer(Modifier.height(8.dp))
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = ENV_CARD)) {
             Column(Modifier.padding(12.dp)) {
