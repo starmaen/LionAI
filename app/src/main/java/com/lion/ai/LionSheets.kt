@@ -7,6 +7,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.CircularProgressIndicator
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -65,7 +70,8 @@ internal fun ModelPickerSheet(
     onChooseAuto: () -> Unit,
     onChooseProvider: (ProviderInfo) -> Unit,
     onChooseModel: (ProviderInfo, String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    canProbe: (ProviderInfo) -> Boolean = { it.webviewUrl == null && it.group != ProviderGroup.LION }
 ) {
     val gold = Color(0xFFFFB800)
     val muted = Color(0xFF9A9A9A)
@@ -81,6 +87,30 @@ internal fun ModelPickerSheet(
     val initial: Set<String> =
         if (autoRoute) emptySet() else setOf(platformKey(providerInfo(selectedProvider)))
     var expanded by remember { mutableStateOf(initial) }
+
+    // حالة الفحص: النتيجة المحفوظة تظهر فوراً، ثم يحدّثها الفحص التلقائي أو زر التحديث.
+    val results = remember { mutableStateMapOf<String, ProviderProbe.Result>() }
+    val checking = remember { mutableStateMapOf<String, Boolean>() }
+    val probeScope = rememberCoroutineScope()
+    val probeList = families.values.flatten().filter(canProbe)
+    fun runProbe(force: Boolean) {
+        val todo = probeList.filter { info ->
+            checking[info.id] != true &&
+                (force || !ProviderProbe.isFresh(results[info.id]))
+        }
+        if (todo.isEmpty()) return
+        probeScope.launch {
+            ProviderProbe.checkAll(
+                sheetPrefs, todo,
+                onStart = { checking[it] = true },
+                onResult = { id, r -> results[id] = r; checking.remove(id) }
+            )
+        }
+    }
+    LaunchedEffect(Unit) {
+        probeList.forEach { info -> ProviderProbe.cached(sheetPrefs, info.id)?.let { results[info.id] = it } }
+        runProbe(force = false)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -109,6 +139,25 @@ internal fun ModelPickerSheet(
                 fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
             )
+            val busy = checking.isNotEmpty()
+            val okCount = probeList.count { results[it.id]?.state == ProviderProbe.State.OK }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (busy) "جارٍ الفحص… (${checking.size} متبقٍ)"
+                    else "✔ $okCount يعمل من ${probeList.size} مزود",
+                    color = muted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { runProbe(force = true) }, enabled = !busy) {
+                    Text("🔄 تحديث وفحص", color = gold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier
@@ -179,7 +228,26 @@ internal fun ModelPickerSheet(
                                 color = if (selectedHere) color else muted,
                                 fontSize = 11.sp
                             )
+                            val probed = members.filter(canProbe)
+                            val bad = probed.firstOrNull { results[it.id]?.state != ProviderProbe.State.OK && results[it.id] != null }
+                            val anyOk = probed.any { results[it.id]?.state == ProviderProbe.State.OK }
+                            if (!anyOk && bad != null && probed.none { checking[it.id] == true }) {
+                                Text(
+                                    results[bad.id]?.note.orEmpty().ifBlank { "فشل الفحص" }.take(70),
+                                    color = if (results[bad.id]?.state == ProviderProbe.State.LIMITED)
+                                        Color(0xFFFFB300) else Color(0xFFFF6B6B),
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
+                        ProbeBadge(
+                            probed = members.filter(canProbe),
+                            results = results,
+                            checking = checking
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text(if (open) "▴" else "▾", color = color, fontSize = 16.sp)
                     }
                     if (open) {
@@ -377,4 +445,28 @@ Column(
     }
 }
         }
+}
+
+
+/** ✔ أخضر = ردّ فعلي ناجح، ✖ أحمر = فشل، ⏳ كهرماني = حد طلبات مؤقت، دائرة = قيد الفحص. */
+@Composable
+private fun ProbeBadge(
+    probed: List<ProviderInfo>,
+    results: Map<String, ProviderProbe.Result>,
+    checking: Map<String, Boolean>
+) {
+    if (probed.isEmpty()) return
+    val states = probed.mapNotNull { results[it.id]?.state }
+    val isChecking = probed.any { checking[it.id] == true }
+    when {
+        isChecking -> CircularProgressIndicator(
+            modifier = Modifier.width(18.dp).height(18.dp),
+            strokeWidth = 2.dp,
+            color = Color(0xFF9A9A9A)
+        )
+        ProviderProbe.State.OK in states -> Text("✔", color = Color(0xFF4CAF50), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        ProviderProbe.State.LIMITED in states -> Text("⏳", color = Color(0xFFFFB300), fontSize = 18.sp)
+        ProviderProbe.State.FAIL in states -> Text("✖", color = Color(0xFFF44336), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        else -> Unit
+    }
 }

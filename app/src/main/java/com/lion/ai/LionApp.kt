@@ -2227,7 +2227,10 @@ fun LionApp() {
             onOpenSettings = {
                 showModelSheet = false
                 showSettings = true
-            }
+            },
+            // الفحص لمزودات API فقط؛ صفحات الويب لا تُفحص بطلب نصي.
+            canProbe = { it.webviewUrl == null && it.group != ProviderGroup.LION &&
+                !WebChatRuntime.handles(it.id) && !WebChatRuntime.isWeb(it.id) }
         )
     }
 
