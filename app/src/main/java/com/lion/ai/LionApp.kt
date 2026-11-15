@@ -211,6 +211,10 @@ fun LionApp() {
     ContextHolder.install(context)
     val prefs = remember { SecurePrefs.get(context) }
     val scope = rememberCoroutineScope()
+    // جلب مصادر التعلّم مرة كل 24 ساعة في الخلفية (إن كان التعلّم التلقائي مفعّلاً).
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { runCatching { LionLearn.autoIngest(prefs) } }
+    }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val listState = rememberLazyListState()
 
@@ -1680,6 +1684,15 @@ fun LionApp() {
                 AgentSessions.clear(prefs, chatId)
             } else if (!session.hasWork()) {
                 AgentSessions.clear(prefs, chatId)
+            }
+            // Lion-1 يتعلّم محلياً من إجابات المزودين الأخرى (دردشة بلا أدوات فقط، وبعد فلترة الأسرار والأسماء).
+            val learnRoute = used
+            if (learnRoute != null && !agentRequested && image == null && !opsDone) {
+                val learnReply = reply
+                val learnUrls = sources.map { it.url }
+                scope.launch(Dispatchers.IO) {
+                    runCatching { LionLearn.observe(prefs, prompt, learnReply, learnRoute.provider, learnUrls) }
+                }
             }
             val newMessage = Message(
                 reply,
