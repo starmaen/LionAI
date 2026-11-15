@@ -65,8 +65,11 @@ private fun WorkLog(lines: List<String>, steps: List<AgentStep>) {
         modifier = Modifier.padding(8.dp).fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text("مسار التنفيذ", color = Color(0xFFD6E0E3), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Text("الحالة محفوظة وتنتقل مع الاستئناف والمزود البديل", color = Color(0xFF718086), fontSize = 10.sp)
+            // العنوان هو العملية الجارية فعلاً (قراءة ملف، تعديل، رفع…) لا عبارة ثابتة.
+            Text(
+                items.lastOrNull { it.state == WorkVisualState.RUNNING }?.title ?: "سير العمل",
+                color = Color(0xFFD6E0E3), fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+            )
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(2.dp), color = Color(0xFF83B8C6), trackColor = Color(0xFF20282B))
             Spacer(Modifier.height(8.dp))
@@ -131,6 +134,8 @@ internal fun LionMessageList(
     /** نص الرد وهو يتكوّن داخل صفحة الويب (بث حي). */
     livePartial: String? = null,
     sessionSteps: List<AgentStep> = emptyList(),
+    /** هل الدور الحالي عمل تنفيذي بأدوات؟ في الدردشة المباشرة لا يظهر سجل العمل إطلاقاً. */
+    agentTurn: Boolean = false,
     listState: LazyListState,
     context: Context,
     tts: TextToSpeech?,
@@ -148,8 +153,10 @@ internal fun LionMessageList(
                 messages.drop(index + 1).none { it.isUser } && !ActionDetector.looksLikeCommand(previousUser.text)
             // بروتوكول الأدوات الخام لا يُعرض: يظهر مكانه مسار التنفيذ.
             val shown = if (!message.isUser && ToolMarkup.hasMarkup(message.text))
-                message.copy(text = ToolMarkup.strip(message.text).ifBlank { "⏳ جارٍ تنفيذ الأدوات…" }) else message
-            Bubble(
+                message.copy(text = ToolMarkup.strip(message.text)) else message
+            // رسالة كلها بروتوكول أدوات: لا تُعرض فقاعة فارغة، يكفي مسار العمل.
+            val hidden = !message.isUser && ToolMarkup.hasMarkup(message.text) && shown.text.isBlank()
+            if (!hidden) Bubble(
                 shown, context, tts, index, onPendingChoice, canRegenerate,
                 { onRegenerate(index) }, { onReply(index) },
                 askEnabled = !loading && index == messages.lastIndex,
@@ -169,7 +176,10 @@ internal fun LionMessageList(
             }
             item(key = "$currentChat:progress") {
                 val lines = (progress ?: "").split("\n").filter { it.isNotBlank() }
-                if (lines.isEmpty() && sessionSteps.isEmpty()) {
+                if (!agentTurn) {
+                    // دردشة مباشرة: نقاط انتظار فقط، بلا بطاقة ولا خطوات قديمة.
+                    if (live.isBlank()) TypingDots()
+                } else if (lines.isEmpty() && sessionSteps.isEmpty()) {
                     if (live.isBlank()) TypingDots()
                 } else WorkLog(lines, sessionSteps)
             }

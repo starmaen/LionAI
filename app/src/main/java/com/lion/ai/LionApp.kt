@@ -193,18 +193,8 @@ internal fun hasProjectReference(text: String, chatMode: ChatMode): Boolean =
         (chatMode == ChatMode.GENERAL && GENERAL_REPO_REFERENCE.containsMatchIn(text)) ||
         text.contains("github.com/")
 
-internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode: ChatMode = ChatMode.GENERAL): Boolean {
-    if (hasWork) return true
-    val text = prompt.trim().lowercase()
-    if (text.isBlank()) return false
-    // الدردشة العامة أيضاً: ذكر مستودع/GitHub/README/ملف برمجي يعني قراءة الواقع بالأدوات لا التخمين (كان الرد «ليس لدي أداة»).
-    val projectRef = hasProjectReference(text, chatMode)
-    // الأصل جواب مباشر: أي سؤال (عاصمة؟ هل هذا ملف pdf؟ ماذا تعني كلمة؟ هل بإمكانك…؟) لا يفتح أدوات.
-    // الاستثناء الوحيد: سؤال عن مشروع/خطأ فعلي في «المطوّر» يقرأ الواقع قبل أن يجيب.
-    if (UserIntent.classify(text) != UserIntent.Kind.REQUEST) return projectRef
-    // غير ذلك: تُفتح الأدوات فقط لفعل تنفيذي صريح؛ العبارة الخبرية أو الشكر أو المحادثة تُجاب مباشرة.
-    return ACTION_REQUEST.containsMatchIn(text) || WriteIntent.isDirectCommand(text) || DevTask.matches(text) || projectRef
-}
+internal fun shouldUseAgentForPrompt(prompt: String, hasWork: Boolean, chatMode: ChatMode = ChatMode.GENERAL): Boolean =
+    AgentGate.shouldUseAgent(prompt, hasWork, chatMode)
 
 /**
  * حاوية معالج الأدوار الملتقطة من صفحات الويب.
@@ -239,6 +229,9 @@ fun LionApp() {
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     val loadingChats = remember { mutableStateMapOf<String, Boolean>() }
     val toolStatus = remember { mutableStateMapOf<String, String>() }
+    // هل الدور الجاري عمل تنفيذي بأدوات؟ ومتى بدأ؟ (الدردشة المباشرة لا تعرض مسار عمل ولا خطوات سابقة).
+    val agentTurns = remember { mutableStateMapOf<String, Boolean>() }
+    val turnStartedAt = remember { HashMap<String, Long>() }
     // سجل عمل الوكيل وحدث الصفحة الأخير يُدمجان معاً: حدث الصفحة لا يمحو سلسلة العمل (قراءة ← فحص ← متابعة ← بناء).
     val agentProgress = remember { HashMap<String, String>() }
     val pageEvents = remember { HashMap<String, String>() }
@@ -1142,6 +1135,8 @@ fun LionApp() {
         val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask, chatMode)
         loadingChats[chatId] = true
         toolStatus[chatId] = ""
+        agentTurns[chatId] = agentRequested
+        turnStartedAt[chatId] = System.currentTimeMillis()
         livePartial.remove(chatId)
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
@@ -1352,7 +1347,15 @@ fun LionApp() {
                                 providerLabel = if (opsActive) OperationsRoom.BRAND else SmartRouter.label(route, kind),
                                 via = route.via,
                                 userRequest = prompt,
-                                onNarration = { text -> scope.launch { appendToChat(chatId, Message(text, false)) } },
+                                // شرح النموذج بين الأدوات يبقى في مسار العمل (سطر واحد) ولا يُغرق الشات؛ يمكن إظهاره من الإعداد.
+                                onNarration = { text ->
+                                    if (prefs.getBoolean("show_agent_narration", false)) {
+                                        scope.launch { appendToChat(chatId, Message(text, false)) }
+                                    } else {
+                                        pageEvents[chatId] = "💬 " + text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(90)
+                                        toolStatus[chatId] = composeProgress(chatId)
+                                    }
+                                },
                                 onProgress = { status ->
                                     agentProgress[chatId] = status
                                     pageEvents.remove(chatId)
@@ -2594,7 +2597,9 @@ fun LionApp() {
                     loading = loadingChats[currentChat] == true,
                     progress = toolStatus[currentChat],
                     livePartial = livePartial[currentChat],
-                    sessionSteps = AgentSessions.peek(currentChat)?.timeline().orEmpty(),
+                    sessionSteps = AgentSessions.peek(currentChat)?.timeline().orEmpty()
+                        .filter { it.at >= (turnStartedAt[currentChat] ?: 0L) },
+                    agentTurn = agentTurns[currentChat] == true,
                     listState = listState,
                     context = context,
                     tts = tts,
