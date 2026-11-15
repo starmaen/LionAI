@@ -19,6 +19,9 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal object LionOne {
     const val ID = "lion1"
+    @Volatile var warmed: Boolean = false
+    private val expInstance = LionExperience.inMemory()
+    fun experience(): LionExperience = expInstance
     const val LOCAL_URL = "http://127.0.0.1:44045/v1/chat/completions"
     private const val COOLDOWN_MS = 60_000L
 
