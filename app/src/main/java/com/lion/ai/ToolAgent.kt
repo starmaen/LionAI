@@ -305,6 +305,7 @@ object ToolAgent {
         else if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
             "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
             else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها مرة واحدة فقط."
+        if (!readOnly && effectiveGroups.isNotEmpty() && provider != LionOne.ID) system += WorkMethod.PROMPT
         // Export compact task context to web composers.
         val permWrite = memory.writeGranted && !readOnly
         val permBasis = when {
@@ -347,6 +348,7 @@ object ToolAgent {
         var promiseNudges = 0
         var permissionNudges = 0
         var repairNudges = 0
+        var transientRetries = 0
         var gateNudges = 0
         var buildFailedPending = false
         var buildNudges = 0
@@ -613,13 +615,33 @@ object ToolAgent {
             // ما تعيده صفحات الويب قد يُعدَّل في العرض (أسوار كود/اقتباسات منحنية): نُرجعه لصيغة المحلّل.
             val reply = if (WebChatRuntime.handles(provider)) WebToolBridge.normalizeReply(rawReply) else rawReply
             if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
+                val errKind = QuotaGuard.classify(reply)
+                // خطأ عابر أو حد قصير: ننتظر ونعيد الخطوة نفسها على المزود نفسه (مرتين كحد أقصى) قبل التبديل،
+                // بلا إضافة أي خطوة جديدة إلى السجل، فلا يضيع السياق.
+                if (QuotaGuard.retryable(errKind) && transientRetries < 2 &&
+                    System.currentTimeMillis() + 45_000 < deadline
+                ) {
+                    transientRetries++
+                    val wait = QuotaGuard.backoffMs(errKind, transientRetries)
+                    session?.recordNote("خطأ مؤقت من المزود ($errKind)؛ إعادة المحاولة $transientRetries/2 بعد ${wait / 1000}ث")
+                    publish("⏳ $label مشغول مؤقتاً — أعيد المحاولة بعد ${wait / 1000}ث ($transientRetries/2)")
+                    kotlinx.coroutines.delay(wait)
+                    stepIndex--
+                    continue
+                }
+                QuotaGuard.mark(provider, errKind)
                 session?.providerFailed(label, reply)
+                session?.recordNote("توقف المزود ($errKind): " + QuotaGuard.describe(provider).ifBlank { "خطأ" } + " — يتابع مزود بديل من النقطة نفسها")
+                // stalled=true: المزود فشل فعلاً، فيُعامل كفشل مزود ويتابع بديل بالسياق نفسه
+                // (قبل هذا الإصلاح كان رد الخطأ بعد أي خطوة ناجحة يُقبل كجواب نهائي فلا يحدث تبديل).
                 return finish(
                     reply.trim().removePrefix("⚠️").trim() +
-                        "\n\nحُفظ ما أُنجز. أرسل أي رد لأتابع من النقطة نفسها.",
+                        "\n\nحُفظ ما أُنجز. يتابع مزود بديل من النقطة نفسها، أو أرسل أي رد لأتابع.",
                     false, "تعذّر المزود الحالي"
-                )
+                ).copy(stalled = true)
             }
+            transientRetries = 0
+            QuotaGuard.clear(provider)
 
             memory.responded = true
             ToolMarkup.strip(reply).replace(ASK, "").replace(ASK_ALT, "").trim().let {

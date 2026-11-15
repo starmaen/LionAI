@@ -1390,6 +1390,7 @@ fun LionApp() {
                     agentAsked = agentAsked || session.pendingQuestion != null
                 }
                 if (error && lastErrorReply.isBlank()) lastErrorReply = r
+                if (error && LlmClient.isErrorReply(r)) QuotaGuard.mark(route.provider, QuotaGuard.classify(r))
                 val noTools = agentResult?.usedTools != true
                 // ادّعاء تنفيذ تعديل/رفع/PR دون استدعاء أي أداة = هلوسة خطيرة تُرفض دائماً حتى في الوضع اليدوي.
                 val falseClaim = !error && kind == TaskKind.DEV && noTools &&
