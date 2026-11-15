@@ -19,6 +19,13 @@ import os
 import sys
 
 import torch
+
+
+def native_bf16():
+    """bf16 أصلي فقط على Ampere وما بعدها (sm_80+). في PyTorch الحديثة is_bf16_supported() تعيد True
+    على T4 (محاكاة)، فيفشل gemm في backward بخطأ RuntimeError — لذا نفحص قدرة البطاقة مباشرة."""
+    return torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8
+
 from datasets import load_dataset
 from peft import LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments
@@ -60,10 +67,10 @@ if not a.no_4bit:
     quant = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+        bnb_4bit_compute_dtype=torch.bfloat16 if native_bf16() else torch.float16,
         bnb_4bit_use_double_quant=True,
     )
-dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()) else torch.float16
+dtype = torch.bfloat16 if native_bf16() else torch.float16
 model = AutoModelForCausalLM.from_pretrained(
     a.base,
     quantization_config=quant,
