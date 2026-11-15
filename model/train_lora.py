@@ -118,6 +118,10 @@ if seq_key:
 eval_key = "eval_strategy" if "eval_strategy" in cfg_fields else ("evaluation_strategy" if "evaluation_strategy" in cfg_fields else None)
 if eval_key and not a.dry_run:
     cfg_kwargs[eval_key] = "epoch"
+    # أفضل نقطة حفظ بحسب eval_loss بدل آخر دورة (يحدّ من أثر الإفراط في التخصيص)
+    cfg_kwargs["load_best_model_at_end"] = True
+    cfg_kwargs["metric_for_best_model"] = "eval_loss"
+    cfg_kwargs["greater_is_better"] = False
 # التدريب يحتاج مساحة أكبر من الذاكرة المتوفرة على T4 مع حزمة معيّنة → التغليف اختياري
 if "packing" in cfg_fields:
     cfg_kwargs["packing"] = False
