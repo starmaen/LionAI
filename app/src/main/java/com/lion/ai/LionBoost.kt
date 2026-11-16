@@ -414,7 +414,7 @@ internal object LionEngineTuning {
     fun launchArgs(ctx: Int, threads: Int, cores: Int): String {
         val batchThreads = maxOf(threads, minOf(cores - 2, 8))
         val ubatch = if (ctx <= 4096) 128 else 256
-        return "-c $ctx -t $threads -tb $batchThreads -np 1 --jinja -b 512 -ub $ubatch --cache-reuse 256 --no-warmup"
+        return "-c $ctx -t $threads -tb $batchThreads -np 1 --jinja -b 512 -ub $ubatch --cache-reuse 256 --no-warmup --alias lion-1 --alias lion-1-summary"
     }
 }
 
