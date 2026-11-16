@@ -146,6 +146,9 @@ class TaskContinuity {
     var current: String = ""
         private set
     var writeGranted = false
+    /** مفاتيح عمليات خطرة وافق عليها المستخدم بالاسم، وأخرى معروضة عليه بانتظار قراره. */
+    val riskApproved = mutableSetOf<String>()
+    val pendingRisk = mutableSetOf<String>()
     var responded = false
     var resume = false
     var trimmed = false
@@ -163,6 +166,9 @@ class TaskContinuity {
         resume = unfinished && (WriteIntent.isContinuation(userRequest) || answering)
         val approved = WriteIntent.isApproval(userRequest) &&
             (resume || answering || writeGranted || persistedWrite)
+        // موافقة المستخدم على بطاقة عملية خطرة تخص تلك العملية فقط؛ المهمة الجديدة أو الرفض يمسحان الاثنتين.
+        if (!resume || WriteIntent.isReadOnlyRequest(userRequest)) { riskApproved.clear(); pendingRisk.clear() }
+        else if (approved || WriteIntent.isExecute(userRequest)) { riskApproved.addAll(pendingRisk); pendingRisk.clear() }
         writeGranted = when {
             WriteIntent.isReadOnlyRequest(userRequest) -> false
             WriteIntent.isExecute(userRequest) -> true
@@ -170,7 +176,7 @@ class TaskContinuity {
             WriteIntent.isDirectCommand(userRequest) -> true
             approved -> true
             resume -> writeGranted || persistedWrite
-            persistedWrite -> true
+            persistedWrite && UserIntent.classify(userRequest) != UserIntent.Kind.QUESTION -> true
             else -> false
         }
         responded = false
@@ -222,10 +228,14 @@ class TaskContinuity {
     }
     fun json(): JSONObject = JSONObject().put("history", JSONArray().also { a -> history.forEach { a.put(JSONObject().put("role",it.role).put("content",it.content)) } })
         .put("current",current).put("write",writeGranted).put("receipts",receipts).put("reads",reads).put("epoch",epoch).put("trimmed",trimmed)
+        .put("riskOk",JSONArray(riskApproved.toList())).put("riskPending",JSONArray(pendingRisk.toList()))
     fun restore(o: JSONObject) {
         val a=o.optJSONArray("history") ?: JSONArray()
         history=(0 until a.length()).mapNotNull { a.optJSONObject(it)?.let { x -> ChatTurn(x.optString("role"),x.optString("content")) } }
         current=o.optString("current");writeGranted=o.optBoolean("write");epoch=o.optInt("epoch");trimmed=o.optBoolean("trimmed")
+        riskApproved.clear();pendingRisk.clear()
+        o.optJSONArray("riskOk")?.let { r -> for (i in 0 until r.length()) riskApproved.add(r.optString(i)) }
+        o.optJSONArray("riskPending")?.let { r -> for (i in 0 until r.length()) pendingRisk.add(r.optString(i)) }
         listOf("receipts" to receipts,"reads" to reads).forEach { (name,target) ->
             target.keys().asSequence().toList().forEach { target.remove(it) }
             o.optJSONObject(name)?.let { source -> source.keys().forEach { target.put(it,source.get(it)) } }

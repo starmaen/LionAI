@@ -1732,8 +1732,10 @@ fun LionApp() {
         loadingChats[id] = false
         toolStatus[id] = ""
         livePartial.remove(id)
+        AgentInterrupt.clear(id)
         // يلغي طلب هذه المحادثة فقط؛ طلب علامة تبويب أخرى جارٍ لا يُمَسّ.
-        WebSessionTransport.cancelActive(id)
+        // ويضغط زر «إيقاف التوليد» في صفحة الموقع نفسها حتى لا يستمر المزود بالكتابة بعد الإيقاف.
+        WebSessionTransport.haltGeneration(id)
     }
 
     fun sendMessage() {
@@ -1760,9 +1762,26 @@ fun LionApp() {
         if (loadingChats[currentChat] == true) {
             val note = input.trim()
             if (note.isNotEmpty() && attachment == null && imageAttachment == null) {
-                AgentInterrupt.request(currentChat, note)
-                input = ""
-                toolStatus[currentChat] = "⏸ سأتوقف عند أقرب نقطة آمنة وأحفظ عملي، ثم أجيب على ملاحظتك"
+                val chatId = currentChat
+                if (AgentInterrupt.deniesChanges(note)) {
+                    // رفضك للتعديل يُلغي إذن الكتابة فوراً (حتى لو مُنح سابقاً) قبل أي أداة تالية.
+                    PermissionStore.revokeWrite(prefs, chatId)
+                    AgentInterrupt.revokeWrite(chatId)
+                }
+                if (AgentInterrupt.isHardStop(note)) {
+                    // أمر إيقاف صريح: إيقاف فوري كامل (المحادثة + صفحة المزود)، بلا انتظار «نقطة آمنة».
+                    stopChat()
+                    messages = messages + Message(note, true) +
+                        Message("⏹ تم الإيقاف فوراً. حُفظ ما أُنجز، ولن أنفّذ أي خطوة أخرى حتى تطلب. قل «أكمل» للمتابعة من النقطة نفسها أو اكتب ما تريد.", false)
+                    input = ""
+                    saveCurrent()
+                } else {
+                    // ملاحظة/اعتراض: يتوقف الوكيل قبل أي أداة تالية، وتُلغى خطوة المزود الجارية ليرى ملاحظتك فوراً.
+                    AgentInterrupt.request(chatId, note)
+                    input = ""
+                    toolStatus[chatId] = "⏸ أوقفت الخطوة الجارية ولن أنفّذ شيئاً قبل أن أجيب على ملاحظتك"
+                    WebSessionTransport.haltGeneration(chatId)
+                }
             }
             return
         }

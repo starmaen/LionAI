@@ -102,7 +102,9 @@ private fun copyToClipboard(context: Context, label: String, text: String) {
     Toast.makeText(context, "تم النسخ", Toast.LENGTH_SHORT).show()
 }
 
-private fun mdInline(line: String): AnnotatedString = buildAnnotatedString {
+private fun mdInline(line: String): AnnotatedString = Glyphs.tint(mdInlineRaw(line))
+
+private fun mdInlineRaw(line: String): AnnotatedString = buildAnnotatedString {
     var i = 0
     while (i < line.length) {
         if (line.startsWith("**", i)) {
@@ -463,7 +465,7 @@ internal fun MessageContent(
                         .joinToString("\n").trim()
                     AskCard(AnswerGuard.sanitizeForDisplay(body), options, askEnabled, onAskReply)
                 } else {
-                    MdText(if (isUser) seg.text else AnswerGuard.sanitizeForDisplay(seg.text), color)
+                    MdText(if (isUser) seg.text else Glyphs.modernize(AnswerGuard.sanitizeForDisplay(seg.text)), color)
                 }
                 is Seg.Code -> CodeCard(seg.lang, seg.code, context)
                 is Seg.FileRef -> FileCard(seg.path, context)

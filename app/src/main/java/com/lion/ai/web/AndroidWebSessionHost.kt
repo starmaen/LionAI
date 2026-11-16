@@ -1096,7 +1096,30 @@ internal class AndroidWebSessionHost(
     override fun cancel(token: String) {
         main.post {
             queued.removeAll { it.first.token == token }
-            pending?.takeIf { it.request.token == token }?.let { fail(it, "أُلغي الطلب.") }
+            pending?.takeIf { it.request.token == token }?.let {
+                haltPage(it.view, it.adapter)
+                fail(it, "أُلغي الطلب.")
+            }
+        }
+    }
+
+    /** ضغط فعلي على زر الإيقاف داخل الصفحة (JS أولاً، ثم لمسة حقيقية إن بقي المولّد يعمل). */
+    private fun haltPage(view: WebView, adapter: WebSiteAdapter) {
+        if (destroyed) return
+        runCatching {
+            view.evaluateJavascript(render(adapter, "halt", "halt")) { }
+        }
+    }
+
+    override fun halt() {
+        main.post {
+            val target = pending?.let { it.view to it.adapter }
+                ?: displayedProvider?.let { id ->
+                    val a = WebSiteAdapters.get(id, prefs)
+                    val v = pool[id]
+                    if (a != null && v != null) v to a else null
+                }
+            target?.let { (v, a) -> haltPage(v, a) }
         }
     }
     fun cancelCurrent() { pending?.let { fail(it, "أُلغي الانتظار. يمكنك إيقاف التوليد من الصفحة.") } }

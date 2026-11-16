@@ -2,6 +2,7 @@ package com.lion.ai
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -91,6 +92,20 @@ object ToolAgent {
         return BUILD_FAIL.containsMatchIn(head) && !BUILD_PASS.containsMatchIn(head)
     }
     private val PLACEHOLDER_REPLY = Regex("(استدعاء\\s*(ال)?أدوات|استدعاء\\s*أداة|tool\\s*call|سأستدعي|جار[يٍ]\\s*التنفيذ|\\(\\s*أدوات\\s*\\))", RegexOption.IGNORE_CASE)
+    /**
+     * ينفّذ نداءً بطيئاً في خيط منفصل ويراقب مقاطعة المستخدم؛ عند المقاطعة يتخلى عنه فوراً ويعيد null
+     * (يكتمل الخيط وحده لاحقاً ويُهمل ناتجه). إلغاء المحادثة نفسها يرمي CancellationException من delay فوراً.
+     */
+    private suspend fun <T> abortable(chatId: String, block: suspend () -> T): T? {
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+        val job = scope.async { block() }
+        while (!job.isCompleted) {
+            if (chatId.isNotBlank() && AgentInterrupt.isPending(chatId)) { job.cancel(); return null }
+            kotlinx.coroutines.delay(200)
+        }
+        return job.await()
+    }
+
     private val LOCAL_FILE_MUTATIONS = setOf("file_apply_patch", "file_edit", "file_write", "file_move", "file_copy", "file_delete", "file_mkdir")
     private val DELETE_BRANCH_REQUEST = Regex("(احذف|حذف|delete)\\s+(ال)?(فرع|branch)", RegexOption.IGNORE_CASE)
     private val DESTRUCTIVE_ASK = Regex(
@@ -554,6 +569,11 @@ object ToolAgent {
             val step = stepIndex
             stepIndex++
             currentCoroutineContext().ensureActive()
+            // رفض المستخدم للتعديل أثناء التشغيل يُلغي إذن الكتابة فوراً قبل أي أداة تالية.
+            if (session != null && AgentInterrupt.consumeRevoke(session.chatId)) {
+                memory.writeGranted = false
+                session.recordNote("ألغى المستخدم إذن التعديل أثناء العمل")
+            }
             if (session != null && AgentInterrupt.consume(session.chatId)) {
                 session.recordNote("قاطع المستخدم العمل؛ حُفظت نقطة التوقف لأجيب ثم أتابع")
                 CheckpointStore.save(prefs, session)
@@ -580,37 +600,55 @@ object ToolAgent {
         // وتهجره في الصفحة. نمنحها حتى 6 دقائق للخطوة الواحدة.
         val stepCap = if (WebChatRuntime.handles(provider)) 360_000L else 120_000L
         val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, stepCap).toInt()
-            val toolTurn = if (nativeTools != null && nativeTools.length() > 0) {
-                LlmClient.askWithTools(
+            // نداء المزود قابل للإلغاء الفوري: يراقب طلب المستخدم (إيقاف/ملاحظة) كل 200ms ويتخلى عن الطلب الجاري
+            // بدل أن ينتظر اتصالاً بطيئاً (مزودات API لا تُقطع بإلغاء الـ coroutine وحده).
+            val chatKey = session?.chatId.orEmpty()
+            val callResult = abortable(chatKey) {
+                val tt = if (nativeTools != null && nativeTools.length() > 0) {
+                    LlmClient.askWithTools(
+                        message = current,
+                        apiKey = apiKey,
+                        provider = provider,
+                        history = historyBuffer,
+                        modelOverride = model,
+                        accountId = accountId,
+                        systemPrompt = system,
+                        tools = nativeTools,
+                        readTimeoutMs = readTimeout,
+                        chatModeHint = chatMode,
+                        via = via,
+                        chatId = chatKey
+                    )
+                } else null
+                val rr = tt?.text ?: LlmClient.ask(
                     message = current,
                     apiKey = apiKey,
                     provider = provider,
                     history = historyBuffer,
                     modelOverride = model,
                     accountId = accountId,
+                    image = null,
                     systemPrompt = system,
-                    tools = nativeTools,
                     readTimeoutMs = readTimeout,
                     chatModeHint = chatMode,
                     via = via,
-                    chatId = session?.chatId.orEmpty()
+                    chatId = chatKey
                 )
-            } else null
+                tt to rr
+            }
+            val toolTurn = callResult?.first
             val nativeCalls = toolTurn?.calls.orEmpty()
-            val rawReply = toolTurn?.text ?: LlmClient.ask(
-                message = current,
-                apiKey = apiKey,
-                provider = provider,
-                history = historyBuffer,
-                modelOverride = model,
-                accountId = accountId,
-                image = null,
-                systemPrompt = system,
-                readTimeoutMs = readTimeout,
-                chatModeHint = chatMode,
-                via = via,
-                chatId = session?.chatId.orEmpty()
-            )
+            val rawReply = callResult?.second.orEmpty()
+            // المستخدم قاطع أثناء انتظار المزود: لا نعالج هذا الرد ولا ننفذ أي أداة منه؛ نتوقف فوراً ونحفظ النقطة.
+            if (session != null && AgentInterrupt.consumeRevoke(session.chatId)) memory.writeGranted = false
+            if (session != null && (AgentInterrupt.consume(session.chatId) || callResult == null)) {
+                session.recordNote("قاطع المستخدم أثناء رد المزود؛ أُهمل الرد الجاري ولم تُنفَّذ أدواته")
+                CheckpointStore.save(prefs, session)
+                return finish(
+                    "توقفت فوراً بناءً على طلبك ولم أنفّذ أي خطوة إضافية. حُفظ ما أُنجز سابقاً. أستمع لملاحظتك الآن، ثم أتابع من النقطة نفسها إن رغبت.",
+                    false, "قاطع المستخدم"
+                )
+            }
             // ما تعيده صفحات الويب قد يُعدَّل في العرض (أسوار كود/اقتباسات منحنية): نُرجعه لصيغة المحلّل.
             val reply = if (WebChatRuntime.handles(provider)) WebToolBridge.normalizeReply(rawReply) else rawReply
             if (nativeCalls.isEmpty() && LlmClient.isErrorReply(reply)) {
@@ -937,6 +975,23 @@ object ToolAgent {
                     return Result(askWithReport(question), used, complete = false, responded = memory.responded)
                 }
             }
+            // مفصل خطر (حذف/استبدال/دفع مدمّر/صدفة مدمّرة/مسار توقيع): ينفَّذ دون سؤال فقط إن سمّاه المستخدم في طلبه،
+            // وإلا بطاقة قرار واحدة توضّح الفكرة. موافقتك تخص هذه العملية وحدها، وبقية المهمة تسير بمرونة.
+            if (!readOnly && !WriteIntent.isReadOnlyRequest(userRequest)) {
+                val risky = calls.mapNotNull { c -> RiskPolicy.assess(c)?.takeIf { it.key !in memory.riskApproved } }
+                    .firstOrNull { !RiskPolicy.requestNames(it, userRequest) }
+                if (risky != null) {
+                    memory.pendingRisk.add(risky.key)
+                    val question = "⚠️ عملية حساسة قبل التنفيذ: ${risky.label}.\n" +
+                        "لم تُسمَّ صراحةً في طلبك، وقد لا يمكن التراجع عنها. هل أنفّذها؟ (نعم / لا) — أو وضّح لي ما تريده بدلاً منها."
+                    session?.recordNote("طُلبت موافقة على عملية حساسة: ${risky.label}")
+                    session?.askQuestion(question)
+                    memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
+                    session?.let { CheckpointStore.save(prefs, it) }
+                    onProgress?.invoke("💬 بانتظار موافقتك على: ${risky.label}")
+                    return Result(askWithReport(question), used, complete = false, responded = memory.responded)
+                }
+            }
             // Access requests use the decision card, never an implicit grant.
             val missingAccess = calls.firstNotNullOfOrNull { AiTools.accessRequirement(toolContext, it) }
             val accessRequest = calls.firstOrNull { it.name == "tools_request_access" }
@@ -952,8 +1007,15 @@ object ToolAgent {
                 onProgress?.invoke("💬 بانتظار إعداد الوصول: $resource")
                 return Result(askWithReport(question), used, complete = false, responded = memory.responded)
             }
+            var interruptedMidBatch = false
             val observations = calls.map { call ->
                 currentCoroutineContext().ensureActive()
+                // طلب المستخدم الإيقاف: لا تُنفَّذ بقية الأدوات في هذه الدفعة (خصوصاً التعديلات).
+                if (session != null && AgentInterrupt.consumeRevoke(session.chatId)) memory.writeGranted = false
+                if (interruptedMidBatch || (session != null && AgentInterrupt.isPending(session.chatId))) {
+                    interruptedMidBatch = true
+                    return@map "⏸ لم تُنفَّذ ${call.name}: أوقفها المستخدم"
+                }
                 val path = call.args.optString("path").ifBlank { call.args.optString("from") }
                 val target = path.ifBlank {
                     call.args.optString("query").ifBlank { call.args.optString("url").ifBlank { call.args.optString("command") } }
