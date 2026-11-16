@@ -128,15 +128,11 @@ internal object LionOne {
      */
     @Volatile var offlineFirst: Boolean = false
 
-    /** هل توجد بوابة قابلة للاستعمال (لها مفتاح) تسبق المحرّك المحلي؟ */
-    fun remoteFirstActive(userKey: String = ""): Boolean {
-        if (offlineFirst) return false
-        if (userKey.isNotBlank()) return true
-        return runCatching {
-            val relays = WebGateway.relays()
-            if (relays.isNotEmpty()) relays.any { it.token.isNotBlank() } else WebGateway.current().token.isNotBlank()
-        }.getOrDefault(false)
-    }
+    /**
+     * هل تسبق مزوداتُك القوية (البوابة بمفتاح ثم «العقل» = مزوداتك المضبوطة) المحرّك المحلي؟
+     * نعم افتراضياً؛ يتوقف فقط في وضع «أولاً بلا إنترنت». يحكم كذلك مسار الأدوات وميزانية التعليمات.
+     */
+    fun remoteFirstActive(userKey: String = ""): Boolean = !offlineFirst
 
     /**
      * يقدّم مسارات البوابة السليمة (غير المتجاوَزة مؤقتاً) على المحلية، ويحفظ الترتيب النسبي فيما عداها.
@@ -189,18 +185,20 @@ internal fun LlmClient.callLionOne(
     // معارف تعلّمها Lion-1 من المزودين والمصادر (فارغة إن لم يوجد ما يناسب السؤال).
     val system = LionOne.systemFor(systemPrompt, task) + LionLearn.contextFor(message)
     val errors = mutableListOf<String>()
-    for (route in LionOne.routes(apiKey)) {
+
+    /** محاولة مسار واحد من مسارات Lion-1 نفسه. يعيد الرد أو null عند الفشل (ويسجّل السبب). */
+    fun attempt(route: LionOne.Route): String? {
         if (route.key == "engine" && !LionEngine.ensureReady()) {
             errors += "المحرّك المدمج: ${LionEngine.lastError.ifBlank { LionEngine.phaseLabel(LionEngine.phase) }}"
-            continue
+            return null
         }
         if (route.url.startsWith("http://") && !route.key.startsWith("engine") && !LionOne.reachable(route.url)) {
             LionOne.markBad(route)
             errors += "${route.label}: غير متاح"
-            continue
+            return null
         }
         val startedAt = System.currentTimeMillis()
-        try {
+        return try {
             val reply = callOpenAiCompatible(
                 route.url, route.token, route.model,
                 if (route.key == "engine" || route.key == "local") LionOne.fitHistory(history, system, message) else history,
@@ -213,18 +211,94 @@ internal fun LlmClient.callLionOne(
                 LionOne.markGood(route)
                 runCatching { LionOne.experience().recordRoute(route.key, true, System.currentTimeMillis() - startedAt) }
                 recordSuccess(LionOne.ID, "lion-1 · ${route.label}")
-                return reply
+                reply
+            } else {
+                runCatching { LionOne.experience().recordRoute(route.key, false, System.currentTimeMillis() - startedAt) }
+                LionOne.markBad(route)
+                errors += "${route.label}: ${reply.take(80)}"
+                null
             }
-            runCatching { LionOne.experience().recordRoute(route.key, false, System.currentTimeMillis() - startedAt) }
-            LionOne.markBad(route)
-            errors += "${route.label}: ${reply.take(80)}"
         } catch (e: Exception) {
             LionOne.markBad(route)
             errors += "${route.label}: ${e.message.orEmpty().take(80)}"
+            null
         }
+    }
+
+    // الترتيب: ١) بوابة بمفتاح ← ٢) «العقل»: مزوداتك ومفاتيحك المضبوطة في التطبيق (Gemini/Groq/…/جلسات الويب)
+    // ← ٣) المحرّك/الخادم المحلي (للعمل دون إنترنت). بلا هذا الدور كان Lion-1 يتوقف تماماً
+    // حين لا يكون المحرّك مثبّتاً ولا للبوابة مفتاح، رغم وجود مزودات تعمل في بقية التطبيق.
+    val all = LionOne.routes(apiKey)
+    val remote = if (LionOne.offlineFirst) emptyList() else
+        all.filter { it.key.startsWith("gw:") && it.token.isNotBlank() }
+    val local = all.filterNot { it in remote }
+    for (r in remote) attempt(r)?.let { return it }
+    if (!LionOne.offlineFirst) {
+        callLionBrain(task, message, history, image, system, errors)?.let { return it }
+    }
+    for (r in local) attempt(r)?.let { return it }
+    if (LionOne.offlineFirst) {
+        callLionBrain(task, message, history, image, system, errors)?.let { return it }
     }
     return "⚠️ Lion-1: تعذّرت كل المسارات.\n" + errors.joinToString("\n") + "\n" +
         LionHint.nextStep()
+}
+
+/**
+ * «عقل» Lion-1: يفوّض إلى مزوداتك الفعلية بخطة العقل المركزي نفسها (SmartRouter.plan)،
+ * فيستفيد من كل مفتاح وجلسة ويب مفعّلة، ويتخطى المبرَّد/الفاشل، ويحافظ على سياق المحادثة.
+ * يعيد الرد أو null (والأسباب تُضاف إلى [errors]).
+ */
+internal fun LlmClient.callLionBrain(
+    task: LionOne.Task,
+    message: String,
+    history: List<ChatTurn>,
+    image: ImageAttachment?,
+    system: String,
+    errors: MutableList<String>
+): String? {
+    val prefs = runCatching { ContextHolder.peek()?.let { SecurePrefs.get(it) } }.getOrNull() ?: return null
+    val kind = when {
+        image != null -> TaskKind.VISION
+        task == LionOne.Task.CODE -> TaskKind.CODE
+        task == LionOne.Task.WRITE -> TaskKind.WRITING
+        task == LionOne.Task.REASON -> TaskKind.REASONING
+        else -> TaskKind.GENERAL
+    }
+    val plan = runCatching { SmartRouter.plan(prefs, kind) }.getOrDefault(emptyList())
+        .filter { it.provider != LionOne.ID && it.provider != "local_proxy" }
+    if (plan.isEmpty()) {
+        errors += "المزودات: لا يوجد مزود مفعّل بمفتاح أو جلسة ويب"
+        return null
+    }
+    for (route in plan.take(5)) {
+        val startedAt = System.currentTimeMillis()
+        val reply = try {
+            ask(
+                message = message,
+                apiKey = prefs.getString("api_key_${route.provider}", "").orEmpty(),
+                provider = route.provider,
+                history = history,
+                modelOverride = route.model,
+                accountId = prefs.getString("cf_account_id", "").orEmpty(),
+                image = image,
+                systemPrompt = system,
+                via = route.via
+            )
+        } catch (e: Exception) {
+            "⚠️ ${e.message.orEmpty()}"
+        }
+        if (!isErrorReply(reply)) {
+            QuotaGuard.clear(route.provider)
+            runCatching { LionOne.experience().recordRoute("brain:" + route.provider, true, System.currentTimeMillis() - startedAt) }
+            recordSuccess(LionOne.ID, "lion-1 · ${route.provider}")
+            return reply
+        }
+        QuotaGuard.mark(route.provider, QuotaGuard.classify(reply))
+        runCatching { LionOne.experience().recordRoute("brain:" + route.provider, false, System.currentTimeMillis() - startedAt) }
+        errors += "${route.provider}: ${reply.take(80)}"
+    }
+    return null
 }
 
 /**
