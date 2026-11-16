@@ -602,9 +602,11 @@ object LionEngine {
         val modelPath = guestPath(context, modelFile(context, prefs))
         val contextSize = ctx(prefs)
         val threadCount = threads(prefs)
-        // --jinja: تفعيل قالب المحادثة الأصلي للنموذج، وهو شرط دعم tools (function calling) في llama-server.
-        val script = "exec llama-server -m '$modelPath' --host 127.0.0.1 --port $PORT " +
-            "-c $contextSize -t $threadCount -np 1 --jinja --no-warmup"
+        // أعلام التشغيل من LionEngineTuning: batch أكبر + إعادة استخدام ذاكرة المطالبة (cache-reuse)
+        // + threads للـbatch، لتسريع قراءة المطالبة والأسئلة المتتابعة في llama.cpp.
+        val cores = Runtime.getRuntime().availableProcessors()
+        val tuningArgs = LionEngineTuning.launchArgs(contextSize, threadCount, cores)
+        val script = "exec llama-server -m '$modelPath' --host 127.0.0.1 --port $PORT $tuningArgs"
         return try {
             val proc = LinuxEnv.start(
                 context,
