@@ -1733,7 +1733,7 @@ object AiTools {
             "file_read", "read_file" -> {
                 val info = FileTools.read(ctx.context, req(args, "path"))
                 if (info.binary) "${info.path} — ملف ثنائي (${info.size} بايت)" else
-                    "${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n${info.text.take(14_000)}"
+                    "${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n" + info.text.lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n").take(15_000)
             }
             "file_read_many" -> {
                 val paths = stringList(args.optJSONArray("paths"))
@@ -1743,7 +1743,7 @@ object AiTools {
                     runCatching {
                         val info = FileTools.read(ctx.context, path)
                         "=== ${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""}) ===\n" +
-                            if (info.binary) "[ملف ثنائي]" else info.text.take(max)
+                            if (info.binary) "[ملف ثنائي]" else info.text.lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n").take(max + 2000)
                     }.getOrElse { "=== $path ===\n❌ ${it.message ?: it.javaClass.simpleName}" }
                 }
             }
