@@ -209,8 +209,9 @@ object ContextStore {
     }
 
     /** تعليمات الحوكمة تُضاف فقط لوضع البرمجة، وليست موجودة في الوضع العام. */
-    fun governancePrompt(prefs: SharedPreferences): String {
-        val manifest = ManifestStore.latest(prefs)
+    fun governancePrompt(prefs: SharedPreferences, chatId: String = ""): String {
+        // Manifest هذه المحادثة فقط، لا آخر Manifest من أي محادثة أخرى
+        val manifest = if (chatId.isBlank()) null else ManifestStore.read(prefs, chatId)
         return buildString {
             append("=== 🛡️ عقد الحوكمة الميكانيكية ===\n")
             append("1) لا كتابة قبل اعتماد Manifest. استخدم manifest_create ثم manifest_validate.\n")

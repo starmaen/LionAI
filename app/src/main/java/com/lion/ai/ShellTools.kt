@@ -227,7 +227,13 @@ object ShellTools {
     )
 
     /** يفرّق بين أوامر الفحص والأوامر التي تكتب/تحذف، لتطبيق حوكمة Manifest عليها. */
-    fun looksLikeWrite(command: String): Boolean = WRITE_COMMAND.containsMatchIn(command)
+    fun looksLikeWrite(command: String): Boolean {
+        // إعادة التوجيه إلى /dev/null أو دمج المخارج (2>&1) ليست كتابة ملفات
+        val cleaned = command
+            .replace(Regex("""\d*>>?\s*/dev/null"""), " ")
+            .replace(Regex("""\d*>&\d"""), " ")
+        return WRITE_COMMAND.containsMatchIn(cleaned)
+    }
 
     fun parseBuildErrors(raw: String): List<String> {
         val results = LinkedHashSet<String>()
