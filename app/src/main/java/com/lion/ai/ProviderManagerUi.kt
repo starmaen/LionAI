@@ -59,7 +59,7 @@ fun ProviderManagerSection(prefs: SharedPreferences) {
                     ) {
                         Text(info.label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
                         TextButton(onClick = { confirm = info }) {
-                            Text("🗑️ حذف", color = Color(0xFFFF6B6B), fontSize = 12.sp)
+                            Text("حذف", color = Color(0xFFFF6B6B), fontSize = 12.sp)
                         }
                     }
                 }

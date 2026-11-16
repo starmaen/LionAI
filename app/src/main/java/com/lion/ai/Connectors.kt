@@ -177,11 +177,11 @@ object Connectors {
         val link = meta.optString("webViewLink")
         if (mime == "application/vnd.google-apps.shortcut") {
             val target = meta.optJSONObject("shortcutDetails")?.optString("targetId").orEmpty()
-            if (target.isNotBlank()) return "🔗 اختصار إلى ملف آخر:\n\n" + driveOpen(ctx, target, maxChars)
+            if (target.isNotBlank()) return "اختصار إلى ملف آخر:\n\n" + driveOpen(ctx, target, maxChars)
         }
         if (mime.startsWith("application/vnd.google-apps.folder")) {
             val listing = driveList(ctx, 100, id)
-            return "📁 $name\n$link\n\n$listing"
+            return "$name\n$link\n\n$listing"
         }
         return driveRead(ctx, id, maxChars)
     }
@@ -496,13 +496,13 @@ object Connectors {
         val link = meta.optString("webViewLink")
         val max = maxChars.coerceIn(1000, 30_000)
         if (mime.startsWith("application/vnd.google-apps.folder")) {
-            return "📁 $name\n$link\n\n" + driveList(ctx, 100, id)
+            return "$name\n$link\n\n" + driveList(ctx, 100, id)
         }
         val googleDoc = mime.startsWith("application/vnd.google-apps")
         val looksText = googleDoc || mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") ||
             mime.contains("csv") || mime.contains("javascript") || mime.contains("x-yaml")
         if (!looksText) {
-            return "📄 $name ($mime, ${FileTools.formatSize(meta.optLong("size"))})\n$link\n" +
+            return "$name ($mime, ${FileTools.formatSize(meta.optLong("size"))})\n$link\n" +
                 "ملف ثنائي؛ استخدم drive_download لنزيله إلى مساحة العمل."
         }
         val text = if (googleDoc) {
@@ -519,7 +519,7 @@ object Connectors {
                 "Drive"
             ).body
         }
-        return "📄 $name ($mime)\n$link\n\n${text.take(max)}" +
+        return "$name ($mime)\n$link\n\n${text.take(max)}" +
             if (text.length > max) "\n… [اقتُطع]" else ""
     }
 
@@ -1184,7 +1184,7 @@ object Connectors {
         }
         walk(pageId, 0)
         val body = builder.toString().trim()
-        return if (body.isBlank()) "الصفحة فارغة." else "📝 محتوى الصفحة:\n\n${body.take(max)}" +
+        return if (body.isBlank()) "الصفحة فارغة." else "محتوى الصفحة:\n\n${body.take(max)}" +
             if (body.length > max) "\n… [اقتُطع]" else ""
     }
 

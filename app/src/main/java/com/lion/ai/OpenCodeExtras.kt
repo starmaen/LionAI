@@ -93,7 +93,7 @@ fun OpenCodeExtrasCard() {
         Modifier.fillMaxWidth().background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("🧩 تقوية OpenCode", color = XGOLD, fontWeight = FontWeight.Bold)
+        Text("تقوية OpenCode", color = XGOLD, fontWeight = FontWeight.Bold)
 
         // 1) المنصات المضافة من الطرفية
         Text(
@@ -113,7 +113,7 @@ fun OpenCodeExtrasCard() {
                 }
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
-        ) { Text("🔄 إعادة تشغيل ومزامنة المنصات", color = XGOLD, fontSize = 12.sp) }
+        ) { Text("إعادة تشغيل ومزامنة المنصات", color = XGOLD, fontSize = 12.sp) }
 
         // منصات مخصصة لـ OpenCode (تبقى كلها معاً ويظهر موديلاتها في المنتقي)
         Spacer(Modifier.height(6.dp))
@@ -151,7 +151,7 @@ fun OpenCodeExtrasCard() {
         // 2) خوادم MCP
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("🔌 خوادم MCP", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("خوادم MCP", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
             TextButton(
                 enabled = !busy,
                 onClick = {
@@ -164,7 +164,7 @@ fun OpenCodeExtrasCard() {
                         busy = false
                     }
                 }
-            ) { Text("🔍 فحص الحالة", color = XGOLD, fontSize = 11.sp) }
+            ) { Text("فحص الحالة", color = XGOLD, fontSize = 11.sp) }
         }
         Text(
             "أدوات إضافية لـ OpenCode. أمر محلي مثل: npx -y @modelcontextprotocol/server-filesystem /workspace — أو رابط https لخادم بعيد.",
@@ -193,7 +193,7 @@ fun OpenCodeExtrasCard() {
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
-            ) { Text("🧪 اختبار الأوامر", color = XGOLD, fontSize = 11.sp) }
+            ) { Text("اختبار الأوامر", color = XGOLD, fontSize = 11.sp) }
         }
         OpenCodeConfig.mcpList(config).forEach { m ->
             Row(verticalAlignment = Alignment.CenterVertically) {

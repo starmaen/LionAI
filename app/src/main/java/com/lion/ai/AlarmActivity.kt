@@ -214,7 +214,7 @@ private fun AlarmScreen(
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
         ) {
-            Text("⏰ تأجيل 10 دقائق", color = Color.White, fontSize = 15.sp)
+            Text("تأجيل 10 دقائق", color = Color.White, fontSize = 15.sp)
         }
         Spacer(Modifier.height(8.dp))
         Button(
@@ -223,7 +223,7 @@ private fun AlarmScreen(
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
         ) {
-            Text("⏰ تأجيل ساعة", color = Color.White, fontSize = 15.sp)
+            Text("تأجيل ساعة", color = Color.White, fontSize = 15.sp)
         }
     }
 }

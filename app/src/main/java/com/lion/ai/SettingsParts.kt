@@ -340,7 +340,7 @@ fun ProviderCard(
                 }
 
                 Spacer(Modifier.height(4.dp))
-                Text("🔑 مفتاح ${info.label}", color = Amber, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("مفتاح ${info.label}", color = Amber, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = keys[id].orEmpty(),
@@ -459,7 +459,7 @@ fun ProviderCard(
 
                 when {
                     info.custom && endpoints[id].orEmpty().isNotBlank() -> {
-                        testButtonLabel = "🧪 اختبار الاتصال بالخادم"
+                        testButtonLabel = "اختبار الاتصال بالخادم"
                         testButtonOnClick = {
                             testing = true
                             testStatus = "⏳ أختبر الاتصال بالخادم..."
@@ -467,7 +467,7 @@ fun ProviderCard(
                         }
                     }
                     id != "custom" -> {
-                        testButtonLabel = "🧪 اختبار المفتاح والموديل"
+                        testButtonLabel = "اختبار المفتاح والموديل"
                         testButtonOnClick = {
                             testing = true
                             testStatus = "⏳ أختبر المفتاح..."
@@ -587,7 +587,7 @@ Spacer(Modifier.height(8.dp))
                         }
                     }
                 ) {
-                    Text("🔄 تحديث قائمة الموديلات من الإنترنت", color = Amber, fontSize = 12.sp)
+                    Text("تحديث قائمة الموديلات من الإنترنت", color = Amber, fontSize = 12.sp)
                 }
                 if (modelStatus.isNotBlank()) {
                     Text(modelStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
@@ -635,7 +635,7 @@ Spacer(Modifier.height(8.dp))
                         }
                         when {
                             endpoints[id].orEmpty().isNotBlank() -> {
-                                testButtonLabel = "🧪 اختبار الاتصال بالخادم"
+                                testButtonLabel = "اختبار الاتصال بالخادم"
                                 testButtonOnClick = {
                                     testing = true
                                     testStatus = "⏳ أختبر الاتصال بالخادم..."
@@ -675,7 +675,7 @@ Spacer(Modifier.height(8.dp))
                     Text(info.modelHint, color = Color(0xFF9A9A9A), fontSize = 11.sp)
                 }
                 TextButton(onClick = { runCatching { uriHandler.openUri(info.docsUrl) } }) {
-                    Text("📖 التوثيق الرسمي وحدود الاستخدام", color = Amber, fontSize = 12.sp)
+                    Text("التوثيق الرسمي وحدود الاستخدام", color = Amber, fontSize = 12.sp)
                 }
             }
         }

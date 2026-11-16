@@ -19,7 +19,7 @@ object CodeDoctor {
     ): String {
         val entries = FileTools.walk(context, path, maxFiles.coerceIn(1, 5000))
         if (entries.isEmpty()) {
-            return "🩺 طبيب المشروع\nالمسار فارغ أو لا يحتوي ملفات: ${path.ifBlank { "مساحة العمل" }}"
+            return "طبيب المشروع\nالمسار فارغ أو لا يحتوي ملفات: ${path.ifBlank { "مساحة العمل" }}"
         }
         val names = entries.map { it.path.lowercase() }
         val systems = detectSystems(names)
@@ -64,10 +64,10 @@ object CodeDoctor {
             manifest = manifest
         )
         val level = when {
-            score >= 85 -> "🟢 جاهز"
+            score >= 85 -> "جاهز"
             score >= 65 -> "🟡 جاهز مع ملاحظات"
             score >= 40 -> "🟠 يحتاج عملاً قبل الاعتماد"
-            else -> "🔴 غير جاهز"
+            else -> "غير جاهز"
         }
 
         val actions = mutableListOf<String>()
@@ -94,7 +94,7 @@ object CodeDoctor {
         if (actions.isEmpty()) actions += "لا عوائق ظاهرة؛ شغّل الاختبارات والبناء ثم راجع الفروق قبل الدمج."
 
         return buildString {
-            append("🩺 تقرير جاهزية المشروع: ").append(level).append(" (").append(score).append("/100)\n")
+            append("تقرير جاهزية المشروع: ").append(level).append(" (").append(score).append("/100)\n")
             append("• المسار: ").append(path.ifBlank { "مساحة العمل" }).append('\n')
             append("• الملفات: ").append(entries.size)
             append(" | مصدرية: ").append(sources.size)
@@ -110,7 +110,7 @@ object CodeDoctor {
             } else {
                 append("• Manifest: لا يوجد لهذه الجلسة\n")
             }
-            append("\n📊 صحة الكود:\n")
+            append("\nصحة الكود:\n")
             append("• TODO/FIXME: ").append(todos)
             append(" | أسرار محتملة: ").append(secretHits)
             append(" | أسطر طويلة: ").append(longLines)
@@ -136,7 +136,7 @@ object CodeDoctor {
                 DependencyAudit.audit(context, path, online, maxFiles)
             }.getOrElse { "تعذّر تدقيق الاعتماديات: ${it.message}" }
             append("\n").append(deps.take(3500)).append('\n')
-            append("\n🎯 الخطوات المقترحة:\n")
+            append("\nالخطوات المقترحة:\n")
             actions.take(10).forEachIndexed { index, action ->
                 append(index + 1).append(". ").append(action).append('\n')
             }

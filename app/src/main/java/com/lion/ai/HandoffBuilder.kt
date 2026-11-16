@@ -51,7 +51,7 @@ object HandoffBuilder {
             appendLine()
             appendLine("## آخر النقاط (آخر ${recent.size} رسائل)")
             recent.forEach { (user, text) ->
-                appendLine((if (user) "👤 المستخدم: " else "🦁 المساعد: ") + cut(text, 1_200))
+                appendLine((if (user) "المستخدم: " else "🦁 المساعد: ") + cut(text, 1_200))
                 appendLine()
             }
         }

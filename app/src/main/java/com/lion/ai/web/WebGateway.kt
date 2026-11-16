@@ -225,9 +225,9 @@ object WebGateway {
         chatUrl(raw).removeSuffix("/chat/completions").trimEnd('/') + "/models"
 
     fun modeLabel(mode: String): String = when (normalizeMode(mode)) {
-        MODE_AUTO -> "🌐 خادم أولاً"
-        MODE_ONLY -> "☁️ خادم فقط"
-        else -> "🔌 مباشر"
+        MODE_AUTO -> "خادم أولاً"
+        MODE_ONLY -> "خادم فقط"
+        else -> "مباشر"
     }
 
     /** اختبار سريع متزامن (يُستدعى من Dispatchers.IO). */

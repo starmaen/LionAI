@@ -60,7 +60,7 @@ fun OperationsRoomCard(prefs: SharedPreferences) {
             )
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Text("🧠 غرفة العمليات المركزية", color = Color(0xFFFFB800), fontSize = 14.sp)
+                Text("غرفة العمليات المركزية", color = Color(0xFFFFB800), fontSize = 14.sp)
                 Text(
                     "خيار ثالث للمهام المعقدة فقط. عند تفعيله يتحول «التلقائي» إلى اجتماع بين عدة مزودات " +
                         "(API والمواقع) ينتهي بقرار واحد معتمد، ويظهر تحت النتيجة «${OperationsRoom.BRAND}» فقط. " +

@@ -15,9 +15,6 @@ object RoutePolicy {
     const val LOCAL_PROXY = "local_proxy"
     const val CUSTOM = "custom"
 
-    /** التثبيت اليدوي نهائي: المزود المختار يدوياً لا يُبدَّل تلقائياً أبداً. */
-    private const val MANUAL_ASSIST_ALLOWED = false
-
     /** مفتاح موحّد للتلقائي/اليدوي — مستخدم من غرفة العمليات والإعدادات والمسار. */
     const val PREF_AUTO = "auto_route"
 
@@ -31,7 +28,7 @@ object RoutePolicy {
     fun isManual(prefs: SharedPreferences): Boolean = !prefs.getBoolean(PREF_AUTO, true)
 
     fun assistEnabled(prefs: SharedPreferences): Boolean =
-        isManual(prefs) && prefs.getBoolean("manual_assist", false) && MANUAL_ASSIST_ALLOWED
+        isManual(prefs) && FailoverPolicy.enabled(prefs)
 
     fun modelFor(prefs: SharedPreferences, provider: String): String =
         if (WebChatRuntime.isWeb(provider)) WebChatRuntime.model(prefs, provider)
@@ -137,7 +134,10 @@ object RoutePolicy {
         WebGateway.load(prefs)
         val chosen = appManualRoute(prefs)
         // An explicit website selection must never turn into an API answer, even in auto/assist mode.
-        if (WebChatRuntime.handles(chosen.provider)) return listOf(chosen.copy(via = Channel.WEB))
+        if (WebChatRuntime.handles(chosen.provider)) {
+            val primary = chosen.copy(via = Channel.WEB)
+            return listOf(primary) + FailoverPolicy.backupsFor(prefs, kind, primary)
+        }
         if (isManual(prefs)) {
             ProviderStick.clear(prefs, chatId)
             // Keep LastRoute so a later return to auto stays on the working provider.

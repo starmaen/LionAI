@@ -484,7 +484,7 @@ fun GitHubScreen(
                         ) {
                             Column(Modifier.padding(12.dp)) {
                                 Text(
-                                    "📦 ${repo.fullName} ${if (repo.private) "🔒" else "🌍"}",
+                                    "${repo.fullName} ${if (repo.private) "🔒" else "🌍"}",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -503,7 +503,7 @@ fun GitHubScreen(
             } else {
                 val repo = selected ?: return@Column
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("📦 ${repo.fullName}", color = GOLD, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("${repo.fullName}", color = GOLD, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Text(repo.defaultBranch, color = MUTED, fontSize = 11.sp)
                 }
                 Spacer(Modifier.height(8.dp))
@@ -595,7 +595,7 @@ fun GitHubScreen(
                             val shown = file ?: return@Column
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    "📄 ${shown.path}",
+                                    "${shown.path}",
                                     color = GOLD,
                                     fontSize = 13.sp,
                                     modifier = Modifier.weight(1f)
@@ -610,9 +610,9 @@ fun GitHubScreen(
                                 TextButton(onClick = {
                                     editContent = shown.text
                                     editing = true
-                                }) { Text("✏️ تعديل", color = GOLD, fontSize = 12.sp) }
+                                }) { Text("تعديل", color = GOLD, fontSize = 12.sp) }
                                 TextButton(onClick = { deleteTarget = shown.path }) {
-                                    Text("🗑️ حذف", color = Color(0xFFE94560), fontSize = 12.sp)
+                                    Text("حذف", color = Color(0xFFE94560), fontSize = 12.sp)
                                 }
                                 Spacer(Modifier.height(4.dp))
                                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -900,7 +900,7 @@ fun GitHubScreen(
         AlertDialog(
             onDismissRequest = { selectedRun = null },
             containerColor = CARD,
-            title = { Text("⚙️ #${run.number} ${run.name}", color = GOLD, fontSize = 14.sp) },
+            title = { Text("#${run.number} ${run.name}", color = GOLD, fontSize = 14.sp) },
             text = {
                 Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                     Text(
@@ -945,7 +945,7 @@ fun GitHubScreen(
             confirmButton = {
                 Row {
                     TextButton(enabled = !actionsBusy, onClick = { rerunSelected() }) {
-                        Text("🔁 إعادة", color = GOLD)
+                        Text("إعادة", color = GOLD)
                     }
                     TextButton(enabled = !actionsBusy, onClick = { cancelSelected() }) {
                         Text("⏹ إلغاء", color = Color(0xFFE94560))
@@ -963,7 +963,7 @@ fun GitHubScreen(
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             containerColor = CARD,
-            title = { Text("🗑️ حذف ملف", color = Color(0xFFE94560)) },
+            title = { Text("حذف ملف", color = Color(0xFFE94560)) },
             text = { Text("سيُحذف «$target» من الفرع $branch ويُنشأ commit جديد.", color = Color.White) },
             confirmButton = {
                 TextButton(onClick = {

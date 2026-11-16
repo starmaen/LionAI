@@ -174,8 +174,8 @@ private fun ServerCard(
         }
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            SrvButton(if (busy) "⏳ …" else "🩺 فحص بدون مزود", enabled = !busy, modifier = Modifier.weight(1f)) { onTestPlain() }
-            SrvButton(if (busy) "⏳ …" else "🧪 فحص مع مزود", enabled = !busy, modifier = Modifier.weight(1f)) { onTestProvider() }
+            SrvButton(if (busy) "⏳ …" else "فحص بدون مزود", enabled = !busy, modifier = Modifier.weight(1f)) { onTestPlain() }
+            SrvButton(if (busy) "⏳ …" else "فحص مع مزود", enabled = !busy, modifier = Modifier.weight(1f)) { onTestProvider() }
         }
         if (onEdit != null || onDelete != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -237,12 +237,12 @@ fun ServersSection(prefs: SharedPreferences, onChanged: () -> Unit) {
     fun probeModel(): String = WebGateway.defaultModel(probeProvider)
 
     SettingsSection(
-        title = "🖥️ الخوادم",
+        title = "الخوادم",
         subtitle = "أضف خوادمك المحلية والخارجية، افحصها، وفعّل واحداً أو كلها أو اتركها مباشرة",
         badge = when {
-            off -> "🔌 مباشر"
+            off -> "مباشر"
             scopeNow == ServerRegistry.SCOPE_ONE -> "☝️ خادم واحد"
-            else -> "🗂️ كل الخوادم"
+            else -> "كل الخوادم"
         },
         initiallyExpanded = true
     ) {
@@ -252,7 +252,7 @@ fun ServersSection(prefs: SharedPreferences, onChanged: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            SrvPill("🔌 مباشر", off, Modifier.weight(1f)) {
+            SrvPill("مباشر", off, Modifier.weight(1f)) {
                 ServerRegistry.selectMode(prefs, off = true)
                 bump()
             }
@@ -280,7 +280,7 @@ fun ServersSection(prefs: SharedPreferences, onChanged: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("🔌 المباشر أولاً", color = Color.White, fontSize = 13.sp)
+                    Text("المباشر أولاً", color = Color.White, fontSize = 13.sp)
                     Text(
                         if (directFirst) "الأولوية للمباشر، والخوادم طريق إضافي عند تعذّره."
                         else "الخوادم وحدها دون الرجوع إلى المباشر.",
@@ -309,7 +309,7 @@ fun ServersSection(prefs: SharedPreferences, onChanged: () -> Unit) {
 
         // ---- الخادم المحلي المدمج ----
         ServerCard(
-            title = "📱 الخادم المحلي (داخل التطبيق)",
+            title = "الخادم المحلي (داخل التطبيق)",
             subtitle = if (LocalAIProxy.isRunning()) "يعمل الآن — ${LocalAIProxy.getUrl()}" else "متوقف",
             enabled = localOn,
             switchActive = !off,
@@ -343,7 +343,7 @@ fun ServersSection(prefs: SharedPreferences, onChanged: () -> Unit) {
                         TextButton(onClick = {
                             val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("LionAI Proxy", url))
-                        }) { Text("📋 نسخ", color = SrvAmber, fontSize = 11.sp) }
+                        }) { Text("نسخ", color = SrvAmber, fontSize = 11.sp) }
                     }
                 }
             }
@@ -352,7 +352,7 @@ fun ServersSection(prefs: SharedPreferences, onChanged: () -> Unit) {
         // ---- الخادم الخارجي المعروف (بوابة LionAI) ----
         var gwEditing by remember { mutableStateOf(false) }
         ServerCard(
-            title = "🌐 الخادم الخارجي (البوابة)",
+            title = "الخادم الخارجي (البوابة)",
             subtitle = if (gwUrl.isBlank()) "غير مضبوط — اضغط تعديل وأدخل الرابط والمفتاح"
             else gwUrl + if (gwToken.isBlank()) "  ⚠️ بلا مفتاح" else "",
             enabled = gwOn,
@@ -504,7 +504,7 @@ fun ServersSection(prefs: SharedPreferences, onChanged: () -> Unit) {
 
     // غرفة العمليات المركزية: قائمة منسدلة داخل حقل الاتصال أسفل الخوادم.
     SettingsSection(
-        title = "🧠 غرفة العمليات المركزية",
+        title = "غرفة العمليات المركزية",
         subtitle = "للمهام المعقدة في وضع المطوّر مع التلقائي فقط — اختياري",
         nested = true
     ) {

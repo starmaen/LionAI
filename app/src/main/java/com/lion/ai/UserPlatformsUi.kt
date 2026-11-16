@@ -73,7 +73,7 @@ fun UserPlatformsSection(prefs: SharedPreferences) {
                         UserPlatforms.remove(prefs, p.id)
                         runCatching { LlmClient.reloadOverrides(prefs) }
                         confirmId = null
-                        status = "🗑️ حُذفت ${p.label}"
+                        status = "حُذفت ${p.label}"
                         version++
                     }) { Text("تأكيد الحذف", color = Color(0xFFFF9A9A), fontSize = 12.sp) }
                     TextButton(onClick = { confirmId = null }) { Text("إلغاء", color = muted, fontSize = 12.sp) }
@@ -172,7 +172,7 @@ fun AddPlatformDialog(prefs: SharedPreferences, onDismiss: () -> Unit, onAdded: 
                             busy = false
                         }
                     }
-                ) { Text("🔄 جلب الموديلات تلقائياً من المنصة", color = gold, fontSize = 12.sp) }
+                ) { Text("جلب الموديلات تلقائياً من المنصة", color = gold, fontSize = 12.sp) }
                 if (status.isNotBlank()) {
                     Text(status, color = if (status.startsWith("❌")) Color(0xFFFF9A9A) else if (status.startsWith("⏳")) muted else Color(0xFF7CC47C), fontSize = 11.sp)
                 }

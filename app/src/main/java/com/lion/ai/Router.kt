@@ -67,7 +67,7 @@ data class Route(val provider: String, val model: String, val via: String = Chan
 enum class AnswerMode(val id: String, val label: String, val hint: String) {
     PRECISE(
         "precise",
-        "🎯 دقيق (موصى به)",
+        "دقيق (موصى به)",
         "يمنع النماذج الضعيفة في الأسئلة المعرفية والعامة، ويستعمل أقوى المزودات المتاحة فقط."
     ),
     BALANCED(

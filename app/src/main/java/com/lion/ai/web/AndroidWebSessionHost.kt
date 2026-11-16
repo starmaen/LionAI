@@ -533,7 +533,7 @@ internal class AndroidWebSessionHost(
         p.deadline = minOf(maxOf(p.deadline, System.currentTimeMillis() + 60_000L), p.hardLimit)
         WebSessionTransport.extend(p.request.token, p.deadline)
         level(p.adapter.id, WebSessionStatus.Level.AMBER, "إعادة تهيئة تلقائية للجلسة")
-        status(p, "🔄 ${decision.reason}")
+        status(p, "${decision.reason}")
         scheduleTick(p, 700L)
         return true
     }
@@ -715,7 +715,7 @@ internal class AndroidWebSessionHost(
         val now = SystemClock.uptimeMillis()
         if (now - lastStreamNoteAt < 1500L) return
         lastStreamNoteAt = now
-        status(p, "✍️ يصل الرد مباشرة من الصفحة ($chars حرفاً)")
+        status(p, "يصل الرد مباشرة من الصفحة ($chars حرفاً)")
     }
     private fun status(p: Pending, text: String) {
         prefs.edit().putString("web_session_status_${p.adapter.id}", text)

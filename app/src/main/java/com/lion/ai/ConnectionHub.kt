@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
 private val Amber = Color(0xFFFFB800)
 
 /** تبويبات الإعدادات: كل قسم في مكانه الواضح بدل قائمة طويلة واحدة. */
-val SETTINGS_TABS = listOf("🔑 المزودات", "🔌 الاتصال", "🧠 الذكاء والأدوات", "⚙️ عام")
+val SETTINGS_TABS = listOf("المزودات", "الاتصال", "الذكاء والأدوات", "عام")
 
 @Composable
 fun SettingsTabsBar(selected: Int, onSelect: (Int) -> Unit) {
@@ -83,16 +83,16 @@ fun ConnectionHubSection(prefs: SharedPreferences, onChanged: () -> Unit) {
     }
 
     SettingsSection(
-        title = "🔌 طريق التنفيذ",
+        title = "طريق التنفيذ",
         subtitle = "نفس المزودات في كل الطرق؛ يختار التطبيق الطريق السليم ويعود للتالي عند الفشل",
         badge = WebGateway.modeLabel(mode),
         initiallyExpanded = true
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             listOf(
-                WebGateway.MODE_AUTO to "🧠 تلقائي",
-                WebGateway.MODE_OFF to "🔌 مباشر فقط",
-                WebGateway.MODE_ONLY to "☁️ خادم فقط"
+                WebGateway.MODE_AUTO to "تلقائي",
+                WebGateway.MODE_OFF to "مباشر فقط",
+                WebGateway.MODE_ONLY to "خادم فقط"
             ).forEach { (value, label) ->
                 val on = mode == value
                 Box(
@@ -147,7 +147,7 @@ fun ConnectionHubSection(prefs: SharedPreferences, onChanged: () -> Unit) {
                 }
                 .padding(vertical = 12.dp),
             contentAlignment = Alignment.Center
-        ) { Text(if (busy) "⏳ …" else "🩺 فحص الخوادم", color = Amber, fontSize = 14.sp) }
+        ) { Text(if (busy) "⏳ …" else "فحص الخوادم", color = Amber, fontSize = 14.sp) }
         if (report.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
             Text(report, color = Color(0xFFD0D0D0), fontSize = 12.sp)

@@ -308,7 +308,7 @@ object LlmClient {
         }
         if (provider == "cfai" && !viaGateway) {
             return "⚠️ Workers AI مجاني لكنه يعمل عبر خادم الويب فقط.\n" +
-                "الإعدادات ← الخادم المحلي ← 🌐 مزودات خادم الويب ← «خادم أولاً» مع الرابط و RELAY_TOKEN."
+                "الإعدادات ← الخادم المحلي ← مزودات خادم الويب ← «خادم أولاً» مع الرابط و RELAY_TOKEN."
         }
         if (apiKey.isBlank() && !viaGateway && !providerInfo(provider).keyless && !provider.startsWith("imp_")) {
             return "⚠️ يرجى إدخال مفتاح API للمزود من الإعدادات (⚙️)"
@@ -474,11 +474,11 @@ object LlmClient {
                     else -> "⚠️ خطأ من المزود (402): ${e.message}"
                 }
                 401, 403 -> if (provider == "hf") {
-                    "🔑 توكن Hugging Face غير مقبول (${e.status}).\n" +
+                    "توكن Hugging Face غير مقبول (${e.status}).\n" +
                         "أنشئ توكن Fine-grained وفيه صلاحية «Make calls to Inference Providers»، وتأكد أن الحساب يملك رصيداً/حصة استدلال. " +
                         "راوتر HF لا يقدّم موديلات مجانية؛ للاستخدام المجاني جرّب OpenRouter (موديلات :free) أو Groq.\n${e.message}"
                 } else {
-                    "🔑 المفتاح غير صالح أو لا يملك صلاحية لهذا الموديل (${e.status}).\n${e.message}" +
+                    "المفتاح غير صالح أو لا يملك صلاحية لهذا الموديل (${e.status}).\n${e.message}" +
                         regionHint(provider, e.message.orEmpty())
                 }
                 404 -> "⚠️ الموديل «$model» غير متاح لهذا المفتاح، أو أن المزود رفض الطلب. جرّب موديلاً آخر من الإعدادات." +
@@ -501,7 +501,7 @@ object LlmClient {
 
     private fun regionHint(provider: String, message: String): String {
         if (provider == "groq") {
-            return "\n\n💡 Groq يحجب طلبات الدول الخاضعة للعقوبات (يرد 403 أو 404 حتى مع مفتاح صحيح). " +
+            return "\n\nGroq يحجب طلبات الدول الخاضعة للعقوبات (يرد 403 أو 404 حتى مع مفتاح صحيح). " +
                 "جرّب تشغيل VPN بدولة أخرى، أو أدخل «عنوان وسيط» في الإعدادات، أو استخدم OpenCode / OpenRouter."
         }
         val blocked = message.contains("Access denied", ignoreCase = true) ||
@@ -509,7 +509,7 @@ object LlmClient {
             message.contains("not supported", ignoreCase = true) ||
             message.contains("1010")
         return if (blocked) {
-            "\n\n💡 يبدو أن المزود يرفض الاتصال من شبكتك أو منطقتك. جرّب VPN أو «عنوان وسيط» من الإعدادات."
+            "\n\nيبدو أن المزود يرفض الاتصال من شبكتك أو منطقتك. جرّب VPN أو «عنوان وسيط» من الإعدادات."
         } else {
             ""
         }

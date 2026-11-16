@@ -305,7 +305,7 @@ internal class LionExperience(
         synchronized(lock) {
             val d = data()
             val routes = section(d, "routes")
-            val sb = StringBuilder("🧠 الخبرة المتراكمة\n")
+            val sb = StringBuilder("الخبرة المتراكمة\n")
             val keys = routes.keys().asSequence().toList()
             if (keys.isEmpty()) sb.append("• لا بيانات بعد\n")
             keys.forEach { k ->

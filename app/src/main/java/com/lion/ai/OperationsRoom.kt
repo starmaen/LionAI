@@ -199,7 +199,7 @@ object OperationsRoom {
         val webPool = Executors.newSingleThreadExecutor() // مسار متسلسل: متصفح واحد لا يقبل طلبين معاً.
         val deadline = System.currentTimeMillis() + PHASE_CAP_MS
         try {
-            onLog("🧠 غرفة العمليات: بدء التشاور (${apiRoutes.size + webRoutes.size} مشاركين)")
+            onLog("غرفة العمليات: بدء التشاور (${apiRoutes.size + webRoutes.size} مشاركين)")
             val futures = mutableListOf<Pair<Route, Future<OpsCandidate>>>()
             apiRoutes.forEach { r ->
                 futures += r to apiPool.submit(Callable {
@@ -222,7 +222,7 @@ object OperationsRoom {
             // التعويض: لا اجتماع بلا مقترح واحد على الأقل.
             while (candidates.none { it.ok } && rescue.isNotEmpty() && System.currentTimeMillis() < deadline) {
                 val next = rescue.removeAt(0)
-                onLog("🔁 مشارك بديل")
+                onLog("مشارك بديل")
                 val c = ask(next, draftMessage, history, systemPrompt, chatId, chatMode, keyOf, API_DRAFT_MS)
                 candidates += c
                 SmartRouter.record(c.route, c.ok, c.ms)
@@ -262,13 +262,13 @@ object OperationsRoom {
         val critic = good.firstOrNull { it.route.provider != chair.route.provider }
         var critique = ""
         if (critic != null) {
-            onLog("🔎 مراجعة المقترحات")
+            onLog("مراجعة المقترحات")
             val c = ask(critic.route, critiquePrompt(message, good, evidence), emptyList(), CRITIC_SYSTEM, chatId, chatMode, keyOf, CRITIQUE_MS)
             SmartRouter.record(c.route, c.ok, c.ms)
             if (c.ok) critique = c.reply.take(3000)
         }
 
-        onLog("🧩 إصدار القرار")
+        onLog("إصدار القرار")
         val decision = ask(
             chair.route, decisionPrompt(message, good, critique, evidence), emptyList(), CHAIR_SYSTEM,
             chatId, chatMode, keyOf, DECISION_MS
@@ -320,7 +320,7 @@ object OperationsRoom {
     ): Evidence {
         val agents = apiRoutes.take(MAX_EVIDENCE_AGENTS)
         if (agents.isEmpty()) return Evidence("", emptyList())
-        onLog("🔎 جمع الأدلة بأدوات القراءة")
+        onLog("جمع الأدلة بأدوات القراءة")
         val pool = Executors.newFixedThreadPool(agents.size)
         val deadline = System.currentTimeMillis() + EVIDENCE_MS + 10_000L
         try {
@@ -351,7 +351,7 @@ object OperationsRoom {
                 }
             }
             if (facts.isEmpty()) onLog("ℹ️ لم تستخدم الأدوات فعلاً؛ يستمر الاجتماع بلا أدلة")
-            else onLog("📚 جُمعت أدلة بـ ${used.size} استدعاء أداة")
+            else onLog("جُمعت أدلة بـ ${used.size} استدعاء أداة")
             return Evidence(facts.distinct().joinToString("\n\n---\n\n").take(MAX_EVIDENCE_CHARS), used.distinct())
         } finally {
             pool.shutdownNow()

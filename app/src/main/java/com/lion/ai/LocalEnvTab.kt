@@ -75,9 +75,9 @@ fun LocalEnvTab() {
 
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("🖥️ البيئة المحلية", color = ENV_GOLD, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("البيئة المحلية", color = ENV_GOLD, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Button(enabled = !busy, onClick = { refresh() }, colors = ButtonDefaults.buttonColors(containerColor = ENV_CARD)) {
-                Text(if (busy) "…" else "🔄 فحص", color = ENV_GOLD)
+                Text(if (busy) "…" else "فحص", color = ENV_GOLD)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -108,12 +108,12 @@ fun LocalEnvTab() {
                                 scope.launch {
                                     busy = true
                                     val result = withContext(Dispatchers.IO) { LinuxEnv.diagnoseEnvironment(context) }
-                                    message = "🔎 فحص المشغّل وDNS والمستودعات والإصدارات:\n" + result.output.takeLast(10000)
+                                    message = "فحص المشغّل وDNS والمستودعات والإصدارات:\n" + result.output.takeLast(10000)
                                     busy = false
                                 }
-                            }) { Text("🔎 تشخيص", color = ENV_GOLD, fontSize = 11.sp) }
+                            }) { Text("تشخيص", color = ENV_GOLD, fontSize = 11.sp) }
                             TextButton(enabled = !busy && activeTool == null, onClick = { LinuxEnv.remove(context); refresh() }) {
-                                Text("🗑️ حذف البيئة", color = Color(0xFFE94560), fontSize = 11.sp)
+                                Text("حذف البيئة", color = Color(0xFFE94560), fontSize = 11.sp)
                             }
                         }
                     }
@@ -182,7 +182,7 @@ fun LocalEnvTab() {
         Spacer(Modifier.height(8.dp))
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = ENV_CARD)) {
             Column(Modifier.padding(12.dp)) {
-                Text("📁 مساحة العمل", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("مساحة العمل", color = Color.White, fontWeight = FontWeight.Bold)
                 val r = report
                 if (r == null) {
                     Text("جارٍ الفحص…", color = ENV_MUTED, fontSize = 12.sp)
@@ -200,7 +200,7 @@ fun LocalEnvTab() {
             }
         }
         Spacer(Modifier.height(10.dp))
-        Text("🧰 الأدوات المطلوبة", color = ENV_GOLD, fontWeight = FontWeight.Bold)
+        Text("الأدوات المطلوبة", color = ENV_GOLD, fontWeight = FontWeight.Bold)
         if (message.isNotBlank()) {
             Text(message, color = ENV_MUTED, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         }
@@ -258,7 +258,7 @@ fun LocalEnvTab() {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text("📦 الحزم المساعدة", color = ENV_GOLD, fontWeight = FontWeight.Bold)
+        Text("الحزم المساعدة", color = ENV_GOLD, fontWeight = FontWeight.Bold)
         Text("ICU للنصوص العربية، SQLite، وحزم npm داخل /workspace/tools/node.", color = ENV_MUTED, fontSize = 11.sp)
         listOf("icu" to "ICU كامل", "sqlite" to "SQLite CLI", "axios" to "Axios", "lodash" to "Lodash", "cheerio" to "Cheerio", "sqlite3" to "SQLite3 npm").forEach { (id, label) ->
             Card(Modifier.fillMaxWidth().padding(vertical = 3.dp), colors = CardDefaults.cardColors(containerColor = ENV_CARD)) {

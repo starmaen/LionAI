@@ -155,7 +155,7 @@ internal fun ModelPickerSheet(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(onClick = { runProbe(force = true) }, enabled = !busy) {
-                    Text("🔄 تحديث وفحص", color = gold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("تحديث وفحص", color = gold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -175,7 +175,7 @@ internal fun ModelPickerSheet(
                     colors = RadioButtonDefaults.colors(selectedColor = gold)
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("🧠 تلقائي (العقل المركزي)", color = gold, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("تلقائي (العقل المركزي)", color = gold, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Text(
                         "يختار الأنسب لكل سؤال ويجرّب بديلاً إذا فشل، والحوار يبقى واحداً",
                         color = muted,
@@ -310,7 +310,7 @@ internal fun ModelPickerSheet(
                                     TextButton(onClick = { deleteId = null }) { Text("إلغاء", color = muted, fontSize = 12.sp) }
                                 }
                             } else {
-                                TextButton(onClick = { deleteId = key }) { Text("🗑️ حذف هذه المنصة", color = Color(0xFFFF9A9A), fontSize = 12.sp) }
+                                TextButton(onClick = { deleteId = key }) { Text("حذف هذه المنصة", color = Color(0xFFFF9A9A), fontSize = 12.sp) }
                             }
                         }
                         Spacer(Modifier.height(6.dp))
@@ -330,7 +330,7 @@ internal fun ModelPickerSheet(
                     .padding(horizontal = 12.dp)
             ) {
                 Text(
-                    "⚙️ الإعدادات والمفاتيح وحدود الاستخدام",
+                    "الإعدادات والمفاتيح وحدود الاستخدام",
                     color = gold,
                     fontSize = 13.sp
                 )
@@ -412,7 +412,7 @@ Column(
     val mediaSections = listOf(
         "🖼️ توليد وتعديل الصور" to "image",
         "🎬 فيديو وأنيميشن" to "video",
-        "🎵 صوت وموسيقى" to "audio"
+        "صوت وموسيقى" to "audio"
     )
     mediaSections.forEach { (sectionTitle, cat) ->
         val items = PROVIDERS.filter { it.category == cat }

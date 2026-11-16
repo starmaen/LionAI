@@ -175,7 +175,7 @@ fun HubChipsRow(
                 .background(Color(0xFF333333))
         )
         HubPill(
-            (if (autoRoute) "🧠 تلقائي" else "✋ يدوي") +
+            (if (autoRoute) "تلقائي" else "✋ يدوي") +
                 (if (channelSummary.isNotBlank()) " · $channelSummary" else ""),
             selected = autoRoute,
             onClick = onToggleAuto
@@ -270,7 +270,7 @@ private fun ChannelCard(
     var local by remember { mutableStateOf(RoutePolicy.channelEnabled(prefs, Channel.LOCAL)) }
     val gatewayConfig = remember { WebGateway.load(prefs) }
     HubCard(
-        title = "🧭 مسار التنفيذ (قنوات مستقلة)",
+        title = "مسار التنفيذ (قنوات مستقلة)",
         subtitle = "فعّل ما تشاء: يجرّب التطبيق القنوات بالترتيب حتى يرد أحدها، " +
             "فلا ينقطع الرد بتعطّل طريق واحد. اختيار المزود يبقى كما هو في كل الحالات."
     ) {
@@ -425,7 +425,7 @@ fun ProviderHubSheet(
                     HubCategory.EXTERNAL -> {
                         ChannelCard(prefs, selectedProvider) { onChanged() }
                         HubCard(
-                            title = "☁️ الخادم الخارجي",
+                            title = "الخادم الخارجي",
                             subtitle = if (gatewayEnabled) "الطلبات تمرّ عبر البوابة" else "البوابة متوقفة"
                         ) {
                             ToggleRow(
@@ -471,9 +471,9 @@ fun ProviderHubSheet(
                                             }
                                         }
                                     }
-                                ) { Text("🧪 اختبار الخادم", color = Gold, fontSize = 12.sp) }
+                                ) { Text("اختبار الخادم", color = Gold, fontSize = 12.sp) }
                                 TextButton(onClick = onOpenSettings) {
-                                    Text("⚙️ إعدادات البوابة والرابط", color = Gold, fontSize = 12.sp)
+                                    Text("إعدادات البوابة والرابط", color = Gold, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -501,7 +501,7 @@ fun ProviderHubSheet(
                     HubCategory.LOCAL -> {
                         ChannelCard(prefs, selectedProvider) { onChanged() }
                         HubCard(
-                            title = "🖥️ الخادم المحلي",
+                            title = "الخادم المحلي",
                             subtitle = if (localRunning) {
                                 "يعمل على ${LocalAIProxy.getUrl()}"
                             } else {
@@ -535,15 +535,15 @@ fun ProviderHubSheet(
                                 TextButton(
                                     enabled = !busy,
                                     onClick = { runCheck("⏳ أفحص الخادم المحلي…") { LocalAIProxy.healthCheck() + "\n\n" + LocalAIProxy.selfTest(prefs) } }
-                                ) { Text("🧪 فحص", color = Gold, fontSize = 12.sp) }
+                                ) { Text("فحص", color = Gold, fontSize = 12.sp) }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 TextButton(
                                     enabled = !busy,
                                     onClick = { runCheck("⏳ أفحص المزودات عبر الخادم المحلي…") { LocalAIProxy.providerCheck(prefs) } }
-                                ) { Text("🔍 فحص المزودات", color = Gold, fontSize = 12.sp) }
+                                ) { Text("فحص المزودات", color = Gold, fontSize = 12.sp) }
                                 TextButton(onClick = onOpenSettings) {
-                                    Text("⚙️ إعدادات الخادم", color = Gold, fontSize = 12.sp)
+                                    Text("إعدادات الخادم", color = Gold, fontSize = 12.sp)
                                 }
                             }
                             Text(
@@ -812,7 +812,7 @@ internal fun LionComposer(
                     )
                     if (image != null) {
                         TextButton(onClick = { onEditImage(image) }) {
-                            Text("✏️ تعديل", color = Gold, fontSize = 11.sp)
+                            Text("تعديل", color = Gold, fontSize = 11.sp)
                         }
                     }
                     IconButton(onClick = onClearAttachment, modifier = Modifier.size(30.dp)) {
@@ -826,16 +826,16 @@ internal fun LionComposer(
                 }
                 val quickPrompts = if (image != null) {
                     listOf(
-                        "📝 صف الصورة" to "صف هذه الصورة بالتفصيل.",
+                        "صف الصورة" to "صف هذه الصورة بالتفصيل.",
                         "🔤 استخرج النص" to "استخرج كل النص الظاهر في هذه الصورة كما هو.",
-                        "🌐 ترجم النص" to "استخرج النص الظاهر في الصورة ثم ترجمه إلى العربية.",
-                        "🔍 حلّل" to "حلّل هذه الصورة: العناصر والألوان والسياق وأي تفاصيل مهمة."
+                        "ترجم النص" to "استخرج النص الظاهر في الصورة ثم ترجمه إلى العربية.",
+                        "حلّل" to "حلّل هذه الصورة: العناصر والألوان والسياق وأي تفاصيل مهمة."
                     )
                 } else {
                     listOf(
-                        "📄 لخّص" to "لخّص هذا الملف في نقاط واضحة.",
-                        "🔎 استخرج الأهم" to "استخرج أهم المعلومات والأرقام من هذا الملف.",
-                        "🌐 ترجم" to "ترجم محتوى هذا الملف إلى العربية.",
+                        "لخّص" to "لخّص هذا الملف في نقاط واضحة.",
+                        "استخرج الأهم" to "استخرج أهم المعلومات والأرقام من هذا الملف.",
+                        "ترجم" to "ترجم محتوى هذا الملف إلى العربية.",
                         "🛠 راجع" to "راجع هذا الملف وأخبرني بالأخطاء والتحسينات الممكنة."
                     )
                 }
