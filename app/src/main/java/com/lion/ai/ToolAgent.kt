@@ -179,6 +179,7 @@ object ToolAgent {
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
         - عندما يطلب المستخدم ملفاً أو مجلداً أو ZIP: أنشئه بأدوات الملفات (file_write ثم file_zip_create عند الحاجة) ثم استدعِ file_present لتسليمه كبطاقة تنزيل، ولا تلصق محتوى الملف الكبير في الرد. أما المقاطع القصيرة فضعها في كتلة كود قابلة للنسخ.
         - دورة التطوير المعتمدة: اقرأ (file_tree/file_read/code_project_analyze) ← خطّط ← عدّل (file_edit أولاً، أو file_apply_patch/code_patch) ← تحقق (code_doctor/gate_run) ← ارفع (github_push_workspace) ← ابنِ (github_dispatch ثم github_wait_run) ← عند الفشل استدعِ build_diagnose ثم صحّح وكرّر حتى ينجح البناء. لا تعلن النجاح قبل نجاح البناء أو البوابة فعلياً، وإن لم تتوفر أداة فاذكر ذلك واقترح toolchain_install.
+        - بوابات إلزامية في الكود (لا تُتجاوز): لا file_edit/file_apply_patch/code_patch قبل file_read على الملف نفسه؛ ولا github_push_workspace بعد تعديل كود قبل نجاح code_doctor أو gate_run؛ وتتوقف المحاولة بعد 3 فشلات متطابقة مع تسليم بشري. للمهام متعددة الملفات سجّل خطتك بـ update_plan (خطوة واحدة in_progress)، واستكشف بـ file_glob وfile_grep قبل التعديل.
         - عند الانتهاء قدّم ملخصاً واضحاً بالعربية: ما أُنجز فعلاً، الملفات التي قرأتها/عدّلتها، نتيجة التحقق، وما لم يُنجز مع الخطوة التالية. لا تكتفِ بكلمات قليلة.
         - إن لم تنتهِ المهمة فقل ذلك صراحةً وحدّد ما تبقى، ولا تُوحِ بأنها اكتملت.
         - إن كنت تعمل داخل «جلسة عمل مستمرة» فأنت تكمل مهمة بدأها مزود آخر؛ لا تكرر الخطوات الناجحة، وافحص الحالة الحالية أولاً.
@@ -365,6 +366,7 @@ object ToolAgent {
         // سجل العمل الحي: يظهر في الواجهة (✅ منجز / ❌ فشل / خطوة جارية) ويُلخَّص في تقرير نهائي ثابت لا يعتمد على النموذج.
         val workLog = mutableListOf<String>()
         val readFiles = LinkedHashSet<String>()
+        val hardGates = HardGateState()
         val writtenFiles = LinkedHashSet<String>()
         val failedSteps = mutableListOf<String>()
         val presented = LinkedHashSet<String>()
@@ -422,6 +424,13 @@ object ToolAgent {
                 } else if (!neutral) {
                     sb.append("- سبب التوقف: ").append(why).append('\n')
                 }
+            }
+            val gaps = hardGates.gaps()
+            val openPlan = if (session != null) PlanTool.openCount(PlanTool.read(prefs, session.chatId)) else 0
+            if (gaps.isNotEmpty() || (openPlan > 0 && complete)) {
+                sb.append("- فجوات التحقق:\n")
+                gaps.forEach { sb.append("  • ").append(it).append('\n') }
+                if (openPlan > 0 && complete) sb.append("  • خطة المهام فيها ").append(openPlan).append(" خطوة غير منجزة.\n")
             }
             // سجل الخطوات يبقى في الشات بعد انتهاء المهمة (كان يظهر مؤقتاً أثناء العمل ثم يختفي) ومعه سبب كل فشل.
             if (workLog.isNotEmpty() && !(complete && failCount == 0)) {
@@ -876,7 +885,13 @@ object ToolAgent {
                     session?.providerFailed(label, "توقف بعد فشل البناء دون إصلاحه")
                     session?.let { CheckpointStore.save(prefs, it) }
                     return finish(
-                        "فشل البناء لم يُصلَح، وحُفظ السياق ليتابع مزود بديل من النقطة نفسها.",
+                        "فشل البناء لم يُصلَح، وحُفظ السياق ليتابع مزود بديل من النقطة نفسها.\n\n" +
+                            HardGateState.diagnosis(
+                                tried = workLog.takeLast(4),
+                                result = "آخر بناء فشل ولم يُصلَح",
+                                cause = lastFailure.ifBlank { "راجع build_diagnose على آخر سجل" },
+                                next = "تشغيل build_diagnose على سجل الفشل ثم إصلاح السبب الجذري وإعادة الدفع والبناء."
+                            ),
                         false, "فشل البناء لم يُصلَح"
                     ).copy(stalled = true)
                 }
@@ -980,7 +995,9 @@ object ToolAgent {
                 val receipt = if (mutating) memory.receipt(fingerprint) else null
                 val cacheable = call.name in setOf("github_read_file", "github_list_tree", "github_list_dir", "file_read", "read_file", "file_read_many", "file_tree", "file_list", "list_dir")
                 val cached = if (cacheable && !call.args.optBoolean("refresh", false)) memory.cachedRead(fingerprint) else null
+                val gateBlock = hardGates.check(call.name, call.args)
                 val result = when {
+                    gateBlock != null -> ToolResult(call.name, gateBlock, false)
                     mutating && !toolContext.allowWrite ->
                         ToolResult(call.name, "⛔ الكتابة معطّلة من الإعدادات. فعّل «السماح للذكاء بالكتابة» ثم أعد المحاولة.", false)
                     mutating && !memory.writeGranted ->
@@ -1004,6 +1021,7 @@ object ToolAgent {
                     }
                     else -> AiTools.execute(toolContext, call).also { if (cacheable && it.ok) memory.recordRead(fingerprint, it.output) }
                 }
+                hardGates.observe(call.name, call.args, result.ok, result.output)
                 session?.let { CheckpointStore.save(prefs, it) }
                 if (call.name == "github_wait_run" || call.name == "github_get_run") {
                     buildFailedPending = buildFailed(result.output)
@@ -1033,7 +1051,7 @@ object ToolAgent {
                     val failKey = call.name + "|" + errLine
                     val times = (failTally[failKey] ?: 0) + 1
                     failTally[failKey] = times
-                    if (times >= 4) failStopKey = failKey
+                    if (times >= HardGateState.MAX_SAME_FAILURE) failStopKey = failKey
                     else if (times >= 2) failHint = "⚠️ الأداة ${call.name} فشلت $times مرات بنفس السبب («${errLine.take(80)}»). " +
                         "لا تُعد نفس المحاولة: اقرأ الملف/الحالة الفعلية من جديد (مع refresh=true)، أو استخدم أداة أخرى، أو اشرح للمستخدم العائق بوضوح."
                     failedSteps.add(call.name.removePrefix("github_") + if (target.isBlank()) "" else " ($target)")
@@ -1051,11 +1069,15 @@ object ToolAgent {
             if (failStopKey.isNotBlank()) {
                 val tool = failStopKey.substringBefore('|')
                 val why = failStopKey.substringAfter('|')
-                session?.recordNote("توقف: فشلت $tool أربع مرات بنفس السبب ($why)")
+                session?.recordNote("توقف: فشلت $tool ${HardGateState.MAX_SAME_FAILURE} مرات بنفس السبب ($why)")
                 return finish(
-                    "توقفت لأن الأداة «$tool» فشلت 4 مرات بنفس السبب ولم تنفع إعادة المحاولة.\n" +
-                        "السبب الظاهر: $why\n" +
-                        "ما أُنجز حتى الآن محفوظ في سجل الخطوات. للمتابعة: غيّر المزود/النموذج، أو أعطني توجيهاً مختلفاً (مثلاً مسار الملف الصحيح أو النص الحالي حرفياً).",
+                    "توقفت لأن الأداة «$tool» فشلت ${HardGateState.MAX_SAME_FAILURE} مرات بنفس السبب ولم تنفع إعادة المحاولة؛ تسليم بشري.\n\n" +
+                        HardGateState.diagnosis(
+                            tried = failedSteps,
+                            result = "فشل متكرر لـ $tool",
+                            cause = why,
+                            next = "غيّر المزود/النموذج، أو أعطني توجيهاً مختلفاً (مثلاً مسار الملف الصحيح أو النص الحالي حرفياً)."
+                        ),
                     false, "فشل متكرر بنفس السبب: $tool"
                 )
             }

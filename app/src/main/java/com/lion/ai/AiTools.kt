@@ -133,6 +133,9 @@ object AiTools {
         // Files
         Def("file_list", ToolGroup.FILES, """{"path":""}""", "عرض ملفات مساحة العمل"),
         Def("file_search", ToolGroup.FILES, """{"query":"TODO","path":"","max_results":50}""", "بحث نصي في مساحة العمل (اسم/مسار/محتوى)"),
+        Def("file_glob", ToolGroup.FILES, """{"pattern":"**/*.kt","path":"","max_results":200}""", "بحث عن ملفات بنمط glob (** و * و {a,b}) دون قراءة محتواها"),
+        Def("file_grep", ToolGroup.FILES, """{"pattern":"fun\\s+main","path":"","glob":"*.kt","context":2,"max_results":50,"ignore_case":true}""", "بحث بتعبير نمطي في محتوى الملفات مع أسطر سياق قبل/بعد وتصفية بنمط glob"),
+        Def("update_plan", ToolGroup.META, """{"explanation":"","plan":[{"step":"قراءة الملفات","status":"completed"},{"step":"التعديل","status":"in_progress"},{"step":"الفحص","status":"pending"}]}""", "تسجيل/تحديث خطة المهام متعددة الخطوات (خطوة واحدة فقط in_progress) لتتابعها أي مزود"),
         Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل"),
         Def("boot_info", ToolGroup.FILES, """{"path":"uploads/boot.img"}""", "تحليل ترويسة boot/recovery.img (إصدار، أحجام، cmdline)"),
         Def("boot_unpack", ToolGroup.FILES, """{"path":"uploads/boot.img","out_dir":"boot_unpacked"}""", "فك boot/recovery.img: kernel وramdisk (إلى مجلد) وdtb وheader.json", true),
@@ -849,6 +852,8 @@ object AiTools {
     }
 
     private val REQUIRED_STRINGS: Map<String, List<String>> = mapOf(
+        "file_glob" to listOf("pattern"),
+        "file_grep" to listOf("pattern"),
         "github_create_repo" to listOf("name"),
         "github_read_file" to listOf("path"),
         "github_write_file" to listOf("path"),
@@ -1164,7 +1169,7 @@ object AiTools {
                 }
                 if (path.isNotBlank()) ManifestStore.markFile(ctx.prefs, ctx.chatId, path, "written")
             }
-            ToolResult(call.name, output.take(16_000), true)
+            ToolResult(call.name, postEditHook(ctx, call, output).take(16_000), true)
         } catch (e: GitHubException) {
             val hint = GitHubErrorHint.explain(e.status, e.message.orEmpty())
             ToolResult(call.name, "❌ GitHub ${e.status}: ${e.message}" + if (hint.isBlank()) "" else "\n$hint", false)
@@ -1181,6 +1186,17 @@ object AiTools {
         }
         ToolAudit.add(call.name, result.ok, result.output)
         return result
+    }
+
+    /** خطّاف ما بعد التعديل: يلحق تنبيه توازن الأقواس بنتيجة التعديل ليراه المزود فوراً. */
+    private fun postEditHook(ctx: ToolContext, call: ToolCall, output: String): String {
+        if (call.name !in HardGateState.LOCAL_WRITE_TOOLS) return output
+        val path = call.args.optString("path").trim()
+        if (path.isBlank() || !QuickSyntax.supports(path)) return output
+        val problem = runCatching {
+            QuickSyntax.balanceProblem(path, FileTools.read(ctx.context, path, 600_000).text)
+        }.getOrNull() ?: return output
+        return output + "\n⚠️ فحص ما بعد التعديل: $problem. افتح الملف وصحّحه الآن قبل المتابعة (أو تحقق بـ code_doctor إن كان إنذاراً كاذباً)."
     }
 
     private fun repoOf(ctx: ToolContext, args: JSONObject): Pair<String, String> {
@@ -1729,6 +1745,32 @@ object AiTools {
                 if (matches.isEmpty()) "لا نتائج." else matches.joinToString("\n") {
                     if (it.line == 0) "• ${it.path}" else "• ${it.path}:${it.line}: ${it.text}"
                 }
+            }
+            "file_glob" -> {
+                val base = FileTools.file(ctx.context, args.optString("path"))
+                val found = SearchTools.glob(FileTools.root(ctx.context), base, req(args, "pattern"), int(args, "max_results", 200).coerceIn(1, 1000))
+                if (found.isEmpty()) "لا ملفات مطابقة." else found.joinToString("\n") { "• $it" } + "\n\n— المجموع: ${found.size} ملف"
+            }
+            "file_grep" -> {
+                val base = FileTools.file(ctx.context, args.optString("path"))
+                val hits = try {
+                    SearchTools.grep(
+                        FileTools.root(ctx.context), base, req(args, "pattern"), args.optString("glob"),
+                        int(args, "context", 0).coerceIn(0, 10), int(args, "max_results", 50).coerceIn(1, 300),
+                        args.optBoolean("ignore_case", true)
+                    )
+                } catch (e: java.util.regex.PatternSyntaxException) {
+                    throw IllegalArgumentException("تعبير نمطي غير صالح: ${e.description}")
+                }
+                SearchTools.renderGrep(hits)
+            }
+            "update_plan" -> {
+                val (steps, problem) = PlanTool.parse(args)
+                if (problem != null) throw IllegalArgumentException(problem)
+                PlanTool.save(ctx.prefs, ctx.chatId, steps)
+                val note = args.optString("explanation").trim()
+                "📋 الخطة (${steps.count { it.status == "completed" }}/${steps.size} منجزة)\n" + PlanTool.render(steps) +
+                    if (note.isBlank()) "" else "\n\nملاحظة: " + note.take(300)
             }
             "file_read", "read_file" -> {
                 val info = FileTools.read(ctx.context, req(args, "path"))
