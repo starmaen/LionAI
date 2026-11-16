@@ -473,6 +473,28 @@
         responses: nodes('[data-message-role], [data-message-author-role], [data-role="assistant"], [class*="assistant"], [class*="markdown"], [class*="prose"], [class*="response"], model-response').filter(visible).slice(-20).map(describe)
       });
     }
+    if (action === 'halt') {
+      // إيقاف حقيقي: ضغط زر «إيقاف التوليد» في الموقع كي لا تستمر الصفحة بالكتابة بعد طلب المستخدم.
+      let stopBtn = find(C.stop);
+      if (!stopBtn) {
+        stopBtn = nodes('button, [role="button"]').find(function (b) {
+          if (!visible(b) || isDisabled(b)) return false;
+          const label = (b.getAttribute('aria-label') || b.title || b.innerText || '').trim();
+          return /^(stop|stop generating|stop response|stop generation|cancel generating|إيقاف|توقف|إيقاف التوليد)\b/i.test(label);
+        });
+      }
+      let clicked = false;
+      if (stopBtn) {
+        try {
+          ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (t) {
+            stopBtn.dispatchEvent(new MouseEvent(t, {bubbles: true, cancelable: true, view: window}));
+          });
+          clicked = true;
+        } catch (e) { try { stopBtn.click(); clicked = true; } catch (e2) {} }
+      }
+      delete window.__lionSessionRequest;
+      return result('halted', {clicked: clicked});
+    }
     if (action === 'capture') {
       // عكس محادثة الصفحة كاملة إلى التطبيق: قراءة بلا كتابة ولا نقر ولا تغيير حالة.
       return result('captured', {turns: captureTurns(), generating: genericStop() || !!find(C.stop)});

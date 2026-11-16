@@ -24,6 +24,8 @@ object WebSessionTransport {
         fun start(request: Request, done: (Reply) -> Unit)
         fun cancel(token: String)
         fun inspect(provider: String) = Unit
+        /** يضغط زر «إيقاف التوليد» في صفحة الموقع المعروضة/الجارية كي تتوقف الكتابة فعلياً. */
+        fun halt() = Unit
         fun open(provider: String)
         fun isUiThread(): Boolean
     }
@@ -53,6 +55,14 @@ object WebSessionTransport {
             if (activeChat.get() != chatId) return
         }
         active.get()?.let { host?.cancel(it) }
+    }
+
+    /** إيقاف صريح من المستخدم: يلغي الانتظار ويوقف توليد الصفحة نفسها (لا يكتفي بالتخلي عنها). */
+    fun haltGeneration(chatId: String = "") {
+        // لا نوقف صفحة تخدم محادثة أخرى جارية؛ نوقف فقط إن كانت لهذه المحادثة أو لا طلب نشط.
+        val running = activeChat.get()
+        if (chatId.isBlank() || running == null || running == chatId) runCatching { host?.halt() }
+        cancelActive(chatId)
     }
 
     private fun cancelledSince(chatId: String, startedAt: Long): Boolean =
