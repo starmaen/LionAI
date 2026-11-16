@@ -734,6 +734,29 @@ object ToolAgent {
                 ).copy(stalled = true)
             }
             if (calls.isEmpty()) {
+                // === بوابة التحقق الإلزامية (تعمل مع جميع المزودات) ===
+                val wroteCode = used.any { it == "file_write" || it == "file_edit" || it == "file_apply_patch" || it == "code_patch" }
+                val verifiedCode = used.any { it == "code_doctor" || it == "gate_run" || it == "build_diagnose" || it == "code_analyze_file" }
+                
+                if (wroteCode && !verifiedCode) {
+                    if (gateNudges < 2) {
+                        gateNudges++
+                        session?.recordNote("بوابة التحقق رفضت الإنهاء: تعديل كود دون فحص")
+                        session?.let { CheckpointStore.save(prefs, it) }
+                        historyBuffer.add(ChatTurn("user", current))
+                        historyBuffer.add(ChatTurn("assistant", reply))
+                        current = "⛔ لا يمكن إنهاء المهمة: قمت بتعديل ملفات برمجية دون تشغيل أدوات التحقق. " +
+                                  "يجب أن تستدعي `code_doctor` أو `gate_run` الآن للتأكد من سلامة الكود قبل تقديم الإجابة النهائية."
+                        continue
+                    } else {
+                        // المزود لم يستجب: لا نوقف العمل، لكن نُرفق تحذيراً صارماً للمستخدم
+                        return finish(
+                            reply + "\n\n⚠️ **تنبيه أمان صارم:** تم تعديل الكود لكن لم يتم تشغيل أدوات الفحص (`code_doctor`/`gate_run`) رغم تنبيه المزود مرتين. يرجى مراجعة التعديلات يدوياً قبل الاعتماد عليها.",
+                            true, "تم الإنهاء مع تحذير: لم يتم الفحص"
+                        )
+                    }
+                }
+
                 // بوابة ميكانيكية: لا يُقبل إعلان الانتهاء إذا كان Manifest قائماً والبوابة لم تجتز.
                 val manifest = if (chatMode == ChatMode.CODE && session != null) {
                     ManifestStore.read(prefs, session.chatId)
