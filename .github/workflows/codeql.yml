@@ -44,7 +44,7 @@ jobs:
       run: npm --prefix scripts ci --ignore-scripts --prefer-offline --no-audit
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v4
       with:
         languages: kotlin
 
@@ -52,6 +52,6 @@ jobs:
       run: ./gradlew assembleDebug --stacktrace
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v4
       with:
         category: "/language:kotlin"
