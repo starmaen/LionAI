@@ -38,8 +38,10 @@ android {
     }
     val releaseStorePassword = System.getenv("LION_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
         ?: keystoreProps.getProperty("storePassword")
+        ?: "LionAI2026!Release"
     val releaseKeyPassword = System.getenv("LION_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
         ?: keystoreProps.getProperty("keyPassword")
+        ?: "LionAI2026!Release"
     val hasReleaseCredentials = releaseStorePassword != null && releaseKeyPassword != null
 
     signingConfigs {
