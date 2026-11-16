@@ -117,7 +117,34 @@ internal object LionOne {
             if (it.key.startsWith("gw:") && it.token.isBlank() && userKey.isNotBlank())
                 Route(it.key, it.url, userKey, it.model, it.label) else it
         }
-        return order(withKey)
+        val ordered = order(withKey)
+        return if (offlineFirst) ordered else preferRemote(ordered)
+    }
+
+    /**
+     * وضع «أولاً بلا إنترنت»: يُبقي المحرّك المحلي في الصدارة (للاستخدام دون شبكة).
+     * الافتراضي false: نموذج 1.5B على الهاتف أبطأ وأضعف من مزودات البوابة، فتُجرَّب البوابة
+     * أولاً (إن كان لها مفتاح) ويبقى المحرّك المحلي احتياطاً عند انقطاع الشبكة أو فشل المزودات.
+     */
+    @Volatile var offlineFirst: Boolean = false
+
+    /** هل توجد بوابة قابلة للاستعمال (لها مفتاح) تسبق المحرّك المحلي؟ */
+    fun remoteFirstActive(userKey: String = ""): Boolean {
+        if (offlineFirst) return false
+        if (userKey.isNotBlank()) return true
+        return runCatching {
+            val relays = WebGateway.relays()
+            if (relays.isNotEmpty()) relays.any { it.token.isNotBlank() } else WebGateway.current().token.isNotBlank()
+        }.getOrDefault(false)
+    }
+
+    /**
+     * يقدّم مسارات البوابة السليمة (غير المتجاوَزة مؤقتاً) على المحلية، ويحفظ الترتيب النسبي فيما عداها.
+     * دالة صرفة لتُختبر على JVM.
+     */
+    internal fun preferRemote(ordered: List<Route>, nowMs: Long = System.currentTimeMillis()): List<Route> {
+        fun remoteOk(r: Route) = r.key.startsWith("gw:") && r.token.isNotBlank() && (badUntil[r.key] ?: 0L) <= nowMs
+        return ordered.filter(::remoteOk) + ordered.filterNot(::remoteOk)
     }
 
     /** آخر ناجح أولاً، ثم الباقي؛ المتجاوَز مؤقتاً يُؤخَّر إلى النهاية بدل حذفه. */
@@ -217,6 +244,12 @@ internal fun LlmClient.callLionOneTools(
 ): LlmClient.ToolReply {
     val task = LionOne.task(model, message)
     val system = LionOne.systemFor(systemPrompt, task) + LionLearn.contextFor(message)
+    // مزودات البوابة القوية تتبع بروتوكول [[TOOL]] النصي بثبات أكبر بكثير من نموذج 1.5B المحلي:
+    // فإن وُجدت بوابة بمفتاح نذهب للرد النصي (الذي يقدّم البوابة)، والمحلي يبقى احتياطاً.
+    if (LionOne.remoteFirstActive(apiKey)) {
+        val remoteText = callLionOne(message, apiKey, model, history, null, systemPrompt)
+        return LlmClient.ToolReply(remoteText, emptyList())
+    }
     for (route in LionOne.routes(apiKey)) {
         // البوابة لا تعيد tool_calls موثوقة في كل مزوداتها؛ الأدوات تُطلب من المسارات المحلية.
         if (route.key.startsWith("gw:")) continue

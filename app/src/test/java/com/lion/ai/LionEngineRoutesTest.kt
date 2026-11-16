@@ -132,4 +132,28 @@ class LionEngineRoutesTest {
         assertTrue(reordered.last().key == "engine")
         LionOne.resetHealth()
     }
+    @Test
+    fun remoteGatewayWithTokenIsPreferredOverLocalEngine() {
+        LionOne.resetHealth()
+        val gw = LionOne.Route("gw:https://x/v1", "https://x/v1/chat/completions", "tok", "auto", "البوابة")
+        val routes = LionOne.buildRoutes("", listOf(gw), engineAvailable = true)
+        val out = LionOne.preferRemote(LionOne.order(routes))
+        assertEquals("gw:https://x/v1", out.first().key)
+        assertTrue(out.any { it.key == "engine" })
+        assertEquals(routes.size, out.size)
+    }
+
+    @Test
+    fun gatewayWithoutTokenOrCoolingDoesNotJumpTheQueue() {
+        LionOne.resetHealth()
+        val noToken = LionOne.Route("gw:https://x/v1", "https://x/v1/chat/completions", "", "auto", "البوابة")
+        val a = LionOne.preferRemote(LionOne.order(LionOne.buildRoutes("", listOf(noToken), engineAvailable = true)))
+        assertEquals("engine", a.first().key)
+
+        val gw = LionOne.Route("gw:https://y/v1", "https://y/v1/chat/completions", "tok", "auto", "البوابة")
+        LionOne.markBad(gw)
+        val b = LionOne.preferRemote(LionOne.order(LionOne.buildRoutes("", listOf(gw), engineAvailable = true)))
+        assertEquals("engine", b.first().key)
+        LionOne.resetHealth()
+    }
 }

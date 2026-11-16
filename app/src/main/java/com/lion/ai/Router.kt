@@ -161,7 +161,7 @@ object SmartRouter {
         "(كود|برمج|سكربت|دال[ةه]|دوال|خطا برمجي|compile|exception|stack ?trace|\\bbug\\b|debug|function|" +
             "\\bclass\\b|\\bimport\\b|\\bdef\\b|\\bfun\\b|public static|select .* from|\\bnpm\\b|\\bpip\\b|gradle|\\bgit\\b|docker|" +
             "\\bapi\\b|json|html|\\bcss\\b|python|kotlin|java|javascript|typescript|c\\+\\+|php|\\bsql\\b|react|flutter|" +
-            "android studio|regex|تعبير نمطي|مكتب[ةه] برمجي|مشروع برمجي|ليب|لارافيل|django|node)"
+            "android studio|\\bandroid\\b|اندرويد|\\bcoroutines?\\b|\\bapk\\b|github actions|regex|تعبير نمطي|مكتب[ةه] برمجي|مشروع برمجي|ليب|لارافيل|django|node)"
     )
     private val CODE_EXT = setOf(
         "kt", "kts", "java", "py", "js", "ts", "tsx", "jsx", "c", "cpp", "h", "cs", "go", "rs", "rb", "php",

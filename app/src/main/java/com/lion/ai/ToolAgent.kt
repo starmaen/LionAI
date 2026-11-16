@@ -292,7 +292,7 @@ object ToolAgent {
         // بدل إغراق المحرّك بمخطط 234 أداة كاملة.
         val maxSystemChars = when (provider) {
             "custom" -> 90_000
-            LionOne.ID -> 12_000
+            LionOne.ID -> if (LionOne.remoteFirstActive()) 16_000 else 12_000
             else -> 16_000
         }
         var system = buildSystem(effectiveGroups)
@@ -305,7 +305,7 @@ object ToolAgent {
         else if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
             "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
             else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها مرة واحدة فقط."
-        if (!readOnly && effectiveGroups.isNotEmpty() && provider != LionOne.ID) system += WorkMethod.PROMPT
+        if (!readOnly && effectiveGroups.isNotEmpty() && (provider != LionOne.ID || LionOne.remoteFirstActive())) system += WorkMethod.PROMPT
         // Export compact task context to web composers.
         val permWrite = memory.writeGranted && !readOnly
         val permBasis = when {
