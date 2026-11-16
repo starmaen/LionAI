@@ -1,3 +1,6 @@
+// ملاحظة: في Kotlin DSL كلمة java محجوزة (امتداد java {}) لذلك يجب الاستيراد الصريح
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -29,7 +32,7 @@ android {
     // بيانات التوقيع تأتي من GitHub Secrets في CI، أو من keystore/keystore.properties محلياً
     // (الملف مستثنى من الرفع). لا كلمة سر احتياطية في الكود: غياب الاثنين يعني توقيعاً
     // بـdebug keystore للبناء المحلي فقط، وCI يبقى موقّعاً بالمفتاح الرسمي.
-    val keystoreProps = java.util.Properties().apply {
+    val keystoreProps = Properties().apply {
         val f = rootProject.file("keystore/keystore.properties")
         if (f.exists()) f.inputStream().use { load(it) }
     }
