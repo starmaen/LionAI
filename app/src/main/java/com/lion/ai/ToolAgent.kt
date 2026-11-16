@@ -61,7 +61,6 @@ object ToolAgent {
     private val ASK_ALT = Regex("\\[\\[QUESTION\\]\\](.*?)\\[\\[/QUESTION\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val TRAILING_QUESTION = Regex("[?؟]\\s*$")
 
-    private val TOOL_BLOCK = Regex("\\[\\[TOOL\\]\\].*?\\[\\[/TOOL\\]\\]", RegexOption.DOT_MATCHES_ALL)
     private val PROMISE = Regex(
         "(سأ[ءا-ي]|سوف |سنقوم|سنبدأ|لنبدأ|فلنبدأ|دعني|حاضر|أبشر|بدأت|جاري|جارٍ|سيتم|الآن سأ|" +
             "\\blet me\\b|\\bi'll\\b|\\bi will\\b|\\bi'm going to\\b|\\bi am going to\\b|\\bgoing to\\b|\\bwill now\\b)",

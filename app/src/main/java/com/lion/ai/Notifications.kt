@@ -282,7 +282,6 @@ class LionNotificationListener : NotificationListenerService() {
     ): List<StoredNotification> {
         val extras = notification.extras ?: Bundle()
         val fallbackTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
         val canReply = notification.actions?.any { action ->
             action.remoteInputs?.any { it.allowFreeFormInput } == true
         } == true

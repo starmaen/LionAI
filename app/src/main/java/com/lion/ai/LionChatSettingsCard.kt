@@ -65,8 +65,9 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                     )
                 }
                 report = res.detailedText()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Throwable) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
                 report = "❌ تعذّر اختبار أدوات $name: ${e.message ?: e.javaClass.simpleName}"
             } finally {
                 testingId = null

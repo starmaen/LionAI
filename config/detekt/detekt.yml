@@ -59,3 +59,9 @@ style:
     active: false
   MayBeConst:
     active: false
+
+performance:
+  # قاعدة تحسينية استشارية: مسارات المصادقة تستدعي دوال vararg بعدّة صغيرة،
+  # وكلفة النسخ مهمة. تُعطّل بدل إسكاتها يدوياً في كل موقع استدعاء.
+  SpreadOperator:
+    active: false

@@ -80,7 +80,9 @@ internal fun ModelPickerSheet(
     var refresh by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var deleteId by remember { mutableStateOf<String?>(null) }
-    val refreshTick = refresh // قراءة تُعيد بناء القائمة بعد إضافة/حذف منصة
+    // قراءة مقصودة لحالة refresh: تجبر Compose على إعادة بناء القائمة بعد إضافة/حذف منصة
+    @Suppress("UnusedPrivateProperty")
+    val refreshTick = refresh
     val families = PROVIDERS
         .filter { it.supportsAppChat && enabled(it.id) }
         .groupBy { platformKey(it) }

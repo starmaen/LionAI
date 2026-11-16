@@ -19,7 +19,6 @@ object ToolMarkup {
     )
     private val DSML_STRAY = Regex("</?[^<>a-zA-Z/]*DSML[^<>]*>")
     private val STRAY = Regex("\\[\\[/?TOOL\\]\\]")
-    private val TOOL_RESULTS_HEADER = Regex("^نتائج الأدوات.*$", RegexOption.MULTILINE)
 
     /** أول JSON متوازن يبدأ عند أول `{` أو `[` بعد [from]، أو null. */
     fun balancedJson(text: String, from: Int): String? {

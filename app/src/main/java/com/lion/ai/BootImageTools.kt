@@ -1,6 +1,7 @@
 package com.lion.ai
 
 import android.content.Context
+import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -222,7 +223,7 @@ object BootImageTools {
             val header = "070701" + listOf(
                 ino.toLong(), e.mode, e.uid, e.gid, e.nlink, e.mtime, e.data.size.toLong(),
                 e.devMajor, e.devMinor, e.rdevMajor, e.rdevMinor, (nameBytes.size + 1).toLong(), 0L
-            ).joinToString("") { String.format("%08X", it) }
+            ).joinToString("") { String.format(Locale.US, "%08X", it) }
             out.write(header.toByteArray(Charsets.US_ASCII))
             out.write(nameBytes); out.write(0); pad()
             out.write(e.data); pad()
@@ -358,7 +359,10 @@ object BootImageTools {
                 val f = safeChild(root, name)
                 when (type) {
                     0x4000L -> if (!f.isDirectory) continue
-                    0x8000L, 0xA000L -> { if (!f.isFile) continue; data = f.readBytes() }
+                    0x8000L, 0xA000L -> {
+                        if (!f.isFile) continue
+                        data = f.readBytes()
+                    }
                     else -> Unit
                 }
             }
@@ -466,7 +470,11 @@ object BootImageTools {
             if (padLen > 0) out.write(ByteArray(padLen))
         }
         part(kernel); part(ramdisk)
-        if (version < 3) { part(second); if (version >= 1) part(dtbo); if (version >= 2) part(dtb) }
+        if (version < 3) {
+            part(second)
+            if (version >= 1) part(dtbo)
+            if (version >= 2) part(dtb)
+        }
         else if (version >= 4) part(signature)
         return out.toByteArray()
     }

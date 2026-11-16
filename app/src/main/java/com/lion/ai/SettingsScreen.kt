@@ -177,8 +177,6 @@ fun SettingsScreen(
     var autoRouteSetting by remember { mutableStateOf(prefs.getBoolean("auto_route", true)) }
     var manualAssist by remember { mutableStateOf(prefs.getBoolean("manual_assist", false)) }
     val settingsScope = rememberCoroutineScope()
-    var refreshing by remember { mutableStateOf(false) }
-    var modelMenuOpen by remember { mutableStateOf(false) }
     val endpoints = remember {
         mutableStateMapOf<String, String>().apply {
             PROVIDERS.filter { it.group == ProviderGroup.API }.forEach { info ->

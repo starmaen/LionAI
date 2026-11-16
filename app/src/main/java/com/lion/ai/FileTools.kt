@@ -2,6 +2,7 @@ package com.lion.ai
 
 import android.content.Context
 import java.io.File
+import java.util.Locale
 import java.util.zip.ZipFile
 
 /** مساحة عمل محلية داخل التطبيق: ملفات المشاريع، ZIP، وقراءة/كتابة آمنة. */
@@ -94,8 +95,8 @@ object FileTools {
 
     fun formatSize(bytes: Long): String = when {
         bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> String.format("%.1f KB", bytes / 1024.0)
-        else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+        bytes < 1024 * 1024 -> String.format(Locale.US, "%.1f KB", bytes / 1024.0)
+        else -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
     }
 
     fun root(context: Context): File = File(context.filesDir, "workspace").apply { mkdirs() }

@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import java.util.Locale
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -625,7 +626,7 @@ private fun SliderRow(
             )
         )
         Text(
-            (if (range.endInclusive <= 10f) String.format("%.1f", value) else value.toInt().toString()) + suffix,
+            (if (range.endInclusive <= 10f) String.format(Locale.US, "%.1f", value) else value.toInt().toString()) + suffix,
             color = Color(0xFFB0B0B0),
             fontSize = 11.sp,
             modifier = Modifier.width(54.dp)

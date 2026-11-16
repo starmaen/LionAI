@@ -18,10 +18,18 @@ class AgentContinuityIntegrationTest {
         private val thread=Thread {
             try { replies.forEach { (code,body) -> socket.accept().use { client ->
                 val input=client.getInputStream();val header=StringBuilder()
-                while (!header.endsWith("\r\n\r\n")) { val c=input.read();if(c<0) break;header.append(c.toChar()) }
+                while (!header.endsWith("\r\n\r\n")) {
+                    val c = input.read()
+                    if (c < 0) break
+                    header.append(c.toChar())
+                }
                 val length=Regex("(?i)Content-Length: (\\d+)").find(header)?.groupValues?.get(1)?.toInt() ?: 0
                 val bytes=ByteArray(length);var pos=0
-                while(pos<length){val n=input.read(bytes,pos,length-pos);if(n<0)break;pos+=n}
+                while (pos < length) {
+                    val n = input.read(bytes, pos, length - pos)
+                    if (n < 0) break
+                    pos += n
+                }
                 requests.add(String(bytes,Charsets.UTF_8))
                 val data=body.toByteArray(Charsets.UTF_8)
                 client.getOutputStream().write(("HTTP/1.1 $code Test\r\nContent-Type: application/json\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray()+data)

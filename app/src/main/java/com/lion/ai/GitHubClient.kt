@@ -1,6 +1,7 @@
 package com.lion.ai
 
 import android.util.Base64
+import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -402,7 +403,7 @@ object GitHubClient {
                 append("اللغات:\n")
                 languages.entries.take(8).forEach {
                     append("  ").append(it.key).append(": ")
-                        .append(String.format("%.1f", it.value * 100.0 / totalBytes)).append("%\n")
+                        .append(String.format(Locale.US, "%.1f", it.value * 100.0 / totalBytes)).append("%\n")
                 }
             }
             if (fileTypes.isNotEmpty()) {

@@ -20,6 +20,8 @@ class WebBridgeFixesTest {
         assertTrue(!isAppStoreUrl("https://copilot.com/"))
     }
 
+    // دوال cancel/open إلزامية بعقد WebSessionTransport.Host ولا منطق لها في هذه الشاهد
+    @Suppress("EmptyFunctionBlock")
     private class Echo : WebSessionTransport.Host {
         val seen = mutableListOf<WebSessionTransport.Request>()
         override fun start(request: WebSessionTransport.Request, done: (WebSessionTransport.Reply) -> Unit) {
