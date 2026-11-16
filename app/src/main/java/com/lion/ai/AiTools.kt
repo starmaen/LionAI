@@ -2926,10 +2926,11 @@ $code
             }
             "pipeline_approve" -> {
                 requireChat(ctx)
-                val state = PipelineStore.read(ctx.prefs, ctx.chatId)
-                    ?: throw IllegalArgumentException("لا دورة تطوير. استخدم pipeline_start أولاً.")
                 val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
                     ?: throw IllegalArgumentException("لا Manifest. استخدم manifest_create أولاً.")
+                // لا نشترط pipeline_start: ننشئ الدورة تلقائياً بدل حلقة مفرغة
+                val state = PipelineStore.read(ctx.prefs, ctx.chatId)
+                    ?: PipelineState(ctx.chatId, manifest.project, manifest.root)
                 val check = ControlPlane.validateManifest(manifest)
                 if (!check.ok) return "⛔ لا يمكن اعتماد Manifest قبل إصلاح أخطائه البنيوية:\n" + check.text()
                 ManifestStore.approve(ctx.prefs, ctx.chatId)
