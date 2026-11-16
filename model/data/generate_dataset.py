@@ -289,7 +289,8 @@ def main():
         if k not in seen:
             seen.add(k); uniq.append(r)
     random.shuffle(uniq)
-    cut = max(1, int(len(uniq) * 0.05))
+    # تحقق كافٍ ليكون eval_loss وبوابة الجودة ذات معنى (9 أمثلة لا تكفي): 5% وبحدّ أدنى 20 إن توفرت بيانات.
+    cut = max(1, int(len(uniq) * 0.05), min(20, len(uniq) // 5))
     val, train = uniq[:cut], uniq[cut:]
     for name, data in (("train.jsonl", train), ("val.jsonl", val)):
         with open(os.path.join(HERE, name), "w", encoding="utf-8") as f:

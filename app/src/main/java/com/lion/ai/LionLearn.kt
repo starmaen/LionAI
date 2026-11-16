@@ -198,7 +198,14 @@ internal object LionLearn {
     val DEFAULT_SOURCES = listOf(
         "https://kotlinlang.org/docs/basic-syntax.html",
         "https://developer.android.com/develop/ui/compose/state",
-        "https://docs.github.com/en/actions/about-github-actions/understanding-github-actions"
+        "https://docs.github.com/en/actions/about-github-actions/understanding-github-actions",
+        "https://kotlinlang.org/docs/coroutines-basics.html",
+        "https://developer.android.com/topic/architecture",
+        "https://developer.android.com/develop/ui/compose/lists",
+        "https://docs.github.com/en/actions/writing-workflows/about-workflows",
+        "https://docs.gradle.org/current/userguide/build_environment.html",
+        "https://huggingface.co/docs/peft/index",
+        "https://huggingface.co/docs/trl/sft_trainer"
     )
 
     @Volatile private var kb: LionKnowledge? = null
@@ -264,7 +271,11 @@ internal object LionLearn {
         val store = knowledge() ?: return 0
         prefs.edit().putLong(PREF_LAST_INGEST, System.currentTimeMillis()).apply()
         var added = 0
-        for (url in (userSources(prefs) + DEFAULT_SOURCES).distinct().take(MAX_PAGES_PER_RUN)) {
+        // تدوير يومي على كل المصادر (مصادر المستخدم أولاً) حتى تُغطّى القائمة كلها عبر الأيام.
+        val pool = (userSources(prefs) + DEFAULT_SOURCES).distinct()
+        val start = if (pool.isEmpty()) 0 else ((System.currentTimeMillis() / INGEST_EVERY_MS) % pool.size).toInt()
+        val picked = (pool.drop(start) + pool.take(start)).take(MAX_PAGES_PER_RUN)
+        for (url in picked) {
             val page = runCatching { fetchPage(url) }.getOrNull() ?: continue
             for (p in passages(page.second).take(MAX_PASSAGES_PER_PAGE)) {
                 val q = page.first + " — " + p.take(110)

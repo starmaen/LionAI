@@ -40,10 +40,10 @@ def ensure_llamacpp():
         if os.path.isdir(LLAMA_DIR):
             shutil.rmtree(LLAMA_DIR, ignore_errors=True)
         run(["git", "clone", "--depth", "1", "https://github.com/ggml-org/llama.cpp", LLAMA_DIR])
-    req = os.path.join(LLAMA_DIR, "requirements", "requirements-convert_hf_to_gguf.txt")
-    if not os.path.exists(req):
-        req = os.path.join(LLAMA_DIR, "requirements.txt")
-    run([sys.executable, "-m", "pip", "install", "-q", "-r", req])
+    # لا نثبّت requirements-convert_hf_to_gguf.txt كاملاً: يثبّت إصدارات torch/transformers مقيَّدة
+    # فيكسر بيئة Colab (وما بعده من دمج/نشر). نكتفي بالحزم الصغيرة التي يحتاجها المحوّل فعلاً،
+    # وgguf-py يُحمَّل من مجلد llama.cpp نفسه.
+    run([sys.executable, "-m", "pip", "install", "-q", "sentencepiece", "protobuf", "numpy", "gguf"])
 
 
 def build_quantizer():
