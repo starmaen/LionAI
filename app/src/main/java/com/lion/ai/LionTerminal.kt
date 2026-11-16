@@ -203,10 +203,10 @@ fun LionTerminal() {
                 Text("🧹 مسح", color = LION_GOLD, fontSize = 12.sp)
             }
             TextButton(onClick = { clipboard.setText(AnnotatedString(output)) }) {
-                Text("📋 نسخ الكل", color = LION_GOLD, fontSize = 12.sp)
+                Text("نسخ الكل", color = LION_GOLD, fontSize = 12.sp)
             }
             TextButton(onClick = { clipboard.setText(AnnotatedString(output.lines().takeLast(40).joinToString("\n"))) }) {
-                Text("📋 آخر 40 سطراً", color = LION_GOLD, fontSize = 12.sp)
+                Text("آخر 40 سطراً", color = LION_GOLD, fontSize = 12.sp)
             }
         }
     }
@@ -221,7 +221,7 @@ fun OpenCodeAuthCard() {
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp)).padding(12.dp)) {
-        Text("🔑 ربط مزود بـ OpenCode", color = LION_GOLD, fontWeight = FontWeight.Bold)
+        Text("ربط مزود بـ OpenCode", color = LION_GOLD, fontWeight = FontWeight.Bold)
         Text(
             "بديل عن opencode auth login (يحتاج طرفية تفاعلية كاملة). اكتب معرّف المزود مثل openai أو anthropic أو openrouter ومفتاحه.",
             color = TERM_MUTED, fontSize = 11.sp

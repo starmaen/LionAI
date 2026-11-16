@@ -5,8 +5,8 @@ import android.content.SharedPreferences
 /** تصنيف المزودات: API، دردشات ويب، وأدوات صور/صوت/فيديو. */
 enum class ProviderGroup(val title: String, val icon: String) {
     LION("Lion Chat - العقل البرتقالي", "🦁"),
-    API("مزودات API (مفتاح أو بدون مفتاح)", "🔑"),
-    WEB("دردشات الويب المجانية", "🌐"),
+    API("مزودات API (مفتاح أو بدون مفتاح)", "◆"),
+    WEB("دردشات الويب المجانية", "◆"),
     MEDIA("الصور والصوت والفيديو", "🎨")
 }
 

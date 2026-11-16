@@ -47,7 +47,7 @@ fun LionLearnCard() {
     Card(Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1E20))) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("🧠 تعلّم Lion-1 التلقائي", color = gold, fontWeight = FontWeight.Bold)
+                Text("تعلّم Lion-1 التلقائي", color = gold, fontWeight = FontWeight.Bold)
                 Switch(
                     checked = enabled,
                     onCheckedChange = { value ->

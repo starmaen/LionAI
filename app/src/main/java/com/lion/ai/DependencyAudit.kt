@@ -58,7 +58,7 @@ object DependencyAudit {
             .filterValues { list -> list.map { exactVersion(it.version) }.filterNotNull().distinct().size > 1 }
 
         val report = buildString {
-            append("📦 تدقيق الاعتماديات (").append(deps.size).append(" اعتمادية)\n")
+            append("تدقيق الاعتماديات (").append(deps.size).append(" اعتمادية)\n")
             byEcosystem.forEach { (ecosystem, list) ->
                 append("• ").append(ecosystem).append(": ").append(list.size)
                 append(" (").append(list.map { it.name }.distinct().size).append(" حزمة فريدة)\n")
@@ -98,7 +98,7 @@ object DependencyAudit {
         }
         return buildString {
             append(report)
-            append("\n\n🛡️ ثغرات OSV (").append(findings.size).append("):\n")
+            append("\n\nثغرات OSV (").append(findings.size).append("):\n")
             findings.take(40).forEach { finding ->
                 append("  - [").append(finding.severity).append("] ").append(finding.name)
                 append(' ').append(finding.version).append(" — ").append(finding.id)

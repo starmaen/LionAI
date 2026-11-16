@@ -154,23 +154,23 @@ fun BootToolCard() {
         Modifier.fillMaxWidth().background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("📦 أداة صور Boot / Recovery", color = gold, fontWeight = FontWeight.Bold)
+        Text("أداة صور Boot / Recovery", color = gold, fontWeight = FontWeight.Bold)
         Text(
             "فك boot.img أو recovery.img (ترويسة v0–v4)، عدّل cmdline أو ملفات ramdisk، ثم أعد التركيب. " +
                 "الناتج غير موقّع (AVB) ويحتاج بوتلودر مفتوحاً؛ احتفظ بنسخة من الأصلية.",
             color = Color(0xFF9A9A9A), fontSize = 11.sp
         )
         Button(enabled = !busy, onClick = { launchPicker() }, colors = ButtonDefaults.buttonColors(containerColor = gold)) {
-            Text("📂 اختيار صورة (.img)", color = Color(0xFF121212))
+            Text("اختيار صورة (.img)", color = Color(0xFF121212))
         }
         if (imagePath.isNotBlank()) Text("الصورة: $imagePath", color = Color(0xFFEDEDED), fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = !busy && imagePath.isNotBlank(), onClick = {
                 run("تحليل الترويسة", block = { BootImageTools.info(context, imagePath) })
-            }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("🔍 تحليل", color = gold, fontSize = 12.sp) }
+            }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("تحليل", color = gold, fontSize = 12.sp) }
             Button(enabled = !busy && imagePath.isNotBlank(), onClick = {
                 run("فك الصورة", block = { BootImageTools.unpack(context, imagePath, unpackDir) })
-            }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("🧩 فك", color = gold, fontSize = 12.sp) }
+            }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2B2B))) { Text("فك", color = gold, fontSize = 12.sp) }
             Button(enabled = !busy && unpackDir.isNotBlank(), onClick = {
                 val target = "deliverables/" + File(unpackDir).name + "-new.img"
                 run("تركيب الصورة", block = { BootImageTools.repack(context, unpackDir, target) }) {

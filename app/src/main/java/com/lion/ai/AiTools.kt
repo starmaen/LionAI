@@ -12,20 +12,20 @@ import java.util.UUID
 
 enum class ToolGroup(val id: String, val label: String, val icon: String) {
     GITHUB("github", "GitHub", "🐙"),
-    WEB("web", "الويب", "🌐"),
-    FILES("files", "الملفات", "📁"),
+    WEB("web", "الويب", "◆"),
+    FILES("files", "الملفات", "◆"),
     DATABASE("database", "قواعد البيانات", "🗄️"),
     FIREBASE("firebase", "Firebase", "🔥"),
-    CODE("code", "محلل الكود", "🔍"),
-    UTIL("util", "أدوات مساعدة", "🧰"),
-    CONNECTORS("connectors", "الموصلات", "🔌"),
+    CODE("code", "محلل الكود", "◆"),
+    UTIL("util", "أدوات مساعدة", "◆"),
+    CONNECTORS("connectors", "الموصلات", "◆"),
     COMMS("comms", "الاتصالات", "💬"),
     SHELL("shell", "التنفيذ والبناء", "⚡"),
     QUALITY("quality", "بوابات الجودة", "✅"),
-    CONTROL("control", "الحوكمة والمخطط", "🛡️"),
-    MEMORY("memory", "الذاكرة ونقاط الاستئناف", "🧠"),
-    MCP("mcp", "خوادم MCP", "🔗"),
-    META("meta", "إدارة الأدوات", "🧭")
+    CONTROL("control", "الحوكمة والمخطط", "◆"),
+    MEMORY("memory", "الذاكرة ونقاط الاستئناف", "◆"),
+    MCP("mcp", "خوادم MCP", "◆"),
+    META("meta", "إدارة الأدوات", "◆")
 }
 
 data class ToolResult(val name: String, val output: String, val ok: Boolean)
@@ -1167,7 +1167,7 @@ object AiTools {
             ToolResult(call.name, output.take(16_000), true)
         } catch (e: GitHubException) {
             val hint = GitHubErrorHint.explain(e.status, e.message.orEmpty())
-            ToolResult(call.name, "❌ GitHub ${e.status}: ${e.message}" + if (hint.isBlank()) "" else "\n💡 $hint", false)
+            ToolResult(call.name, "❌ GitHub ${e.status}: ${e.message}" + if (hint.isBlank()) "" else "\n$hint", false)
         } catch (e: McpException) {
             ToolResult(call.name, "❌ MCP: ${e.message}", false)
         } catch (e: IllegalArgumentException) {
@@ -1206,18 +1206,18 @@ object AiTools {
         return when (name) {
             "github_whoami" -> {
                 val user = GitHubClient.whoAmI(token)
-                "👤 ${user.optString("login")} (${user.optString("name")}) — ${user.optInt("public_repos")} مستودع عام"
+                "${user.optString("login")} (${user.optString("name")}) — ${user.optInt("public_repos")} مستودع عام"
             }
             "github_list_repos" -> {
                 val repos = GitHubClient.listRepos(token, int(args, "per_page", 30))
                 if (repos.isEmpty()) "لا توجد مستودعات." else repos.joinToString("\n") {
-                    "• ${it.fullName}${if (it.private) " 🔒" else ""} — ${it.language.ifBlank { "—" }} ⭐${it.stars} — ${it.description.take(80)}"
+                    "• ${it.fullName}${if (it.private) " " else ""} — ${it.language.ifBlank { "—" }} ⭐${it.stars} — ${it.description.take(80)}"
                 }
             }
             "github_get_repo" -> {
                 val (owner, repo) = repoOf(ctx, args)
                 val r = GitHubClient.getRepo(token, owner, repo)
-                "📦 ${r.fullName}\n${r.description}\nالفرع الافتراضي: ${r.defaultBranch}\nاللغة: ${r.language} | ⭐${r.stars}\n${r.htmlUrl}"
+                "${r.fullName}\n${r.description}\nالفرع الافتراضي: ${r.defaultBranch}\nاللغة: ${r.language} | ⭐${r.stars}\n${r.htmlUrl}"
             }
             "github_repo_overview" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -1227,11 +1227,11 @@ object AiTools {
                 val tree = runCatching { GitHubClient.listTree(token, owner, repo, maxEntries = 80) }.getOrDefault(emptyList())
                 val commits = runCatching { GitHubClient.listCommits(token, owner, repo) }.getOrDefault(emptyList())
                 buildString {
-                    append("📦 ").append(r.fullName).append('\n')
+                    append("").append(r.fullName).append('\n')
                     append(r.description).append('\n')
                     append("الفرع: ").append(r.defaultBranch).append(" | اللغة: ").append(r.language).append('\n')
                     append("اللغات: ").append(languages.entries.take(6).joinToString("، ") { "${it.key} ${it.value}" }).append('\n')
-                    if (readme.isNotBlank()) append("\n📖 README:\n").append(readme.take(4000)).append('\n')
+                    if (readme.isNotBlank()) append("\nREADME:\n").append(readme.take(4000)).append('\n')
                     if (tree.isNotEmpty()) {
                         append("\n🗂️ أول 60 ملفاً:\n")
                         tree.take(60).forEach { append(if (it.type == "dir") "📁 " else "📄 ").append(it.path).append('\n') }
@@ -1274,7 +1274,7 @@ object AiTools {
                 val (owner, repo) = repoOf(ctx, args)
                 val path = req(args, "path")
                 val file = GitHubClient.readFile(token, owner, repo, path, args.optString("branch"))
-                if (file.binary) "📄 $path — ملف ثنائي (${file.sha})" else "📄 ${file.path} (${file.sha})\n\n${file.text.take(14_000)}"
+                if (file.binary) "$path — ملف ثنائي (${file.sha})" else "${file.path} (${file.sha})\n\n${file.text.take(14_000)}"
             }
             "github_write_file" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -1673,13 +1673,13 @@ object AiTools {
                 )
                 val maxChars = int(args, "max_chars", 12_000).coerceIn(1000, 30_000)
                 buildString {
-                    if (page.title.isNotBlank()) append("📄 ").append(page.title).append('\n')
-                    append("🔗 ").append(page.finalUrl).append('\n')
+                    if (page.title.isNotBlank()) append("").append(page.title).append('\n')
+                    append("").append(page.finalUrl).append('\n')
                     append("الحجم: ").append(page.bytes).append(" بايت | ").append(page.contentType).append("\n\n")
                     append(page.text.take(maxChars))
                     if (page.text.length > maxChars) append("\n… [اقتُطع النص]")
                     if (page.links.isNotEmpty()) {
-                        append("\n\n🔗 الروابط (${page.links.size}):\n")
+                        append("\n\nالروابط (${page.links.size}):\n")
                         page.links.take(40).forEach { (label, url) -> append("- ").append(label).append(" — ").append(url).append('\n') }
                     }
                     if (page.images.isNotEmpty()) {
@@ -1716,7 +1716,7 @@ object AiTools {
             "file_list", "list_dir" -> {
                 val entries = FileTools.list(ctx.context, args.optString("path"))
                 if (entries.isEmpty()) "المساحة فارغة." else entries.joinToString("\n") {
-                    (if (it.directory) "📁 " else "📄 ") + it.path + if (!it.directory) " (${it.size} بايت)" else ""
+                    (if (it.directory) "" else "") + it.path + if (!it.directory) " (${it.size} بايت)" else ""
                 }
             }
             "file_search" -> {
@@ -1732,8 +1732,8 @@ object AiTools {
             }
             "file_read", "read_file" -> {
                 val info = FileTools.read(ctx.context, req(args, "path"))
-                if (info.binary) "📄 ${info.path} — ملف ثنائي (${info.size} بايت)" else
-                    "📄 ${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n${info.text.take(14_000)}"
+                if (info.binary) "${info.path} — ملف ثنائي (${info.size} بايت)" else
+                    "${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n${info.text.take(14_000)}"
             }
             "file_read_many" -> {
                 val paths = stringList(args.optJSONArray("paths"))
@@ -1757,7 +1757,7 @@ object AiTools {
                     val byExt = entries.groupBy { it.path.substringAfterLast('.', "").lowercase().ifBlank { "بدون امتداد" } }
                         .entries.sortedByDescending { group -> group.value.sumOf { it.size } }.take(8)
                     buildString {
-                        append("📁 ").append(FileTools.relative(ctx.context, file)).append('\n')
+                        append("").append(FileTools.relative(ctx.context, file)).append('\n')
                         append("الملفات: ").append(entries.size).append('\n')
                         append("الحجم: ").append(FileTools.formatSize(total)).append('\n')
                         append("الامتدادات: ").append(byExt.joinToString("، ") { "${it.key} (${it.value.size})" })
@@ -1766,7 +1766,7 @@ object AiTools {
                     val info = FileTools.read(ctx.context, FileTools.relative(ctx.context, file), 2_000_000)
                     val lines = if (info.binary) 0 else info.text.lineSequence().count()
                     buildString {
-                        append("📄 ").append(info.path).append('\n')
+                        append("").append(info.path).append('\n')
                         append("النوع: ").append(FileTools.fileType(info.path)).append('\n')
                         FileTools.language(info.path)?.let { append("اللغة: ").append(it).append('\n') }
                         append("الحجم: ").append(FileTools.formatSize(info.size)).append('\n')
@@ -1795,7 +1795,7 @@ object AiTools {
             }
             "file_zip_list" -> {
                 val file = resolveWorkspace(ctx, req(args, "path"))
-                FileTools.zipList(file).joinToString("\n") { (if (it.directory) "📁 " else "📄 ") + it.path }
+                FileTools.zipList(file).joinToString("\n") { (if (it.directory) "" else "") + it.path }
             }
             "file_zip_read" -> {
                 val file = resolveWorkspace(ctx, req(args, "path"))
@@ -1873,7 +1873,7 @@ object AiTools {
                 val all = FileTools.walk(ctx.context, args.optString("path"), 5000)
                 val shown = all.take(int(args, "max_files", 300).coerceIn(1, 5000))
                 if (all.isEmpty()) "المجلد فارغ."
-                else shown.joinToString("\n") { (if (it.directory) "📁 " else "📄 ") + it.path + if (!it.directory) " (${it.size})" else "" } +
+                else shown.joinToString("\n") { (if (it.directory) "" else "") + it.path + if (!it.directory) " (${it.size})" else "" } +
                     treeFooter(all.map { it.path to it.directory }, shown.size, args.optString("count_suffix"))
             }
             "file_checksum" -> {
@@ -2004,7 +2004,7 @@ object AiTools {
                     }
                     .toList()
                 if (files.isEmpty()) "لا ملفات كود للمراجعة."
-                else CodeAnalyzer.projectReport(files) + "\n\n🔎 راجع أيضاً: الأسرار المكشوفة، الاعتماديات غير المثبتة، وعدم معالجة الأخطاء."
+                else CodeAnalyzer.projectReport(files) + "\n\nراجع أيضاً: الأسرار المكشوفة، الاعتماديات غير المثبتة، وعدم معالجة الأخطاء."
             }
             "code_translate" -> {
                 val path = args.optString("path")
@@ -2026,7 +2026,7 @@ object AiTools {
                     ctx, source, sourceName, target, args.optString("notes")
                 )
                 if (code.startsWith("⚠️")) code
-                else """🌐 ${CodeTranslator.languageOf(sourceName)} → ${CodeTranslator.canonical(target)}
+                else """${CodeTranslator.languageOf(sourceName)} → ${CodeTranslator.canonical(target)}
 
 ```
 $code
@@ -2228,7 +2228,7 @@ $code
                 }
             }
             "tools_groups" -> buildString {
-                append("🧭 حالة الأدوات\n")
+                append("حالة الأدوات\n")
                 append("إذن التعديل لهذه المهمة: ").append(if (ctx.writeAuthorized) "ممنوح" else "غير ممنوح").append('\n')
                 append("التشغيل التلقائي: ").append(if (agentEnabled(ctx.prefs)) "مفعّل" else "متوقف").append('\n')
                 append("الكتابة والتنفيذ: ").append(if (ctx.allowWrite) "مسموح" else "معطّل").append('\n')
@@ -2316,13 +2316,13 @@ $code
                             val safe = art.name.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").take(80).ifBlank { "artifact" }
                             val target = File(File(FileTools.root(ctx.context), "downloads"), if (safe.contains('.')) safe else "$safe.zip")
                             val file = GitHubClient.downloadArtifact(token, owner, repo, art.id, target)
-                            delivered = "\n📥 نُزّل المخرج «${art.name}» (${FileTools.formatSize(file.length())}) وهو جاهز للتنزيل:\n" +
+                            delivered = "\nنُزّل المخرج «${art.name}» (${FileTools.formatSize(file.length())}) وهو جاهز للتنزيل:\n" +
                                 FileDelivery.marker(FileTools.relative(ctx.context, file))
                         }.onFailure { delivered = "\n⚠️ نجح البناء لكن تعذّر تنزيل المخرج تلقائياً (${it.message?.take(80)}). استخدم github_download_artifact id=${art.id}." }
                     }
                     return buildString {
                         append("✅ نجح البناء #${current.number} خلال ${minutes} ثانية تقريباً.\n")
-                        append("🔗 صفحة البناء: ").append(current.htmlUrl).append('\n')
+                        append("صفحة البناء: ").append(current.htmlUrl).append('\n')
                         append("🌿 الفرع: ").append(current.branch).append(" · الإصدار: ").append(current.headSha.take(7))
                         append(delivered)
                         if (artifacts.isEmpty()) append("\nلم ينتج هذا البناء ملفات للتنزيل.")
@@ -2339,7 +2339,7 @@ $code
                 }
                 buildString {
                     append("❌ فشل البناء #${current.number} (${current.conclusion}).\n")
-                    append("🔗 ").append(current.htmlUrl).append('\n')
+                    append("").append(current.htmlUrl).append('\n')
                     append(runSummary(current)).append('\n')
                     append(failed.joinToString("\n") { "• ${it.name}: ${it.conclusion}" })
                     if (logs.isNotBlank()) append("\n\nسجل الفشل:\n").append(logs.take(16_000))
@@ -2440,7 +2440,7 @@ $code
                 if (results.isEmpty()) "لا توجد فروع مطابقة للحذف."
                 else buildString {
                     val deleted = results.count { it.deleted }
-                    append(if (dryRun) "🧪 تجربة جافة (لم يُحذف شيء): " else "🗑️ نتيجة الحذف: ")
+                    append(if (dryRun) "تجربة جافة (لم يُحذف شيء): " else "نتيجة الحذف: ")
                         .append("$deleted حُذف من ").append(results.size).append(" فرعاً\n")
                     results.forEach { item ->
                         append(if (item.deleted) "• ✅ " else "• ⏭️ ").append(item.branch)
@@ -2470,7 +2470,7 @@ $code
                     UnifiedDiff.apply(info.text, req(args, "patch"))
                 } catch (e: IllegalArgumentException) {
                     throw IllegalArgumentException((e.message ?: "فشل الـ patch") +
-                        "\n💡 لا تكرر patch: استخدم file_edit بنص الموضع الحالي حرفياً (old) والجديد (new)، بعد قراءة الملف بنطاق الأسطر.")
+                        "\nلا تكرر patch: استخدم file_edit بنص الموضع الحالي حرفياً (old) والجديد (new)، بعد قراءة الملف بنطاق الأسطر.")
                 }
                 if (args.optBoolean("backup", true)) {
                     runCatching {
@@ -2809,7 +2809,7 @@ $code
                 val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
                     ?: return "لا يوجد Manifest لهذه المحادثة. استخدم manifest_create أولاً."
                 buildString {
-                    append("📋 ").append(manifest.project).append(" | root=").append(manifest.root.ifBlank { "." })
+                    append("").append(manifest.project).append(" | root=").append(manifest.root.ifBlank { "." })
                     append(" | معتمد: ").append(if (manifest.approved) "نعم" else "لا").append('\n')
                     append("نقاط الدخول: ").append(manifest.entryPoints.joinToString("، ").ifBlank { "تلقائي" }).append('\n')
                     manifest.files.forEach { file ->
@@ -2953,7 +2953,7 @@ $code
                     PipelinePhase.PLAN -> {
                         val next = state.copy(phase = PipelinePhase.MANIFEST, note = note)
                         PipelineStore.write(ctx.prefs, next)
-                        "➡️ المرحلة: اعتماد Manifest."
+                        "المرحلة: اعتماد Manifest."
                     }
                     PipelinePhase.MANIFEST -> {
                         val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
@@ -2980,15 +2980,15 @@ $code
                     }
                     PipelinePhase.GATE -> {
                         PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.REVIEW, note = note))
-                        "➡️ المرحلة: المراجعة."
+                        "المرحلة: المراجعة."
                     }
                     PipelinePhase.REVIEW -> {
                         PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.QA, note = note))
-                        "➡️ المرحلة: الاختبار."
+                        "المرحلة: الاختبار."
                     }
                     PipelinePhase.QA -> {
                         PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.BUILD, note = note))
-                        "➡️ المرحلة: البناء."
+                        "المرحلة: البناء."
                     }
                     PipelinePhase.BUILD -> {
                         PipelineStore.write(ctx.prefs, state.copy(phase = PipelinePhase.DONE, note = note))
@@ -3044,7 +3044,7 @@ $code
                 val results = ProjectMemory.search(ctx.prefs, args.optString("query"), int(args, "limit", 10))
                 if (results.isEmpty()) "لا نتائج في الذاكرة."
                 else results.joinToString("\n\n") { entry ->
-                    "🧠 ${entry.title} [${entry.project}] (${entry.id})\n${entry.body.take(1200)}"
+                    "${entry.title} [${entry.project}] (${entry.id})\n${entry.body.take(1200)}"
                 }
             }
             "memory_list" -> {
@@ -3135,7 +3135,7 @@ $code
                 val tools = McpClient.listTools(ctx.prefs, req(args, "server"))
                 if (tools.length() == 0) "لا أدوات في هذا الخادم."
                 else buildString {
-                    append("🔗 ").append(tools.length()).append(" أداة:\n")
+                    append("").append(tools.length()).append(" أداة:\n")
                     for (i in 0 until tools.length()) {
                         val item = tools.optJSONObject(i) ?: continue
                         append("• ").append(item.optString("name"))

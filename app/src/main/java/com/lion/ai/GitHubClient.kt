@@ -1191,11 +1191,11 @@ object GitHubClient {
             throw IllegalArgumentException("عدد الملفات المتغيرة كبير جداً (${changed.size + deleted.size})")
         }
         val summary = buildString {
-            append("📦 $owner/$repo@$targetBranch\n")
+            append("$owner/$repo@$targetBranch\n")
             append("متغير/جديد: ${changed.size} — محذوف: ${deleted.size}\n")
-            changed.take(60).forEach { (path, _) -> append("• ✏️ ").append(path).append('\n') }
+            changed.take(60).forEach { (path, _) -> append("• ").append(path).append('\n') }
             if (changed.size > 60) append("• … ${changed.size - 60} ملفاً آخر\n")
-            deleted.take(40).forEach { append("• 🗑️ ").append(it).append('\n') }
+            deleted.take(40).forEach { append("• ").append(it).append('\n') }
         }
         if (dryRun) return "$summary\n(تجريبي فقط — لم يُرفع شيء)"
 

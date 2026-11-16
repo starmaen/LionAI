@@ -97,7 +97,7 @@ fun ConnectorsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("🔌 الموصلات والحسابات", color = Color(0xFFFFB800), fontSize = 18.sp) },
+                title = { Text("الموصلات والحسابات", color = Color(0xFFFFB800), fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "رجوع", tint = Color(0xFFFFB800))
@@ -137,7 +137,7 @@ fun ConnectorsScreen(
             }
 
             item {
-                SectionCard(title = "🔑 إعداد Google OAuth", subtitle = "مطلوب مرة واحدة لربط Drive وGmail وCalendar") {
+                SectionCard(title = "إعداد Google OAuth", subtitle = "مطلوب مرة واحدة لربط Drive وGmail وCalendar") {
                     Text(
                         "الطريقة المضمونة: أنشئ OAuth Client من نوع Desktop app في Google Cloud Console، وفعّل Drive API وGmail API وCalendar API، " +
                             "ثم ألصق Client ID وSecret هنا. التطبيق يستخدم PKCE مع redirect محلي ثابت (127.0.0.1) — لا يحتاج تسجيل رابط لنوع Desktop.",
@@ -260,7 +260,7 @@ fun ConnectorsScreen(
 
             item {
                 SectionCard(
-                    title = "📱 قراءة وردّ WhatsApp/Telegram (حسابك الشخصي)",
+                    title = "قراءة وردّ WhatsApp/Telegram (حسابك الشخصي)",
                     subtitle = "عبر صلاحية الإشعارات — بدون تسجيل دخول أو QR"
                 ) {
                     Text(
@@ -552,7 +552,7 @@ private fun GenericConnectorCard(
     }
     var value by remember { mutableStateOf(prefs.getString(ConnectorAuth.valueKey("generic"), "").orEmpty()) }
     SectionCard(
-        title = "🔗 خدمة REST مخصّصة",
+        title = "خدمة REST مخصّصة",
         subtitle = defDescription("generic")
     ) {
         Text(

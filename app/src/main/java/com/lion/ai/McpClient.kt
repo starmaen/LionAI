@@ -361,8 +361,8 @@ object McpConfig {
     const val KEY = "mcp_servers_v1"
 
     fun mask(server: McpServer): String = buildString {
-        append(if (server.enabled) "🟢" else "⚪")
+        append(if (server.enabled) "◆" else "⚪")
         append(' ').append(server.name).append(" (").append(server.id).append(") — ").append(server.url)
-        if (server.token.isNotBlank()) append(" — 🔑 مخفي")
+        if (server.token.isNotBlank()) append(" — مخفي")
     }
 }

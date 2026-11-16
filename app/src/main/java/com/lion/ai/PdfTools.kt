@@ -48,7 +48,7 @@ object PdfTools {
         val file = existing(context, path)
         return PDDocument.load(file).use { doc ->
             val title = runCatching { doc.documentInformation?.title }.getOrNull().orEmpty()
-            "📄 ${FileTools.relative(context, file)}: ${doc.numberOfPages} صفحة، ${file.length()} بايت" +
+            "${FileTools.relative(context, file)}: ${doc.numberOfPages} صفحة، ${file.length()} بايت" +
                 (if (title.isNotBlank()) "، العنوان: $title" else "") +
                 (if (doc.isEncrypted) "، ⚠️ مشفّر" else "")
         }
@@ -71,8 +71,8 @@ object PdfTools {
                 if (out.length >= maxChars) break
             }
             val body = out.toString().trim()
-            if (body.isBlank()) "📄 لا نص قابل للاستخراج (قد يكون PDF ممسوحاً ضوئياً). عدد الصفحات: $total"
-            else "📄 ${FileTools.relative(context, file)} ($total صفحة)\n" + body.take(maxChars) +
+            if (body.isBlank()) "لا نص قابل للاستخراج (قد يكون PDF ممسوحاً ضوئياً). عدد الصفحات: $total"
+            else "${FileTools.relative(context, file)} ($total صفحة)\n" + body.take(maxChars) +
                 if (body.length > maxChars) "\n…[مقتطع]" else ""
         }
     }

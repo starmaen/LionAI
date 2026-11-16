@@ -148,7 +148,7 @@ fun ContactsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "📇 جهات الاتصال (${contacts.size})",
+                        "جهات الاتصال (${contacts.size})",
                         color = Color(0xFFFFB800)
                     )
                 },
@@ -189,7 +189,7 @@ fun ContactsScreen(
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("👤", fontSize = 24.sp)
+                        Text("◆", fontSize = 24.sp)
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
@@ -331,7 +331,7 @@ fun Bubble(
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Text("🎵 YT Music", color = Color.White, fontSize = 12.sp)
+                                Text("YT Music", color = Color.White, fontSize = 12.sp)
                             }
                             Spacer(Modifier.width(6.dp))
                         }
@@ -350,7 +350,7 @@ fun Bubble(
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Text("🎵 أنغامي", color = Color.White, fontSize = 12.sp)
+                                Text("أنغامي", color = Color.White, fontSize = 12.sp)
                             }
                             Spacer(Modifier.width(6.dp))
                         }
@@ -369,7 +369,7 @@ fun Bubble(
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Text("🌐 المتصفح", color = Color.White, fontSize = 12.sp)
+                                Text("المتصفح", color = Color.White, fontSize = 12.sp)
                             }
                         }
                     }
@@ -514,49 +514,49 @@ fun ChatRow(
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
-                    text = { Text("✏️ تغيير الاسم") },
+                    text = { Text("تغيير الاسم") },
                     onClick = {
                         menu = false
                         onRename()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("📤 مشاركة المحادثة") },
+                    text = { Text("مشاركة المحادثة") },
                     onClick = {
                         menu = false
                         onShare()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("🔁 ترحيل المحادثة (ملخص)") },
+                    text = { Text("ترحيل المحادثة (ملخص)") },
                     onClick = {
                         menu = false
                         onHandoff()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("➡️ متابعة في محادثة جديدة") },
+                    text = { Text("متابعة في محادثة جديدة") },
                     onClick = {
                         menu = false
                         onContinue()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("✨ عنوان تلقائي") },
+                    text = { Text("عنوان تلقائي") },
                     onClick = {
                         menu = false
                         onAutoTitle()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(if (meta.archived) "📤 إلغاء الأرشفة" else "📦 أرشفة") },
+                    text = { Text(if (meta.archived) "إلغاء الأرشفة" else "أرشفة") },
                     onClick = {
                         menu = false
                         onArchiveToggle()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("🗑️ حذف", color = Color(0xFFE94560)) },
+                    text = { Text("حذف", color = Color(0xFFE94560)) },
                     onClick = {
                         menu = false
                         onDelete()
@@ -578,7 +578,7 @@ fun ScheduledScreen(
         containerColor = Color(0xFF0D0D0D),
         topBar = {
             TopAppBar(
-                title = { Text("⏰ المجدولات (${items.size})", color = Color(0xFFFFB800)) },
+                title = { Text("المجدولات (${items.size})", color = Color(0xFFFFB800)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, "رجوع", tint = Color(0xFFFFB800))
@@ -607,14 +607,14 @@ fun ScheduledScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             val label = when (item.kind) {
-                                ActionKind.REMINDER -> "⏰ تذكير"
-                                ActionKind.SMS -> "📱 رسالة إلى ${item.name}"
-                                ActionKind.CALL -> "📞 اتصال بـ ${item.name}"
+                                ActionKind.REMINDER -> "تذكير"
+                                ActionKind.SMS -> "رسالة إلى ${item.name}"
+                                ActionKind.CALL -> "اتصال بـ ${item.name}"
                             }
                             Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(
                                 TimeFmt.whenText(item.whenMillis) +
-                                    if (item.repeatMs > 0) "  🔁 ${RepeatFmt.label(item.repeatMs)}" else "",
+                                    if (item.repeatMs > 0) "  ${RepeatFmt.label(item.repeatMs)}" else "",
                                 color = Color(0xFFFFB800),
                                 fontSize = 12.sp
                             )

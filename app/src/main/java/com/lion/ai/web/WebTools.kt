@@ -314,7 +314,7 @@ object WebTools {
         val authNote = when (status) {
             401, 403 -> "🔐 يحتاج مصادقة (مفتاح/توكن)."
             in 200..299 -> "✅ الوصول العام متاح."
-            301, 302, 303, 307, 308 -> "↪️ تحويل إلى: ${redirect ?: "غير معروف"}"
+            301, 302, 303, 307, 308 -> "تحويل إلى: ${redirect ?: "غير معروف"}"
             in 400..499 -> "⚠️ الطلب مرفوض (HTTP $status)."
             else -> "⚠️ استجابة غير متوقعة (HTTP $status)."
         }
@@ -380,8 +380,8 @@ object WebTools {
     }
 
     fun summary(page: Page, maxChars: Int = 12_000): String = buildString {
-        if (page.title.isNotBlank()) append("📄 ").append(page.title).append('\n')
-        append("🔗 ").append(page.finalUrl).append('\n')
+        if (page.title.isNotBlank()) append("").append(page.title).append('\n')
+        append("").append(page.finalUrl).append('\n')
         append("الحجم: ").append(page.bytes).append(" بايت | ").append(page.contentType).append('\n')
         if (page.metadata.isNotEmpty()) {
             append("بيانات وصفية: ")
@@ -391,14 +391,14 @@ object WebTools {
         append('\n').append(page.text.take(maxChars))
         if (page.text.length > maxChars) append("\n… [اقتُطع النص]")
         if (page.codeBlocks.isNotEmpty()) {
-            append("\n\n🧩 أكواد مستخرجة (${page.codeBlocks.size}):\n")
+            append("\n\nأكواد مستخرجة (${page.codeBlocks.size}):\n")
             page.codeBlocks.take(5).forEach { block ->
                 append("```").append(block.language).append('\n')
                 append(block.code.take(3000)).append("\n```\n")
             }
         }
         if (page.links.isNotEmpty()) {
-            append("\n🔗 الروابط (${page.links.size}):\n")
+            append("\nالروابط (${page.links.size}):\n")
             page.links.take(40).forEach { (label, url) -> append("- ").append(label).append(" — ").append(url).append('\n') }
         }
         if (page.images.isNotEmpty()) {

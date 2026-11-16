@@ -424,7 +424,7 @@ object LionEngine {
             phase = Phase.LINUX_MISSING
             return ShellResult(false, err, 1, 0)
         }
-        progress = "📦 تثبيت llama-server…"
+        progress = "تثبيت llama-server…"
         val script = """
             set -e
             apk update || true
@@ -596,7 +596,7 @@ object LionEngine {
         starting = true
         phase = Phase.STARTING
         lastError = ""
-        progress = "🚀 تشغيل المحرّك…"
+        progress = "تشغيل المحرّك…"
         logLines.clear()
         logTail = ""
         val modelPath = guestPath(context, modelFile(context, prefs))

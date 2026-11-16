@@ -177,11 +177,11 @@ object Connectors {
         val link = meta.optString("webViewLink")
         if (mime == "application/vnd.google-apps.shortcut") {
             val target = meta.optJSONObject("shortcutDetails")?.optString("targetId").orEmpty()
-            if (target.isNotBlank()) return "🔗 اختصار إلى ملف آخر:\n\n" + driveOpen(ctx, target, maxChars)
+            if (target.isNotBlank()) return "اختصار إلى ملف آخر:\n\n" + driveOpen(ctx, target, maxChars)
         }
         if (mime.startsWith("application/vnd.google-apps.folder")) {
             val listing = driveList(ctx, 100, id)
-            return "📁 $name\n$link\n\n$listing"
+            return "$name\n$link\n\n$listing"
         }
         return driveRead(ctx, id, maxChars)
     }
@@ -332,7 +332,7 @@ object Connectors {
         return (0 until files.length()).joinToString("\n") { index ->
             val f = files.optJSONObject(index) ?: JSONObject()
             val folder = f.optString("mimeType").startsWith("application/vnd.google-apps.folder")
-            (if (folder) "📁 " else "📄 ") + f.optString("name") +
+            (if (folder) "" else "") + f.optString("name") +
                 (if (folder) "" else " (${FileTools.formatSize(f.optLong("size"))})") +
                 " id=${f.optString("id")} — ${f.optString("modifiedTime")}"
         }
@@ -496,13 +496,13 @@ object Connectors {
         val link = meta.optString("webViewLink")
         val max = maxChars.coerceIn(1000, 30_000)
         if (mime.startsWith("application/vnd.google-apps.folder")) {
-            return "📁 $name\n$link\n\n" + driveList(ctx, 100, id)
+            return "$name\n$link\n\n" + driveList(ctx, 100, id)
         }
         val googleDoc = mime.startsWith("application/vnd.google-apps")
         val looksText = googleDoc || mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") ||
             mime.contains("csv") || mime.contains("javascript") || mime.contains("x-yaml")
         if (!looksText) {
-            return "📄 $name ($mime, ${FileTools.formatSize(meta.optLong("size"))})\n$link\n" +
+            return "$name ($mime, ${FileTools.formatSize(meta.optLong("size"))})\n$link\n" +
                 "ملف ثنائي؛ استخدم drive_download لنزيله إلى مساحة العمل."
         }
         val text = if (googleDoc) {
@@ -519,7 +519,7 @@ object Connectors {
                 "Drive"
             ).body
         }
-        return "📄 $name ($mime)\n$link\n\n${text.take(max)}" +
+        return "$name ($mime)\n$link\n\n${text.take(max)}" +
             if (text.length > max) "\n… [اقتُطع]" else ""
     }
 
@@ -539,7 +539,7 @@ object Connectors {
         val f = JSONObject(res.body)
         val owner = f.optJSONArray("owners")?.optJSONObject(0)
         return buildString {
-            append("📄 ").append(f.optString("name")).append('\n')
+            append("").append(f.optString("name")).append('\n')
             append("id=").append(f.optString("id")).append('\n')
             append("النوع: ").append(shortMime(f.optString("mimeType"))).append('\n')
             append("الحجم: ").append(FileTools.formatSize(f.optLong("size"))).append('\n')
@@ -974,7 +974,7 @@ object Connectors {
             buildString {
                 append("• ").append(e.optString("summary").ifBlank { "(بدون عنوان)" }).append(" — ").append(start)
                 if (location.isNotBlank()) append("\n  📍 ").append(location)
-                if (meet.isNotBlank()) append("\n  🔗 ").append(meet)
+                if (meet.isNotBlank()) append("\n  ").append(meet)
                 append("\n  id=").append(e.optString("id"))
             }
         }
@@ -1184,7 +1184,7 @@ object Connectors {
         }
         walk(pageId, 0)
         val body = builder.toString().trim()
-        return if (body.isBlank()) "الصفحة فارغة." else "📝 محتوى الصفحة:\n\n${body.take(max)}" +
+        return if (body.isBlank()) "الصفحة فارغة." else "محتوى الصفحة:\n\n${body.take(max)}" +
             if (body.length > max) "\n… [اقتُطع]" else ""
     }
 

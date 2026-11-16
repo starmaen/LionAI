@@ -284,7 +284,7 @@ object LocalAIProxy {
         else listOfNotNull(PROVIDERS.firstOrNull { it.id == backendProvider(prefs) })
         if (targets.isEmpty()) return "⚠️ لا يوجد أي مزود مفعّل. أدخل مفتاح مزود واحد على الأقل."
         val sb = StringBuilder(
-            if (auto) "🧠 تلقائي: أفحص ${targets.size} مزود مفعّل…\n" else "✋ يدوي: ${targets[0].shortName}\n"
+            if (auto) "تلقائي: أفحص ${targets.size} مزود مفعّل…\n" else "✋ يدوي: ${targets[0].shortName}\n"
         )
         val speeds = mutableListOf<Pair<String, Long>>()
         for (info in targets) {
@@ -479,7 +479,7 @@ object LocalAIProxy {
                     reply += "\n\n(جرّبت بالترتيب: " + tried.distinct().joinToString("، ") + ")"
                 }
                 if (RoutePolicy.isManual(prefs)) {
-                    reply += "\n\n🔒 الوضع اليدوي: تعذّر مزودك المختار ولم يُبدَّل تلقائياً. " +
+                    reply += "\n\nالوضع اليدوي: تعذّر مزودك المختار ولم يُبدَّل تلقائياً. " +
                         "تحقق من المفتاح/الموديل أو اختر مزوداً آخر."
                 }
             }
@@ -489,7 +489,7 @@ object LocalAIProxy {
             if (manual && usedRoute != null && chosenProvider != null && usedRoute.provider != chosenProvider &&
                 !reply.contains("[[TOOL]]") && !reply.contains("[[ASK]]")
             ) {
-                reply += "\n\n↪️ مزودك المختار (" + RoutePolicy.shortName(chosenProvider) + ") لم يرد" +
+                reply += "\n\nمزودك المختار (" + RoutePolicy.shortName(chosenProvider) + ") لم يرد" +
                     (if (lastError.isNotBlank()) ": " + lastError.replace("\n", " ").take(140) else "") +
                     "، فأجاب " + RoutePolicy.shortName(usedRoute.provider) + " بدلاً منه."
             }

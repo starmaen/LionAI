@@ -342,8 +342,8 @@ object LinuxEnv {
             File(root, "root").mkdirs()
             marker(context).writeText(release.file)
         }
-        progress = "📦 تثبيت الحزم الأساسية فقط…"
-        val core = runPackageCommand(context, "apk add --no-cache $CORE", 1200) { progress = "📦 " + it.take(100) }
+        progress = "تثبيت الحزم الأساسية فقط…"
+        val core = runPackageCommand(context, "apk add --no-cache $CORE", 1200) { progress = "" + it.take(100) }
         if (!core.ok) throw IllegalStateException("فشل تثبيت الأساسيات (exit ${core.exitCode}):\n" + core.output.takeLast(8000))
         val aliases = run(context, DEV_ALIASES, 120)
         if (!aliases.ok) throw IllegalStateException("فشل تجهيز أوامر python/pip:\n" + aliases.output.takeLast(4000))

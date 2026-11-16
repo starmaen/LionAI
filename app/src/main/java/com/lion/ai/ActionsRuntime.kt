@@ -147,7 +147,7 @@ object Notifier {
                             .putExtra("minutes", minutes),
                         flags
                     )
-                builder.addAction(android.R.drawable.ic_menu_recent_history, "⏰ بعد 10 دقائق", action(1, ReminderActionReceiver.ACTION_SNOOZE, 10))
+                builder.addAction(android.R.drawable.ic_menu_recent_history, "بعد 10 دقائق", action(1, ReminderActionReceiver.ACTION_SNOOZE, 10))
                 builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "✔ تم", action(2, ReminderActionReceiver.ACTION_DONE, 0))
             }
             val notification = builder.build()
@@ -177,7 +177,7 @@ object ActionRunner {
             ActionKind.REMINDER -> {
                 val task = item.text.ifBlank { "حان موعد التذكير" }
                 Notifier.show(
-                    context, item.id, "⏰ حان موعد التذكير",
+                    context, item.id, "حان موعد التذكير",
                     task + "\n🕐 الموعد: " + TimeFmt.clock(item.whenMillis),
                     snoozeText = task,
                     alarmIntent = AlarmIntents.forReminder(context, item.id, task, item.whenMillis)
@@ -189,7 +189,7 @@ object ActionRunner {
                 Notifier.show(
                     context,
                     item.id,
-                    if (sent) "📱 تم إرسال رسالتك إلى ${item.name}" else "⚠️ تعذر إرسال الرسالة إلى ${item.name}",
+                    if (sent) "تم إرسال رسالتك إلى ${item.name}" else "⚠️ تعذر إرسال الرسالة إلى ${item.name}",
                     item.text
                 )
             }
@@ -208,7 +208,7 @@ object ActionRunner {
                 )
                 Notifier.show(
                     context, item.id,
-                    "📞 حان موعد الاتصال بـ ${item.name}",
+                    "حان موعد الاتصال بـ ${item.name}",
                     "اضغط هنا للاتصال: ${item.number}",
                     pending
                 )
@@ -218,7 +218,7 @@ object ActionRunner {
 
     fun missed(context: Context, item: ScheduledItem) {
         val label = when (item.kind) {
-            ActionKind.REMINDER -> "⏰ فاتك تذكير"
+            ActionKind.REMINDER -> "فاتك تذكير"
             ActionKind.SMS -> "⚠️ لم تُرسل الرسالة المجدولة إلى ${item.name} (فات موعدها)"
             ActionKind.CALL -> "⚠️ فاتك الاتصال المجدول بـ ${item.name}"
         }

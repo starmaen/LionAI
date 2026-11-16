@@ -72,7 +72,7 @@ internal fun LionDrawerContent(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E4A2E))
         ) {
-            Text("⏰ المجدولات (${scheduledCount})", color = Color.White)
+            Text("المجدولات (${scheduledCount})", color = Color.White)
         }
         Button(
             onClick = onImageEditor,
@@ -93,14 +93,14 @@ internal fun LionDrawerContent(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3A3A))
         ) {
-            Text("🧰 أدوات المطوّر", color = Color.White)
+            Text("أدوات المطوّر", color = Color.White)
         }
         Button(
             onClick = onConnectors,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A2E1F))
         ) {
-            Text("🔌 ربط الحسابات والموصلات", color = Color.White)
+            Text("ربط الحسابات والموصلات", color = Color.White)
         }
         Spacer(Modifier.height(6.dp))
 
@@ -162,7 +162,7 @@ internal fun LionDrawerContent(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "📦 الأرشيف (${archivedChats.size}) " + if (showArchive) "▲" else "▼",
+                            "الأرشيف (${archivedChats.size}) " + if (showArchive) "▲" else "▼",
                             color = Color(0xFFB0B0B0)
                         )
                     }

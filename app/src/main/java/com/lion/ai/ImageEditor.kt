@@ -646,12 +646,12 @@ private fun fitRect(bw: Int, bh: Int, boxW: Float, boxH: Float): FitRect {
 private val TOOLS = listOf(
     "adjust" to "🎛️ تعديلات",
     "presets" to "🎨 مرشحات",
-    "transform" to "🔄 تحويل",
+    "transform" to "تحويل",
     "crop" to "✂️ قص",
     "resize" to "📐 الحجم",
     "text" to "🔤 نص",
     "brush" to "🖌️ فرشاة",
-    "words" to "✨ بالكلمات"
+    "words" to "بالكلمات"
 )
 
 private val PALETTE = listOf(
@@ -1142,7 +1142,7 @@ fun ImageEditorScreen(
                             )
                         )
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            ToolChip("✨ نفّذ", ready && instruction.isNotBlank()) { runInstruction() }
+                            ToolChip("نفّذ", ready && instruction.isNotBlank()) { runInstruction() }
                         }
                     }
                 }
@@ -1152,7 +1152,7 @@ fun ImageEditorScreen(
                         modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        ToolChip("✨ تحسين ذكي تلقائي", ready) {
+                        ToolChip("تحسين ذكي تلقائي", ready) {
                             val b = current
                             if (b != null) {
                                 scope.launch {
@@ -1176,8 +1176,8 @@ fun ImageEditorScreen(
                 val ready = current != null && !busy
                 ToolChip((if (showOriginal) "● " else "") + "👁 الأصل", current != null) { showOriginal = !showOriginal }
                 ToolChip("💾 حفظ", ready) { saveAndShare(false) }
-                ToolChip("📤 مشاركة", ready) { saveAndShare(true) }
-                ToolChip("🔍 حلّل بالذكاء", ready) {
+                ToolChip("مشاركة", ready) { saveAndShare(true) }
+                ToolChip("حلّل بالذكاء", ready) {
                     val bitmap = current
                     if (bitmap != null) {
                         scope.launch {

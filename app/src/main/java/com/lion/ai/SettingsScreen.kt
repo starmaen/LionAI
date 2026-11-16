@@ -264,7 +264,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "⚙️ الإعدادات",
+                        "الإعدادات",
                         color = Color(0xFFFFB800),
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
@@ -358,7 +358,7 @@ fun SettingsScreen(
                             containerColor = if (autoRouteSetting) Color(0xFFFFB800) else Color(0xFF2A2A2A)
                         )
                     ) {
-                        Text("🧠 تلقائي", color = if (autoRouteSetting) Color.Black else Color(0xFFE0E0E0), fontSize = 12.sp)
+                        Text("تلقائي", color = if (autoRouteSetting) Color.Black else Color(0xFFE0E0E0), fontSize = 12.sp)
                     }
                     Button(
                         onClick = {
@@ -377,7 +377,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     if (autoRouteSetting)
-                        "🧠 تلقائي: العقل المركزي يختار المزود حسب الكفاءة والحاجة، ولا يبدّله ما دام يعمل، ويبدّله عند انقطاع الاتصال به."
+                        "تلقائي: العقل المركزي يختار المزود حسب الكفاءة والحاجة، ولا يبدّله ما دام يعمل، ويبدّله عند انقطاع الاتصال به."
                     else
                         "✋ يدوي: تعمل بالمزود الذي تختاره من قائمة المزودات (${RoutePolicy.shortName(provider)}) دون أي تدخل من العقل المركزي، والتبديل بين المزودات بيدك.",
                     color = Color(0xFFB0B0B0),
@@ -392,7 +392,7 @@ fun SettingsScreen(
 
             if (settingsTab == 0) {
             SettingsSection(
-                title = "🔑 المزودات الأساسية (API)",
+                title = "المزودات الأساسية (API)",
                 subtitle = "اضغط على المزود لفتح مفتاحه وموديله وزر الاختبار. الدائرة ● = المزود النشط",
                 badge = "${PROVIDERS.count { it.group == ProviderGroup.API && it.id != "local_proxy" }} مزود",
                 initiallyExpanded = true
@@ -403,7 +403,7 @@ fun SettingsScreen(
                 listOf(
                     "🔧 مخصص (Gateway / LiteLLM)" to apiProviders.filter { it.custom },
                     "🆓 بدون مفتاح" to apiProviders.filter { !it.custom && it.keyless },
-                    "🟢 مجانية بمفتاح" to apiProviders.filter { !it.custom && !it.keyless && it.free },
+                    "مجانية بمفتاح" to apiProviders.filter { !it.custom && !it.keyless && it.free },
                     "🔵 مدفوعة أو برصيد" to apiProviders.filter { !it.custom && !it.keyless && !it.free }
                 ).forEach { (groupTitle, list) ->
                     if (list.isNotEmpty()) {
@@ -503,7 +503,7 @@ fun SettingsScreen(
                 if (groupProviders.isNotEmpty()) {
                     SettingsSection(
                         title = if (group == ProviderGroup.WEB) "🌐 مزودات صفحات الويب" else "🎨 مزودات الوسائط",
-                        subtitle = "هذا مزود ويب/وسائط: يُفتح داخل التطبيق من هنا أو من زر 🌐، ولا يحتاج مفتاحاً.",
+                        subtitle = "هذا مزود ويب/وسائط: يُفتح داخل التطبيق من هنا أو من زر ، ولا يحتاج مفتاحاً.",
                         badge = "${groupProviders.size} موقع"
                     ) {
                         groupProviders.forEach { info ->
@@ -553,7 +553,7 @@ fun SettingsScreen(
 
             if (settingsTab == 3) {
             SettingsSection(
-                title = "⚙️ الإعدادات العامة والعقل المركزي",
+                title = "الإعدادات العامة والعقل المركزي",
                 subtitle = "القراءة التلقائية، عناوين المحادثات، التأكيدات، واختيار النموذج تلقائياً"
             ) {
                 Spacer(Modifier.height(8.dp))
@@ -670,7 +670,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("🌐 بحث ويب تلقائي للمعلومات", color = Color.White, fontSize = 14.sp)
+                        Text("بحث ويب تلقائي للمعلومات", color = Color.White, fontSize = 14.sp)
                         Text(
                             "للأسئلة المعرفية والبرمجية: يجلب مقتطفات من ويكيبيديا والبحث العام، ومن GitHub وStack Overflow وXDA عند الحاجة، ثم يعرض المصادر أسفل الرد. يرسل نص سؤالك إلى خدمات البحث، ولا يعمل مع المرفقات.",
                             color = Color(0xFF9A9A9A),
@@ -694,7 +694,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("🧩 إجماع النماذج للأسئلة المعرفية", color = Color.White, fontSize = 14.sp)
+                        Text("إجماع النماذج للأسئلة المعرفية", color = Color.White, fontSize = 14.sp)
                         Text(
                             "يسأل نموذجين قويين، يقارن إجابتيهما محلياً، ثم يدمجهما في إجابة واحدة مع نسبة الاتفاق. يضاعف الطلبات والزمن، ويتطلب توفر مزودين قويين.",
                             color = Color(0xFF9A9A9A),
@@ -705,7 +705,7 @@ fun SettingsScreen(
             }
 
             SettingsSection(
-                title = "🧰 أدوات الذكاء والتطوير",
+                title = "أدوات الذكاء والتطوير",
                 subtitle = "GitHub والملفات والموصلات (Drive/Gmail/Calendar...)"
             ) {
                 Text(
@@ -833,7 +833,7 @@ fun SettingsScreen(
                                 githubTesting = false
                             }
                         }
-                    ) { Text("🧪 اختبار اتصال GitHub", color = Color(0xFFFFB800), fontSize = 12.sp) }
+                    ) { Text("اختبار اتصال GitHub", color = Color(0xFFFFB800), fontSize = 12.sp) }
                     TextButton(onClick = { persist(); onOpenGitHub() }) {
                         Text("🐙 فتح GitHub", color = Color(0xFFFFB800), fontSize = 12.sp)
                     }
@@ -842,17 +842,17 @@ fun SettingsScreen(
                     Text(githubStatus, color = Color(0xFFB0B0B0), fontSize = 12.sp)
                 }
                 TextButton(onClick = { persist(); onOpenDevTools() }) {
-                    Text("🧰 فتح أدوات المطوّر ومساحة العمل", color = Color(0xFFFFB800), fontSize = 12.sp)
+                    Text("فتح أدوات المطوّر ومساحة العمل", color = Color(0xFFFFB800), fontSize = 12.sp)
                 }
                 TextButton(onClick = { persist(); onOpenConnectors() }) {
-                    Text("🔌 ربط الحسابات: Drive · Gmail · Calendar · Notion · Slack", color = Color(0xFFFFB800), fontSize = 12.sp)
+                    Text("ربط الحسابات: Drive · Gmail · Calendar · Notion · Slack", color = Color(0xFFFFB800), fontSize = 12.sp)
                 }
             }
             }
 
             if (settingsTab == 3) {
             SettingsSection(
-                title = "🔔 التنبيهات والتذكيرات",
+                title = "التنبيهات والتذكيرات",
                 subtitle = "اختبار الإشعارات والمنبه والأذونات"
             ) {
                 var alarmStatus by remember { mutableStateOf("") }
@@ -866,10 +866,10 @@ fun SettingsScreen(
                         ensureNotificationPermission()
                         alarmStatus = "اسمح بالإشعارات من النافذة الظاهرة ثم اضغط «اختبار إشعار الآن» مرة أخرى."
                     } else {
-                        val ok = Notifier.show(ctx, 7001, "🔔 اختبار", "إذا ظهر لك هذا الإشعار فالتنبيهات تعمل بشكل سليم.")
+                        val ok = Notifier.show(ctx, 7001, "اختبار", "إذا ظهر لك هذا الإشعار فالتنبيهات تعمل بشكل سليم.")
                         alarmStatus = if (ok) "تم إرسال إشعار تجريبي. هل ظهر؟" else "⚠️ تعذر إرسال الإشعار (تحقق من صلاحية الإشعارات)."
                     }
-                }) { Text("🔔 اختبار إشعار الآن", color = Color(0xFFFFB800), fontSize = 13.sp) }
+                }) { Text("اختبار إشعار الآن", color = Color(0xFFFFB800), fontSize = 13.sp) }
                 TextButton(onClick = {
                     ensureNotificationPermission()
                     val err = Scheduler.add(
@@ -889,7 +889,7 @@ fun SettingsScreen(
                                 .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
                         )
                     }
-                }) { Text("⚙️ إعدادات إشعارات التطبيق", color = Color(0xFFFFB800), fontSize = 13.sp) }
+                }) { Text("إعدادات إشعارات التطبيق", color = Color(0xFFFFB800), fontSize = 13.sp) }
                 if (Build.VERSION.SDK_INT >= 34) {
                     TextButton(onClick = {
                         runCatching {

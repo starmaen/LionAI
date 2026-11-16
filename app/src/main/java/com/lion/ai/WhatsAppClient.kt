@@ -80,7 +80,7 @@ object WhatsAppClient {
             "/${credentials.phoneId}?fields=display_phone_number,verified_name,quality_rating,platform_type,code_verification_status"
         )
         return buildString {
-            append("📱 ").append(o.optString("verified_name").ifBlank { "WhatsApp Business" })
+            append("").append(o.optString("verified_name").ifBlank { "WhatsApp Business" })
             append(" — ").append(o.optString("display_phone_number"))
             append("\nالحالة: ").append(o.optString("code_verification_status").ifBlank { "—" })
             append(" · الجودة: ").append(o.optString("quality_rating").ifBlank { "—" })

@@ -66,10 +66,17 @@ private fun WorkLog(lines: List<String>, steps: List<AgentStep>) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // العنوان هو العملية الجارية فعلاً (قراءة ملف، تعديل، رفع…) لا عبارة ثابتة.
-            Text(
-                items.lastOrNull { it.state == WorkVisualState.RUNNING }?.title ?: "سير العمل",
-                color = Color(0xFFD6E0E3), fontSize = 12.sp, fontWeight = FontWeight.SemiBold
-            )
+            val running = items.lastOrNull { it.state == WorkVisualState.RUNNING }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (running != null) {
+                    StateGlyphIcon(running.glyph, Color(0xFF83B8C6), 14.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    running?.title ?: "سير العمل",
+                    color = Color(0xFFD6E0E3), fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+                )
+            }
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(2.dp), color = Color(0xFF83B8C6), trackColor = Color(0xFF20282B))
             Spacer(Modifier.height(8.dp))
@@ -109,7 +116,14 @@ private fun WorkRow(item: WorkVisual, last: Boolean) {
             }
         }
         Column(Modifier.weight(1f).padding(bottom = if (last) 0.dp else 8.dp)) {
-            Text(item.title, color = color, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StateGlyphIcon(item.glyph, color, 14.dp)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    item.title, color = color, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
             if (item.detail.isNotBlank()) Text(item.detail, color = Color(0xFF89969B), fontSize = 10.sp, lineHeight = 14.sp)
         }
         Text(
@@ -168,7 +182,7 @@ internal fun LionMessageList(
             if (live.isNotBlank()) {
                 item(key = "$currentChat:live") {
                     Bubble(
-                        Message(live, false, via = "🔴 مباشر من صفحة الموقع"),
+                        Message(live, false, via = "مباشر من صفحة الموقع"),
                         context, tts, messages.size, onPendingChoice, false, {}, {},
                         askEnabled = false, onAskReply = onAskReply
                     )

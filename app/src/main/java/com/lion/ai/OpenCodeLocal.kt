@@ -101,7 +101,7 @@ object OpenCodeLocal {
         "connected" -> "✅ متصل"
         "failed" -> "❌ فشل" + if (error.isNotBlank()) ": " + error.take(160) else ""
         "disabled" -> "⏸ معطّل"
-        "needs_auth", "needs_client_registration" -> "🔑 يحتاج مصادقة"
+        "needs_auth", "needs_client_registration" -> "يحتاج مصادقة"
         else -> status.ifBlank { "؟" }
     }
 
@@ -198,9 +198,9 @@ object OpenCodeLocal {
         val raw = (message + " " + body).take(600)
         val hint = when {
             raw.contains("tool", ignoreCase = true) && (raw.contains("support", ignoreCase = true) || raw.contains("endpoint", ignoreCase = true)) ->
-                "\n💡 الموديل لا يدعم استدعاء الأدوات (OpenCode يرسلها دائماً). اختر موديلاً يدعمها."
+                "\nالموديل لا يدعم استدعاء الأدوات (OpenCode يرسلها دائماً). اختر موديلاً يدعمها."
             raw.contains("data policy", ignoreCase = true) || raw.contains("privacy", ignoreCase = true) ->
-                "\n💡 فعّل خيار مشاركة البيانات للموديلات المجانية في openrouter.ai/settings/privacy."
+                "\nفعّل خيار مشاركة البيانات للموديلات المجانية في openrouter.ai/settings/privacy."
             status == 401 || name.contains("Auth", ignoreCase = true) -> "\n💡 المفتاح غير صالح أو غير مربوط بهذا المزود."
             status == 402 -> "\n💡 الرصيد غير كافٍ."
             status == 429 -> "\n💡 تجاوزت حد الطلبات (الموديلات المجانية محدودة). انتظر قليلاً."

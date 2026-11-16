@@ -63,7 +63,7 @@ internal class LionKnowledge(
             LionText.words(text).filter { it !in STOP && it.length >= 3 }.distinct()
 
         fun scrub(answer: String): String =
-            answer.substringBefore("\n\n✅").substringBefore("\n\n🧩").substringBefore("\n\n↪️").trim()
+            answer.substringBefore("\n\n✅").substringBefore("\n\n").substringBefore("\n\n").trim()
 
         /** سبب الرفض أو null إن كان الزوج صالحاً للتعلّم. */
         fun rejection(q: String, a: String): String? = when {

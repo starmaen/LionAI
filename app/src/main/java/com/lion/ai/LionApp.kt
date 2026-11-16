@@ -312,7 +312,7 @@ fun LionApp() {
         val mirror = object : WebSessionMirror.Listener {
             override fun onOutbound(chatId: String, provider: String, fullText: String) {
                 if (loadingChats[chatId] == true)
-                    toolStatus[chatId] = providerInfo(provider).shortName + " • 📤 أُرسل إلى الصفحة (" + fullText.length + " حرفاً)"
+                    toolStatus[chatId] = providerInfo(provider).shortName + " • أُرسل إلى الصفحة (" + fullText.length + " حرفاً)"
             }
             override fun onPartial(chatId: String, provider: String, fullText: String) {
                 if (loadingChats[chatId] == true) livePartial[chatId] = ToolMarkup.strip(fullText)
@@ -458,7 +458,7 @@ fun LionApp() {
         val provider = if (providerInfo(selectedProvider).supportsAppChat) selectedProvider else "gemini"
         val tab = ChatTab(
             id = TabsStore.newId(),
-            name = if (autoRoute) "🧠 تلقائي" else providerInfo(provider).shortName,
+            name = if (autoRoute) "تلقائي" else providerInfo(provider).shortName,
             chatId = chatId,
             provider = provider,
             autoRoute = autoRoute
@@ -655,7 +655,7 @@ fun LionApp() {
         val body = buildString {
             ChatRepository.load(prefs, meta.id).forEach {
                 val t = WebToolBridge.redact(ToolMarkup.strip(FileDelivery.strip(it.text)))
-                if (t.isNotBlank()) append(if (it.isUser) "👤 " else "🦁 ").append(t).append("\n\n")
+                if (t.isNotBlank()) append(if (it.isUser) "" else "🦁 ").append(t).append("\n\n")
             }
         }
         // حد آمن لحمولة Intent؛ نحذف الأقدم ونُعلم بذلك بدل فشل صامت.
@@ -954,16 +954,16 @@ fun LionApp() {
                         "⚠️ تعذر فتح واتساب."
                     }
                 } else if (SmsSender.send(context, r.number, text)) {
-                    "📱 تم إرسال الرسالة إلى ${r.name} (${r.number})"
+                    "تم إرسال الرسالة إلى ${r.name} (${r.number})"
                 } else {
                     openSmsComposer(r.number, text)
-                    "📱 فتحت تطبيق الرسائل لإرسالها إلى ${r.name} (${r.number}). اضغط إرسال للتأكيد."
+                    "فتحت تطبيق الرسائل لإرسالها إلى ${r.name} (${r.number}). اضغط إرسال للتأكيد."
                 }
             }
 
             ActionKind.CALL -> {
                 startCall(r.number)
-                "📞 جارٍ الاتصال بـ ${r.name} (${r.number})"
+                "جارٍ الاتصال بـ ${r.name} (${r.number})"
             }
 
             ActionKind.REMINDER -> ""
@@ -978,7 +978,7 @@ fun LionApp() {
             ActionKind.REMINDER -> {
                 val at = a.triggerAt
                 if (at == null) {
-                    reply("⏰ متى تريد التذكير؟ مثال: ذكرني بعد نصف ساعة أن أتصل بأحمد، أو: ذكرني الساعة 7 صباحاً بالاجتماع.")
+                    reply("متى تريد التذكير؟ مثال: ذكرني بعد نصف ساعة أن أتصل بأحمد، أو: ذكرني الساعة 7 صباحاً بالاجتماع.")
                     return
                 }
                 val text = a.message.ifBlank { "تذكير" }
@@ -997,9 +997,9 @@ fun LionApp() {
                 if (firstTime) prefs.edit().putBoolean("reminder_hint_shown", true).apply()
                 reply(
                     "✅ سأذكّرك ${TimeFmt.whenText(at)}:\n$text" +
-                        (if (a.repeatMs > 0) "\n🔁 ${RepeatFmt.label(a.repeatMs)}" else "") +
+                        (if (a.repeatMs > 0) "\n${RepeatFmt.label(a.repeatMs)}" else "") +
                         (if (notices) "" else "\n⚠️ الإشعارات معطلة من إعدادات النظام.") +
-                        (if (firstTime) "\n\n💡 إن لم يصلك التنبيه في موعده: الإعدادات ← 🔔 التنبيهات ← اختبار." else "")
+                        (if (firstTime) "\n\nإن لم يصلك التنبيه في موعده: الإعدادات ← التنبيهات ← اختبار." else "")
                 )
             }
 
@@ -1007,15 +1007,15 @@ fun LionApp() {
                 if (a.recipient.isBlank()) {
                     reply(
                         if (a.kind == ActionKind.SMS) {
-                            "📱 لمن تريد إرسال الرسالة؟ اكتب الاسم أو الرقم."
+                            "لمن تريد إرسال الرسالة؟ اكتب الاسم أو الرقم."
                         } else {
-                            "📞 بمن تريد الاتصال؟ اكتب الاسم أو الرقم."
+                            "بمن تريد الاتصال؟ اكتب الاسم أو الرقم."
                         }
                     )
                     return
                 }
                 if (a.kind == ActionKind.SMS && a.message.isBlank()) {
-                    reply("📱 ما نص الرسالة؟")
+                    reply("ما نص الرسالة؟")
                     return
                 }
                 val candidates = resolveRecipients(a.recipient)
@@ -1029,9 +1029,9 @@ fun LionApp() {
                 } else {
                     val whenLine = a.triggerAt?.let { "\n⏱ ${TimeFmt.whenText(it)}" } ?: ""
                     val head = if (a.kind == ActionKind.SMS) {
-                        "📱 رسالة جاهزة:\n«${a.message}»$whenLine\n\nاختر المستلم للتأكيد:"
+                        "رسالة جاهزة:\n«${a.message}»$whenLine\n\nاختر المستلم للتأكيد:"
                     } else {
-                        "📞 اتصال$whenLine\n\nاختر الرقم للتأكيد:"
+                        "اتصال$whenLine\n\nاختر الرقم للتأكيد:"
                     }
                     reply(head, PendingAction(a.kind, a.message, a.triggerAt, candidates.take(5)))
                 }
@@ -1464,7 +1464,7 @@ fun LionApp() {
                         "⚠️ تعذر الوصول إلى مزود يرد حالياً. تحقق من الاتصال أو جرّب مزوداً آخر."
                     }
                     if (!central) {
-                        reply += "\n\n🔒 الوضع اليدوي: بقيت على المزود الذي اخترته ولم أبدّل تلقائياً. " +
+                        reply += "\n\nالوضع اليدوي: بقيت على المزود الذي اخترته ولم أبدّل تلقائياً. " +
                             "تحقق من المفتاح/الموديل أو اختر مزوداً آخر، أو فعّل «مساعدة العقل المركزي في الوضع اليدوي» من الإعدادات."
                     }
                 }
@@ -1474,7 +1474,7 @@ fun LionApp() {
             if (manualMode && switchedTo != null && chosenProvider != null &&
                 switchedTo.provider != chosenProvider && !reply.startsWith("⚠️")
             ) {
-                reply += "\n\n↪️ توقف " + RoutePolicy.shortName(chosenProvider) +
+                reply += "\n\nتوقف " + RoutePolicy.shortName(chosenProvider) +
                     (if (lastErrorReply.isNotBlank()) " (" + lastErrorReply.replace("\n", " ").take(80) + ")" else "") +
                     " — حُفظ عملك وتابع " + RoutePolicy.shortName(switchedTo.provider) + " من النقطة نفسها."
             }
@@ -1558,9 +1558,9 @@ fun LionApp() {
                         ) {
                             reply = verdict.corrected
                             used = judge
-                            reply += "\n\n🧭 دقّق العقل المركزي الإجابة واعتمد النسخة المصححة."
+                            reply += "\n\nدقّق العقل المركزي الإجابة واعتمد النسخة المصححة."
                         } else {
-                            reply += "\n\n🧭 تحقق العقل المركزي: " + note.take(240)
+                            reply += "\n\nتحقق العقل المركزي: " + note.take(240)
                         }
                     }
                 }
@@ -1642,7 +1642,7 @@ fun LionApp() {
                             ) {
                                 reply = synthesized
                             } else {
-                                reply += "\n\n🧩 " + Consensus.label(percent) +
+                                reply += "\n\n" + Consensus.label(percent) +
                                     " (" + percent + "%) بين إجابتين؛ عُرضت الإجابة الأقوى."
                             }
                         }
@@ -1668,10 +1668,10 @@ fun LionApp() {
                     SmartRouter.label(route, null)
                 }
                 routeLabel +
-                    (if (sources.isNotEmpty()) " · 🌐 مصادر ويب" else "") +
-                    (if (toolNames.isNotEmpty()) " · 🧰 " + toolNames.distinct().take(4).joinToString("، ") else "") +
+                    (if (sources.isNotEmpty()) " · مصادر ويب" else "") +
+                    (if (toolNames.isNotEmpty()) " · " + toolNames.distinct().take(4).joinToString("، ") else "") +
                     (if (agentAsked) " · 💬 بانتظار ردك" else "") +
-                    (if (consensusPercent >= 0) " · 🧩 " + consensusPercent + "%" else "")
+                    (if (consensusPercent >= 0) " · " + consensusPercent + "%" else "")
             }
             toolStatus.remove(chatId)
             agentProgress.remove(chatId)
@@ -1801,7 +1801,7 @@ fun LionApp() {
             )
         if (imageAsText && ImageToText.pickProvider(prefs) == null) {
             messages = messages + Message(
-                "⚠️ هذه الدردشة لا تقرأ الصور مباشرة. لتحليلها أضف مفتاح مزود يقرأ الصور (Gemini المجاني من AI Studio مثلاً) في الإعدادات، فيحوّل التطبيق الصور إلى نص ويرسلها لأي دردشة ويب أو موديل. أو فعّل «🧠 تلقائي».",
+                "⚠️ هذه الدردشة لا تقرأ الصور مباشرة. لتحليلها أضف مفتاح مزود يقرأ الصور (Gemini المجاني من AI Studio مثلاً) في الإعدادات، فيحوّل التطبيق الصور إلى نص ويرسلها لأي دردشة ويب أو موديل. أو فعّل «تلقائي».",
                 false
             )
             saveCurrent()
@@ -2407,7 +2407,7 @@ fun LionApp() {
         AlertDialog(
             onDismissRequest = { renameTarget = null },
             containerColor = Color(0xFF1A1A1A),
-            title = { Text("✏️ تغيير اسم المحادثة", color = Color(0xFFFFB800)) },
+            title = { Text("تغيير اسم المحادثة", color = Color(0xFFFFB800)) },
             text = {
                 OutlinedTextField(
                     value = renameText,
@@ -2441,7 +2441,7 @@ fun LionApp() {
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             containerColor = Color(0xFF1A1A1A),
-            title = { Text("🗑️ حذف المحادثة", color = Color(0xFFE94560)) },
+            title = { Text("حذف المحادثة", color = Color(0xFFE94560)) },
             text = { Text("سيتم حذف «${deleting.title}» نهائياً.", color = Color.White) },
             confirmButton = {
                 TextButton(onClick = {

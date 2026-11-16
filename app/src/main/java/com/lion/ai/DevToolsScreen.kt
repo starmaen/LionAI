@@ -77,7 +77,7 @@ fun DevToolsScreen(
         containerColor = T_DARK,
         topBar = {
             TopAppBar(
-                title = { Text("🧰 أدوات المطوّر", color = T_GOLD, fontWeight = FontWeight.Bold) },
+                title = { Text("أدوات المطوّر", color = T_GOLD, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { if (tab == "home") onBack() else tab = "home" }) {
                         Icon(Icons.Filled.ArrowBack, "رجوع", tint = T_GOLD)
@@ -121,17 +121,17 @@ private fun ToolsHome(
             Spacer(Modifier.height(10.dp))
         }
         item {
-            ToolCard("🌐", "متصفح الويب", "جلب صفحة، استخراج النص والأكواد والروابط والصور، استدعاء API، وتنزيل ملفات") { onTab("web") }
+            ToolCard("◆", "متصفح الويب", "جلب صفحة، استخراج النص والأكواد والروابط والصور، استدعاء API، وتنزيل ملفات") { onTab("web") }
             ToolCard("🐙", "GitHub Explorer", "استعراض المستودعات، الشجرة، الملفات، README، الفروع، Issues، PRs، Actions") { onOpenGitHub() }
-            ToolCard("🖥️", "البيئة المحلية", "فحص مساحة العمل، تثبيت الأدوات، ربط مزودات OpenCode، وTerminal حقيقي") { onTab("env") }
-            ToolCard("📦", "صور Boot / Recovery", "فك boot.img وrecovery.img، تعديل cmdline وramdisk، ثم إعادة التركيب وتنزيل الناتج") { onTab("boot") }
-            ToolCard("📁", "قارئ الملفات", "قراءة وكتابة ملفات مساحة العمل، CSV، JSON، ZIP، وحفظ التعديلات") { onTab("files") }
+            ToolCard("◆", "البيئة المحلية", "فحص مساحة العمل، تثبيت الأدوات، ربط مزودات OpenCode، وTerminal حقيقي") { onTab("env") }
+            ToolCard("◆", "صور Boot / Recovery", "فك boot.img وrecovery.img، تعديل cmdline وramdisk، ثم إعادة التركيب وتنزيل الناتج") { onTab("boot") }
+            ToolCard("◆", "قارئ الملفات", "قراءة وكتابة ملفات مساحة العمل، CSV، JSON، ZIP، وحفظ التعديلات") { onTab("files") }
             ToolCard("🗄️", "قواعد البيانات", "إنشاء SQLite، تنفيذ SQL، عرض المخطط، استيراد/تصدير JSON") { onTab("db") }
-            ToolCard("🔍", "محلل الكود", "مقاييس، دوال، كلاسات، Imports، تعقيد، TODO/FIXME، وملاحظات") { onTab("code") }
-            ToolCard("🚀", "Git Push", "إنشاء/تعديل الملفات وإنشاء الفروع وPRs من شاشة GitHub") { onOpenGitHub() }
-            ToolCard("🧠", "مدير الأدوات", "حالة Function Calling، صلاحيات الكتابة، وربط الأدوات بالمحادثة") { onTab("manager") }
+            ToolCard("◆", "محلل الكود", "مقاييس، دوال، كلاسات، Imports، تعقيد، TODO/FIXME، وملاحظات") { onTab("code") }
+            ToolCard("◆", "Git Push", "إنشاء/تعديل الملفات وإنشاء الفروع وPRs من شاشة GitHub") { onOpenGitHub() }
+            ToolCard("◆", "مدير الأدوات", "حالة Function Calling، صلاحيات الكتابة، وربط الأدوات بالمحادثة") { onTab("manager") }
             ToolCard("📜", "سجل الأدوات", "آخر ما نفّذه الذكاء الاصطناعي من أدوات ونتائجها") { onTab("audit") }
-            ToolCard("⚙️", "إعدادات الذكاء", "التوكن، المستودع الافتراضي، تشغيل الأدوات والكتابة") { onOpenSettings() }
+            ToolCard("◆", "إعدادات الذكاء", "التوكن، المستودع الافتراضي، تشغيل الأدوات والكتابة") { onOpenSettings() }
         }
     }
 }
@@ -231,7 +231,7 @@ private fun WebToolTab() {
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = T_GOLD)
-            ) { Text(if (apiMode) "📡 استدعاء" else "🌐 جلب", color = T_DARK) }
+            ) { Text(if (apiMode) "📡 استدعاء" else "جلب", color = T_DARK) }
             if (!apiMode) {
                 TextButton(enabled = !loading, onClick = {
                     runRemote {
@@ -308,7 +308,7 @@ private fun FilesToolTab(context: Context) {
     LaunchedEffect(path) { refresh() }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-        Text("📁 مساحة العمل: ${FileTools.root(context).absolutePath}", color = T_MUTED, fontSize = 10.sp)
+        Text("مساحة العمل: ${FileTools.root(context).absolutePath}", color = T_MUTED, fontSize = 10.sp)
         OutlinedTextField(
             value = path,
             onValueChange = { path = it },
@@ -322,7 +322,7 @@ private fun FilesToolTab(context: Context) {
             TextButton(onClick = {
                 if (path.isNotBlank()) path = path.substringBeforeLast('/', "")
             }) { Text("⬆️ أعلى", color = T_GOLD, fontSize = 12.sp) }
-            TextButton(onClick = { refresh() }) { Text("🔄 تحديث", color = T_GOLD, fontSize = 12.sp) }
+            TextButton(onClick = { refresh() }) { Text("تحديث", color = T_GOLD, fontSize = 12.sp) }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -352,7 +352,7 @@ private fun FilesToolTab(context: Context) {
                         searching = false
                     }
                 }
-            ) { Text(if (searching) "⏳" else "🔎", color = T_GOLD) }
+            ) { Text(if (searching) "⏳" else "◆", color = T_GOLD) }
         }
         if (selected == null && search.isNotBlank()) {
             if (searchResults.isEmpty()) {
@@ -363,7 +363,7 @@ private fun FilesToolTab(context: Context) {
                     Modifier.fillMaxWidth().clickable { openFile(match.path) }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🔎")
+                    Text("◆")
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
                         Text(match.path, color = Color.White, fontSize = 12.sp)
@@ -389,7 +389,7 @@ private fun FilesToolTab(context: Context) {
                         selected = if (path.isBlank()) newPath.trim() else "$path/${newPath.trim()}"
                         content = ""
                         csvInfo = null
-                        status = "✏️ ملف جديد — اكتب المحتوى ثم احفظ"
+                        status = "ملف جديد — اكتب المحتوى ثم احفظ"
                         newPath = ""
                     }
                 }) { Text("➕ جديد", color = T_GOLD, fontSize = 12.sp) }
@@ -407,7 +407,7 @@ private fun FilesToolTab(context: Context) {
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(if (entry.directory) "📁" else "📄")
+                    Text(if (entry.directory) "◆" else "◆")
                     Spacer(Modifier.width(8.dp))
                     Text(entry.path, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
                     if (!entry.directory) Text(FileTools.formatSize(entry.size), color = T_MUTED, fontSize = 10.sp)
@@ -417,7 +417,7 @@ private fun FilesToolTab(context: Context) {
         }
         if (selected != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("📄 ${selected.orEmpty()}", color = T_GOLD, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text("${selected.orEmpty()}", color = T_GOLD, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { selected = null; content = ""; csvInfo = null }) {
                     Text("رجوع", color = T_GOLD, fontSize = 12.sp)
                 }
@@ -458,7 +458,7 @@ private fun FilesToolTab(context: Context) {
                             refresh()
                         }.onFailure { status = "⚠️ ${it.message}" }
                     }
-                }) { Text("🗑️ حذف", color = T_RED, fontSize = 12.sp) }
+                }) { Text("حذف", color = T_RED, fontSize = 12.sp) }
             }
         }
         if (status.isNotBlank()) Text(status, color = T_MUTED, fontSize = 12.sp)
@@ -514,7 +514,7 @@ private fun DatabaseToolTab(context: Context) {
             }) { Text("🗂️ المخطط", color = T_GOLD, fontSize = 12.sp) }
             TextButton(enabled = !loading, onClick = {
                 execute { DatabaseTools.list(context).joinToString("\n") { "• $it" }.ifBlank { "لا قواعد بيانات" } }
-            }) { Text("📚 القواعد", color = T_GOLD, fontSize = 12.sp) }
+            }) { Text("القواعد", color = T_GOLD, fontSize = 12.sp) }
         }
         if (status.isNotBlank()) Text(status, color = T_MUTED, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
@@ -574,7 +574,7 @@ private fun CodeToolTab(context: Context) {
                 }.getOrElse { "❌ ${it.message}" }
             },
             colors = ButtonDefaults.buttonColors(containerColor = T_GOLD)
-        ) { Text("🔍 تحليل", color = T_DARK) }
+        ) { Text("تحليل", color = T_DARK) }
         Spacer(Modifier.height(8.dp))
         if (report.isNotBlank()) Text(report.take(60_000), color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
     }
@@ -645,7 +645,7 @@ private fun ToolManagerTab(
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-        Text("🧠 مدير الأدوات", color = T_GOLD, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("مدير الأدوات", color = T_GOLD, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         LionChatSettingsCard(prefs)
         Text(
             "يستخدم النموذج بروتوكول Function Calling نصياً موحّداً يعمل مع جميع مزودات API، دون الحاجة لدعم خاص من كل مزود.",
@@ -727,7 +727,7 @@ private fun ToolManagerTab(
         Spacer(Modifier.height(10.dp))
         HorizontalDivider(color = Color(0xFF2A2A2A))
         Spacer(Modifier.height(10.dp))
-        Text("🖥️ خادم محلي — مزود الخلفية", color = T_GOLD, fontWeight = FontWeight.Bold)
+        Text("خادم محلي — مزود الخلفية", color = T_GOLD, fontWeight = FontWeight.Bold)
         Text(
             "الخادم المحلي يوجّه الطلبات لهذا المزود. اتركه فارغاً لاستخدام المزود النشط. أمثلة: gemini, deepseek, qwen, openrouter, groq.",
             color = T_MUTED,
@@ -755,7 +755,7 @@ private fun ToolManagerTab(
         Spacer(Modifier.height(10.dp))
         HorizontalDivider(color = Color(0xFF2A2A2A))
         Spacer(Modifier.height(10.dp))
-        Text("🧪 اختبار المزودات والخادم", color = T_GOLD, fontWeight = FontWeight.Bold)
+        Text("اختبار المزودات والخادم", color = T_GOLD, fontWeight = FontWeight.Bold)
         Text(
             "اختبار الخادم يرسل طلباً عبر HTTP إلى 127.0.0.1 (المسار نفسه الذي يستخدمه التطبيق). فحص المزودات يجرّب كل مزود متاح بكلمة واحدة.",
             color = T_MUTED,
@@ -774,7 +774,7 @@ private fun ToolManagerTab(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
-            ) { Text("🖥️ اختبار الخادم", color = T_GOLD) }
+            ) { Text("اختبار الخادم", color = T_GOLD) }
             Button(
                 enabled = !working,
                 onClick = {
@@ -875,14 +875,14 @@ private fun ToolManagerTab(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
-            ) { Text("📋 استدعاء الموديلات", color = T_GOLD) }
+            ) { Text("استدعاء الموديلات", color = T_GOLD) }
         }
         if (providerReport.isNotBlank()) {
             Spacer(Modifier.height(6.dp))
             Text(providerReport.take(4000), color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(10.dp))
-        Text("📦 حزم الجهاز/الخادم", color = T_GOLD, fontWeight = FontWeight.Bold)
+        Text("حزم الجهاز/الخادم", color = T_GOLD, fontWeight = FontWeight.Bold)
         Text(
             "تثبيت الأدوات الناقصة (git/java/gradle/node/python/jq/ffmpeg...) عبر pkg أو apt داخل الجهاز أو الخادم الداخلي.",
             color = T_MUTED,
@@ -900,7 +900,7 @@ private fun ToolManagerTab(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = T_CARD)
-            ) { Text(if (working) "…" else "🔍 فحص", color = T_GOLD) }
+            ) { Text(if (working) "…" else "فحص", color = T_GOLD) }
             Button(
                 enabled = !working,
                 onClick = {
@@ -925,21 +925,21 @@ private fun ToolManagerTab(
         Spacer(Modifier.height(10.dp))
         Text("الأدوات المتاحة", color = T_GOLD, fontWeight = FontWeight.Bold)
         listOf(
-            "🌐 الويب: جلب/API/بحث/تنزيل" to ToolGroup.WEB,
+            "الويب: جلب/API/بحث/تنزيل" to ToolGroup.WEB,
             "🐙 GitHub: قراءة/كتابة/فروع/Issues/PRs" to ToolGroup.GITHUB,
-            "📁 الملفات: مساحة عمل/ZIP/CSV" to ToolGroup.FILES,
+            "الملفات: مساحة عمل/ZIP/CSV" to ToolGroup.FILES,
             "🗄️ SQLite: استعلام/مخطط/JSON" to ToolGroup.DATABASE,
-            "🔍 الكود: مقاييس/تعقيد/اعتماديات" to ToolGroup.CODE,
+            "الكود: مقاييس/تعقيد/اعتماديات" to ToolGroup.CODE,
             "🧰 أدوات: JSON/Base64/Hash/Regex" to ToolGroup.UTIL,
-            "🔌 الموصلات: Drive/Gmail/Calendar/Notion/Slack" to ToolGroup.CONNECTORS,
+            "الموصلات: Drive/Gmail/Calendar/Notion/Slack" to ToolGroup.CONNECTORS,
             "🔥 Firebase: Firestore/Storage عبر REST" to ToolGroup.FIREBASE,
-            "🛡️ الأمان: فحص الأسرار + بوابات الجودة" to ToolGroup.QUALITY,
+            "الأمان: فحص الأسرار + بوابات الجودة" to ToolGroup.QUALITY,
             "⚡ التنفيذ والبناء: Gradle/JDK/أوامر محلية" to ToolGroup.SHELL,
-            "🛡️ الحوكمة والمخطط: Manifest وبوابات" to ToolGroup.CONTROL,
-            "🧠 الذاكرة ونقاط الاستئناف" to ToolGroup.MEMORY,
-            "🔗 خوادم MCP" to ToolGroup.MCP,
+            "الحوكمة والمخطط: Manifest وبوابات" to ToolGroup.CONTROL,
+            "الذاكرة ونقاط الاستئناف" to ToolGroup.MEMORY,
+            "خوادم MCP" to ToolGroup.MCP,
             "💬 الاتصالات: واتساب/تلغرام/إشعارات" to ToolGroup.COMMS,
-            "🧭 إدارة الأدوات" to ToolGroup.META
+            "إدارة الأدوات" to ToolGroup.META
         ).forEach { (label, _) ->
             Text("• $label", color = Color.White, fontSize = 12.sp)
         }
@@ -949,7 +949,7 @@ private fun ToolManagerTab(
                 Text("🐙 GitHub", color = T_GOLD)
             }
             Button(onClick = onOpenSettings, colors = ButtonDefaults.buttonColors(containerColor = T_CARD)) {
-                Text("⚙️ الإعدادات", color = T_GOLD)
+                Text("الإعدادات", color = T_GOLD)
             }
         }
     }

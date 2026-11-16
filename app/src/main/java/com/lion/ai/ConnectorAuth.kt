@@ -58,7 +58,7 @@ object ConnectorAuth {
 
     val all: List<ConnectorDef> = listOf(
         ConnectorDef(
-            "google_drive", "Google Drive", "📁", AuthType.GOOGLE,
+            "google_drive", "Google Drive", "◆", AuthType.GOOGLE,
             "قراءة ورفع وإدارة ملفات الدرايف",
             listOf(
                 "openid", "email", "profile",
@@ -83,7 +83,7 @@ object ConnectorAuth {
             )
         ),
         ConnectorDef(
-            "notion", "Notion", "📝", AuthType.TOKEN,
+            "notion", "Notion", "◆", AuthType.TOKEN,
             "البحث في الصفحات وقراءتها وإنشاء صفحات",
             tokenHint = "التقط توكن Integration من notion.so/my-integrations وشارك الصفحة معه"
         ),
@@ -103,7 +103,7 @@ object ConnectorAuth {
             tokenHint = "الصق بالصيغة PHONE_NUMBER_ID:ACCESS_TOKEN من Meta for Developers. هذا لرقم أعمال رسمي، وليس حساب واتساب الشخصي."
         ),
         ConnectorDef(
-            "generic", "خدمة REST مخصّصة", "🔗", AuthType.CUSTOM,
+            "generic", "خدمة REST مخصّصة", "◆", AuthType.CUSTOM,
             "اربط أي API بمفتاح أو رأس مصادقة خاص بك"
         )
     )

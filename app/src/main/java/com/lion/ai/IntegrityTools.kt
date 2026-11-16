@@ -32,7 +32,7 @@ object IntegrityTools {
         val largest = hashed.sortedByDescending { it.size }.take(5)
 
         return buildString {
-            append("🛡️ فحص سلامة الملفات (${algorithm.uppercase()})\n")
+            append("فحص سلامة الملفات (${algorithm.uppercase()})\n")
             append("• المسار: ").append(path.ifBlank { "مساحة العمل" }).append('\n')
             append("• الملفات: ").append(hashes.size)
             append(" | مبصومة: ").append(hashed.size)
@@ -56,7 +56,7 @@ object IntegrityTools {
                 append("\n⏭️ لم تُبصم (").append(failed.size).append("):\n")
                 failed.take(10).forEach { append("  - ").append(it.path).append(": ").append(it.error).append('\n') }
             }
-            append("\n📦 أكبر الملفات:\n")
+            append("\nأكبر الملفات:\n")
             largest.forEach { append("  - ").append(it.path).append(" (").append(FileTools.formatSize(it.size)).append(")\n") }
 
             if (baselinePath.isNotBlank()) {
@@ -69,17 +69,17 @@ object IntegrityTools {
                     val changed = current.keys.filter { key -> baseline.containsKey(key) && baseline[key] != current[key] }
                     val missing = baseline.keys - current.keys
                     val added = current.keys - baseline.keys
-                    append("\n📊 مقارنة بخط الأساس (").append(baselinePath).append("):\n")
+                    append("\nمقارنة بخط الأساس (").append(baselinePath).append("):\n")
                     append("• مطابق: ").append(matches)
                     append(" | متغير: ").append(changed.size)
                     append(" | مفقود: ").append(missing.size)
                     append(" | جديد: ").append(added.size).append('\n')
                     if (changed.isNotEmpty()) {
-                        append("✏️ تغيّرت:\n")
+                        append("تغيّرت:\n")
                         changed.take(15).forEach { append("  - ").append(it).append('\n') }
                     }
                     if (missing.isNotEmpty()) {
-                        append("🗑️ حُذفت:\n")
+                        append("حُذفت:\n")
                         missing.sorted().take(15).forEach { append("  - ").append(it).append('\n') }
                     }
                     if (added.isNotEmpty()) {

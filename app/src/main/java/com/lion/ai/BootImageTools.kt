@@ -172,7 +172,7 @@ object BootImageTools {
         val m = headerOf(file)
         val h = m.header
         return buildString {
-            append("📦 ").append(FileTools.relative(context, file)).append(" (").append(file.length()).append(" بايت)\n")
+            append("").append(FileTools.relative(context, file)).append(" (").append(file.length()).append(" بايت)\n")
             append("إصدار الترويسة: ").append(h.getInt("header_version"))
                 .append("، page_size=").append(h.getLong("page_size")).append('\n')
             append("kernel=").append(m.kernel.size).append("  ramdisk=").append(m.ramdisk.size)

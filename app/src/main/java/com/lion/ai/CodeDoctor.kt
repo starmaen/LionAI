@@ -64,10 +64,10 @@ object CodeDoctor {
             manifest = manifest
         )
         val level = when {
-            score >= 85 -> "🟢 جاهز"
+            score >= 85 -> "جاهز"
             score >= 65 -> "🟡 جاهز مع ملاحظات"
             score >= 40 -> "🟠 يحتاج عملاً قبل الاعتماد"
-            else -> "🔴 غير جاهز"
+            else -> "غير جاهز"
         }
 
         val actions = mutableListOf<String>()
@@ -110,7 +110,7 @@ object CodeDoctor {
             } else {
                 append("• Manifest: لا يوجد لهذه الجلسة\n")
             }
-            append("\n📊 صحة الكود:\n")
+            append("\nصحة الكود:\n")
             append("• TODO/FIXME: ").append(todos)
             append(" | أسرار محتملة: ").append(secretHits)
             append(" | أسطر طويلة: ").append(longLines)
@@ -136,7 +136,7 @@ object CodeDoctor {
                 DependencyAudit.audit(context, path, online, maxFiles)
             }.getOrElse { "تعذّر تدقيق الاعتماديات: ${it.message}" }
             append("\n").append(deps.take(3500)).append('\n')
-            append("\n🎯 الخطوات المقترحة:\n")
+            append("\nالخطوات المقترحة:\n")
             actions.take(10).forEachIndexed { index, action ->
                 append(index + 1).append(". ").append(action).append('\n')
             }

@@ -510,7 +510,7 @@ object ToolAgent {
             return answer
         }
         fun legacyStatusReport(complete: Boolean, why: String): String {
-            val sb = StringBuilder("\n\n——\n📋 تقرير التنفيذ\n")
+            val sb = StringBuilder("\n\n——\nتقرير التنفيذ\n")
             if (complete) {
                 sb.append("• الحالة: ✅ اكتملت المهمة\n")
             } else {
@@ -576,7 +576,7 @@ object ToolAgent {
                 return finish(text, false, reason)
             }
             compressHistory()
-            publish("🧠 $label يخطط للخطوة ${step + 1}")
+            publish("$label يخطط للخطوة ${step + 1}")
             // صفحات الويب (خاصة نماذج التفكير بعد نتائج طويلة كسجل بناء) قد تحتاج دقائق للرد: مهلة 120ث كانت تقطع الرد
         // وتهجره في الصفحة. نمنحها حتى 6 دقائق للخطوة الواحدة.
         val stepCap = if (WebChatRuntime.handles(provider)) 360_000L else 120_000L

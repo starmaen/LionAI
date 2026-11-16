@@ -239,7 +239,7 @@ object CodeAnalyzer {
     }
 
     fun report(result: Result, maxIssues: Int = 20): String = buildString {
-        append("🔍 تحليل: ").append(result.name).append(" (").append(result.language).append(")\n")
+        append("تحليل: ").append(result.name).append(" (").append(result.language).append(")\n")
         append("• الأسطر: ").append(result.lines)
         append(" | كود: ").append(result.codeLines)
         append(" | فارغ: ").append(result.blankLines)
@@ -250,11 +250,11 @@ object CodeAnalyzer {
         val avg = if (result.functions > 0) "%.1f".format(result.complexity.toDouble() / result.functions) else "—"
         append(" | متوسط التعقيد/دالة: ").append(avg).append('\n')
         if (result.todos.isNotEmpty()) {
-            append("\n📌 TODO/FIXME (").append(result.todos.size).append("):\n")
+            append("\nTODO/FIXME (").append(result.todos.size).append("):\n")
             result.todos.take(maxIssues).forEach { append("  - سطر ").append(it.line).append(": ").append(it.message).append('\n') }
         }
         if (result.dependencies.isNotEmpty()) {
-            append("\n📦 الاعتماديات/الاستيرادات (").append(result.dependencies.size).append("):\n")
+            append("\nالاعتماديات/الاستيرادات (").append(result.dependencies.size).append("):\n")
             result.dependencies.take(25).forEach { append("  - ").append(it).append('\n') }
         }
         if (result.issues.isNotEmpty()) {
@@ -265,7 +265,7 @@ object CodeAnalyzer {
         }
         if (result.duplicateLines > 0) append("\n♻️ أسطر مكرّرة: ").append(result.duplicateLines).append('\n')
         if (result.functionList.isNotEmpty()) {
-            append("\n🧩 الدوال (").append(result.functionList.size).append("):\n")
+            append("\nالدوال (").append(result.functionList.size).append("):\n")
             result.functionList.take(30).forEach {
                 append("  - ").append(it.name).append("() سطر ").append(it.line)
                 if (it.isAsync) append(" [async]")

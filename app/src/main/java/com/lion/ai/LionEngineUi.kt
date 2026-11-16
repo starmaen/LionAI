@@ -71,7 +71,7 @@ fun LionEngineCard() {
             if (picked != null) {
                 selected = picked.modelId
                 ctxSize = picked.ctx
-                message = "⚙️ ضُبطت التركيبة المناسبة لجهازك تلقائياً: ${picked.modelId} · سياق ${picked.ctx} (${picked.why})"
+                message = "ضُبطت التركيبة المناسبة لجهازك تلقائياً: ${picked.modelId} · سياق ${picked.ctx} (${picked.why})"
             }
         }
     }
@@ -139,7 +139,7 @@ fun LionEngineCard() {
                             selected = rec.modelId
                             ctxSize = rec.ctx
                             message = if (LionEngine.phase == LionEngine.Phase.RUNNING)
-                                "🔁 طُبّقت التركيبة. أوقف المحرّك ثم شغّله ليُطبَّق النموذج/السياق الجديد."
+                                "طُبّقت التركيبة. أوقف المحرّك ثم شغّله ليُطبَّق النموذج/السياق الجديد."
                             else "✅ طُبّقت التركيبة الموصى بها."
                         }) { Text("طبّق", color = ENGINE_GOLD, fontSize = 10.sp) }
                     }
@@ -156,7 +156,7 @@ fun LionEngineCard() {
                             LionEngine.setModel(prefs, m.id)
                             // المحرّك يحمل النموذج في الذاكرة عند التشغيل: تغيير الملف يحتاج إعادة تشغيل.
                             message = if (LionEngine.phase == LionEngine.Phase.RUNNING)
-                                "🔄 النموذج تغيّر إلى ${m.label}. اضغط «⏹️ إيقاف» ثم «▶️ تشغيل» ليُحمَّل النموذج الجديد."
+                                "النموذج تغيّر إلى ${m.label}. اضغط «⏹️ إيقاف» ثم «▶️ تشغيل» ليُحمَّل النموذج الجديد."
                             else "✅ سيُستخدم ${m.label} عند التشغيل."
                         }
                         .padding(vertical = 3.dp),
@@ -233,7 +233,7 @@ fun LionEngineCard() {
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = ENGINE_CARD)
-                ) { Text("📦 تثبيت المحرّك", color = ENGINE_GOLD, fontSize = 11.sp) }
+                ) { Text("تثبيت المحرّك", color = ENGINE_GOLD, fontSize = 11.sp) }
 
                 Button(
                     enabled = !busy && LinuxEnv.ready(context),
@@ -270,10 +270,10 @@ fun LionEngineCard() {
                     )
                 }
                 TextButton(enabled = !busy, onClick = { run("اختبار المحرّك") { LionEngine.selfTest(context) } }) {
-                    Text("🧪 اختبار", color = ENGINE_GOLD, fontSize = 11.sp)
+                    Text("اختبار", color = ENGINE_GOLD, fontSize = 11.sp)
                 }
                 TextButton(enabled = !busy, onClick = { run("فحص") { LionEngine.statusText(context) } }) {
-                    Text("🔎 حالة", color = ENGINE_GOLD, fontSize = 11.sp)
+                    Text("حالة", color = ENGINE_GOLD, fontSize = 11.sp)
                 }
             }
 

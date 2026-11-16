@@ -13,8 +13,8 @@ import org.json.JSONObject
  */
 enum class MissionFocus(val label: String) {
     FAST("⚡ سريع"),
-    RELIABLE("🛡️ موثوق"),
-    TEACHING("🎓 تعليمي"),
+    RELIABLE("موثوق"),
+    TEACHING("تعليمي"),
     ENGINEERING("🛠️ هندسي")
 }
 

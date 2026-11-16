@@ -235,7 +235,7 @@ object LibraryAudit {
         val fresh = results.filter { it.error == null && it.level == "same" }
         val errors = results.filter { it.error != null }
         return buildString {
-            appendLine("📚 فحص إصدارات المكتبات (${results.size} مكتبة):")
+            appendLine("فحص إصدارات المكتبات (${results.size} مكتبة):")
             appendLine()
             results.forEach { info ->
                 if (info.error != null) {
@@ -263,7 +263,7 @@ object LibraryAudit {
         val info = lookup(ecosystem, name, current, true)
         if (info.error != null) return "⚠️ ${info.name}: ${info.error}"
         return buildString {
-            appendLine("📦 ${info.ecosystem}/${info.name}")
+            appendLine("${info.ecosystem}/${info.name}")
             appendLine("المثبّت: ${info.current.ifBlank { "غير محدد" }}")
             appendLine("الأحدث: ${info.latest} (${levelLabel(info.level)})")
             if (info.license.isNotBlank()) appendLine("الترخيص: ${info.license}")
