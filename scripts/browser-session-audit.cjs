@@ -71,10 +71,11 @@ const fixture=(editable=false,cover=false)=>`<!doctype html><html><body>
   const response=await p.goto('https://arena.ai/text/direct');assert.equal(response.status(),403);
   assert.equal(JSON.parse(await p.evaluate(script('probe'))).status,'needs_input');await p.close();
  });
- await check('Arena-like unlabelled type=button send control cannot be found by current adapter',async()=>{
+ await check('Arena-like unlabelled type=button send control is found by the send fallback',async()=>{
   const p=await browser.newPage();await p.route('https://arena.ai/**',r=>r.fulfill({body:fixture(false,false).replace('aria-label="Send message"','type="button"'),contentType:'text/html'}));
   await p.goto('https://arena.ai/text/direct');assert.equal(JSON.parse(await p.evaluate(script('prepare'))).status,'prepared');
-  assert.equal(JSON.parse(await p.evaluate(script('submit'))).status,'needs_send');await p.close();
+  // المحوّل يملك احتياطياً لإيجاد زر الإرسال غير الموسوم (تحسّن لاحق) فيُضغط بدل needs_send
+  assert.equal(JSON.parse(await p.evaluate(script('submit'))).status,'clicked');await p.close();
  });
  await browser.close();
  console.log(JSON.stringify(results,null,2));if(results.some(r=>r.status==='FAIL'))process.exitCode=1;
