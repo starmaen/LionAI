@@ -82,4 +82,3 @@ dependencies {
     testImplementation("org.json:json:20240303")
 }
 
-tasks.withType<Test> { filter { excludeTestsMatching("*WebRouteIsolationTest*") } }

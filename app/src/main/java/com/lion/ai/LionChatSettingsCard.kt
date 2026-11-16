@@ -108,6 +108,17 @@ fun LionChatSettingsCard(prefs: SharedPreferences, onActivate: (String) -> Unit 
                         prefs.edit().putBoolean(WebChatRuntime.CENTRAL, it).apply()
                     })
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("أدوات المطور عبر الجسر (تنفيذ المهام من داخل التطبيق)", color = Color.White, modifier = Modifier.weight(1f))
+                    Switch(WebToolBridge.enabled(prefs), {
+                        prefs.edit().putBoolean(WebToolBridge.PREF_ENABLED, it).apply()
+                    })
+                }
+                Text(
+                    "مفعّل: صفحة الموقع تنفّذ المهام بأدوات التطبيق (ملفات/GitHub/أوامر) عبر الجسر مثل أي مزود فردي. " +
+                        "معطّل: الصفحة للدردشة فقط بلا دورة أدوات.",
+                    color = Color.LightGray, fontSize = 12.sp
+                )
                 Row {
                     TextButton(enabled = !busy, onClick = {
                         val edit = prefs.edit()

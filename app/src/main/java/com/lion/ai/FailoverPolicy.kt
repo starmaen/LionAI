@@ -17,6 +17,10 @@ object FailoverPolicy {
     /**
      * بدائل تأتي بعد [primary] فقط. تشمل مزودات API المتاحة وجلسات الويب الموثّقة،
      * وتستثني المزود نفسه والخادم المحلي/المخصص (لهما مسارهما).
+     *
+     * هوية الويب معزولة دائماً: إذا كان [primary] صفحة ويب مختارة (أو «Lion Chat»)
+     * فلا بدائل إطلاقاً — صفحة الدخول مزود مستقل بذاته، وفشلها يُعرض للمستخدم
+     * ولا يُنقل بصمت إلى مزود API (عزل WebRouteIsolationTest).
      */
     fun backupsFor(
         prefs: SharedPreferences,
@@ -24,6 +28,7 @@ object FailoverPolicy {
         primary: Route,
         limit: Int = 3
     ): List<Route> {
+        if (WebChatRuntime.handles(primary.provider)) return emptyList()
         if (!enabled(prefs)) return emptyList()
         return CentralBrain.rescueRoutes(prefs, kind, emptyList(), image = false, limit = limit + 2)
             .filter {

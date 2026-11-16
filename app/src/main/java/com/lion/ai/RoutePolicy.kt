@@ -134,10 +134,11 @@ object RoutePolicy {
         WebGateway.load(prefs)
         val chosen = appManualRoute(prefs)
         // An explicit website selection must never turn into an API answer, even in auto/assist mode.
-        if (WebChatRuntime.handles(chosen.provider)) {
-            val primary = chosen.copy(via = Channel.WEB)
-            return listOf(primary) + FailoverPolicy.backupsFor(prefs, kind, primary)
-        }
+        // العزل كامل: صفحة الويب المختارة (صفحة دخول الموقع) مزود مستقل بذاته — لا تُلحق خلفها
+        // بدائل فشل من مزودات API. إن كانت الصفحة بطيئة أو تحتاج تسجيل دخول فالمهمة تبقى عليها
+        // (يظهر سبب الفشل للمستخدم) ولا تُنفَّذ بصمت على مزود آخر. قنوات الفشل للمزودات API
+        // تعمل عبر assistEnabled/rescueRoutes في LionApp ولا تمس هذا الفرع.
+        if (WebChatRuntime.handles(chosen.provider)) return listOf(chosen.copy(via = Channel.WEB))
         if (isManual(prefs)) {
             ProviderStick.clear(prefs, chatId)
             // Keep LastRoute so a later return to auto stays on the working provider.

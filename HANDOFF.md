@@ -1,6 +1,35 @@
 # HANDOFF — حالة العمل وتقرير الفحص
 
-آخر تحديث: 2026-11-01 · راجع `git log --oneline -5` لمعرفة أحدث commit.
+آخر تحديث: 2026-11-16 · راجع `git log --oneline -5` لمعرفة أحدث commit.
+
+## جولة 2026-11-16 (3): عزل مزودات الويب — إصلاح بلاغ «صفحات الدخول ليست كأي مزود»
+
+**البلاغ:** مزودات الويب (صفحات الدخول: Arena/Gemini/DeepSeek/Claude…) كانت تعمل ممتازاً وتستخدم
+أدوات المطور من واجهة التطبيق عبر الجسر، ثم «بعض التعديلات أثرت سلباً» فصارت المهام لا تُنفَّذ عليها
+كأي مزود فردي.
+
+**السبب الجذري (موثّق من التاريخ):** commit `96e0b79` («Emoji removal v2 + failover + state glyphs»)
+أعاد `FailoverPolicy` وألحق بدائل فشل من مزودات API خلف **هوية الويب المختارة** في `RoutePolicy.appPlan`:
+`return listOf(primary) + FailoverPolicy.backupsFor(prefs, kind, primary)`.
+النتيجة: عند اختيار صفحة ويب، أي فشل/مهلة/حاجة تسجيل دخول كان يُجيب مزود API بديل بصمت —
+فالصفحة لم تعد «مزوداً فردياً» معزولاً، والوكيل/الأدوات يظهران وكأنهما لا يعملان عليها.
+`WebRouteIsolationTest` (الذي يقفل هذا العزل) بدأ يفشل، فاستُبعد من CI في `ea86a7b`
+(`excludeTestsMatching("*WebRouteIsolationTest*")`) بدل إصلاح الكود.
+
+**الإصلاح (هذا الجانب فقط):**
+- `RoutePolicy.appPlan`: فرع الويب عاد معزولاً بالكامل — `listOf(chosen.copy(via = Channel.WEB))`
+  بلا أي بدائل. تعليق الكود نفسه («must never turn into an API answer») أصبح محقّقاً.
+- `FailoverPolicy.backupsFor`: حماية داخلية — هوية الويب تُعيد `emptyList()` دائماً حتى لو
+  أُعيد استدعاؤها مستقبلاً. بدائل الفشل تعمل لمزودات API اليدوية عبر `assistEnabled`/`rescueRoutes`.
+- `app/build.gradle.kts`: حُذف استبعاد `WebRouteIsolationTest` من CI — العزل محميّ بالاختبار من جديد،
+  مع اختبار إضافي `failoverBackupsNeverFollowAWebIdentityEvenWhenFailoverIsEnabled`.
+- `LionChatSettingsCard`: أظهر مفتاح «أدوات المطور عبر الجسر» (`web_agent_tools`) في بطاقة Lion Chat —
+  كان مفتاحاً بلا واجهة، وتفعيله شرط تشغيل حلقة الأدوات لصفحات الويب في `LionApp`.
+
+**التحقق:** kotlinc 2.0.21 على كل مصادر app غير الـCompose مقابل android-35.jar: صفر أخطاء في
+`RoutePolicy.kt` و`FailoverPolicy.kt`، وصفر أخطاء صياغة في الملفات المعدّلة (أخطاء Compose-only
+مرجعية مكتبات غير متاحة محلياً). يجري `testDebugUnitTest` الكامل على GitHub Actions.
+
 
 ## ملخص سريع
 LionAI أصبح: أوضاع محادثة معزولة (GENERAL / CODE؛ التعلّم مدمج في CODE) + Control Plane (Manifest + بوابات جودة + توقيع HMAC) + مزود مخصص OpenAI-Compatible (LiteLLM/Ollama/Gateway) + طبقة أدوات موسّعة (SHELL/QUALITY/CONTROL/MEMORY/MCP).

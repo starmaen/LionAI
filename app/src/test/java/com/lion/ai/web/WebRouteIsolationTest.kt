@@ -24,4 +24,20 @@ class WebRouteIsolationTest {
         assertEquals(listOf("arena"), plan.map { it.provider })
         assertEquals(Channel.WEB, plan.single().via)
     }
+
+    /** أُعيد بعد أن ألحق 96e0b79 بدائل الفشل خلف صفحة الويب فانكسر العزل (سبق واستُبعد الاختبار من CI). */
+    @Test fun failoverBackupsNeverFollowAWebIdentityEvenWhenFailoverIsEnabled() {
+        val prefs = FakePrefs()
+        prefs.edit().putString("provider", "arena").putBoolean(FailoverPolicy.PREF, true)
+            .putString("api_key_gemini", "configured").apply()
+        val webPrimary = Route("arena", "web-session", Channel.WEB)
+        assertTrue(FailoverPolicy.backupsFor(prefs, TaskKind.GENERAL, webPrimary).isEmpty())
+        // مزود API حقيقي يحتفظ ببدائله: الفشل يعمل فقط خارج هوية الويب.
+        val apiPrefs = FakePrefs()
+        apiPrefs.edit().putString("provider", "gemini").putString("api_key_gemini", "configured")
+            .putBoolean(FailoverPolicy.PREF, true).apply()
+        val backups = FailoverPolicy.backupsFor(apiPrefs, TaskKind.GENERAL, Route("gemini", "gemini-2.0-flash"))
+        assertTrue(backups.none { it.provider == "gemini" })
+        assertTrue(backups.all { it.provider != RoutePolicy.LOCAL_PROXY && it.provider != RoutePolicy.CUSTOM })
+    }
 }
