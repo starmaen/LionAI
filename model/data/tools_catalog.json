@@ -472,6 +472,57 @@
   "connector": null
  },
  {
+  "name": "file_glob",
+  "group": "files",
+  "args": {
+   "pattern": "**/*.kt",
+   "path": "",
+   "max_results": 200
+  },
+  "description": "بحث عن ملفات بنمط glob (** و * و {a,b}) دون قراءة محتواها",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "file_grep",
+  "group": "files",
+  "args": {
+   "pattern": "fun\\s+main",
+   "path": "",
+   "glob": "*.kt",
+   "context": 2,
+   "max_results": 50,
+   "ignore_case": true
+  },
+  "description": "بحث بتعبير نمطي في محتوى الملفات مع أسطر سياق قبل/بعد وتصفية بنمط glob",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "update_plan",
+  "group": "meta",
+  "args": {
+   "explanation": "",
+   "plan": [
+    {
+     "step": "قراءة الملفات",
+     "status": "completed"
+    },
+    {
+     "step": "التعديل",
+     "status": "in_progress"
+    },
+    {
+     "step": "الفحص",
+     "status": "pending"
+    }
+   ]
+  },
+  "description": "تسجيل/تحديث خطة المهام متعددة الخطوات (خطوة واحدة فقط in_progress) لتتابعها أي مزود",
+  "write": false,
+  "connector": null
+ },
+ {
   "name": "file_read",
   "group": "files",
   "args": {
