@@ -870,7 +870,8 @@ fun LionApp() {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
             }
             voiceLauncher.launch(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
+            // أفضل جهد: تعذّر تشغيل التعرف الصوتي لا يستحق إشعار المستخدم
         }
     }
 

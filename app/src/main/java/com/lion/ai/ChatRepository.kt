@@ -220,7 +220,8 @@ object ChatRepository {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
+            // أفضل جهد: سجل تالف يُتخطى بصمت ويبقى بقية السجل صالحاً
         }
         return result
     }

@@ -263,7 +263,8 @@ object ActionParser {
                 val f = SimpleDateFormat(pattern, Locale.US)
                 f.isLenient = false
                 return f.parse(s)?.time
-            } catch (e: Exception) {
+            } catch (_: Exception) {
+                // صيغة تاريخ غير مفهومة: تُتخطى وتُجرَّب الصيغة التالية
             }
         }
         return null

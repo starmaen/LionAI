@@ -130,7 +130,8 @@ class AlarmActivity : ComponentActivity() {
             mp.prepare()
             mp.start()
             player = mp
-        } catch (e: Exception) {
+        } catch (_: Exception) {
+            // أفضل جهد: فشل الصوت لا يمنع الإنذار نفسه
         }
     }
 
@@ -140,7 +141,8 @@ class AlarmActivity : ComponentActivity() {
             val v = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             vibrator = v
             v?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 0))
-        } catch (e: Exception) {
+        } catch (_: Exception) {
+            // أفضل جهد: فشل الاهتزاز لا يمنع الإنذار نفسه
         }
     }
 

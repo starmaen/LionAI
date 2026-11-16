@@ -69,11 +69,9 @@ jobs:
       run: npm --prefix scripts test
 
     - name: Install Playwright Chromium (cached)
-      continue-on-error: true
       run: npm exec --prefix scripts -- playwright install --with-deps chromium
 
     - name: Test real Chromium editor and reply round trips (local fixtures)
-      continue-on-error: true
       run: npm --prefix scripts run test:browser
 
     # بوابة بيانات Lion-1: يمنع دمج بيانات تدريب قديمة أو صيغة أدوات مكسورة
@@ -82,10 +80,26 @@ jobs:
         python model/data/import_tools.py --check
         python model/eval_lion.py data model/data/train.jsonl model/data/val.jsonl
 
+    # تحليل ثابت يفشل على أي مخالفة جديدة (maxIssues: 0 في config/detekt/detekt.yml)
+    - name: Static analysis (detekt)
+      run: ./gradlew detekt --stacktrace
+
     - name: Run unit tests
       run: |
         set -o pipefail
         ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee /tmp/unit-tests.log
+
+    - name: Coverage report (Kover) + summary
+      run: |
+        ./gradlew koverXmlReport --stacktrace
+        python3 - <<'PY'
+        import xml.etree.ElementTree as ET
+        r = ET.parse("app/build/reports/kover/report.xml").getroot()
+        for c in r.iter("counter"):
+            if c.get("type") == "LINE":
+                m, cv = int(c.get("missed")), int(c.get("covered"))
+                print(f"::notice::Line coverage: {cv / (m + cv) * 100:.1f}% ({cv}/{m + cv} lines)")
+        PY
 
     - name: Report failing tests
       if: failure()
@@ -124,3 +138,14 @@ jobs:
         path: app/build/outputs/apk/release/*.apk
         if-no-files-found: error
         retention-days: 30
+
+    - name: Upload detekt and coverage reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: quality-reports
+        path: |
+          build/reports/detekt/
+          app/build/reports/kover/
+        if-no-files-found: ignore
+        retention-days: 14

@@ -52,3 +52,6 @@ scripts/node_modules/
 
 # يُجلب أثناء البناء عبر scripts/fetch-proot.sh
 app/src/main/jniLibs/
+
+# ====== بيانات التوقيع المحلية (النسخة الحقيقية لا تُرفع) ======
+keystore/keystore.properties

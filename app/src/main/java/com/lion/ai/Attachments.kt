@@ -219,7 +219,8 @@ object Attachments {
                     .onUnmappableCharacter(CodingErrorAction.REPORT)
                     .decode(slice)
                     .toString()
-            } catch (e: CharacterCodingException) {
+            } catch (_: CharacterCodingException) {
+                // مقطع بترميز غير صالح: يُتخطى ويُكمل فك الباقي
             }
         }
         return try {

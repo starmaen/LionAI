@@ -1,0 +1,61 @@
+# detekt — إعداد LionAI (detekt 1.23.7)
+# قواعد الصحة مفعّلة، وقواعد الأسلوب/الحجم تعطيل عملي لكود Jetpack Compose،
+# وكل مخالفة قديمة متبقية في baseline.xml — أي مخالفة جديدة تفشل في CI.
+build:
+  maxIssues: 0
+
+complexity:
+  CyclomaticComplexMethod:
+    active: false
+  LargeClass:
+    active: false
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: false        # دوال ToolAgent/Composable تحتوي سياقاً كثيراً بالتصميم
+  TooManyFunctions:
+    active: false
+  NestedBlockDepth:
+    active: false
+  ComplexCondition:
+    active: false
+
+exceptions:
+  SwallowedException:
+    active: false
+  TooGenericExceptionCaught:
+    active: false
+  PrintStackTrace:
+    active: false        # موقع واحد مقصود في LocalAIProxy لتتبع الخطأ في stderr
+
+naming:
+  FunctionNaming:
+    active: false        # دوال Composable تُسمى PascalCase بمعيار Jetpack Compose
+  MatchingDeclarationName:
+    active: false        # ملفات UI تجمع عدة عناصر مسمّاة عن قصد
+  InvalidPackageDeclaration:
+    active: false        # WebToolBridge وغيره في مجلد web/ بحزمة الجذر عن قصد
+  VariableNaming:
+    active: false
+
+style:
+  UseRequire:
+    active: false
+  UseCheckOrError:
+    active: false
+  MagicNumber:
+    active: false        # أرقام رسومية/مهلات في كل مكان في كود Compose
+  MaxLineLength:
+    active: false
+  ReturnCount:
+    active: false
+  WildcardImport:
+    active: false
+  UnusedParameter:
+    active: false        # دوال Composable/override تحمل بارامترات لعقد الاتصال
+  LoopWithTooManyJumpStatements:
+    active: false
+  ThrowsCount:
+    active: false
+  MayBeConst:
+    active: false

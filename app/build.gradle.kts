@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("io.gitlab.arturbosch.detekt")
+    id("org.jetbrains.kotlinx.kover")
 }
 
 android {
@@ -24,27 +26,38 @@ android {
     }
 
     // توقيع ثابت واحد لكل النسخ: بدونه يولّد كل بناء مفتاحاً جديداً ويُجبرك على حذف التطبيق القديم
+    // بيانات التوقيع تأتي من GitHub Secrets في CI، أو من keystore/keystore.properties محلياً
+    // (الملف مستثنى من الرفع). لا كلمة سر احتياطية في الكود: غياب الاثنين يعني توقيعاً
+    // بـdebug keystore للبناء المحلي فقط، وCI يبقى موقّعاً بالمفتاح الرسمي.
+    val keystoreProps = java.util.Properties().apply {
+        val f = rootProject.file("keystore/keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val releaseStorePassword = System.getenv("LION_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+        ?: keystoreProps.getProperty("storePassword")
+    val releaseKeyPassword = System.getenv("LION_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+        ?: keystoreProps.getProperty("keyPassword")
+    val hasReleaseCredentials = releaseStorePassword != null && releaseKeyPassword != null
+
     signingConfigs {
         create("lion") {
             storeFile = rootProject.file("keystore/lionai-release.jks")
-            // الأسرار تُقرأ من GitHub Secrets عند توفرها. القيمة الاحتياطية تبقى كما هي
-            // حتى لا ينكسر التوقيع أو التحديث فوق النسخ المثبتة قبل إعداد الأسرار.
-            storePassword = System.getenv("LION_KEYSTORE_PASSWORD")
-                ?.takeIf { it.isNotBlank() } ?: "LionAI2026!Release"
+            storePassword = releaseStorePassword
             keyAlias = "lionai"
-            keyPassword = System.getenv("LION_KEY_PASSWORD")
-                ?.takeIf { it.isNotBlank() } ?: "LionAI2026!Release"
+            keyPassword = releaseKeyPassword
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("lion")
+            signingConfig = if (hasReleaseCredentials) signingConfigs.getByName("lion")
+                            else signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            signingConfig = signingConfigs.getByName("lion")
+            signingConfig = if (hasReleaseCredentials) signingConfigs.getByName("lion")
+                            else signingConfigs.getByName("debug")
         }
     }
 
@@ -66,6 +79,17 @@ android {
         }
     }
 }
+
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    source.setFrom(files("src/main/java", "src/test/java"))
+    reportsDir = file("$rootDir/build/reports/detekt")
+}
+
+// تقارير تغطية اختبارات الوحدة (تبقى قراءةً فقط في CI: لا بوابة نسبة دنيا بعد —
+// تُشدّد لاحقاً بـkoverVerify عند استقرار الرقم الأول من التقرير الفعلي).
+// أداة القياس الافتراضية في Kover 0.9 تكفي بلا أي إعداد إضافي.
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")

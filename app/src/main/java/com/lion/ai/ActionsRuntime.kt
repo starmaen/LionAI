@@ -251,7 +251,8 @@ object Scheduler {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
+            // أفضل جهد: إدخال مجدول تالف يُتخطى ويبقى البقية صالحة
         }
         return result.sortedBy { it.whenMillis }
     }

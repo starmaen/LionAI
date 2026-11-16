@@ -1,0 +1,38 @@
+version: 2
+
+# تحديث آلي للاعتماديات: PR أسبوعي واحد لكل منظومة، مع group يجمع ترقيات patch/minor
+# في PR واحد كي لا تُغرق قائمة الـPR. الترقيات الكبرى (major) تُفتح منفصلة.
+
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      gradle-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gradle"
+    directory: "/app"
+    schedule:
+      interval: "weekly"
+    groups:
+      app-libs-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "npm"
+    directory: "/scripts"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-dev:
+        dependency-type: "development"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

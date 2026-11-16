@@ -187,7 +187,8 @@ fun loadContactsFromDevice(ctx: Context): List<Contact> {
                 }
             }
         }
-    } catch (e: Exception) {
+    } catch (_: Exception) {
+        // أفضل جهد: قراءة جهات الاتصال تفتقر لصلاحية أو مزود ولا تكسر الرد
     }
     return list.distinctBy { it.number }
 }
