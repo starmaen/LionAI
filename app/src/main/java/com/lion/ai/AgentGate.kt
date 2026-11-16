@@ -44,6 +44,13 @@ internal object AgentGate {
             "\\.(?:kt|kts|java|py|js|ts|tsx|json|xml|ya?ml|md|gradle|sh)\\b)"
     )
 
+    /** مصطلحات برمجية صريحة: السؤال التقني في «المطوّر» يقرأ الواقع بالأدوات بدل جواب مباشر من الذاكرة. */
+    private val TECH_QUESTION = Regex(
+        "(?<![\\p{L}])(?:kotlin|java|python|gradle|android|compose|coroutines?|git|github|docker|api|sql|json|regex|" +
+            "exception|stack\\s?trace|bug|crash|manifest|apk|npm|linux|bash|كوتلن|جافا|بايثون|برمجة|برمجي|كود|الكود|دالة|" +
+            "اندرويد|أندرويد|كراش)(?![\\p{L}])"
+    )
+
     fun hasTarget(text: String): Boolean =
         FILE_TARGET.containsMatchIn(text) || REPO_TARGET.containsMatchIn(text) || text.contains("github.com/")
 
@@ -72,7 +79,13 @@ internal object AgentGate {
         if (hasWork) return true
         val projectRef = projectReference(text, chatMode)
         // سؤال/قدرة: جواب مباشر، إلا سؤالاً عن مشروع أو خطأ فعلي.
-        if (UserIntent.classify(text) != UserIntent.Kind.REQUEST) return projectRef
+        val intent = UserIntent.classify(text)
+        if (intent != UserIntent.Kind.REQUEST) {
+            // سؤال تقني في «المطوّر» لا يُجاب من الذاكرة وحدها: تُفتح الأدوات (الوكيل يقرر أيها يلزم).
+            // أسئلة القدرة («هل تستطيع…؟») والأسئلة غير التقنية تبقى مباشرة.
+            return projectRef ||
+                (chatMode == ChatMode.CODE && intent == UserIntent.Kind.QUESTION && TECH_QUESTION.containsMatchIn(text))
+        }
         val target = hasTarget(text)
         // «عدّل الفقرة» / «اكتب رسالة»: نص عادي لا أدوات.
         if (TEXT_OBJECT.containsMatchIn(text) && !target && !DevTask.matches(text)) return false

@@ -95,7 +95,9 @@ object WebGrounding {
         if (kind == TaskKind.FACTUAL) return true
         if (text.contains("```")) return false
         if (kind == TaskKind.DEV || kind == TaskKind.CODE) {
-            return RESEARCH_WORDS.containsMatchIn(norm) || explicitlyRequested(text)
+            // أي سؤال تقني (لا طلب كتابة كود) يُدعَّم بمصادر وروابط: توثيق/GitHub/Stack Overflow.
+            val technicalQuestion = UserIntent.classify(text) == UserIntent.Kind.QUESTION && TECH_WORDS.containsMatchIn(norm)
+            return RESEARCH_WORDS.containsMatchIn(norm) || explicitlyRequested(text) || technicalQuestion
         }
         return explicitlyRequested(text)
     }

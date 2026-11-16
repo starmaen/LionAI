@@ -38,6 +38,7 @@ class WebGroundingTest {
         assertTrue(WebGrounding.shouldSearch(TaskKind.DEV, "أصلح فشل البناء في المستودع"))
         assertTrue(WebGrounding.shouldSearch(TaskKind.CODE, "لماذا يظهر هذا exception في gradle؟"))
         assertFalse(WebGrounding.shouldSearch(TaskKind.CODE, "اكتب لي دالة لجمع رقمين"))
+        assertTrue(WebGrounding.shouldSearch(TaskKind.CODE, "كيف أستخدم coroutines في kotlin؟"))
     }
 
     @Test

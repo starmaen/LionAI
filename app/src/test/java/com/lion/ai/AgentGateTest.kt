@@ -26,4 +26,13 @@ class AgentGateTest {
         assertTrue(AgentGate.shouldUseAgent("ارفع التعديلات إلى github.com/a/b", false, ChatMode.GENERAL))
         assertTrue(AgentGate.shouldUseAgent("نفذ", true, ChatMode.CODE))
     }
+
+    @Test
+    fun technicalQuestionsInDeveloperModeOpenTools() {
+        assertTrue(AgentGate.shouldUseAgent("كيف أستخدم coroutines في kotlin؟", false, ChatMode.CODE))
+        assertTrue(AgentGate.shouldUseAgent("لماذا يظهر exception في gradle؟", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("كيف أستخدم coroutines في kotlin؟", false, ChatMode.GENERAL))
+        assertFalse(AgentGate.shouldUseAgent("هل تستطيع كتابة كود؟", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("ما هي عاصمة فرنسا", false, ChatMode.CODE))
+    }
 }
