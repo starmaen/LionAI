@@ -542,6 +542,32 @@
   "connector": null
  },
  {
+  "name": "image_info",
+  "group": "files",
+  "args": {
+   "path": "uploads/photo.jpg"
+  },
+  "description": "معلومات صورة أو PDF: الصيغة الحقيقية من المحتوى، الأبعاد، الحجم، اتجاه EXIF، الجهاز والتاريخ، وتحذير GPS",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "image_read",
+  "group": "files",
+  "args": {
+   "path": "uploads/screenshot.png",
+   "mode": "auto",
+   "question": "",
+   "more": [],
+   "pages": "1",
+   "engine": "auto",
+   "max_chars": 12000
+  },
+  "description": "قراءة وتحليل صورة (أو صفحات PDF ممسوحة) بأي صيغة وإرجاعها كنص حتى لو كان مزودك لا يرى الصور: mode=auto|ocr|describe|ui|table|error؛ more=صور إضافية (حتى 6)؛ question لتركيز التحليل؛ engine=auto|vision|local",
+  "write": false,
+  "connector": null
+ },
+ {
   "name": "pdf_info",
   "group": "files",
   "args": {

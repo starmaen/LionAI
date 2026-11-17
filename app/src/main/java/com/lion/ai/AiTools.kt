@@ -139,6 +139,8 @@ object AiTools {
         Def("boot_info", ToolGroup.FILES, """{"path":"uploads/boot.img"}""", "تحليل ترويسة boot/recovery.img (إصدار، أحجام، cmdline)"),
         Def("boot_unpack", ToolGroup.FILES, """{"path":"uploads/boot.img","out_dir":"boot_unpacked"}""", "فك boot/recovery.img: kernel وramdisk (إلى مجلد) وdtb وheader.json", true),
         Def("boot_repack", ToolGroup.FILES, """{"dir":"boot_unpacked","target":"deliverables/boot-new.img"}""", "إعادة تركيب boot/recovery.img من مجلد الفك بعد التعديل (غير موقّعة)", true),
+        Def("image_info", ToolGroup.FILES, """{"path":"uploads/photo.jpg"}""", "معلومات صورة أو PDF: الصيغة الحقيقية من المحتوى، الأبعاد، الحجم، اتجاه EXIF، الجهاز والتاريخ، وتحذير GPS"),
+        Def("image_read", ToolGroup.FILES, """{"path":"uploads/screenshot.png","mode":"auto","question":"","more":[],"pages":"1","engine":"auto","max_chars":12000}""", "قراءة وتحليل صورة (أو صفحات PDF ممسوحة) بأي صيغة وإرجاعها كنص حتى لو كان مزودك لا يرى الصور: mode=auto|ocr|describe|ui|table|error؛ more=صور إضافية (حتى 6)؛ question لتركيز التحليل؛ engine=auto|vision|local"),
         Def("pdf_info", ToolGroup.FILES, """{"path":"uploads/a.pdf"}""", "عدد صفحات PDF وبياناته"),
         Def("pdf_read", ToolGroup.FILES, """{"path":"uploads/a.pdf","pages":"1-5","max_chars":12000}""", "قراءة نص PDF (كل الصفحات أو نطاق)"),
         Def("pdf_merge", ToolGroup.FILES, """{"paths":["uploads/a.pdf","uploads/b.pdf"],"target":"deliverables/merged.pdf"}""", "دمج عدة ملفات PDF في ملف واحد", true),
@@ -913,6 +915,8 @@ object AiTools {
         "boot_info" to listOf("path"),
         "boot_unpack" to listOf("path"),
         "boot_repack" to listOf("dir"),
+        "image_info" to listOf("path"),
+        "image_read" to listOf("path"),
         "pdf_info" to listOf("path"),
         "pdf_read" to listOf("path"),
         "pdf_split" to listOf("path", "pages"),
@@ -1844,6 +1848,8 @@ object AiTools {
                 val rel = FileTools.relative(ctx.context, resolveWorkspace(ctx, args.optString("target").ifBlank { "deliverables/boot-new.img" }))
                 msg + "\n" + FileDelivery.marker(rel)
             }
+            "image_info" -> ImageTools.info(ctx.context, req(args, "path"))
+            "image_read" -> ImageTools.read(ctx, args)
             "pdf_info" -> PdfTools.info(ctx.context, req(args, "path"))
             "pdf_read" -> PdfTools.read(ctx.context, req(args, "path"), args.optString("pages"), int(args, "max_chars", 12000).coerceIn(500, 30_000))
             "pdf_merge" -> {
