@@ -75,7 +75,8 @@ object WriteIntent {
      * طلب قراءة/رفض فعلي. عبارات النهي الجزئية داخل أمر صريح («احذف الفرع X، ولا تحذف أي فرع آخر»)
      * قيود على نطاق الإذن وليست رفضاً للمهمة، فلا تُلغي الإذن الممنوح بالأمر نفسه.
      */
-    fun isReadOnlyRequest(s: String): Boolean = isDenial(s) && !startsImperative(s) && !hasMutationIntent(s)
+    fun isReadOnlyRequest(s: String): Boolean =
+        (isDenial(s) && !startsImperative(s) && !hasMutationIntent(s)) || ScopeGuard.isLookup(s)
 
     /** فعل تعديل/حذف/كتابة/تشغيل بصيغة الأمر في أي موضع (لا «تعدل» المنفية): يعني أن الطلب ليس قراءة فقط. */
     private val MUTATION_WORD = Regex(

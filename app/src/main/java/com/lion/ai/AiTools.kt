@@ -97,7 +97,8 @@ object AiTools {
         Def("github_create_repo", ToolGroup.GITHUB, """{"name":"repo","description":"","private":true}""", "إنشاء مستودع جديد", true),
         Def("github_list_tree", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","prefix":"app/src/test","count_suffix":"Test.kt","max_entries":300}""", "شجرة الملفات (prefix لتضييق المجلد، وcount_suffix يعيد عدداً محسوباً بدقة؛ لا تعدّ بنفسك)"),
         Def("github_list_dir", ToolGroup.GITHUB, """{"repo":"owner/name","path":"","branch":""}""", "محتويات مجلد"),
-        Def("github_read_file", ToolGroup.GITHUB, """{"repo":"owner/name","path":"README.md","branch":""}""", "قراءة ملف"),
+        Def("github_read_file", ToolGroup.GITHUB, """{"repo":"owner/name","path":"README.md","branch":"","start_line":1,"end_line":120}""", "قراءة ملف؛ مع start_line/end_line تُقرأ الأسطر المطلوبة فقط"),
+        Def("github_latest_run", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"","conclusion":"success"}""", "آخر عملية بناء بالحالة المطلوبة (success أو failure أو any) في استدعاء واحد مع رقمها ورابطها وcommit"),
         Def("github_write_file", ToolGroup.GITHUB, """{"repo":"owner/name","path":"file.txt","content":"...","message":"...","branch":""}""", "إنشاء أو تعديل ملف (commit)", true),
         Def("github_delete_file", ToolGroup.GITHUB, """{"repo":"owner/name","path":"file.txt","message":"...","branch":""}""", "حذف ملف", true),
         Def("github_list_branches", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "الفروع"),
@@ -133,7 +134,8 @@ object AiTools {
         // Files
         Def("file_list", ToolGroup.FILES, """{"path":""}""", "عرض ملفات مساحة العمل"),
         Def("file_search", ToolGroup.FILES, """{"query":"TODO","path":"","max_results":50}""", "بحث نصي في مساحة العمل (اسم/مسار/محتوى)"),
-        Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","max_chars":12000}""", "قراءة ملف من مساحة العمل"),
+        Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","start_line":1,"end_line":120}""", "قراءة ملف من مساحة العمل؛ مع start_line/end_line تُقرأ الأسطر المطلوبة فقط (أوفر للسياق في الملفات الكبيرة)"),
+        Def("repo_map", ToolGroup.FILES, """{"path":"","max_files":200,"max_chars":12000}""", "خريطة المشروع: الملفات مع تواقيع الأصناف والدوال فقط بلا أجسام؛ ابدأ بها ثم اقرأ نطاق أسطر محدداً"),
         Def("boot_info", ToolGroup.FILES, """{"path":"uploads/boot.img"}""", "تحليل ترويسة boot/recovery.img (إصدار، أحجام، cmdline)"),
         Def("boot_unpack", ToolGroup.FILES, """{"path":"uploads/boot.img","out_dir":"boot_unpacked"}""", "فك boot/recovery.img: kernel وramdisk (إلى مجلد) وdtb وheader.json", true),
         Def("boot_repack", ToolGroup.FILES, """{"dir":"boot_unpacked","target":"deliverables/boot-new.img"}""", "إعادة تركيب boot/recovery.img من مجلد الفك بعد التعديل (غير موقّعة)", true),
@@ -1274,7 +1276,21 @@ object AiTools {
                 val (owner, repo) = repoOf(ctx, args)
                 val path = req(args, "path")
                 val file = GitHubClient.readFile(token, owner, repo, path, args.optString("branch"))
-                if (file.binary) "$path — ملف ثنائي (${file.sha})" else "${file.path} (${file.sha})\n\n${file.text.take(14_000)}"
+                if (file.binary) "$path — ملف ثنائي (${file.sha})" else
+                    ContextBuilder.sliceLines("${file.path} (${file.sha})", file.text, args.optInt("start_line", 0), args.optInt("end_line", 0), 14_000)
+                        ?: "${file.path} (${file.sha})\n\n${file.text.take(14_000)}"
+            }
+            "github_latest_run" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val want = args.optString("conclusion", "success").trim().lowercase().ifBlank { "success" }
+                val runs = GitHubClient.listWorkflowRuns(
+                    token, owner, repo, 1, null, args.optString("branch"),
+                    status = if (want == "any") "" else want
+                )
+                val run = runs.firstOrNull()
+                if (run == null) "لا توجد عملية بناء بحالة «$want» في $owner/$repo" + (args.optString("branch").takeIf { it.isNotBlank() }?.let { " (الفرع $it)" } ?: "") + "."
+                else "آخر بناء ($want): #${run.number} ${run.name} [${run.branch}] — ${run.status}/${run.conclusion}\n" +
+                    "id=${run.id} · commit=${run.headSha.take(7)} · ${run.createdAt}\n${run.htmlUrl}"
             }
             "github_write_file" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -1733,7 +1749,20 @@ object AiTools {
             "file_read", "read_file" -> {
                 val info = FileTools.read(ctx.context, req(args, "path"))
                 if (info.binary) "${info.path} — ملف ثنائي (${info.size} بايت)" else
-                    "${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n" + info.text.lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n").take(15_000)
+                    ContextBuilder.sliceLines(info.path, info.text, args.optInt("start_line", 0), args.optInt("end_line", 0))
+                        ?: ("${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n" + info.text.lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n").take(15_000))
+            }
+            "repo_map" -> {
+                val all = FileTools.walk(ctx.context, args.optString("path"), 5000).filter { !it.directory && RepoMap.supports(it.path) }
+                if (all.isEmpty()) "لا توجد ملفات شيفرة مدعومة (kt/java/py/js/ts) في هذا المسار." else {
+                    val entries = all.take(int(args, "max_files", 200).coerceIn(1, 1000)).mapNotNull { f ->
+                        runCatching {
+                            val info = FileTools.read(ctx.context, f.path, 400_000)
+                            if (info.binary) null else RepoMap.Entry(f.path, info.text.lines().size, RepoMap.signatures(f.path, info.text))
+                        }.getOrNull()
+                    }
+                    RepoMap.render(entries, int(args, "max_chars", 12_000).coerceIn(2_000, 40_000))
+                }
             }
             "file_read_many" -> {
                 val paths = stringList(args.optJSONArray("paths"))

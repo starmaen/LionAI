@@ -94,7 +94,7 @@ object WebToolBridge {
 
     private val COMMON_TOOLS = listOf(
         "file_tree", "file_read", "file_write", "file_edit", "file_apply_patch", "file_diff", "code_doctor", "gate_run",
-        "github_repo_overview", "github_list_tree", "github_read_file", "github_search_code",
+        "repo_map", "github_latest_run", "github_repo_overview", "github_list_tree", "github_read_file", "github_search_code",
         "github_push_workspace", "github_dispatch", "github_wait_run", "github_run_logs", "build_diagnose",
         "execute_command", "tools_schema", "tools_groups", "tools_request_access"
     )
