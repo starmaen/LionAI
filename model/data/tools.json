@@ -137,6 +137,8 @@
  "gmail_search",
  "gmail_send",
  "gmail_trash",
+ "image_info",
+ "image_read",
  "library_versions",
  "lion_engine",
  "list_dir",
