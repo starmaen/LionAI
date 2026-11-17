@@ -66,7 +66,7 @@ object LlmClient {
         }
     }
 
-    private fun currentReadTimeout(): Int = threadReadTimeout.get() ?: LLM_READ_TIMEOUT
+    internal fun currentReadTimeout(): Int = threadReadTimeout.get() ?: LLM_READ_TIMEOUT
 
     fun reloadOverrides(prefs: android.content.SharedPreferences) {
         WebChatRuntime.load(prefs)
@@ -228,6 +228,33 @@ object LlmClient {
     }
 
     fun ask(
+        message: String,
+        apiKey: String,
+        provider: String,
+        history: List<ChatTurn>,
+        modelOverride: String = "",
+        accountId: String = "",
+        image: ImageAttachment? = null,
+        systemPrompt: String = LLM_SYSTEM_PROMPT,
+        readTimeoutMs: Int = 0,
+        chatModeHint: ChatMode? = null,
+        forceDirect: Boolean = false,
+        via: String = Channel.AUTO,
+        chatId: String = ""
+    ): String {
+        // يربط معرّف المحادثة بالخيط الحالي ليبث المسار المتوافق مع OpenAI النص حياً إلى هذه المحادثة.
+        LiveStream.bind(chatId)
+        try {
+            return askInner(
+                message, apiKey, provider, history, modelOverride, accountId, image, systemPrompt,
+                readTimeoutMs, chatModeHint, forceDirect, via, chatId
+            )
+        } finally {
+            LiveStream.unbind()
+        }
+    }
+
+    private fun askInner(
         message: String,
         apiKey: String,
         provider: String,
@@ -652,7 +679,7 @@ object LlmClient {
     private val apinexCalls = java.util.ArrayDeque<Long>()
 
     /** APInex المجاني محدود (حوالي 5 طلبات/دقيقة): نوزّع الطلبات بدل إغراقه فيرد 429. */
-    private fun throttleFor(url: String) {
+    internal fun throttleFor(url: String) {
         if (!url.contains("apinex.bond")) return
         val wait = synchronized(apinexCalls) {
             val now = System.currentTimeMillis()

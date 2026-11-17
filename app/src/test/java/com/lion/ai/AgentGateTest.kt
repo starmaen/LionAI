@@ -55,4 +55,14 @@ class AgentGateTest {
         assertFalse(AgentGate.shouldUseAgent("شكراً", false, ChatMode.CODE))
         assertFalse(AgentGate.shouldUseAgent("مرحبا", false, ChatMode.CODE))
     }
+
+    @Test
+    fun workCommandsForceExecutionOnlyInDeveloperMode() {
+        for (c in listOf("اختبر البوابة", "جرب الأداة", "تأكد من الأخطاء", "ابدء الاصلاح", "تحقق من التواصل")) {
+            assertTrue(c, shouldForceExecution(ChatMode.CODE, TaskKind.GENERAL, false, c))
+            assertFalse(c, shouldForceExecution(ChatMode.GENERAL, TaskKind.GENERAL, false, c))
+        }
+        assertFalse(shouldForceExecution(ChatMode.CODE, TaskKind.GENERAL, false, "شكراً"))
+        assertFalse(shouldForceExecution(ChatMode.CODE, TaskKind.GENERAL, false, "راجع الرسالة قبل الإرسال"))
+    }
 }
