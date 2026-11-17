@@ -165,7 +165,7 @@ jobs:
         echo "Certificate matches the expected fingerprint."
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: LionAI-APK
         path: app/build/outputs/apk/release/*.apk
@@ -174,7 +174,7 @@ jobs:
 
     - name: Upload detekt and coverage reports
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: quality-reports
         path: |
