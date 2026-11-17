@@ -35,4 +35,24 @@ class AgentGateTest {
         assertFalse(AgentGate.shouldUseAgent("هل تستطيع كتابة كود؟", false, ChatMode.CODE))
         assertFalse(AgentGate.shouldUseAgent("ما هي عاصمة فرنسا", false, ChatMode.CODE))
     }
+
+    @Test
+    fun developerModeWorkVerbsOpenToolsWithoutExplicitTarget() {
+        val cases = listOf(
+            "افحص الأدوات", "اختبر البوابة", "ابدء الاصلاح", "ابدأ الإصلاح", "ابدا الاصلاح",
+            "جرب الأداة وأخبرني", "تأكد من عمل الاختبارات", "تحقق من الأخطاء", "دقق في ShellTools",
+            "شوف المشكلة", "راجع التقييم وطبق التحسينات", "وافحص التواصل مع الوكيل"
+        )
+        for (c in cases) assertTrue("يجب فتح الأدوات: $c", AgentGate.shouldUseAgent(c, false, ChatMode.CODE))
+    }
+
+    @Test
+    fun workVerbsStayDirectInGeneralModeAndForPlainText() {
+        assertFalse(AgentGate.shouldUseAgent("افحص الأدوات", false, ChatMode.GENERAL))
+        assertFalse(AgentGate.shouldUseAgent("ابدأ الإصلاح", false, ChatMode.GENERAL))
+        assertFalse(AgentGate.shouldUseAgent("راجع الرسالة قبل الإرسال", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("حسن الفقرة التالية", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("شكراً", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("مرحبا", false, ChatMode.CODE))
+    }
 }

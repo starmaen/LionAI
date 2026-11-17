@@ -51,6 +51,27 @@ internal object AgentGate {
             "اندرويد|أندرويد|كراش)(?![\\p{L}])"
     )
 
+    /**
+     * أفعال عمل عامة (على النص المطبَّع: أ/إ→ا، ة→ه، بلا تشكيل). في «المطوّر» تفتح الأدوات
+     * حتى بلا ملف أو مستودع صريح («افحص الأدوات»، «اختبر البوابة»، «ابدء الاصلاح»)،
+     * فلا يضطر المستخدم لتكرار الطلب حتى تصيب صياغته قاعدة. تشمل الأخطاء الإملائية الشائعة.
+     */
+    private val WORK_VERB = Regex(
+        "(?<![\\p{L}])(?:و|ف)?(?:ابد[اءئ]|افحص|اختبر|جرب|تاكد|تحقق|دقق|راجع|شوف|شاهد|حلل|حسن|طور|اصلح|عدل|" +
+            "نفذ|انفذ|شغل|ثبت|طبق|كمل|اكمل|تابع|استمر|ابحث|اعرض|ادرس|اكتشف|رتب|نظف|صحح|اضف|ضيف|ابن|ابني|اعمل|سوي)" +
+            "(?![\\p{L}])"
+    )
+
+    /** هل الرسالة (في «المطوّر») أمر عمل يستوجب الأدوات؟ نص عادي («عدل الفقرة») يبقى مباشراً. */
+    fun isWorkCommand(text: String, chatMode: ChatMode): Boolean {
+        if (chatMode != ChatMode.CODE) return false
+        val n = TextNorm.forMatch(text)
+        if (!WORK_VERB.containsMatchIn(n)) return false
+        // TEXT_OBJECT/DevTask مكتوبتان بالإملاء الأصلي (ة/أ)، فتُفحصان على النص الخام لا المطبَّع.
+        val raw = text.trim().lowercase()
+        return !(TEXT_OBJECT.containsMatchIn(raw) && !hasTarget(raw) && !DevTask.matches(raw))
+    }
+
     fun hasTarget(text: String): Boolean =
         FILE_TARGET.containsMatchIn(text) || REPO_TARGET.containsMatchIn(text) || text.contains("github.com/")
 
@@ -92,6 +113,6 @@ internal object AgentGate {
         return (STRONG_ACTION.containsMatchIn(text) && (target || chatMode == ChatMode.CODE)) ||
             (TARGETED_ACTION.containsMatchIn(text) && target) ||
             WriteIntent.isDirectCommand(text) && (target || chatMode == ChatMode.CODE) ||
-            DevTask.matches(text) || projectRef
+            DevTask.matches(text) || projectRef || isWorkCommand(text, chatMode)
     }
 }
