@@ -36,7 +36,7 @@ data class ImageAttachment(
     fun displayName(): String = all().joinToString("، ") { it.name }
 
     companion object {
-        const val MAX_IMAGES = 6
+        const val MAX_IMAGES = 10
         fun merge(list: List<ImageAttachment>): ImageAttachment? {
             val flat = list.flatMap { it.all() }.take(MAX_IMAGES)
             val first = flat.firstOrNull() ?: return null

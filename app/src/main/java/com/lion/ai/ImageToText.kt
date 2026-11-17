@@ -35,6 +35,32 @@ object ImageToText {
     /** مزود رؤية جاهز (له مفتاح وموديله يقرأ الصور)، أو null. */
     fun pickProvider(prefs: SharedPreferences): String? = candidates(prefs).firstOrNull()
 
+    /**
+     * الاحتياط الدائم: OCR محلي فقط (بلا مفتاح وبلا إنترنت) لمرفقات الصور.
+     * يقرأ النص اللاتيني والأرقام والأكواد؛ العربية تحتاج مزود رؤية. يعيد null إن لم يُعثر على نص.
+     * حاجب: يُستدعى من خيط IO.
+     */
+    fun localDescribe(images: ImageAttachment): String? = ImageTools.localOcrAttachments(images)
+
+    fun asPromptBlock(names: String, analysis: String): String =
+        "[صور مرفقة ($names) — حلّلها التطبيق بنموذج رؤية لأن هذه الدردشة لا تستقبل الصور؛ " +
+            "اعتمد على التحليل التالي كأنك ترى الصور]\n$analysis\n[نهاية تحليل الصور]"
+
+    /**
+     * كتلة الصور المحوّلة محلياً (OCR بلا مزود رؤية). تُرسل دائماً حتى لو لم يُستخرج نص،
+     * لأن رفض الرفع كلياً ليس خياراً — الصورة قد تكون فاشلة القراءة لكن سؤال المستخدم يبقى صالحاً.
+     */
+    fun asLocalBlock(names: String, ocr: String?): String = buildString {
+        append("[صور مرفقة ($names) — هذه الدردشة لا تستقبل الصور مباشرة]\n")
+        if (ocr.isNullOrBlank()) {
+            append("لم يُستخرج نص من الصور محلياً (OCR المحلي يقرأ اللاتينية والأرقام فقط؛ العربية تحتاج موديل رؤية). ")
+            append("أجب على سؤال المستخدم بما يمكن، وإن كان الجواب يتوقف على محتوى الصورة فاطلب منه لصق النص الظاهر فيها.")
+        } else {
+            append("النص المستخرج محلياً (OCR — لاتيني/أرقام):\n$ocr")
+        }
+        append("\n[نهاية تحليل الصور]")
+    }
+
     private fun askOnce(prefs: SharedPreferences, provider: String, images: ImageAttachment, question: String): String? {
         val key = prefs.getString("api_key_$provider", "").orEmpty()
         val model = RoutePolicy.modelFor(prefs, provider)
@@ -74,8 +100,4 @@ object ImageToText {
         }
         return null
     }
-
-    fun asPromptBlock(names: String, analysis: String): String =
-        "[صور مرفقة ($names) — حلّلها التطبيق بنموذج رؤية لأن هذه الدردشة لا تستقبل الصور؛ " +
-            "اعتمد على التحليل التالي كأنك ترى الصور]\n$analysis\n[نهاية تحليل الصور]"
 }

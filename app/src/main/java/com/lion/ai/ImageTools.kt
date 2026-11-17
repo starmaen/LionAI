@@ -37,7 +37,7 @@ object ImageTools {
         JPEG("JPEG"), PNG("PNG"), GIF("GIF"), WEBP("WebP"), BMP("BMP"), HEIF("HEIC/HEIF"), AVIF("AVIF"), PDF("PDF"), SVG("SVG"), UNKNOWN("غير معروف")
     }
 
-    private const val MAX_IMAGES = 6
+    private const val MAX_IMAGES = 10
     private const val MAX_FILE_BYTES = 40L * 1024 * 1024
     private const val SEND_MAX_SIDE = 1800
     private const val SEND_MAX_BYTES = 3_500_000
@@ -233,6 +233,21 @@ object ImageTools {
             recognizer.close()
         }
     }.getOrNull()
+
+    /**
+     * OCR محلي لمرفقات الصور (بلا مفتاح وبلا إنترنت): يفكّ Base64 ثم يقرأ النص اللاتيني والأرقام.
+     * يعيد «الاسم: النص» لكل صورة عليها نص، أو null إن لم يُعثر على شيء. حاجب: يُستدعى من خيط IO.
+     */
+    fun localOcrAttachments(images: ImageAttachment): String? {
+        val out = images.all().mapNotNull { att ->
+            val bmp = runCatching {
+                val bytes = Base64.decode(att.base64, Base64.NO_WRAP)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull() ?: return@mapNotNull null
+            localOcr(bmp)?.let { "${att.name}:\n$it" }
+        }
+        return out.joinToString("\n\n").trim().ifBlank { null }
+    }
 
     // ───────────────────────── الأدوات ─────────────────────────
 

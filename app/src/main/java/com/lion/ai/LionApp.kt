@@ -1285,7 +1285,34 @@ fun LionApp() {
             val stickProvider = if (manualMode) null else {
                 ProviderStick.get(prefs, chatId) ?: LastRoute.get(prefs, chatId)?.provider
             }
-            val routesToTry = RoutePolicy.mergeAttempts(plan, rescueRoutes, stickProvider)
+            var routesToTry = RoutePolicy.mergeAttempts(plan, rescueRoutes, stickProvider)
+            // ربط الصور بالمزودات (ويب وعادي): الصورة تُرسل مباشرة فقط لمزود يرى فعلاً.
+            // إن لم يوجد أي مزود رؤية في الخطة نحوّل الصورة إلى نص (مزود رؤية إن وُجد، وإلا OCR محلي)
+            // ونرسل الرسالة لمزودك كما هي — لا فشل ولا رفض للرفع.
+            var turnImage = image
+            var promptForApi = llmPrompt
+            var promptForWeb = llmPromptWeb
+            if (image != null && routesToTry.isNotEmpty()) {
+                val seeing = routesToTry.filter {
+                    WebChatRuntime.handles(it.provider) || LlmClient.supportsVision(it.provider, it.model)
+                }
+                if (seeing.isNotEmpty()) {
+                    routesToTry = seeing
+                } else {
+                    toolStatus[chatId] = "🖼️ لا يوجد مزود رؤية في الخطة — أحوّل الصور إلى نص ثم أرسل الرسالة…"
+                    val vision = withContext(Dispatchers.IO) { ImageToText.describe(prefs, image, prompt) }
+                    val block = if (vision != null) {
+                        ImageToText.asPromptBlock(image.displayName(), vision)
+                    } else {
+                        val ocr = withContext(Dispatchers.IO) { ImageToText.localDescribe(image) }
+                        ImageToText.asLocalBlock(image.displayName(), ocr)
+                    }
+                    promptForApi = llmPrompt + "\n\n" + block
+                    promptForWeb = llmPromptWeb + "\n\n" + block
+                    turnImage = null
+                    toolStatus.remove(chatId)
+                }
+            }
             // التحية لا تحتاج سجل الحوار كاملاً؛ نرسل آخر دورين فقط لتقليل الزمن.
             val requestHistory = if (kind == TaskKind.FAST) history.takeLast(2) else history
             // غرفة العمليات بلا أدوات: مقترحات (API والويب) ثم مراجعة ثم قرار واحد. إن فشلت تُكمل الحلقة العادية.
@@ -1341,7 +1368,7 @@ fun LionApp() {
                             ToolAgent.run(
                                 context = context,
                                 prefs = prefs,
-                                prompt = if (WebChatRuntime.handles(route.provider)) llmPromptWeb else llmPrompt,
+                                prompt = if (WebChatRuntime.handles(route.provider)) promptForWeb else promptForApi,
                                 apiKey = keyOf(route.provider),
                                 provider = WebToolBridge.pin(prefs, route.provider),
                                 model = route.model,
@@ -1380,13 +1407,13 @@ fun LionApp() {
                 // No tool-less retry: it would discard execution state and can invent completion.
                 val r = agentResult?.answer ?: withContext(Dispatchers.IO) {
                     LlmClient.ask(
-                        message = if (WebChatRuntime.handles(route.provider)) llmPromptWeb else llmPrompt,
+                        message = if (WebChatRuntime.handles(route.provider)) promptForWeb else promptForApi,
                         apiKey = keyOf(route.provider),
                         provider = route.provider,
                         history = requestHistory,
                         modelOverride = route.model,
                         accountId = accountId(),
-                        image = image,
+                        image = turnImage,
                         systemPrompt = systemPrompt,
                         readTimeoutMs = attemptCap,
                         chatModeHint = chatMode,
@@ -1818,20 +1845,13 @@ fun LionApp() {
         }
         // دردشات الويب والموديلات بلا رؤية لا تستقبل الصور مباشرة: نحوّل الصور إلى نص بموديل رؤية (OCR + وصف).
         // دردشات الويب تستقبل الصورة كملف مرفق فعلي (WebSessionTransport.WebFile) ما لم يُطفأ الإعداد.
+        // لا نرفض الرفع أبداً: إن لم يتوفر مزود رؤية نستخدم OCR المحلي كطبقة احتياط (انظر الإرسال أدناه).
         val webUpload = image != null && WebChatRuntime.handles(selectedProvider) &&
             prefs.getBoolean("web_upload_files", true)
         val imageAsText = image != null && kind != TaskKind.IMAGE_EDIT && !webUpload && (
             WebChatRuntime.handles(selectedProvider) ||
                 (!autoRoute && !LlmClient.supportsVision(selectedProvider, prefs.getString("model_$selectedProvider", "") ?: ""))
             )
-        if (imageAsText && ImageToText.pickProvider(prefs) == null) {
-            messages = messages + Message(
-                "⚠️ هذه الدردشة لا تقرأ الصور مباشرة. لتحليلها أضف مفتاح مزود يقرأ الصور (Gemini المجاني من AI Studio مثلاً) في الإعدادات، فيحوّل التطبيق الصور إلى نص ويرسلها لأي دردشة ويب أو موديل. أو فعّل «تلقائي».",
-                false
-            )
-            saveCurrent()
-            return
-        }
 
         val displayText = buildString {
             if (text.isNotEmpty()) append(text)
@@ -1925,16 +1945,29 @@ fun LionApp() {
         if (imageAsText && image != null) {
             val basePrompt = prompt
             loadingChats[chatId] = true
-            toolStatus[chatId] = "🖼️ أحلّل الصور (استخراج النص + الوصف) ثم أرسلها نصاً إلى الدردشة…"
+            val hasVisionProvider = ImageToText.pickProvider(prefs) != null
+            toolStatus[chatId] = if (hasVisionProvider) {
+                "🖼️ أحلّل الصور (استخراج النص + الوصف) ثم أرسلها نصاً إلى الدردشة…"
+            } else {
+                "🖼️ لا مزود رؤية مفعّل — أستخرج نص الصور محلياً (OCR) ثم أرسل الرسالة…"
+            }
             scope.launch {
-                val analysis = withContext(Dispatchers.IO) { ImageToText.describe(prefs, image, text) }
+                // الترتيب: تحليل بمزود رؤية (وصف دقيق + عربية) ← ثم OCR محلي (لاتيني/أرقام، بلا مفتاح).
+                // الرسالة تُرسل دائماً حتى لو فشل كلا الاستخراجين — لا إسقاط ولا رفض للرفع.
+                val vision = if (hasVisionProvider) {
+                    withContext(Dispatchers.IO) { ImageToText.describe(prefs, image, text) }
+                } else {
+                    null
+                }
+                val block = if (vision != null) {
+                    ImageToText.asPromptBlock(image.displayName(), vision)
+                } else {
+                    val ocr = withContext(Dispatchers.IO) { ImageToText.localDescribe(image) }
+                    ImageToText.asLocalBlock(image.displayName(), ocr)
+                }
                 loadingChats[chatId] = false
                 toolStatus.remove(chatId)
-                if (analysis == null) {
-                    appendToChat(chatId, Message("⚠️ تعذّر تحليل الصور بمزود الرؤية (تحقق من المفتاح أو الشبكة). لم تُرسل الرسالة للدردشة.", false))
-                    return@launch
-                }
-                val enriched = basePrompt + "\n\n" + ImageToText.asPromptBlock(image.displayName(), analysis)
+                val enriched = basePrompt + "\n\n" + block
                 runChat(chatId, enriched, history, null, ytUrl, ytmUrl, anghamiUrl, browserUrl,
                     SmartRouter.classify(enriched, false, 0, null))
             }

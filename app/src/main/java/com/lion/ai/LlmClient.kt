@@ -246,7 +246,7 @@ object LlmClient {
             val prefs = WebChatRuntime.prefs() ?: return "⚠️ افتح إعدادات جلسات الويب أولاً."
             if (!WebChatRuntime.available(prefs, provider)) return "⚠️ فعّل جلسات الويب والموقع المطلوب من Lion Chat."
             // الصور تُرفق آلياً بصفحة الموقع (حقل ملف أو لصق في المحرر)، بدل رفضها أو تحويلها إلى نص فقط.
-            val webFiles = if (image == null) emptyList() else image.all().take(4).map {
+            val webFiles = if (image == null) emptyList() else image.all().take(10).map {
                 WebSessionTransport.WebFile(it.name, it.mime, it.base64)
             }
             if (webFiles.sumOf { it.base64.length } > 6_000_000) {
