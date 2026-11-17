@@ -186,7 +186,8 @@ private val GENERAL_REPO_REFERENCE = Regex(
 internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: Boolean, prompt: String? = null): Boolean {
     if (kind == TaskKind.DEV || hasWork) return true
     if (chatMode != ChatMode.CODE) return false
-    return prompt == null || ACTION_REQUEST.containsMatchIn(prompt.trim().lowercase())
+    return prompt == null || ACTION_REQUEST.containsMatchIn(prompt.trim().lowercase()) ||
+        AgentGate.isWorkCommand(prompt, chatMode)
 }
 
 /**
@@ -331,6 +332,14 @@ fun LionApp() {
         }
         WebSessionMirror.attach(mirror)
         onDispose { WebSessionMirror.detach(mirror) }
+    }
+    // بث حي لردود مزودات API: النص يظهر تدريجياً في فقاعة مباشرة بدل انتظار الرد كاملاً.
+    DisposableEffect(Unit) {
+        LiveStream.enabled = prefs.getBoolean("stream_replies", true)
+        LiveStream.sink = { chatId, text ->
+            if (loadingChats[chatId] == true) livePartial[chatId] = ToolMarkup.strip(text)
+        }
+        onDispose { LiveStream.sink = null }
     }
     var tabs by remember {
         mutableStateOf(
@@ -1144,7 +1153,8 @@ fun LionApp() {
         }
         val agentRequested = toolGroups.isNotEmpty() && shouldUseAgentForPrompt(prompt, resumingTask, chatMode)
         loadingChats[chatId] = true
-        toolStatus[chatId] = ""
+        // صدى فهم فوري محلي قبل أول خطوة فعلية، ليرى المستخدم كيف فُهم طلبه.
+        toolStatus[chatId] = if (agentRequested) UnderstandingEcho.line(prompt) else ""
         agentTurns[chatId] = agentRequested
         turnStartedAt[chatId] = System.currentTimeMillis()
         livePartial.remove(chatId)

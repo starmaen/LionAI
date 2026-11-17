@@ -47,6 +47,11 @@ internal fun LlmClient.callOpenAiCompatible(
         if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"
         headers.putAll(extraHeaders)
 
+        val liveChat = LiveStream.active()
+        if (liveChat != null) {
+            val streamed = streamChat(url, headers, JSONObject(body.toString()), liveChat)
+            if (streamed != null) return streamed
+        }
         val response = postJson(url, headers, body)
         val content = response.optJSONArray("choices")
             ?.optJSONObject(0)

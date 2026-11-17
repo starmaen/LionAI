@@ -168,7 +168,7 @@ internal fun LionMessageList(
             if (live.isNotBlank()) {
                 item(key = "$currentChat:live") {
                     Bubble(
-                        Message(live, false, via = "مباشر من صفحة الموقع"),
+                        Message(live, false, via = "مباشر"),
                         context, tts, messages.size, onPendingChoice, false, {}, {},
                         askEnabled = false, onAskReply = onAskReply
                     )
