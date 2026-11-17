@@ -38,18 +38,20 @@ android {
     }
     val releaseStorePassword = System.getenv("LION_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
         ?: keystoreProps.getProperty("storePassword")
-        ?: "LionAI2026!Release"
     val releaseKeyPassword = System.getenv("LION_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
         ?: keystoreProps.getProperty("keyPassword")
-        ?: "LionAI2026!Release"
-    val hasReleaseCredentials = releaseStorePassword != null && releaseKeyPassword != null
+    val releaseKeystoreFile = rootProject.file("keystore/lionai-release.jks")
+    val hasReleaseCredentials =
+        releaseStorePassword != null && releaseKeyPassword != null && releaseKeystoreFile.exists()
 
-    signingConfigs {
-        create("lion") {
-            storeFile = rootProject.file("keystore/lionai-release.jks")
-            storePassword = releaseStorePassword
-            keyAlias = "lionai"
-            keyPassword = releaseKeyPassword
+    if (hasReleaseCredentials) {
+        signingConfigs {
+            create("lion") {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = "lionai"
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 

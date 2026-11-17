@@ -28,7 +28,8 @@ jobs:
           echo "$LION_KEYSTORE_BASE64" | base64 -d > keystore/lionai-release.jks
           echo "Signing key restored from secrets."
         else
-          echo "::warning::LION_KEYSTORE_BASE64 is not set; using the keystore committed in the repo (phase 1 fallback)."
+          echo "::error::LION_KEYSTORE_BASE64 is not set; refusing to build a release with the wrong key."
+          exit 1
         fi
 
     - name: Set up JDK 17
@@ -60,8 +61,8 @@ jobs:
         EXPECTED=$(printf '%s' "$EXPECTED_SHA256" | tr -d ': ' | tr 'A-Z' 'a-z')
         echo "Actual certificate SHA-256: $ACTUAL"
         if [ -z "$EXPECTED" ]; then
-          echo "::warning::LION_CERT_SHA256 is not set; fingerprint check skipped."
-          exit 0
+          echo "::error::LION_CERT_SHA256 is not set; refusing to publish without a fingerprint check."
+          exit 1
         fi
         if [ "$ACTUAL" != "$EXPECTED" ]; then
           echo "::error::Signing certificate changed! Users could not update over the installed app."
