@@ -140,6 +140,26 @@ import java.util.Date
 import java.util.Locale
 
 /** نافذة سياق ذكية: آخر الرسائل ضمن ميزانية أحرف، فتقلّ مدة الطلب وحجمه بلا فقدان سياق مهم. */
+/**
+ * سجل المحادثة المرسل للمزود عبر [ContextBuilder]: ملخص متدحرج للقديم + نافذة منزلقة للحديث،
+ * مع حذف وسوم التفكير. الملخص يُحفظ لكل محادثة فيُشاركه أي مزود يكمل العمل.
+ */
+private fun contextHistory(messages: List<Message>, prefs: android.content.SharedPreferences, chatId: String): List<ChatTurn> {
+    val turns = messages
+        .filter { it.isUser || !LlmClient.isErrorReply(it.text) }
+        .map { ChatTurn(if (it.isUser) "user" else "assistant", it.text) }
+    val key = "ctxsum_$chatId"
+    val built = ContextBuilder.build(turns, ContextBuilder.State.parse(prefs.getString(key, null)))
+    runCatching {
+        val stored = prefs.getString(key, null)
+        val fresh = built.state?.toJson()
+        if (fresh != stored) {
+            prefs.edit().apply { if (fresh == null) remove(key) else putString(key, fresh) }.apply()
+        }
+    }
+    return built.turns
+}
+
 private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): List<ChatTurn> {
     val picked = ArrayDeque<ChatTurn>()
     var used = 0
@@ -1862,7 +1882,7 @@ fun LionApp() {
 
         // نستبعد رسائل الخطأ حتى لا تربك النموذج التالي، ونرسل آخر 12000 حرف فقط للسرعة
         // مع الحفاظ على بداية الحوار الصحيحة (الرسالة الأولى من المستخدم).
-        val history = windowedHistory(messages)
+        val history = contextHistory(messages, prefs, currentChat)
 
         val chatId = currentChat
         val reply = replyingTo
@@ -1984,7 +2004,7 @@ fun LionApp() {
             )
             return
         }
-        val history = windowedHistory(messages.take(userIndex))
+        val history = contextHistory(messages.take(userIndex), prefs, chatId)
         val kind = SmartRouter.classify(userText, false, 0, null)
         runChat(
             chatId = chatId,

@@ -551,7 +551,8 @@ object GitHubClient {
         perPage: Int = 10,
         workflowId: Long? = null,
         branch: String = "",
-        headSha: String = ""
+        headSha: String = "",
+        status: String = ""
     ): List<WorkflowRun> {
         val safe = perPage.coerceIn(1, 50)
         val base = if (workflowId != null) {
@@ -563,6 +564,7 @@ object GitHubClient {
             append("?per_page=").append(safe)
             if (branch.isNotBlank()) append("&branch=").append(encode(branch))
             if (headSha.isNotBlank()) append("&head_sha=").append(encode(headSha))
+            if (status.isNotBlank()) append("&status=").append(encode(status))
         }
         val raw = request("$base$query", token)
         val array = JSONObject(raw).optJSONArray("workflow_runs") ?: return emptyList()

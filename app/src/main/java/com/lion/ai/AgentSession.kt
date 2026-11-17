@@ -384,7 +384,7 @@ class AgentSession(val chatId: String) {
 
     /** أدوات لا تغيّر الملف (قراءة/استكشاف) فلا تُعدّ من «الملفات المعدّلة». */
     private val READ_ONLY_TOOLS = setOf(
-        "file_read", "read_file", "file_list", "list_dir", "file_tree", "github_read_file",
+        "file_read", "read_file", "file_list", "list_dir", "file_tree", "repo_map", "github_read_file", "github_latest_run",
         "file_diff", "file_search", "grep", "github_list_tree", "github_list_dir", "tool_schema", "tools_schema"
     )
 
