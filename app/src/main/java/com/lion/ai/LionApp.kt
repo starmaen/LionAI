@@ -139,7 +139,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** نافذة سياق ذكية: آخر الرسائل ضمن ميزانية أحرف، فتقلّ مدة الطلب وحجمه بلا فقدان سياق مهم. */
 /**
  * سجل المحادثة المرسل للمزود عبر [ContextBuilder]: ملخص متدحرج للقديم + نافذة منزلقة للحديث،
  * مع حذف وسوم التفكير. الملخص يُحفظ لكل محادثة فيُشاركه أي مزود يكمل العمل.
@@ -159,20 +158,6 @@ private fun contextHistory(messages: List<Message>, prefs: android.content.Share
     }
     return built.turns
 }
-
-private fun windowedHistory(messages: List<Message>, maxChars: Int = 12_000): List<ChatTurn> {
-    val picked = ArrayDeque<ChatTurn>()
-    var used = 0
-    for (m in messages.asReversed()) {
-        if (!m.isUser && LlmClient.isErrorReply(m.text)) continue
-        val turn = ChatTurn(if (m.isUser) "user" else "assistant", m.text)
-        if (picked.isNotEmpty() && used + turn.content.length > maxChars) break
-        used += turn.content.length
-        picked.addFirst(turn)
-    }
-    return picked.toList()
-}
-
 
 /** أمر تنفيذي صريح (قراءة/تعديل/بناء/رفع...) يحتاج أدوات حتماً. */
 private val ACTION_REQUEST = Regex(

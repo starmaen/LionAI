@@ -81,9 +81,23 @@
   "args": {
    "repo": "owner/name",
    "path": "README.md",
-   "branch": ""
+   "branch": "",
+   "start_line": 1,
+   "end_line": 120
   },
-  "description": "قراءة ملف",
+  "description": "قراءة ملف؛ مع start_line/end_line تُقرأ الأسطر المطلوبة فقط",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_latest_run",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "branch": "",
+   "conclusion": "success"
+  },
+  "description": "آخر عملية بناء بالحالة المطلوبة (success أو failure أو any) في استدعاء واحد مع رقمها ورابطها وcommit",
   "write": false,
   "connector": null
  },
@@ -476,9 +490,22 @@
   "group": "files",
   "args": {
    "path": "src/Main.kt",
+   "start_line": 1,
+   "end_line": 120
+  },
+  "description": "قراءة ملف من مساحة العمل؛ مع start_line/end_line تُقرأ الأسطر المطلوبة فقط (أوفر للسياق في الملفات الكبيرة)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "repo_map",
+  "group": "files",
+  "args": {
+   "path": "",
+   "max_files": 200,
    "max_chars": 12000
   },
-  "description": "قراءة ملف من مساحة العمل",
+  "description": "خريطة المشروع: الملفات مع تواقيع الأصناف والدوال فقط بلا أجسام؛ ابدأ بها ثم اقرأ نطاق أسطر محدداً",
   "write": false,
   "connector": null
  },
