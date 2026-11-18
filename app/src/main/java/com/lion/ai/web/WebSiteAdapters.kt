@@ -244,4 +244,9 @@ object WebSiteAdapters {
     }
 
     internal fun all(): List<WebSiteAdapter> = SPECS.keys.mapNotNull { build(it) }
+
+    /** دالة توافقية للاستدعاءات القديمة التي تمرر SharedPreferences (تُستخدم حالياً كمرجع فقط). */
+    internal fun get(id: String, @Suppress("UNUSED_PARAMETER") prefs: android.content.SharedPreferences?): WebSiteAdapter? {
+        return build(id)
+    }
 }
