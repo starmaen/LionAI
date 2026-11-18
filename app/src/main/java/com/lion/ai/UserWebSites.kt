@@ -94,7 +94,13 @@ object UserWebSites {
         require(!authority.contains('@')) { "الرابط لا يجب أن يحتوي اسم مستخدم أو كلمة مرور" }
         val port = authority.substringAfter(':', "")
         require(port.isEmpty() || port.all { it.isDigit() }) { "منفذ غير صالح في الرابط" }
-        return url.trimEnd('/')
+        // الشرطة المائلة الزائدة تُزال من المسار فقط — والاستعلام يُعاد كما هو، فلا يُلغى `/`
+        // المدخل الجذري (`https://x.app/`) لأن بعض الخوادم تفرّق بينه وبين `https://x.app`.
+        val mark = url.indexOf('?')
+        val path = if (mark >= 0) url.substring(0, mark) else url
+        val query = if (mark >= 0) url.substring(mark) else ""
+        val trimmed = path.trimEnd('/')
+        return (if (trimmed.count { it == '/' } > 2) trimmed else path) + query
     }
 
     /** معرّف فريد: نطاق الصفحة أولاً (اسم المستخدم قد يكون عربياً)، مع لاحقة رقمية عند التكرار. */
