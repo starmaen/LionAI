@@ -58,9 +58,9 @@ import androidx.webkit.WebViewFeature
  * المتصفح المدمج لدردشات الويب (Gemini وQwen وDeepSeek وCopilot وArena وغيرها).
  */
 private val WEB_BG = Color(0xFF121212)
-private val WEB_BAR = Color(0xFF171717)
-private val WEB_ACCENT = Color(0xFFFFB800)
-private val WEB_MUTED = Color(0xFF9A9A9A)
+@Suppress("unused") private val WEB_BAR = Color(0xFF171717)
+@Suppress("unused") private val WEB_ACCENT = Color(0xFFFFB800)
+@Suppress("unused") private val WEB_MUTED = Color(0xFF9A9A9A)
 
 internal fun mobileUserAgent(base: String): String =
     base.replace("; wv", "").replace("Version/4.0 ", "")
