@@ -153,7 +153,7 @@ internal fun LlmClient.listModels(provider: String, rawKey: String, accountId: S
                 out
             }
 
-            "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "together", "cerebras", "unorouter", "sambanova" -> {
+            "kilo", "llm7", "ovh", "mistral", "zai", "nvidia", "together", "cerebras", "unorouter", "sambanova", "you" -> {
                 val info = providerInfo(provider)
                 if (!info.keyless) requireKey(apiKey)
                 val url = info.endpoint.removeSuffix("/chat/completions") + "/models"

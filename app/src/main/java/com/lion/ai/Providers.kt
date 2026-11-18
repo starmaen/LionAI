@@ -540,6 +540,29 @@ val BUILTIN_PROVIDERS = listOf(
         models = listOf("grok-2-latest"),
         free = false
     ),
+    ProviderInfo(
+        id = "you",
+        label = "You.com Inference Router (API)",
+        tagline = "مدفوع بالاستهلاك — موديلات مفتوحة بواجهة OpenAI مع بحث ويب اختياري",
+        docsUrl = "https://you.com/docs/guides/inference-router",
+        defaultModel = "kimi-k3",
+        free = false,
+        shortName = "You.com",
+        endpoint = "https://api.you.com/v1/chat/completions",
+        modelHint = "مفتاح من you.com/platform (Bearer). دردشة You.com الاستهلاكية أُغلقت وهذه واجهة المطورين البديلة وتُسعَّر حسب الموديل. زر «تحديث» يجلب الموديلات المتاحة لحسابك.",
+        models = listOf("kimi-k3", "muse-spark-1.3", "deepseek-v4.1-flash", "glm-5.3")
+    ),
+    ProviderInfo(
+        id = "deepai",
+        label = "DeepAI (API — صور)",
+        tagline = "واجهة DeepAI الخاصة (ليست OpenAI) — توليد وتعديل صور، تتطلب DeepAI Pro",
+        docsUrl = "https://deepai.org/docs#apis",
+        defaultModel = "text2img",
+        free = false,
+        shortName = "DeepAI API",
+        modelHint = "مفتاح من deepai.org/dashboard/profile (ترويسة api-key). الواجهة الموثقة صور فقط: اكتب وصف الصورة فيعود رابط النتيجة. للتعديل/التلوين/إزالة الخلفية/التكبير اختر الموديل وأرفق صورة أو ضع رابطها. فحص المزود يستهلك توليدة واحدة. الدردشة المجانية في «DeepAI Chat».",
+        models = listOf("text2img", "text2img:hd", "text2img:genius", "text2img:super_genius", "image-editor", "colorizer", "background-remover", "torch-srgan")
+    ),
     // ===== دردشات الويب المجانية (بدون مفتاح) =====
     ProviderInfo(
         id = "arena",
@@ -581,13 +604,13 @@ val BUILTIN_PROVIDERS = listOf(
         id = "copilot_web",
         label = "Microsoft Copilot (بدون مفتاح)",
         tagline = "مجاني — دردشة Copilot الرسمية من مايكروسوفت",
-        docsUrl = "https://copilot.microsoft.com",
+        docsUrl = "https://copilot.com/",
         defaultModel = "default",
         shortName = "Copilot",
         modelHint = "دردشة Copilot الرسمية من مايكروسوفت، مجانية ولا تحتاج اشتراكاً.",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://copilot.microsoft.com"
+        webviewUrl = "https://copilot.com/"
     ),
     ProviderInfo(
         id = "ptero_web",
@@ -747,15 +770,27 @@ val BUILTIN_PROVIDERS = listOf(
     ),
     ProviderInfo(
         id = "you_web",
-        label = "You.com (بدون مفتاح)",
-        tagline = "مجاني محدود — بحث ومساعد ذكي",
+        label = "You.com Chat (قديم — يتطلب حساب)",
+        tagline = "الدردشة الاستهلاكية أُغلقت — للاستخدام الفعلي اختر «You.com Inference Router (API)»",
         docsUrl = "https://you.com",
         defaultModel = "default",
         shortName = "You.com",
         modelHint = "بحث ومساعد ذكي؛ مجاني مع حدود استخدام. قد يطلب You.com تسجيل الدخول عند إرسال الرسالة؛ سجّل من «فتح الجلسة».",
         models = listOf("default"),
         keyless = true,
-        webviewUrl = "https://you.com/?chatMode=default"
+        webviewUrl = "https://you.com/chat"
+    ),
+    ProviderInfo(
+        id = "deepai_web",
+        label = "DeepAI Chat (بدون مفتاح)",
+        tagline = "مجاني — دردشة DeepAI (الوضع Standard)",
+        docsUrl = "https://deepai.org/chat",
+        defaultModel = "default",
+        shortName = "DeepAI",
+        modelHint = "الوضع Standard مجاني؛ النماذج المتقدمة تتطلب DeepAI Pro. محددات الصفحة غير مُتحقق منها بعد، استخدم «تقرير البنية» إن لزم.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://deepai.org/chat"
     ),
     ProviderInfo(
         id = "aistudio_web",
@@ -771,6 +806,19 @@ val BUILTIN_PROVIDERS = listOf(
     ),
 
     // ===== أدوات الصور والصوت والفيديو =====
+    ProviderInfo(
+        id = "deepai_img",
+        label = "DeepAI Image (بدون مفتاح)",
+        tagline = "مولد صور DeepAI — الجودة العليا تتطلب Pro",
+        docsUrl = "https://deepai.org/machine-learning-model/text2img",
+        defaultModel = "default",
+        shortName = "DeepAI Image",
+        modelHint = "توليد صور من النص عبر صفحة DeepAI.",
+        models = listOf("default"),
+        keyless = true,
+        webviewUrl = "https://deepai.org/machine-learning-model/text2img",
+        category = "image"
+    ),
     ProviderInfo(
         id = "bing_create",
         label = "Bing Image Creator (بدون مفتاح)",
