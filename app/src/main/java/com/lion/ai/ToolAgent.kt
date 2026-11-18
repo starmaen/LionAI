@@ -85,6 +85,22 @@ object ToolAgent {
             "(إذن|اذن|أذونات|اذونات|صلاحي|صلاحية|تصريح|permission|authorization|access)",
         RegexOption.IGNORE_CASE
     )
+    /** المزود ينفي امتلاك الأدوات/الوصول (تصرّف شائع من صفحات الويب) رغم أنها تصله فعلاً عبر البروتوكول. */
+    private val CAPABILITY_DENIAL = Regex(
+        "(لا أستطيع|لا استطيع|لا يمكنني|لا أملك|لا املك|لا أمتلك|لا امتلك|ليس لدي|ليست لدي|لا يتوفر لدي|غير قادر).{0,50}" +
+            "(الوصول|الأدوات|أدوات|الأداة|الملفات|المستودع|GitHub|جيت|الإنترنت|تصفح)|" +
+            "(I can't|I cannot|I don't have|I do not have|I'm unable to|I am unable to|no access to|don't have access).{0,50}" +
+            "(tools?|access|files?|repository|github|internet|browse)|" +
+            "(as an ai|كنموذج ذكاء اصطناعي|كنموذج لغوي).{0,80}(cannot|can't|unable|لا أستطيع|لا يمكنني)",
+        RegexOption.IGNORE_CASE
+    )
+
+    internal fun isCapabilityDenial(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty() || t.length > 900 || t.contains("[[TOOL]]") || t.contains("```")) return false
+        return CAPABILITY_DENIAL.containsMatchIn(t)
+    }
+
     private val BUILD_FAIL = Regex("(?i)(conclusion\\W{0,4}failure|\\bfailure\\b|\\bfailed\\b|فشل|❌)")
     private val BUILD_PASS = Regex("(?i)(conclusion\\W{0,4}success|completed successfully|\\bsuccess\\b|نجح|✅)")
     internal fun buildFailed(output: String): Boolean {
@@ -389,6 +405,7 @@ object ToolAgent {
         var endNudges = 0
         var lastNarration = ""
         var promiseNudges = 0
+        var capabilityNudges = 0
         var permissionNudges = 0
         var repairNudges = 0
         var transientRetries = 0
@@ -779,6 +796,27 @@ object ToolAgent {
                     "(أو بالمفتاح \"tool\" بدل \"name\" — كلاهما مقبول)، " +
                     "بعلامات اقتباس مزدوجة عادية ودون أي نص داخلها. إن لم تكن متأكداً من الاسم استدعِ tools_schema."
                 continue
+            }
+            if (calls.isEmpty() && effectiveGroups.isNotEmpty() && !answerOnly && isCapabilityDenial(reply)) {
+                if (capabilityNudges < 3 && System.currentTimeMillis() + 45_000 < deadline) {
+                    capabilityNudges++
+                    session?.recordNote("المزود نفى وصوله للأدوات؛ ذُكّر بالبروتوكول ($capabilityNudges/3)")
+                    publish("⚠️ $label ادّعى غياب الأدوات — أذكّره ببروتوكولها ($capabilityNudges/3)")
+                    historyBuffer.add(ChatTurn("user", current))
+                    historyBuffer.add(ChatTurn("assistant", reply))
+                    current = "تصحيح: الأدوات موجودة ومتاحة لك فعلاً داخل Lion AI، وينفّذها التطبيق نيابة عنك على جهاز المستخدم " +
+                        "وفي مستودعه، وتصلك نتيجتها في الرد التالي. اكتب استدعاءً واحداً فقط بصيغة " +
+                        "[[TOOL]]{\"name\":\"اسم_الأداة\",\"args\":{...}}[[/TOOL]] بلا أي نص آخر. " +
+                        "للقراءة ابدأ بـ file_list أو github_repo_overview، وإن لم تعرف الاسم استدعِ tools_schema. " +
+                        "لا تكرر أنك لا تملك أدوات."
+                    continue
+                }
+                session?.providerFailed(label, "نفى وصوله للأدوات رغم التذكير")
+                session?.let { CheckpointStore.save(prefs, it) }
+                return finish(
+                    "⚠️ هذا المزود لا يلتزم ببروتوكول الأدوات. حُفظ السياق والتقدم، ويتابع مزود بديل من النقطة نفسها.",
+                    false, "المزود لا يستعمل الأدوات"
+                ).copy(stalled = true)
             }
             if (calls.isEmpty() && forceExecution && !answerOnly && isIntentOnly(reply)) {
                 if (promiseNudges < 3 && System.currentTimeMillis() + 45_000 < deadline) {
