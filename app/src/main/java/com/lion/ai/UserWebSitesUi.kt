@@ -198,7 +198,7 @@ fun UserWebSitesSection(prefs: SharedPreferences) {
                     colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFF6D00))
                 )
             }
-            Row(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 TextButton(enabled = !busy, onClick = { detect(site.id, site.url, site.label) }) {
                     Text("🔎 إعادة كشف المحددات", color = gold, fontSize = 11.sp)
                 }

@@ -253,7 +253,7 @@ object WebSiteAdapters {
 
     fun get(id: String, prefs: SharedPreferences? = null): WebSiteAdapter? {
         val base = all().firstOrNull { it.id == id } ?: return null
-        fun setting(key: String, default: String): String = prefs?.getString("$DOM_PREFIX$id_$key", "")
+        fun setting(key: String, default: String): String = prefs?.getString("$DOM_PREFIX${id}_$key", "")
             ?.trim()?.takeIf { it.isNotEmpty() } ?: default
         return base.copy(input = setting("input", base.input), send = setting("send", base.send),
             answer = setting("answer", base.answer), stop = setting("stop", base.stop),
