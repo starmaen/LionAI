@@ -9,6 +9,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# كل push جديد على الفرع نفسه يُلغي البناء القديم (الوكيل يدفع مرات متتالية).
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -18,6 +23,8 @@ jobs:
       LION_KEY_PASSWORD: ${{ secrets.LION_KEY_PASSWORD }}
     steps:
     - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
 
     - name: Restore signing key from secrets (if configured)
       if: github.event_name != 'pull_request'
@@ -73,6 +80,31 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    # بوابة ترجمة سريعة: أخطاء Kotlin تظهر خلال دقائق قبل Playwright وproot.
+    - name: Fast compile gate (Kotlin)
+      run: ./gradlew :app:compileDebugKotlin --stacktrace
+
+    # اختبارات Chromium الحقيقية بطيئة (تثبيت apt + تنزيل 1-8 دقائق): تعمل فقط عند تغيّر ملفاتها.
+    - name: Detect browser-related changes
+      id: web
+      run: |
+        run=true
+        base=""
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          base=$(git merge-base HEAD "origin/${{ github.base_ref }}" 2>/dev/null || true)
+        elif [ "${{ github.event_name }}" = "push" ]; then
+          base="${{ github.event.before }}"
+        fi
+        if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+          if git diff --name-only "$base" HEAD | grep -qE '^(scripts/|app/src/main/java/com/lion/ai/web/|app/src/main/assets/|\.github/workflows/build\.yml)'; then
+            run=true
+          else
+            run=false
+          fi
+        fi
+        echo "browser tests needed: $run"
+        echo "run=$run" >> "$GITHUB_OUTPUT"
+
     - name: Fetch proot (Linux environment runtime, checksum-verified)
       run: bash scripts/fetch-proot.sh
 
@@ -83,9 +115,11 @@ jobs:
       run: npm --prefix scripts test
 
     - name: Install Playwright Chromium (cached)
+      if: steps.web.outputs.run == 'true'
       run: npm exec --prefix scripts -- playwright install --with-deps chromium
 
     - name: Test real Chromium editor and reply round trips (local fixtures)
+      if: steps.web.outputs.run == 'true'
       run: npm --prefix scripts run test:browser
 
     # بوابة بيانات Lion-1: يمنع دمج بيانات تدريب قديمة أو صيغة أدوات مكسورة
@@ -104,6 +138,7 @@ jobs:
         ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee /tmp/unit-tests.log
 
     - name: Coverage report (Kover) + summary
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
         ./gradlew koverXmlReport --stacktrace
         python3 - <<'PY'

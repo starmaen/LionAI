@@ -128,6 +128,26 @@ object ToolAgent {
         return PROMISE.containsMatchIn(text)
     }
 
+    /** أدوات التطوير الأساسية فقط (قراءة/تعديل/بناء/CI) للمزودات ذات السياق المحدود؛ الباقي عبر tools_schema. */
+    internal val LEAN_TOOLS = setOf(
+        "tools_schema", "tools_groups", "file_list", "file_search", "file_read", "file_read_many",
+        "file_write", "file_edit", "file_apply_patch", "file_diff", "repo_map", "code_analyze_file",
+        "build_diagnose", "shell_exec", "code_run", "android_build", "gate_run",
+        "github_repo_overview", "github_list_tree", "github_read_file", "github_clone",
+        "github_push_workspace", "github_wait_run", "github_run_logs", "github_create_branch",
+        "github_create_pr"
+    )
+
+    /** يجرّب المستويات من الأكبر إلى الأصغر ويعيد أول نص يلائم الميزانية (وإلا الأصغر). */
+    internal fun fitSystem(budget: Int, vararg tiers: () -> String): String {
+        var last = ""
+        for (tier in tiers) {
+            last = tier()
+            if (last.length <= budget) return last
+        }
+        return last
+    }
+
     internal fun coreGroups(groups: Set<ToolGroup>): Set<ToolGroup> {
         val required = setOf(
             ToolGroup.META, ToolGroup.FILES, ToolGroup.CODE, ToolGroup.GITHUB,
@@ -295,9 +315,9 @@ object ToolAgent {
         val modeBlock = if (profile.promptSuffix.isNotBlank() &&
             baseSystemPrompt.contains(profile.promptSuffix.take(60))
         ) "" else profile.promptSuffix
-        fun buildSystem(g: Set<ToolGroup>): String = baseSystemPrompt + modeBlock +
+        fun buildSystem(g: Set<ToolGroup>, only: Set<String>? = null): String = baseSystemPrompt + modeBlock +
             AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT +
-            AiTools.spec(g, prefs) +
+            AiTools.spec(g, prefs, only) +
             (if (provider in LOCAL_PROVIDERS) LOCAL_TOOL_HINT else "") + resumeBlock
         // المزودات السحابية (خاصة المجانية) لها سقف سياق/معدّل: إن كبرت التعليمات نقلّص الأدوات للنواة
         // (والباقي متاح عبر tools_schema) بدل أن يفشل الطلب كاملاً.
@@ -309,11 +329,19 @@ object ToolAgent {
             LionOne.ID -> if (LionOne.remoteFirstActive()) 16_000 else 12_000
             else -> 16_000
         }
-        var system = buildSystem(effectiveGroups)
-        if (system.length > maxSystemChars) {
-            val core = coreGroups(effectiveGroups)
-            system = buildSystem(core)
-        }
+        // الذيل (WorkMethod + ScopeGuard + الصلاحيات + السياق) يُلحَق بعد الفحص، فنحجز مساحته مسبقاً.
+        val tailReserve = WorkMethod.PROMPT.length + ScopeGuard.DIRECTIVE.length + 900 +
+            modeBlock.take(1_000).length + AiTools.contextHint(contextText, prefs).take(2_000).length +
+            resumeRaw.takeLast(2_000).length
+        val toolBudget = (maxSystemChars - tailReserve).coerceAtLeast(maxSystemChars / 3)
+        val core = coreGroups(effectiveGroups)
+        var system = fitSystem(
+            toolBudget,
+            { buildSystem(effectiveGroups) },
+            { buildSystem(core) },
+            { buildSystem(core, LEAN_TOOLS) },
+            { buildSystem(setOf(ToolGroup.META)) }
+        )
         system += if (readOnly) "\nوضع جمع الأدلة (قراءة فقط): استخدم أدوات القراءة للتحقق من الوقائع، ولا تكتب ولا تعدّل ولا تنفّذ أي شيء." +
             " لا تسأل المستخدم. أخرج حقائق موثقة بمصدرها (مسار الملف أو الرابط) وصرّح بما لم تستطع التحقق منه."
         else if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +

@@ -594,10 +594,11 @@ object AiTools {
         names.mapNotNull { n -> defs.firstOrNull { it.name == n }?.let { "- ${it.name} ${it.signature}" } }
             .joinToString("\n")
 
-    fun spec(groups: Set<ToolGroup>, prefs: SharedPreferences): String {
+    fun spec(groups: Set<ToolGroup>, prefs: SharedPreferences, only: Set<String>? = null): String {
         if (groups.isEmpty()) return ""
         val available = defs.filter { def ->
-            def.connector == null || ConnectorAuth.isConnected(prefs, def.connector)
+            (def.connector == null || ConnectorAuth.isConnected(prefs, def.connector)) &&
+                (only == null || def.name in only)
         }
         if (available.isEmpty()) return ""
         val builder = StringBuilder()
