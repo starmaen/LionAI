@@ -129,15 +129,15 @@ internal fun isAppStoreUrl(url: String): Boolean {
 }
 
 internal fun describeWebError(code: Int): String = when (code) {
-    WebViewClient.ERROR_HOST_LOOKUP -> "تعذّر العثور على عنوان الموقع."
-    WebViewClient.ERROR_CONNECT -> "تعذّر الاتصال بالخادم."
+    WebViewClient.ERROR_HOST_LOOKUP -> "تعذر العثور على عنوان الموقع."
+    WebViewClient.ERROR_CONNECT -> "تعذر الاتصال بالخادم."
     WebViewClient.ERROR_TIMEOUT -> "انتهت مهلة الاتصال."
     WebViewClient.ERROR_BAD_URL -> "عنوان الصفحة غير صالح."
     WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> "فشل التحقق من شهادة الأمان."
-    WebViewClient.ERROR_TOO_MANY_REQUESTS -> "طلبات كثيرة جداً من الموقع."
+    WebViewClient.ERROR_TOO_MANY_REQUESTS -> "طلبات كثيرة جدا من الموقع."
     WebViewClient.ERROR_FILE_NOT_FOUND -> "الصفحة أو الملف غير موجود."
     WebViewClient.ERROR_UNSUPPORTED_SCHEME -> "نوع الرابط غير مدعوم."
-    else -> "تعذّر تحميل الصفحة."
+    else -> "تعذر تحميل الصفحة."
 }
 
 internal class LionWebController(
@@ -282,6 +282,20 @@ internal class LionWebController(
         override fun onPageFinished(view: WebView, url: String) {
             CookieManager.getInstance().flush()
             injectCompatibilityFixes(view)
+            // إصلاح Copilot: إجبار التركيز على حقل الإدخال بعد اكتمال التحميل (معزول بشرط URL)
+            if (url.contains("copilot")) {
+                val jsFocus = """
+                    setTimeout(function() {
+                        var input = document.querySelector('#userInput') || 
+                                    document.querySelector('[contenteditable="true"][role="textbox"]');
+                        if (input) {
+                            input.focus();
+                            input.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                        }
+                    }, 500);
+                """.trimIndent()
+                runCatching { view.evaluateJavascript(jsFocus, null) }
+            }
             pageUrl = view.url ?: url
         }
 
@@ -342,49 +356,4 @@ internal fun LionWebScreen(controller: LionWebController, onClose: () -> Unit) {
     val safeInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
     Column(modifier = Modifier.fillMaxSize().background(WEB_BG).windowInsetsPadding(safeInsets)) {
         LionWebBar(controller = controller, onClose = onClose)
-        Box(modifier = Modifier.fillMaxWidth().weight(1f).imePadding()) {
-            AndroidView(factory = { ctx -> WebView(ctx).also { controller.attach(it) } }, modifier = Modifier.fillMaxSize())
-            if (controller.isLoading) {
-                LinearProgressIndicator(
-                    progress = { controller.progress / 100f },
-                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
-                    color = WEB_ACCENT,
-                    trackColor = Color.Transparent
-                )
-            }
-            val err = controller.errorMessage
-            if (err != null) {
-                Surface(modifier = Modifier.fillMaxSize(), color = WEB_BG) {
-                    Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "⚠️", fontSize = 48.sp)
-                        Text(text = err, color = Color.White, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp, bottom = 24.dp))
-                        Surface(shape = RoundedCornerShape(8.dp), color = WEB_ACCENT, modifier = Modifier.clickable { controller.reload() }) {
-                            Text(text = "إعادة المحاولة", color = Color.Black, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LionWebBar(controller: LionWebController, onClose: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth().height(56.dp), color = WEB_BAR) {
-        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF262626), modifier = Modifier.clickable { onClose() }) {
-                Text(text = "✕", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-            }
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(text = controller.pageTitle.ifBlank { hostOf(controller.pageUrl) }, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(text = hostOf(controller.pageUrl), color = WEB_MUTED, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF262626), modifier = Modifier.clickable { controller.reload() }) {
-                Text(text = "↻", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-            }
-            Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF262626), modifier = Modifier.clickable { controller.openInBrowser() }.padding(start = 6.dp)) {
-                Text(text = "↗", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-            }
-        }
-    }
-}
+        Box(modifier = Modifier.fillMaxWidth().weight(1f).imePadding()

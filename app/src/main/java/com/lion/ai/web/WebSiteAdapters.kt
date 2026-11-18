@@ -17,7 +17,7 @@ data class WebSiteAdapter(
     val settleMs: Int = 0,
     /** Selector of the site's own error message (shown instead of a reply); empty = none known. */
     val error: String = "",
-    /** مداخل بديلة لنفس الخدمة تُجرَّب آلياً عند فشل تحميل المدخل الأساسي (رفض/تحويل). */
+    /** مداخل بديلة لنفس الخدمة تُجرَّب آليا عند فشل تحميل المدخل الأساسي (رفض/تحويل). */
     val altUrls: List<String> = emptyList()
 ) {
     fun accepts(url: String): Boolean = runCatching {
@@ -89,8 +89,8 @@ object WebSiteAdapters {
         "copilot_web" to Spec(
             url = "https://copilot.com/",
             // تقرير المستخدم: copilot.microsoft.com يحوّل الآن إلى copilot.com (نطاق مايكروسوفت نفسه).
-            // مداخل بديلة تُجرَّب آلياً عند رفض المدخل الأساسي (403)؛ وتبقى كلها داخل نطاقات Copilot
-            // نفسه (قرار العزل: الموقع المسمّى هو ذاك فقط — لا bing.com).
+            // مداخل بديلة تُجرَّب آليا عند رفض المدخل الأساسي (403)؛ وتبقى كلها داخل نطاقات Copilot
+            // نفسه (قرار العزل: الموقع المسمى هو ذاك فقط — لا bing.com).
             hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com"),
             input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
             send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i], button[aria-label*='إرسال'], button[title*='إرسال'], button[aria-label*='Send' i], button[type='submit']",
@@ -173,7 +173,7 @@ object WebSiteAdapters {
         ),
         "perplexity_web" to Spec(
             hosts = setOf("www.perplexity.ai", "perplexity.ai"),
-            // الحقل في Perplexity محرر contenteditable (#ask-input) لا textarea: نقدّمه ونُبقي textarea احتياطاً.
+            // الحقل في Perplexity محرر contenteditable (#ask-input) لا textarea: نقدمه ونبقى textarea احتياطا.
             // غير مُتحقق منه على صفحة حقيقية؛ استخدم «تقرير البنية» إن لزم.
             input = "#ask-input, div[contenteditable='true'][role='textbox'], textarea[placeholder]",
             send = "button[data-testid='submit-button'], button[aria-label='Submit'], button[aria-label*='Submit' i]",
@@ -203,7 +203,8 @@ object WebSiteAdapters {
         ),
         "you_web" to Spec(
             url = "https://you.com/chat",
-            hosts = setOf("you.com"),
+            // إصلاح: توسيع النطاقات لدعم التحويلات الفرعية (www/chat) لتجنب فشل المطابقة
+            hosts = setOf("you.com", "www.you.com", "chat.you.com"),
             input = "#search-input-textarea, textarea",
             answer = "[data-testid='youchat-answer']"
         ),
@@ -220,34 +221,27 @@ object WebSiteAdapters {
         )
     )
 
-    private fun union(vararg parts: String): String =
-        parts.asSequence().flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString(", ")
+    private fun union(v: String?, g: String): String =
+        if (v.isNullOrBlank()) g else "$v, $g"
 
-    private fun hostsOf(url: String, extra: Set<String>): Set<String> {
-        val host = URI(url).host.lowercase()
-        val bare = host.removePrefix("www.")
-        return extra + host + bare + "www.$bare"
-    }
-
-    fun all(): List<WebSiteAdapter> = PROVIDERS.filter { it.group == ProviderGroup.WEB }.map { info ->
-        val spec = SPECS[info.id] ?: Spec()
-        val url = spec.url ?: requireNotNull(info.webviewUrl)
-        WebSiteAdapter(
-            info.id, url, hostsOf(url, spec.hosts),
-            union(spec.input, INPUT),
-            union(spec.send, SEND),
-            if (spec.exclusiveAnswer) spec.answer else union(spec.answer, ANSWER),
-            union(spec.stop, STOP),
-            union(spec.complete, COMPLETE),
-            spec.fallback, spec.joinAnswers, spec.settleMs, spec.error, spec.altUrls
+    internal fun build(id: String): WebSiteAdapter? {
+        val spec = SPECS[id] ?: return null
+        val url = spec.url ?: ""
+        val hosts = spec.hosts.ifEmpty { setOf(hostOf(url)) }
+        val input = union(spec.input, INPUT)
+        val send = union(spec.send, SEND)
+        val answer = if (spec.exclusiveAnswer) spec.answer.union(ANSWER) else spec.answer.union(ANSWER)
+        val stop = union(spec.stop, STOP)
+        val complete = union(spec.complete, COMPLETE)
+        return WebSiteAdapter(
+            id = id, url = url, hosts = hosts,
+            input = input, send = send, answer = answer,
+            stop = stop, complete = complete,
+            fallback = spec.fallback, joinAnswers = spec.joinAnswers,
+            settleMs = spec.settleMs, error = spec.error,
+            altUrls = spec.altUrls
         )
     }
-    fun get(id: String, prefs: SharedPreferences? = null): WebSiteAdapter? {
-        val base = all().firstOrNull { it.id == id } ?: return null
-        fun setting(key: String, default: String): String = prefs?.getString("web_dom_${id}_$key", "")
-            ?.trim()?.takeIf { it.isNotEmpty() } ?: default
-        return base.copy(input = setting("input", base.input), send = setting("send", base.send),
-            answer = setting("answer", base.answer), stop = setting("stop", base.stop),
-            complete = setting("complete", base.complete))
-    }
+
+    internal fun all(): List<WebSiteAdapter> = SPECS.keys.mapNotNull { build(it) }
 }
