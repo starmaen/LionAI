@@ -545,6 +545,7 @@ fun SettingsScreen(
             }
 
             UserPlatformsSection(prefs)
+            UserWebSitesSection(prefs)
 
             ProviderManagerSection(prefs)
             }

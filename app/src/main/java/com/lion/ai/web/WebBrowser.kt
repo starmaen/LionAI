@@ -55,7 +55,8 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 
 /**
- * المتصفح المدمج لدردشات الويب (Gemini وQwen وDeepSeek وCopilot وArena وغيرها).
+ * المتصفح المدمج لدردشات الويب (Gemini وQwen وDeepSeek وDeepAI Chat وArena والصفحات المضافة
+ * بالرابط وغيرها). الجسر الآلي في [AndroidWebSessionHost]؛ هنا يفتح المستخدم الصفحة بنفسه.
  */
 private val WEB_BG = Color(0xFF121212)
 private val WEB_BAR = Color(0xFF171717)
@@ -199,6 +200,7 @@ internal class LionWebController(
             displayZoomControls = false
             mediaPlaybackRequiresUserGesture = false
             textZoom = 100
+            // صفحات تريد نسخة سطح المكتب (GitHub Copilot مثلاً)؛ بقيتها على الوكيل المحمول.
             userAgentString = if (startUrl.contains("copilot")) desktopUserAgent(baseUserAgent) else mobileUserAgent(baseUserAgent)
             if (startUrl.contains("copilot")) applyDesktopClientHints(this, desktopMajor(baseUserAgent))
         }
@@ -283,20 +285,6 @@ internal class LionWebController(
             CookieManager.getInstance().flush()
             injectCompatibilityFixes(view)
             pageUrl = view.url ?: url
-            // إصلاح Copilot: إجبار التركيز على حقل الإدخال بعد اكتمال التحميل (معزول بشرط URL)
-            if (url.contains("copilot")) {
-                val jsFocus = """
-                    setTimeout(function() {
-                        var input = document.querySelector('#userInput') ||
-                                    document.querySelector('[contenteditable="true"][role="textbox"]');
-                        if (input) {
-                            input.focus();
-                            input.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
-                        }
-                    }, 500);
-                """.trimIndent()
-                runCatching { view.evaluateJavascript(jsFocus, null) }
-            }
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {

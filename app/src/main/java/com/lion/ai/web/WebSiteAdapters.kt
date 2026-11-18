@@ -33,6 +33,8 @@ data class WebSiteAdapter(
 }
 
 object WebSiteAdapters {
+    /** بادئة مفاتيح تجاوز المحددات لكل موقع (تكتبها «محددات المطور» وتقرؤها [get]). */
+    const val DOM_PREFIX = "web_dom_"
     private const val INPUT = "textarea, [contenteditable='true'][role='textbox'], [contenteditable='true'].ProseMirror, [contenteditable='true']"
     private const val SEND = "button[data-testid='send-button'], button[data-testid*='send'], button.send-button, button[aria-label='Send'], button[aria-label='Send message'], button[aria-label='Send Message'], button[aria-label*='Send'], button[aria-label*='إرسال'], button[type='submit'], [role='button'][aria-label*='Send'], [role='button'][aria-label*='إرسال']"
     private const val STOP = "button[data-testid='stop-button'], button.stop-button, button[aria-label='Stop'], button[aria-label='Stop generating'], button[aria-label='Stop response'], button[aria-label='Stop generation'], button[aria-label*='Stop'], button[aria-label*='إيقاف']"
@@ -86,21 +88,9 @@ object WebSiteAdapters {
             settleMs = 3000,
             error = "error-message, .error-message, [data-test-id='error-message']"
         ),
-        "copilot_web" to Spec(
-            url = "https://copilot.com/",
-            // تقرير المستخدم: copilot.microsoft.com يحوّل الآن إلى copilot.com (نطاق مايكروسوفت نفسه).
-            // مداخل بديلة تُجرَّب آلياً عند رفض المدخل الأساسي (403)؛ وتبقى كلها داخل نطاقات Copilot
-            // نفسه (قرار العزل: الموقع المسمّى هو ذاك فقط — لا bing.com).
-            hosts = setOf("copilot.microsoft.com", "copilot.cloud.microsoft", "copilot.com", "www.copilot.com"),
-            input = "#userInput, textarea[data-testid='composer-input'], textarea[aria-label*='message' i], textarea[placeholder*='Copilot' i], textarea[placeholder*='Message' i], [contenteditable='true'][role='textbox']",
-            send = "button[data-testid='submit-button'], button[aria-label='Submit message'], button[aria-label*='Submit' i], button[title*='Submit' i], button[aria-label*='إرسال'], button[title*='إرسال'], button[aria-label*='Send' i], button[type='submit']",
-            // رد Copilot فقط (لا رسالة المستخدم data-content='user-message').
-            answer = "[data-content='ai-message'], [data-testid='ai-message'], div[data-testid='message-item'][data-author='ai'], [data-testid='copilot-response'], [class*='ai-message']",
-            stop = "button[data-testid='stop-button'], button[aria-label*='Stop' i], button[title*='Stop' i]",
-            settleMs = 3500,
-            error = "[data-testid='error-message'], [role='alert']",
-            altUrls = listOf("https://copilot.microsoft.com", "https://copilot.cloud.microsoft")
-        ),
+        // "copilot_web" و "you_web" حُذفتا من التطبيق: الصفحتان لا تعملان (copilot.com يرفض WebView
+        // ويحوّل إلى متجر التطبيقات، وyou.com أغلق دردشته الاستهلاكية). أُبقي GitHub Copilot
+        // (github_copilot_web) لأنه صفحة أخرى تعمل، ومزوّد You.com API لأنه واجهة مفتاح لا صفحة ويب.
         "ptero_web" to Spec(
             url = "https://ptero.pro/",
             hosts = setOf("ptero.pro", "www.ptero.pro"),
@@ -201,17 +191,21 @@ object WebSiteAdapters {
             input = "textarea, [contenteditable='true']",
             answer = ".chat-assistant-message"
         ),
-        "you_web" to Spec(
-            url = "https://you.com/chat",
-            // توسيع النطاقات لدعم التحويلات الفرعية (www/chat)
-            hosts = setOf("you.com", "www.you.com", "chat.you.com"),
-            input = "#search-input-textarea, textarea",
-            answer = "[data-testid='youchat-answer']"
-        ),
         "deepai_web" to Spec(
             url = "https://deepai.org/chat",
-            hosts = setOf("deepai.org", "www.deepai.org"),
-            input = "textarea, [contenteditable='true']",
+            // بنية الصفحة الفعلية (من HTML deepai.org/chat): المحرر textarea#persistentChatbox،
+            // وزر الإرسال button#chatSubmitButton بلا aria-label ولا data-testid ولا نوع submit،
+            // وهو معطَّل حتى يُطلق المحرر حدث input، والصفحة تتجاهل Enter على الجوال
+            // (if (isMobileDevice) return) — لذلك كانت الرسائل تُكتب في الحقل ولا تُرسل أبداً.
+            // النطاقات هنا تُسمّى صراحةً: deepai.org صفحة مستقلة لا علاقة لها بـ chat.deepseek.com.
+            hosts = setOf("deepai.org"),
+            input = "#persistentChatbox, textarea.chatbox",
+            send = "#chatSubmitButton",
+            stop = "#chatStopButton",
+            // الجواب في .outputBox (يدخلها زر النسخ داخل .optionsBox، فيستثنيه تنقية النص).
+            answer = "#convo .outputBox, .outputBox",
+            complete = ".copytextButton, .optionsBox button",
+            error = "#errorpopup",
             settleMs = 3500
         ),
         "aistudio_web" to Spec(
@@ -230,25 +224,42 @@ object WebSiteAdapters {
         return extra + host + bare + "www.$bare"
     }
 
-    fun all(): List<WebSiteAdapter> = PROVIDERS.filter { it.group == ProviderGroup.WEB }.map { info ->
-        val spec = SPECS[info.id] ?: Spec()
-        val url = spec.url ?: requireNotNull(info.webviewUrl)
-        WebSiteAdapter(
-            info.id, url, hostsOf(url, spec.hosts),
-            union(spec.input, INPUT),
-            union(spec.send, SEND),
-            if (spec.exclusiveAnswer) spec.answer else union(spec.answer, ANSWER),
-            union(spec.stop, STOP),
-            union(spec.complete, COMPLETE),
-            spec.fallback, spec.joinAnswers, spec.settleMs, spec.error, spec.altUrls
-        )
-    }
+    fun all(): List<WebSiteAdapter> = build(
+        PROVIDERS.filter { it.group == ProviderGroup.WEB }, UserWebSites.entries()
+    )
+
+    /**
+     * محددات كل مزود ويب. [added] بطاقات ما أضافه المستخدم بالرابط: نطاقها من رابطها، ومهلها من
+     * بطاقتها، وما كُشف من صفحتها يُقدَّم على المحددات العامة (union) لا يلغيها — فتبقى العامة
+     * احتياطاً إن تغيّرت الصفحة. منفصلة كهذه لتكون قابلة للاختبار بلا سياق أندرويد.
+     */
+    internal fun build(infos: List<ProviderInfo>, added: List<UserWebSites.Entry>): List<WebSiteAdapter> =
+        infos.map { info ->
+            val spec = SPECS[info.id] ?: Spec()
+            val custom = added.firstOrNull { it.id == info.id }
+            val url = custom?.url ?: spec.url ?: requireNotNull(info.webviewUrl)
+            val settle = if (custom != null && custom.settleMs > 0) custom.settleMs else spec.settleMs
+            WebSiteAdapter(
+                info.id, url, hostsOf(url, spec.hosts + custom?.hosts?.toSet().orEmpty()),
+                union(custom?.input.orEmpty(), spec.input, INPUT),
+                union(custom?.send.orEmpty(), spec.send, SEND),
+                if (spec.exclusiveAnswer) spec.answer
+                else union(custom?.answer.orEmpty(), spec.answer, ANSWER),
+                union(custom?.stop.orEmpty(), spec.stop, STOP),
+                union(spec.complete, COMPLETE),
+                spec.fallback, spec.joinAnswers, settle, spec.error, spec.altUrls
+            )
+        }
+
     fun get(id: String, prefs: SharedPreferences? = null): WebSiteAdapter? {
         val base = all().firstOrNull { it.id == id } ?: return null
-        fun setting(key: String, default: String): String = prefs?.getString("web_dom_${id}_$key", "")
+        fun setting(key: String, default: String): String = prefs?.getString("$DOM_PREFIX$id_$key", "")
             ?.trim()?.takeIf { it.isNotEmpty() } ?: default
         return base.copy(input = setting("input", base.input), send = setting("send", base.send),
             answer = setting("answer", base.answer), stop = setting("stop", base.stop),
             complete = setting("complete", base.complete))
     }
+
+    /** كل مزودات الويب المعرَّفة (المدمجة + ما أُضيف يدوياً بالرابط): للبحث بنطاق الصفحة. */
+    fun byHost(url: String): WebSiteAdapter? = all().firstOrNull { it.accepts(url) }
 }

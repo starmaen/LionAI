@@ -6,7 +6,8 @@ import androidx.compose.runtime.mutableIntStateOf
 /**
  * حذف أي مزود/منصة/صفحة ويب/وسائط دون أي أثر جانبي، فيبقى التطبيق مرناً ونظيفاً.
  *
- * - المنصات التي أضافها المستخدم (usr_*) والمزودون المستوردون (imp_*): حذف فعلي كامل (بياناتها ومفاتيحها).
+ * - المنصات التي أضافها المستخدم (usr_*)، وصفحات الويب التي أضافها بالرابط (web_*)، والمزودون
+ *   المستوردون (imp_*): حذف فعلي كامل (بياناتها ومفاتيحها ومحدداتها).
  * - المدمجون في التطبيق: لا يمكن حذف كودهم وقت التشغيل، فيُسجَّلون كـ«محذوفين» ويختفون كلياً من كل مكان
  *   ([PROVIDERS] نفسها تستبعدهم): الإعدادات، المنتقي، الراوتر التلقائي، الإجماع، الوكيل ومحوّلات الويب.
  *   تبقى مفاتيحهم محفوظة ليمكن استعادتهم بضغطة واحدة دون إعادة إدخال شيء.
@@ -65,6 +66,7 @@ object ProviderRemoval {
         if (isApiChat && PROVIDERS.none { it.id != id && it.group == ProviderGroup.API && it.id != "local_proxy" }) return false
         when {
             id.startsWith(UserPlatforms.PREFIX) -> UserPlatforms.remove(prefs, id)
+            id.startsWith(UserWebSites.PREFIX) -> UserWebSites.remove(prefs, id)
             id.startsWith("imp_") -> ImportedProviders.remove(prefs, id)
             else -> {
                 prefs.edit().putString(KEY, serialize(parse(prefs.getString(KEY, "") ?: "") + id)).apply()

@@ -62,6 +62,16 @@ object WebChatRuntime {
         prefs.edit().putLong("web_timeout_$id", clamped).apply()
     }
     fun timeoutSeconds(prefs: SharedPreferences, id: String): Long = timeoutMs(prefs, id) / 1000L
+
+    /**
+     * صفحات ترفض الحاويات المحمولة (تحوّلها إلى صفحة تثبيت التطبيق أو ترسل نسخة خفيفة بلا محرر
+     * كامل): وكيل سطح مكتب يفتحها. يُطبَّق على جلسة الموقع الجديدة بعد إغلاق الجلسة الحالية.
+     */
+    const val DESKTOP_UA = "web_desktop_ua_"
+    fun desktopUa(prefs: SharedPreferences, id: String): Boolean = prefs.getBoolean(DESKTOP_UA + id, false)
+    fun setDesktopUa(prefs: SharedPreferences, id: String, value: Boolean) {
+        prefs.edit().putBoolean(DESKTOP_UA + id, value).apply()
+    }
 }
 
 val ProviderInfo.supportsAppChat: Boolean

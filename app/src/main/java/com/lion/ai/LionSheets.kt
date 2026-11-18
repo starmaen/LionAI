@@ -348,6 +348,12 @@ internal fun WebPickerSheet(
     onDismiss: () -> Unit,
     onOpen: (String) -> Unit
 ) {
+val sheetContext = LocalContext.current
+val sheetPrefs = remember { SecurePrefs.get(sheetContext) }
+var showAdd by remember { mutableStateOf(false) }
+var webRefresh by remember { mutableIntStateOf(0) }
+// القائمة تُقرأ من PROVIDERS: ما يُضاف بالرابط هنا يظهر فيها وفي الإعدادات والجسر بلا أي خطوة ثانية.
+val webSites = remember(webRefresh) { PROVIDERS.filter { it.group == ProviderGroup.WEB } }
 ModalBottomSheet(
 onDismissRequest = onDismiss,
 sheetState = sheetState,
@@ -359,6 +365,9 @@ Column(
         .verticalScroll(rememberScrollState())
         .padding(bottom = 12.dp)
 ) {
+    if (showAdd) {
+        AddWebSiteDialog(prefs = sheetPrefs, onDismiss = { showAdd = false }, onAdded = { webRefresh++ })
+    }
     Text(
         "دردشات الويب المجانية (بدون مفتاح)",
         color = Color(0xFFFFB800),
@@ -366,7 +375,7 @@ Column(
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     )
-    PROVIDERS.filter { it.group == ProviderGroup.WEB }.forEach { info ->
+    webSites.forEach { info ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -374,13 +383,24 @@ Column(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("🌐", fontSize = 18.sp)
+            Text(if (info.id.startsWith(UserWebSites.PREFIX)) "➕" else "🌐", fontSize = 18.sp)
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(info.label, color = Color.White, fontSize = 14.sp)
                 Text(info.tagline, color = Color(0xFF9A9A9A), fontSize = 11.sp, maxLines = 1)
             }
         }
+    }
+    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "صفحة أخرى؟ ألصق رابطها فتُضاف مزود ويب كاملاً ويُقرن زر إرسالها وحقل كتابتها بما في الصفحة.",
+            color = Color(0xFF9A9A9A), fontSize = 11.sp, modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = { showAdd = true }) { Text("إضافة صفحة", color = Color(0xFFFFB800), fontSize = 12.sp) }
     }
 }
         }

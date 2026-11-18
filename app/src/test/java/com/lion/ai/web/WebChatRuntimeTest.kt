@@ -63,7 +63,6 @@ class WebChatRuntimeTest {
         assertTrue(WebSiteAdapters.get("arena")!!.url.contains("/text/direct"))
         assertTrue(requireNotNull(WebSiteAdapters.get("duckduckgo_web")).accepts("https://duck.ai/"))
         assertTrue(requireNotNull(WebSiteAdapters.get("chatgpt_web")).accepts("https://chat.openai.com/"))
-        assertTrue(requireNotNull(WebSiteAdapters.get("you_web")).accepts("https://you.com/?chatMode=default"))
         assertTrue(claude.send.contains("send-button") || claude.send.contains("aria-label"))
         WebSiteAdapters.all().forEach { adapter ->
             assertTrue(adapter.id, adapter.send.contains("aria-label") || adapter.send.contains("send-button"))
@@ -83,9 +82,24 @@ class WebChatRuntimeTest {
             assertFalse(adapter.accepts("https://evil.example/"))
         }
         assertTrue(requireNotNull(WebSiteAdapters.get("gemini_web")).accepts("https://gemini.google.com/app"))
-        assertTrue(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://copilot.microsoft.com/chats"))
-        assertTrue(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://copilot.com/"))
-        assertFalse(requireNotNull(WebSiteAdapters.get("copilot_web")).accepts("https://www.bing.com/"))
+    }
+    @Test fun deepAiChatIsBridgedToItsOwnPageAndNotToDeepSeek() {
+        val deepai = requireNotNull(WebSiteAdapters.get("deepai_web"))
+        assertEquals("https://deepai.org/chat", deepai.url)
+        assertTrue(deepai.accepts("https://deepai.org/chat"))
+        assertTrue(deepai.accepts("https://www.deepai.org/chat"))
+        assertFalse(deepai.accepts("https://chat.deepseek.com/"))
+        assertFalse(requireNotNull(WebSiteAdapters.get("deepseek_web")).accepts(deepai.url))
+        // الصفحة تُقاد بمسمّياتها: زر الإرسال بلا تسمية تصل إليه المحددات العامة، والحقل ليس أي textarea.
+        assertTrue(deepai.input, deepai.input.startsWith("#persistentChatbox"))
+        assertTrue(deepai.send, deepai.send.contains("#chatSubmitButton"))
+        assertTrue(deepai.stop, deepai.stop.contains("#chatStopButton"))
+        assertTrue(deepai.answer, deepai.answer.contains(".outputBox"))
+        assertTrue(deepai.error, deepai.error.contains("#errorpopup"))
+        // بطاقتا DeepAI الأخريان مستقلتان: واجهة API للصور، ومولد الصور — لا دردشة الويب.
+        assertEquals(ProviderGroup.API, providerInfo("deepai").group)
+        assertEquals(ProviderGroup.MEDIA, providerInfo("deepai_img").group)
+        assertEquals(ProviderGroup.WEB, providerInfo("deepai_web").group)
     }
     @Test fun removedWebProvidersAreGoneEverywhereAndDeadBackendFallsBack() {
         val removed = listOf("hf_chat_web", "kimi_web", "phind_web", "blackbox_web", "pi_web")
@@ -98,8 +112,10 @@ class WebChatRuntimeTest {
         prefs.edit().putString("provider", "kimi_web").apply()
         assertEquals("gemini", RoutePolicy.selectedProvider(prefs))
         assertEquals("gemini", LocalAIProxy.backendProvider(prefs))
-        listOf("gemini_web", "copilot_web", "perplexity_web", "you_web", "ptero_web", "lumo_web").forEach {
+        listOf("gemini_web", "deepai_web", "perplexity_web", "ptero_web", "lumo_web").forEach {
             assertTrue(it, WebChatRuntime.isWeb(it))
         }
+        // GitHub Copilot صفحة أخرى تعمل: بقيت رغم حذف صفحة مايكروسوفت.
+        assertTrue(WebChatRuntime.isWeb("github_copilot_web"))
     }
 }

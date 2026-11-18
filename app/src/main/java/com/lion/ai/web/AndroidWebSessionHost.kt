@@ -305,9 +305,12 @@ internal class AndroidWebSessionHost(
             loadWithOverviewMode = true
             setSupportMultipleWindows(false)
             javaScriptCanOpenWindowsAutomatically = false
-            userAgentString = if (adapter.id == "copilot_web") desktopUserAgent(WebSettings.getDefaultUserAgent(activity))
+            // بعض الصفحات ترفض الحاويات المحمولة (تحوّلها إلى متجر التطبيقات): وكيل سطح المكتب
+            // قرار لكل موقع يقرّره المستخدم من «صفحاتي الخاصة (ويب)»، لا قائمة معرّفات مضمّنة.
+            val desktopUa = runCatching { WebChatRuntime.desktopUa(prefs, adapter.id) }.getOrDefault(false)
+            userAgentString = if (desktopUa) desktopUserAgent(WebSettings.getDefaultUserAgent(activity))
                 else mobileUserAgent(WebSettings.getDefaultUserAgent(activity))
-            if (adapter.id == "copilot_web") applyDesktopClientHints(this, desktopMajor(WebSettings.getDefaultUserAgent(activity)))
+            if (desktopUa) applyDesktopClientHints(this, desktopMajor(WebSettings.getDefaultUserAgent(activity)))
         }
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {

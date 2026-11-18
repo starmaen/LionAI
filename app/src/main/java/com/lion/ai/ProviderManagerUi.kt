@@ -89,7 +89,8 @@ fun ProviderManagerSection(prefs: SharedPreferences) {
     }
 
     confirm?.let { info ->
-        val permanent = info.id.startsWith(UserPlatforms.PREFIX) || info.id.startsWith("imp_")
+        val permanent = info.id.startsWith(UserPlatforms.PREFIX) || info.id.startsWith(UserWebSites.PREFIX) ||
+            info.id.startsWith("imp_")
         AlertDialog(
             onDismissRequest = { confirm = null },
             title = { Text("حذف ${info.label}؟") },

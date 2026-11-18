@@ -54,8 +54,19 @@
     return out;
   }
   function find(selector) { return nodes(selector).find(visible); }
+  // أول عنصر ظاهر لا يكفي: نافذة الدخول قد تحمل textarea وزر submit أسبق في المستند،
+  // فتُخطئ الجسر الحقل وتضغط «Login» بدل «إرسال». نفضّل ما كان خارج النوافذ وغير معطّل،
+  // ونبقى نعيد أول ظاهر إن لم يوجد غيره حتى تُبلّغ الاستطلاعات بالحقل المعطّل لا بالصمت.
+  function pickUsable(selector, prefer) {
+    const list = nodes(selector).filter(visible);
+    if (!list.length) return null;
+    const good = list.find(function (n) {
+      return !isDisabled(n) && !inModal(n) && (!prefer || prefer(n));
+    });
+    return good || list[0];
+  }
   function findInput() {
-    const explicit = find(C.input);
+    const explicit = pickUsable(C.input, function (n) { return !n.readOnly; });
     if (explicit && !isDisabled(explicit) && !explicit.readOnly) return explicit;
     const all = nodes("textarea, [contenteditable='true'][role='textbox'], [contenteditable='true']").filter(function (n) {
       return visible(n) && !isDisabled(n) && !n.readOnly;
@@ -177,18 +188,54 @@
       return {x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height};
     } catch (e) { return {x: 0, y: 0, w: 0, h: 0}; }
   }
+  // مواقع تسمّي زر الإرسال في id/class وحدهما بلا أي تسمية قابلة للوصول: deepai.org/chat مثلاً
+  // button#chatSubmitButton (بلا aria-label ولا data-testid، ونوعه button لا submit). المحددات
+  // العامة لا تصيبه، والصفحة تتجاهل Enter على الجوال، فكان النص يبقى في الحقل ولا يُرسل أبداً.
+  const SENT_NAME = /(send|submit)/i;
+  const NOT_SEND_NAME = /stop|cancel|regenerat|retry|preview|feedback|newsletter|subscribe|search|login|sign|upload|attach|copy|share|model|preset|theme|menu|settings/i;
+  function nameKey(b) {
+    if (!b || !b.getAttribute) return '';
+    return ((b.id || '') + ' ' + (typeof b.className === 'string' ? b.className : '') + ' ' +
+      (b.getAttribute('data-testid') || '') + ' ' + (b.getAttribute('data-test-id') || '') + ' ' +
+      (b.getAttribute('name') || '')).trim();
+  }
+  function sendishName(b) {
+    const key = nameKey(b);
+    return !!key && SENT_NAME.test(key) && !NOT_SEND_NAME.test(key + ' ' + labelOf(b));
+  }
+  /** زر داخل نافذة دخول/اشتراك ليس زر إرسال المحادثة: الضغط عليه يحوّلنا بعيداً عن الدردشة. */
+  function inModal(b) {
+    let el = b;
+    for (let i = 0; i < 6 && el; i++, el = el.parentElement) {
+      if (!el.getAttribute) continue;
+      if (el.tagName === 'DIALOG' || el.getAttribute('role') === 'dialog' ||
+          el.getAttribute('aria-modal') === 'true') return true;
+    }
+    return false;
+  }
+  /** أزرار الإرسال مربّعات صغيرة؛ النطاق يستثني أزرار النماذج العريضة. */
+  function smallControl(b) {
+    const r = rectOf(b);
+    return r.w > 0 && r.h > 0 && r.w <= 160 && r.h <= 160;
+  }
+  /** زر دخول/اشتراك داخل نافذة: ليس زر إرسال المحادثة وإن صادف محدد زر الإرسال العام. */
+  const AUTH_LIKE = /login|log[-_ ]?in|sign[-_ ]?in|sign[-_ ]?up|password|subscribe|newsletter|register|checkout|pay/i;
+  function modalAuthButton(b) {
+    return !!b && inModal(b) && AUTH_LIKE.test(nameKey(b) + ' ' + labelOf(b));
+  }
   function findSend() {
-    const explicit = find(C.send);
-    if (explicit && !isDisabled(explicit)) return explicit;
+    const raw = pickUsable(C.send);
+    const explicit = modalAuthButton(raw) ? null : raw;
     const exact = /^(send|send message|submit|إرسال|ارسل|envoyer|senden)$/i;
     const partial = /(send|submit|إرسال|paper-airplane|arrow-up)/i;
     const stopish = /(stop|إيقاف|cancel generating)/i;
     const buttons = nodes('button, [role="button"], [data-testid*="send"], [data-test-id*="send"]');
-    const labeled = buttons.find(function (b) {
-      if (!visible(b) || isDisabled(b)) return false;
-      const lab = labelOf(b);
-      return exact.test(lab) && !stopish.test(lab);
-    });
+    const usable = function (b) {
+      return visible(b) && !isDisabled(b) && !stopish.test(labelOf(b)) && !inModal(b);
+    };
+    // محدد الموقع المسمّى صراحةً يبقى أولاً (قد يكون المحرر نفسه داخل لوحة/حوار).
+    if (explicit && !isDisabled(explicit)) return explicit;
+    const labeled = buttons.find(function (b) { return usable(b) && exact.test(labelOf(b)); });
     if (labeled) return labeled;
     const input = findInput();
     if (input) {
@@ -200,13 +247,27 @@
       }
       let root = input.parentElement;
       for (let i = 0; i < 8 && root; i++, root = root.parentElement) {
-        const cands = nodes('button, [role="button"]', root).filter(function (b) {
-          return visible(b) && !isDisabled(b) && !stopish.test(labelOf(b));
-        });
+        const cands = nodes('button, [role="button"]', root).filter(usable);
+        // الاسم أولاً: أدقّ من «زر واحد في الجوار» على المحررات التي بها مِرفق/ميكروفون/نموذج.
+        const byName = cands.find(sendishName);
+        if (byName) return byName;
         const sendish = cands.find(function (b) { return partial.test(labelOf(b)); });
         if (sendish) return sendish;
         if (cands.length === 1) return cands[0];
       }
+    }
+    // لا شيء في محيط المحرر: أي زر إرسال صغير مسمّى في الصفحة، الأقرب إلى حقل الكتابة أولاً.
+    const named = buttons.filter(function (b) { return usable(b) && sendishName(b) && smallControl(b); });
+    if (named.length) {
+      if (!input) return named[named.length - 1];
+      const ir = rectOf(input);
+      const near = function (b) {
+        const r = rectOf(b);
+        return Math.abs(r.y - ir.y) + Math.abs(r.x - ir.x) * 0.3;
+      };
+      let best = named[0], bestAt = near(named[0]);
+      for (const b of named) { const d = near(b); if (d < bestAt) { best = b; bestAt = d; } }
+      return best;
     }
     return (explicit && !isDisabled(explicit)) ? explicit : null;
   }
@@ -298,6 +359,8 @@
   }
   // ===== التقاط احتياطي عام عند عدم مطابقة محددات الموقع =====
   // نص الصفحة بدون حقل الكتابة نفسه (حتى لا يُحسب نص المسودة داخل المحرر كأنه رسالة ظاهرة).
+  // أما نص حقول أخرى خارج المحرر (صفحات تعرض رسالة المستخدم داخل textarea جاهزة للتعديل،
+  // مثل deepai.org/chat) فهو دليل تسليم صالح: لا يمكن أن يظهر فيه نصنا إلا بعد خروج الرسالة.
   function pageText(skip) {
     const root = document.querySelector('main') || document.body;
     const out = [];
@@ -306,7 +369,8 @@
       if (n.nodeType === 3) { out.push(n.nodeValue); return; }
       if (n.nodeType !== 1) return;
       const tag = n.tagName;
-      if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|SVG)$/i.test(tag)) return;
+      if (/^(SCRIPT|STYLE|NOSCRIPT|SVG)$/i.test(tag)) return;
+      if (tag === 'TEXTAREA') { if (n.value) out.push('\n' + n.value + '\n'); return; }
       if (n.hidden || n.getAttribute('aria-hidden') === 'true') return;
       const block = /^(DIV|P|LI|UL|OL|SECTION|ARTICLE|MAIN|HEADER|FOOTER|H[1-6]|PRE|BLOCKQUOTE|TABLE|TR|BR|BUTTON)$/i.test(tag);
       if (block) out.push('\n');

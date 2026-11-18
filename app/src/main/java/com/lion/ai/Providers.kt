@@ -37,7 +37,10 @@ data class ProviderInfo(
         }
 }
 
-/** المزودون المدمجون الثابتون. القائمة الفعلية [PROVIDERS] تضيف إليها منصات المستخدم. */
+/**
+ * المزودون المدمجون الثابتون. القائمة الفعلية [PROVIDERS] تضيف إليها منصات المستخدم
+ * ([UserPlatforms]) وصفحات الويب التي أضافها بالرابط ([UserWebSites]).
+ */
 val BUILTIN_PROVIDERS = listOf(
     ProviderInfo(
         id = "lion_chat",
@@ -600,18 +603,9 @@ val BUILTIN_PROVIDERS = listOf(
         keyless = true,
         webviewUrl = "https://gemini.google.com/"
     ),
-    ProviderInfo(
-        id = "copilot_web",
-        label = "Microsoft Copilot (بدون مفتاح)",
-        tagline = "مجاني — دردشة Copilot الرسمية من مايكروسوفت",
-        docsUrl = "https://copilot.com/",
-        defaultModel = "default",
-        shortName = "Copilot",
-        modelHint = "دردشة Copilot الرسمية من مايكروسوفت، مجانية ولا تحتاج اشتراكاً.",
-        models = listOf("default"),
-        keyless = true,
-        webviewUrl = "https://copilot.com/"
-    ),
+    // «Microsoft Copilot (صفحة ويب)» حُذفت: copilot.com يرفض حاويات WebView ويحوّلها إلى صفحة
+    // تثبيت التطبيق، فلا يستجيب الجسر هناك. بقيت «GitHub Copilot» لأنها صفحة أخرى تعمل،
+    // ومن أراد صفحة ويب مماثلة يضيفها بالرابط من «➕ صفحاتي الخاصة (ويب)».
     ProviderInfo(
         id = "ptero_web",
         label = "Ptero (بدون مفتاح)",
@@ -768,26 +762,19 @@ val BUILTIN_PROVIDERS = listOf(
         keyless = true,
         webviewUrl = "https://chat.z.ai"
     ),
-    ProviderInfo(
-        id = "you_web",
-        label = "You.com Chat (قديم — يتطلب حساب)",
-        tagline = "الدردشة الاستهلاكية أُغلقت — للاستخدام الفعلي اختر «You.com Inference Router (API)»",
-        docsUrl = "https://you.com",
-        defaultModel = "default",
-        shortName = "You.com",
-        modelHint = "بحث ومساعد ذكي؛ مجاني مع حدود استخدام. قد يطلب You.com تسجيل الدخول عند إرسال الرسالة؛ سجّل من «فتح الجلسة».",
-        models = listOf("default"),
-        keyless = true,
-        webviewUrl = "https://you.com/chat"
-    ),
+    // «You.com Chat (صفحة ويب)» حُذفت: You.com أغلق دردشته الاستهلاكية، والصفحة لم تعد تُجري
+    // محادثة من حاوية WebView. للاستخدام الفعلي بقيت «You.com Inference Router (API)» بمفتاحه.
     ProviderInfo(
         id = "deepai_web",
         label = "DeepAI Chat (بدون مفتاح)",
-        tagline = "مجاني — دردشة DeepAI (الوضع Standard)",
+        tagline = "مجاني — دردشة DeepAI الرسمية (deepai.org/chat)، الوضع Standard",
         docsUrl = "https://deepai.org/chat",
         defaultModel = "default",
-        shortName = "DeepAI",
-        modelHint = "الوضع Standard مجاني؛ النماذج المتقدمة تتطلب DeepAI Pro. محددات الصفحة غير مُتحقق منها بعد، استخدم «تقرير البنية» إن لزم.",
+        shortName = "DeepAI Chat",
+        modelHint = "صفحة DeepAI Chat نفسها (لا علاقة لها بـ DeepSeek ولا بواجهة DeepAI API للصور): " +
+            "محررها #persistentChatbox وزر إرسالها #chatSubmitButton — سُمّيا صراحة في جسر الويب لأن " +
+            "الزر بلا تسمية تصل إليها المحددات العامة وللصفحة إيقاع خاص في قبول النص. الوضع Standard " +
+            "مجاني؛ Genius وSuper Genius يتطلبان DeepAI Pro.",
         models = listOf("default"),
         keyless = true,
         webviewUrl = "https://deepai.org/chat"
@@ -1055,11 +1042,15 @@ val BUILTIN_PROVIDERS = listOf(
     )
 )
 
-/** المدمجون + المنصات التي أضافها المستخدم (UserPlatforms)، تُقرأ ديناميكياً عند كل وصول. */
+/**
+ * المدمجون + المنصات التي أضافها المستخدم (UserPlatforms) + صفحات الويب المضافة بالرابط
+ * (UserWebSites)، تُقرأ ديناميكياً عند كل وصول. الصفحات المضافة لا تحتاج تسجيلاً في أي مكان
+ * آخر: مجموعة WEB مشتقة من webviewUrl، فيلتقطها الجسر والمنتقي والإعدادات والتوجيه تلقائياً.
+ */
 val PROVIDERS: List<ProviderInfo>
     get() {
         val removed = ProviderRemoval.removedIds()
-        return (BUILTIN_PROVIDERS + UserPlatforms.infos()).let { all ->
+        return (BUILTIN_PROVIDERS + UserPlatforms.infos() + UserWebSites.infos()).let { all ->
             if (removed.isEmpty()) all else all.filterNot { it.id in removed }
         }
     }

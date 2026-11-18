@@ -345,3 +345,149 @@ test('attach without files is a no-op and attach_wait reports ready',()=>withPag
   assert.equal(p.run('attach').status,'attached');
   assert.equal(p.run('attach_wait').status,'attach_ready');
 }));
+
+// ===== صفحة على نمط DeepAI Chat: زر إرسال بلا تسمية، معطّل حتى حدث input، وEnter معطّل على الجوال =====
+// نموذج من البنية الفعلية لـ deepai.org/chat (textarea#persistentChatbox + button#chatSubmitButton
+// + ردّ في .outputBox داخل #convo + زر إيقاف #chatStopButton). المحددات العامة وحدها كانت تُخرس
+// الجسر: لا اسم للزر تصل إليه، والصفحة تتجاهل Enter على الجوال، فيبقى النص في الحقل بلا إرسال.
+function deepAiPage(config) {
+  const html = [
+    '<div id="convo"></div>',
+    '<div class="persistent-compose-area">',
+    '<button id="attachFileButton"><svg></svg></button>',
+    '<button id="recordButton"><svg></svg></button>',
+    '<textarea id="persistentChatbox" class="chatbox" placeholder="Message AI Chat..."></textarea>',
+    '<div class="button-container"><div class="button-container-right">',
+    '<button id="chatSubmitButton" type="button"><svg></svg></button>',
+    '<button id="chatStopButton" type="button" style="display:none"><svg></svg></button>',
+    '</div></div></div>',
+    '<div id="loginModal" role="dialog" aria-modal="true"><form>',
+    '<input id="email" type="email"><button id="loginSubmit" type="submit">Login</button></form></div>'
+  ].join('');
+  const dom = new JSDOM(html, {url: 'https://deepai.org/chat', runScripts: 'outside-only', pretendToBeVisual: true});
+  const w = dom.window;
+  const d = w.document;
+  w.HTMLElement.prototype.getClientRects = function() { return this.hidden ? [] : [{}]; };
+  w.HTMLElement.prototype.getBoundingClientRect = function() {
+    const wide = this.tagName === 'TEXTAREA';
+    const x = wide ? 16 : 300, y = wide ? 700 : 710;
+    return {x, y, width: wide ? 300 : 41, height: 41, top: y, left: x, bottom: y + 41, right: x + (wide ? 300 : 41)};
+  };
+  let clock = 1000, clicks = 0, enterKeys = 0, sent = '', loginClicks = 0;
+  w.Date.now = () => clock;
+  const box = d.querySelector('#persistentChatbox');
+  const submit = d.querySelector('#chatSubmitButton');
+  const stop = d.querySelector('#chatStopButton');
+  submit.disabled = true;                      // initEventDelegation: معطّل بلا نص
+  box.addEventListener('input', () => { submit.disabled = !box.value.trim(); });
+  box.addEventListener('keydown', (e) => {     // if (e.key==='Enter' && !e.shiftKey) { if (isMobileDevice) return; ... }
+    if (e.key !== 'Enter') return;
+    enterKeys++;
+    if (w.__lionFakeMobile) return;
+    if (!submit.disabled) submit.click();
+  });
+  submit.addEventListener('click', () => {
+    clicks++;
+    if (submit.disabled) return;
+    sent = box.value;
+    box.value = '';
+    const user = d.createElement('div');
+    user.className = 'chatbox-wrapper';
+    const echo = d.createElement('textarea');
+    echo.className = 'chatbox';
+    echo.value = sent;
+    user.append(echo);
+    d.querySelector('#convo').append(user);
+    submit.style.display = 'none';
+    stop.style.display = 'block';
+  });
+  d.querySelector('#loginSubmit').addEventListener('click', () => { loginClicks++; });
+  w.__lionFakeMobile = true;
+  function answer(text) {
+    const out = d.createElement('div');
+    out.className = 'outputBox';
+    const copy = d.createElement('button');
+    copy.className = 'copytextButton';
+    out.innerHTML = '<div class="markdownContainer">' + text + '</div>';
+    out.append(copy);
+    d.querySelector('#convo').append(out);
+    submit.style.display = 'block';
+    stop.style.display = 'none';
+    return out;
+  }
+  function run(action, prompt = 'مرحبا', token = 'deepai1') {
+    return JSON.parse(w.eval(source.replace('__LION_CONFIG__', JSON.stringify(config || {}))
+      .replace('__LION_TOKEN__', JSON.stringify(token)).replace('__LION_ACTION__', JSON.stringify(action))
+      .replace('__LION_FILES__', '[]').replace('__LION_PROMPT__', JSON.stringify(prompt)).replace('__LION_INTERACTIVE__', 'false')));
+  }
+  return {w, d, box, submit, stop, run, answer, clicks: () => clicks, sent: () => sent,
+    enterKeys: () => enterKeys, loginClicks: () => loginClicks, advance: (n) => clock += n, close: () => w.close()};
+}
+
+const GENERIC_CONFIG = {
+  id: 'web_example', hosts: ['deepai.org'],
+  input: "textarea, [contenteditable='true']",
+  send: "button[data-testid='send-button'], button[aria-label='Send'], button[type='submit']",
+  answer: "[data-message-role='assistant'], [data-testid='assistant-message']",
+  stop: "button[aria-label='Stop']", complete: "button[aria-label*='Copy']"
+};
+const DEEPAI_CONFIG = {
+  id: 'deepai_web', hosts: ['deepai.org'],
+  input: "#persistentChatbox", send: "#chatSubmitButton", stop: "#chatStopButton",
+  answer: ".outputBox", complete: ".copytextButton", error: "#errorpopup", settleMs: 3500
+};
+
+test('DeepAI-style page: generic selectors still find the named send button', () => {
+  const p = deepAiPage(GENERIC_CONFIG);
+  try {
+    assert.equal(p.run('probe').status, 'ready');
+    assert.equal(p.run('prepare').status, 'prepared');
+    assert.equal(p.box.value, 'مرحبا');
+    assert.equal(p.submit.disabled, false, 'writing the text must enable the site send button');
+    // locate يعيد إحداثيات الزر للمسٍ حقيقي؛ submit يظل يراه «محدَّداً» فلا ينقر مرتين.
+    // مسار اللمسة الحقيقية: locate يعيد إحداثيات الزر بلا نقر، ثم poll ينتظر الإقرار.
+    assert.equal(p.run('locate').status, 'located');
+    assert.equal(p.clicks(), 0);
+    assert.equal(p.run('poll').status, 'awaiting_ack');
+    // ومسار النقر على الزر نفسه (submit) يعمل كذلك لما تُستنفد اللمسة: الزر مُكتشَف.
+    p.d.querySelector('#convo').innerHTML = '';
+    delete p.w.__lionSessionRequest;
+    assert.equal(p.run('prepare', 'مرحبا', 'deepai2').status, 'prepared');
+    assert.equal(p.run('submit', 'مرحبا', 'deepai2').status, 'clicked');
+    assert.equal(p.clicks(), 1);
+    assert.equal(p.sent(), 'مرحبا', 'the page received the message through its own send control');
+    assert.equal(p.enterKeys(), 0, 'no Enter-only fallback: the page ignores Enter on mobile');
+    // بلا محددات تعرف هذه الصفحة (محررها و فقاعتها نصّيان متشابهان) لا دليل تسليم بعد النقر:
+    // هذا بالضبط ما يعالجه الكشف التلقائي للمحددات عند الإضافة اليدوية — انظر الاختبار التالي.
+    assert.equal(p.run('poll', 'مرحبا', 'deepai2').status, 'awaiting_ack');
+  } finally { p.close(); }
+});
+
+test('DeepAI-style page: site send button is not hijacked by the sign-in modal', () => {
+  const p = deepAiPage(GENERIC_CONFIG);
+  try {
+    p.run('prepare');
+    assert.equal(p.submit.disabled, false);
+    // زر «Login» داخل dialog: محدد عام (button[type=submit]) يصيبه، لكن النوافذ مستثناة.
+    p.d.querySelector('#chatSubmitButton').style.display = 'none';
+    p.run('submit');
+    assert.equal(p.loginClicks(), 0, 'the sign-in button must never be pressed as a send button');
+    assert.equal(p.sent(), '', 'nothing was sent while only the modal button was available');
+  } finally { p.close(); }
+});
+
+test('DeepAI-style page: named selectors from the site spec send and read the reply', () => {
+  const p = deepAiPage(DEEPAI_CONFIG);
+  try {
+    assert.equal(p.run('prepare').status, 'prepared');
+    assert.equal(p.run('submit').status, 'clicked');
+    assert.equal(p.clicks(), 1);
+    assert.equal(p.run('poll').status, 'sent');
+    p.answer('ردّ من DeepAI');
+    assert.equal(p.run('poll').status, 'streaming');
+    p.advance(1200);
+    const done = p.run('poll');
+    assert.equal(done.status, 'complete');
+    assert.equal(done.text, 'ردّ من DeepAI');
+  } finally { p.close(); }
+});
