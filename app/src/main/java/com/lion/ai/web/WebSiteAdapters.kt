@@ -202,10 +202,16 @@ object WebSiteAdapters {
             answer = ".chat-assistant-message"
         ),
         "you_web" to Spec(
-            url = "https://you.com/?chatMode=default",
+            url = "https://you.com/chat",
             hosts = setOf("you.com"),
             input = "#search-input-textarea, textarea",
             answer = "[data-testid='youchat-answer']"
+        ),
+        "deepai_web" to Spec(
+            url = "https://deepai.org/chat",
+            hosts = setOf("deepai.org", "www.deepai.org"),
+            input = "textarea, [contenteditable='true']",
+            settleMs = 3500
         ),
         "aistudio_web" to Spec(
             hosts = setOf("aistudio.google.com", "makersuite.google.com"),

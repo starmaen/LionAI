@@ -388,6 +388,7 @@ object LlmClient {
                     "https://api.cloudflare.com/client/v4/accounts/$accountId/ai/v1/chat/completions",
                     apiKey, model, turns, message, image = image, systemPrompt = systemPrompt
                 )
+                "deepai" -> callDeepAi(message, apiKey, model, image)
                 "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
                 "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
                 "aihorde" -> callAiHorde(message, apiKey, model, turns, image, systemPrompt)
