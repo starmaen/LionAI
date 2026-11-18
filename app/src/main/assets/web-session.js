@@ -210,6 +210,29 @@
     }
     return (explicit && !isDisabled(explicit)) ? explicit : null;
   }
+  // مواقع مثل Copilot تُبقي زر الإرسال معطّلاً حتى تسجّل حالتها إدخال مستخدم حقيقياً.
+  // نحرّك الحقل بإدخال مسافة ثم حذفها (أحداث beforeinput/input حقيقية) ونعيد النص كما كان.
+  function nudgeInput(input, st) {
+    if (!input || !st || (st.nudges || 0) >= 3) return;
+    st.nudges = (st.nudges || 0) + 1;
+    try {
+      const want = expectedText();
+      input.focus({preventScroll: true});
+      ['focus', 'focusin'].forEach(function (t) {
+        try { input.dispatchEvent(new Event(t, {bubbles: t === 'focusin', composed: true})); } catch (e) {}
+      });
+      if (!input.isContentEditable && typeof input.setSelectionRange === 'function') {
+        const n = String(input.value || '').length;
+        input.setSelectionRange(n, n);
+      }
+      if (typeof document.execCommand === 'function') {
+        document.execCommand('insertText', false, ' ');
+        document.execCommand('delete');
+      }
+      try { input.dispatchEvent(new KeyboardEvent('keyup', {key: ' ', code: 'Space', bubbles: true, composed: true})); } catch (e) {}
+      if (inputText(input) !== want) writeInput(input, prompt);
+    } catch (e) {}
+  }
   function pressEnter(el) {
     if (!el) return false;
     try { el.focus({preventScroll: true}); } catch (e) { try { el.focus(); } catch (e2) {} }
@@ -598,7 +621,7 @@
       if (find(C.stop)) return result('site_busy');
       if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
       const button = findSend();
-      if (!button) return result('needs_send');
+      if (!button) { nudgeInput(input, state); return result('needs_send'); }
       const tap = rectOf(button);
       if (!(tap.w > 0 && tap.h > 0)) return result('needs_send');
       state.clicked = true; state.clickedAt = Date.now(); state.clicks++; state.tap = tap; state.tapped = true;
@@ -619,7 +642,7 @@
       if (find(C.stop)) return result('site_busy');
       if (!input || inputText(input) !== expectedText()) return result(input && inputText(input) ? 'draft_changed' : 'input_rejected');
       const button = findSend();
-      if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return result('needs_send');
+      if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') { nudgeInput(input, state); return result('needs_send'); }
       state.clicked = true; state.clickedAt = Date.now(); state.clicks++;
       button.click(); // Click is not delivery acknowledgement. Never click this token twice.
       return result('clicked');

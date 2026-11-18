@@ -199,8 +199,8 @@ internal class LionWebController(
             displayZoomControls = false
             mediaPlaybackRequiresUserGesture = false
             textZoom = 100
-            userAgentString = if (startUrl.contains("copilot")) desktopUserAgent(baseUserAgent) else mobileUserAgent(baseUserAgent)
-            if (startUrl.contains("copilot")) applyDesktopClientHints(this, desktopMajor(baseUserAgent))
+            userAgentString = if (startUrl.contains("copilot") || startUrl.contains("you.com")) desktopUserAgent(baseUserAgent) else mobileUserAgent(baseUserAgent)
+            if (startUrl.contains("copilot") || startUrl.contains("you.com")) applyDesktopClientHints(this, desktopMajor(baseUserAgent))
         }
         hideRequestedWithHeader(webView.settings)
         webView.webViewClient = lionClient
