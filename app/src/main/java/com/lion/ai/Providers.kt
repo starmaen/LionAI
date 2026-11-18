@@ -280,6 +280,18 @@ val BUILTIN_PROVIDERS = listOf(
         models = listOf("north-mini-code-1-0", "command-a-03-2025", "command-r7b-12-2024")
     ),
     ProviderInfo(
+        id = "deepai",
+        label = "DeepAI",
+        tagline = "مفتاح من deepai.org/dashboard — نص فقط عبر api.deepai.org",
+        docsUrl = "https://deepai.org/docs",
+        defaultModel = "text-generator",
+        shortName = "DeepAI",
+        modelHint = "ألصق مفتاح DeepAI فقط (من deepai.org/dashboard) — لا تلصق رابط الموقع. " +
+            "اسم الموديل هنا هو مسار الواجهة بعد /api/ والافتراضي text-generator. " +
+            "الواجهة تأخذ نصاً واحداً بلا أدوات ولا صور، فالسجل يُدمج في الطلب.",
+        models = listOf("text-generator")
+    ),
+    ProviderInfo(
         id = "mistral",
         label = "Mistral AI (API)",
         tagline = "مجاني — La Plateforme، موديلات مفتوحة",

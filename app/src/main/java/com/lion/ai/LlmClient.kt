@@ -416,6 +416,7 @@ object LlmClient {
                     apiKey, model, turns, message, image = image, systemPrompt = systemPrompt
                 )
                 "cohere" -> callCohere(message, apiKey, model, turns, image, systemPrompt)
+                "deepai" -> callDeepAi(message, apiKey, model, turns, systemPrompt)
                 "claude" -> callClaude(message, apiKey, model, turns, image, systemPrompt)
                 "aihorde" -> callAiHorde(message, apiKey, model, turns, image, systemPrompt)
                 "qwen" -> {
