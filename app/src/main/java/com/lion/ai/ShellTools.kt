@@ -30,6 +30,22 @@ object ShellTools {
     )
 
     /** حزم مسموح تثبيتها فقط (لا يُمرَّر اسم الحزمة من النموذج مباشرة إلى الصدفة). */
+    @Volatile private var gitChecked = false
+
+    private fun gitReady(context: Context): Boolean {
+        if (gitChecked) return true
+        return available(context, "git").also { if (it) gitChecked = true }
+    }
+
+    private val HEAVY = Regex(
+        "(^|[;&|]\\s*)(\\./)?gradlew?\\b|\\bnpm\\s+(ci|install|i|run\\s+build)\\b|" +
+            "\\b(pip3?|python3?\\s+-m\\s+pip)\\s+install\\b|\\b(apt|apt-get|pkg|apk)\\s+(install|add|upgrade|update)\\b|" +
+            "\\bgit\\s+(clone|fetch|pull|push)\\b|\\b(cargo|make|cmake|sdkmanager|pytest)\\b"
+    )
+
+    /** أوامر طويلة بطبيعتها (بناء/تثبيت/استنساخ): لا تُقطع بمهلة قصيرة افتراضية. */
+    internal fun isHeavy(command: String): Boolean = HEAVY.containsMatchIn(command.trim())
+
     private val PACKAGES = mapOf(
         "git" to listOf("git"),
         "python" to listOf("python3", "python"),
@@ -98,6 +114,19 @@ object ShellTools {
         }
         BLOCKED.firstOrNull { it.containsMatchIn(cleaned) }?.let { pattern ->
             return ShellResult(false, "⛔ أمر مرفوض أمنياً: ${pattern.pattern}", 126, 0)
+        }
+        if (first == "git" && !gitReady(context)) {
+            val installed = install(context, "git", 600)
+            if (!installed.ok) {
+                return ShellResult(
+                    false,
+                    "git غير مثبت على هذا الجهاز ولم يُثبَّت تلقائياً. لا تتوقف: استعمل أدوات GitHub المباشرة " +
+                        "(github_clone وgithub_read_file وgithub_commit_files وgithub_push_workspace)، فهي تعمل بلا git.",
+                    127,
+                    0
+                )
+            }
+            gitChecked = true
         }
         val root = FileTools.file(context, cwd)
         if (!root.exists()) return ShellResult(false, "❌ مجلد العمل غير موجود: $cwd", 1, 0)

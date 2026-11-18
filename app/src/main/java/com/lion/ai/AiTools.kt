@@ -3096,16 +3096,24 @@ $code
             // ===== Shell / Android =====
             "execute_command", "shell_exec" -> {
                 val isShort = name == "execute_command"
+                val command = req(args, "command")
+                val heavy = ShellTools.isHeavy(command)
+                val defaultSec = if (heavy) 600 else if (isShort) 30 else 120
+                val capSec = if (isShort && !heavy) 30 else 900
+                val requested = int(args, "timeout_sec", defaultSec)
                 val result = ShellTools.exec(
                     ctx.context,
-                    req(args, "command"),
-                    int(args, "timeout_sec", if (isShort) 30 else 120).coerceAtMost(if (isShort) 30 else 900),
+                    command,
+                    (if (heavy) maxOf(requested, 300) else requested).coerceAtMost(capSec),
                     args.optString("cwd")
                 )
                 buildString {
                     append(if (result.ok) "✅" else "❌").append(" exit=").append(result.exitCode)
                     append(" (").append(result.elapsedMs).append("ms)")
-                    if (result.timedOut) append(" — انتهت المهلة")
+                    if (result.timedOut) {
+                        append(" — انتهت مهلة هذا الاستدعاء قبل اكتمال الأمر (ليس فشلاً منطقياً). ")
+                        append("أعد الأمر نفسه بـ timeout_sec أكبر (حتى 900) أو قسّمه لخطوات أصغر، ولا تعلن فشل الأداة.")
+                    }
                     append('\n').append(result.output)
                 }
             }
