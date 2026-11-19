@@ -200,13 +200,23 @@ jobs:
         fi
         echo "Certificate matches the expected fingerprint."
 
-    - name: Upload APK
+    - name: Upload APK (signed release key, safe to install)
+      if: github.event_name != 'pull_request'
       uses: actions/upload-artifact@v7
       with:
         name: LionAI-APK
         path: app/build/outputs/apk/release/*.apk
         if-no-files-found: error
         retention-days: 30
+
+    - name: Upload PR test APK (debug key - DO NOT INSTALL)
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v7
+      with:
+        name: PR-TEST-ONLY-DO-NOT-INSTALL
+        path: app/build/outputs/apk/release/*.apk
+        if-no-files-found: error
+        retention-days: 7
 
     - name: Upload detekt and coverage reports
       if: always()

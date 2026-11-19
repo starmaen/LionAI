@@ -23,3 +23,21 @@ class BranchFlowTest {
         assertEquals(true, r.protocolStall)
     }
 }
+
+class CiGateTest {
+    @Test
+    fun pushWithoutConfirmedCiBlocksCompletion() {
+        assertTrue(ToolAgent.ciGateNeeded(true, false, false, false))
+        assertFalse(ToolAgent.ciGateNeeded(false, false, false, false))
+        assertFalse(ToolAgent.ciGateNeeded(true, true, false, false))   // مستودع بلا CI
+        assertFalse(ToolAgent.ciGateNeeded(true, false, true, false))   // قراءة فقط
+        assertFalse(ToolAgent.ciGateNeeded(true, false, false, true))   // سؤال معرفي
+    }
+
+    @Test
+    fun onlyCompletedSuccessCountsAsPass() {
+        assertTrue(ToolAgent.isCiPass("✅ conclusion: success"))
+        assertFalse(ToolAgent.isCiPass("⏳ البناء #5 ما زال in_progress"))
+        assertFalse(ToolAgent.isCiPass("conclusion: failure ❌"))
+    }
+}
