@@ -1106,12 +1106,13 @@ object ToolAgent {
             // مفصل خطر (حذف/استبدال/دفع مدمّر/صدفة مدمّرة/مسار توقيع): ينفَّذ دون سؤال فقط إن سمّاه المستخدم في طلبه،
             // وإلا بطاقة قرار واحدة توضّح الفكرة. موافقتك تخص هذه العملية وحدها، وبقية المهمة تسير بمرونة.
             if (!readOnly && !WriteIntent.isReadOnlyRequest(userRequest)) {
-                val risky = calls.mapNotNull { c -> RiskPolicy.assess(c)?.takeIf { it.key !in memory.riskApproved } }
+                val risky = calls.mapNotNull { c -> RiskPolicy.assess(c)?.takeIf { it.key !in memory.riskApproved && "cat:" + it.key.substringBefore('|') !in memory.riskApproved } }
                     .firstOrNull { !RiskPolicy.requestNames(it, userRequest) }
                 if (risky != null) {
                     memory.pendingRisk.add(risky.key)
-                    val question = "⚠️ عملية حساسة قبل التنفيذ: ${risky.label}.\n" +
-                        "لم تُسمَّ صراحةً في طلبك، وقد لا يمكن التراجع عنها. هل أنفّذها؟ (نعم / لا) — أو وضّح لي ما تريده بدلاً منها."
+                    val question = "⚠️ أطلب موافقتك على: ${risky.label}\n\n" +
+                        "سبب السؤال: لم يُذكر هذا الإجراء صراحةً في طلبك وقد لا يمكن التراجع عنه. " +
+                        "اختر «موافق» ليُنفَّذ هو وما يشبهه في هذه المهمة، أو «لا» ثم اكتب ما تريده بدلاً منه."
                     session?.recordNote("طُلبت موافقة على عملية حساسة: ${risky.label}")
                     session?.askQuestion(question)
                     memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)

@@ -106,7 +106,8 @@ object AnswerGuard {
         var inTable = false
         for (raw in input.lines()) {
             val line = raw.trim()
-            if (line.count { it == '|' } >= 2) {
+            // صف جدول حقيقي يبدأ بـ | فقط؛ سطر أمر يحوي أنابيب (grep ... | head) ليس جدولاً ولا يُحذف.
+            if (line.startsWith("|") && line.count { it == '|' } >= 2) {
                 val cells = line.trim('|').split('|').map { it.trim() }
                 if (cells.all { TABLE_CELL_SEPARATOR.matches(it) }) continue
                 if (!inTable) {
