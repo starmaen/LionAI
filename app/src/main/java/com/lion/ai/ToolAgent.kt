@@ -466,6 +466,9 @@ object ToolAgent {
         var okMutations = 0
         var okCount = 0
         var failCount = 0
+        var trailingFails = 0
+        val sameResultTally = mutableMapOf<String, Int>()
+        var loopResultStop = ""
         // آخر نص جوهري كتبه المزود: يُعرض مع أي توقف أو ملخص بدل أن يضيع الجواب خلف سجل الإجراءات.
         var lastSubstantive = ""
         var lastFailure = ""
@@ -1104,6 +1107,20 @@ object ToolAgent {
                     ).copy(stalled = true, protocolStall = true)
                 }
                 val answer = finalAnswer(reply, used, lastSubstantive)
+                val verdict = CompletionGuard.verdict(
+                    mutationIntent = WriteIntent.hasMutationIntent(userRequest),
+                    readOnly = readOnly || WriteIntent.isReadOnlyRequest(userRequest),
+                    answerOnly = answerOnly,
+                    toolsUsed = used.size,
+                    okMutations = okMutations,
+                    trailingFailures = trailingFails,
+                    replyBlank = ToolMarkup.strip(reply).replace(ASK, "").replace(ASK_ALT, "").isBlank()
+                )
+                if (!verdict.complete) {
+                    session?.recordNote("رُفض إعلان الاكتمال: " + verdict.why)
+                    session?.let { CheckpointStore.save(prefs, it) }
+                    return finish(answer + "\n\n⚠️ لم أعتبر المهمة مكتملة: " + verdict.why + ". حُفظ السياق ويُتابع من النقطة نفسها.", false, verdict.why)
+                }
                 if (used.isNotEmpty()) session?.recordNote("اكتملت المهمة: " + answer.take(240))
                 if (used.isNotEmpty()) {
                     session?.markCompleted()
@@ -1287,11 +1304,13 @@ object ToolAgent {
                 if (result.ok) {
                     if (mutating) okMutations++
                     okCount++
+                    trailingFails = 0
                     if (path.isNotBlank()) {
                         if (call.name in GATE_WRITE_TOOLS) writtenFiles.add(path.takeLast(60)) else readFiles.add(path.takeLast(60))
                     }
                 } else {
                     failCount++
+                    trailingFails++
                     lastFailure = result.output.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.take(2).joinToString(" ")
                     // تعلّم من الفشل: نفس الأداة + نفس سبب الخطأ (بغض النظر عن اختلاف المدخلات الطفيف) = لا فائدة من إعادتها.
                     val errLine = result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty()
@@ -1303,6 +1322,14 @@ object ToolAgent {
                     else if (times >= 2) failHint = "⚠️ الأداة ${call.name} فشلت $times مرات بنفس السبب («${errLine.take(80)}»). " +
                         "لا تُعد نفس المحاولة: اقرأ الملف/الحالة الفعلية من جديد (مع refresh=true)، أو استخدم أداة أخرى، أو اشرح للمستخدم العائق بوضوح."
                     failedSteps.add(call.name.removePrefix("github_") + if (target.isBlank()) "" else " ($target)")
+                }
+                if (!CompletionGuard.isPolling(call.name)) {
+                    val rk = CompletionGuard.resultKey(call.name, call.args.toString(), result.output)
+                    val n = (sameResultTally[rk] ?: 0) + 1
+                    sameResultTally[rk] = n
+                    if (n >= 5) loopResultStop = call.name
+                    else if (n >= 3 && failHint.isBlank()) failHint = "⚠️ كررت ${call.name} ثلاث مرات بنفس المدخلات ونفس النتيجة دون تقدّم. " +
+                        "لا تُعدها: اعتمد النتيجة السابقة أو غيّر الأسلوب أو اشرح العائق للمستخدم."
                 }
                 publish(null)
                 stepNumber = okCount + failCount
@@ -1323,6 +1350,14 @@ object ToolAgent {
                         "السبب الظاهر: $why\n" +
                         "ما أُنجز حتى الآن محفوظ في سجل الخطوات. للمتابعة: غيّر المزود/النموذج، أو أعطني توجيهاً مختلفاً (مثلاً مسار الملف الصحيح أو النص الحالي حرفياً).",
                     false, "فشل متكرر بنفس السبب: $tool"
+                )
+            }
+            if (loopResultStop.isNotBlank()) {
+                session?.recordNote("توقف: تكرار نتيجة متطابقة للأداة $loopResultStop خمس مرات")
+                return finish(
+                    "توقفت لأن الأداة «$loopResultStop» أعادت النتيجة نفسها بالمدخلات نفسها 5 مرات دون تقدّم.\n" +
+                        "ما أُنجز محفوظ في سجل الخطوات. للمتابعة: غيّر المزود/النموذج أو أعطني توجيهاً مختلفاً.",
+                    false, "تكرار نتيجة متطابقة: $loopResultStop"
                 )
             }
             if (failHint.isNotBlank()) { extra.append("\n\n").append(failHint); failHint = "" }
@@ -1446,6 +1481,6 @@ object ToolAgent {
             .trim()
             .ifBlank { lastText.trim() }
         if (used.isEmpty()) return clean.ifBlank { "لم أجد حاجة لاستخدام أدوات." }
-        return clean.ifBlank { "اكتملت العملية." }
+        return clean.ifBlank { CompletionGuard.BLANK_SUMMARY }
     }
 }
