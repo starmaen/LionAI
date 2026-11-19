@@ -176,7 +176,10 @@ object ToolAgent {
         "build_diagnose", "shell_exec", "code_run", "android_build", "gate_run",
         "github_repo_overview", "github_list_tree", "github_read_file", "github_clone",
         "github_push_workspace", "github_wait_run", "github_run_logs", "github_create_branch",
-        "github_create_pr"
+        "github_create_pr",
+        // أدوات تطلبها تعليمات الحلقة نفسها (دمج/تشغيل/تشخيص/حذف): يجب أن يرى المزود مخططها.
+        "github_merge_pr", "github_dispatch", "github_get_run", "github_delete_branch",
+        "code_doctor", "file_delete", "file_tree"
     )
 
     /** يجرّب المستويات من الأكبر إلى الأصغر ويعيد أول نص يلائم الميزانية (وإلا الأصغر). */

@@ -93,7 +93,7 @@ object ContextProfiles {
 - سؤال معرفي عام لا يتعلق بالمشروع («ما هو الـ closure؟») أجب عنه مباشرة بلا أدوات وبلا مقدمات.
 - سؤال عن قدراتك («هل تستطيع/بإمكانك…؟») أو سؤال معرفي: أجب مباشرة بجملة أو جملتين (نعم/لا + ما تستطيعه مع مثال قصير). لا تبدأ تنفيذاً ولا تطلب قراراً أو موافقة؛ التنفيذ فقط عند طلب صريح.
 - اسأل المستخدم بـ [[ASK]] فقط عند نقص معلومة أو موافقة خطرة أو اختيار بين بديلين بعد إنجاز ما يمكن.
-- هذا سياق هندسي مستقل. اتبع دورة: Manifest معتمد ← وحدة تنفيذ واحدة ← بوابة جودة ميكانيكية ← مراجعة ← اختبار ← بناء.
+- هذا سياق هندسي مستقل. مشروع جديد من الصفر: Manifest معتمد ← وحدة تنفيذ واحدة ← بوابة جودة ← مراجعة ← اختبار ← بناء. مشروع قائم (إصلاح/تعديل/مراجعة): لا تنشئ Manifest؛ اقرأ ← أصغر تعديل ← code_doctor/gate_run ← بناء ← تحقق.
 - لا تكتب كوداً في مشروع له Manifest غير معتمد. لا تعلن «تم» قبل تشغيل بوابة فعلية.
 - كل ملف مصدري يجب أن يصل إلى نقطة دخول حقيقية. الملفات اليتيمة أو الفارغة أو TODO تُرفض.
 - لا تعبث بالاختبارات لجعلها خضراء؛ بوابة HMAC تكشف تعديل ملفات الاختبار دون تفويض.
@@ -160,11 +160,13 @@ object ContextProfiles {
         }
         if (lean && !detectedAny) {
             // محادثة عادية (عام/تعلّم) بلا طلب أدوات: رد مباشر بسياق نظيف، دون حقن كتالوج الأدوات ولا تعليمات وكيل البرمجة.
+            // الأدوات تبقى متاحة عند الحاجة: META (tools_schema) تكفي ليحمّل الوكيل أي مجموعة وسط المهمة،
+            // ولا تُفتح دورة الأدوات فعلياً إلا إذا وافقت AgentGate على الرسالة؛ المحادثة العادية تبقى مباشرة.
             return ContextProfile(
                 mode = mode,
-                allowTools = false,
-                allowWrite = false,
-                groups = emptySet(),
+                allowTools = true,
+                allowWrite = AiTools.allowWrite(prefs),
+                groups = setOf(ToolGroup.META),
                 promptSuffix = GENERAL_PROMPT,
                 injectProjectContext = false,
                 injectAgentsFile = false
@@ -217,12 +219,12 @@ object ContextStore {
         val manifest = if (chatId.isBlank()) null else ManifestStore.read(prefs, chatId)
         return buildString {
             append("=== 🛡️ عقد الحوكمة الميكانيكية ===\n")
-            append("1) لا كتابة قبل اعتماد Manifest. استخدم manifest_create ثم manifest_validate.\n")
+            append("1) مشروع جديد فقط: لا كتابة قبل اعتماد Manifest (manifest_create ثم manifest_validate). المشروع القائم لا يحتاج Manifest ويُعدَّل مباشرة.\n")
             append("2) بعد كل وحدة استخدم gate_run. إن فشلت البوابة لا تنتقل؛ أصلح الأخطاء وأعد الفحص.\n")
             append("3) استخدم root_reachability للتأكد من عدم وجود ملفات يتيمة.\n")
-            append("4) استخدم gate_verify_tests قبل التسليم للتأكد من سلامة الاختبارات (HMAC).\n")
+            append("4) إن وُجد Manifest معتمد استخدم gate_verify_tests قبل التسليم للتأكد من سلامة الاختبارات (HMAC).\n")
             append("5) احفظ checkpoint_save بعد كل خطوة؛ واستخدم checkpoint_resume عند الاستئناف.\n")
-            append("6) لا تقل «تم» إلا إذا أعادت gate_run وgate_verify_tests ونتيجة البناء/الاختبار نجاحاً فعلياً.\n")
+            append("6) لا تقل «تم» إلا بعد نتيجة فحص فعلية ناجحة (code_doctor/gate_run، ونتيجة البناء/الاختبار، وgate_verify_tests إن وُجد Manifest).\n")
             if (manifest != null) {
                 append("\nManifest الحالي: ").append(manifest.project)
                     .append(" | ملفات: ").append(manifest.files.size)
