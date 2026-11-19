@@ -30,8 +30,12 @@ internal object BranchFlow {
         if (prefs.getBoolean(ALLOW_MAIN, false)) return Prep(requested, "")
         val default = runCatching { GitHubClient.getRepo(token, owner, repo).defaultBranch }.getOrDefault("")
         val wanted = requested.trim()
+        // فشل مغلق: إن لم يُعرف الفرع الافتراضي فلا نخاطر بالكتابة عليه.
+        if (default.isBlank()) {
+            if (wanted.isNotBlank() && wanted !in setOf("main", "master")) return Prep(wanted, "")
+            throw IllegalStateException("⛔ تعذّر تحديد الفرع الافتراضي للمستودع، فرفضت الكتابة احتياطاً كي لا تُعدَّل main. أعد المحاولة أو حدّد فرعاً غير رئيسي.")
+        }
         if (wanted.isNotBlank() && wanted != default) return Prep(wanted, "")
-        if (default.isBlank()) return Prep(wanted, "")
         val k = key(ctx, owner, repo)
         var branch = prefs.getString("wb_$k", "").orEmpty()
         if (branch.isNotBlank()) return Prep(branch, "")
@@ -41,8 +45,10 @@ internal object BranchFlow {
             prefs.edit().putString("wb_$k", branch).remove("wbpr_$k").apply()
             Prep(branch, "ℹ️ لم يُدفع إلى $default: أُنشئ فرع العمل «$branch» وسيُفتح PR تلقائياً.")
         } catch (e: Exception) {
-            // مستودع فارغ لا فرع فيه بعد: لا بديل عن الدفع الأول إلى الافتراضي.
-            Prep(wanted, "ℹ️ تعذّر إنشاء فرع عمل (${e.message?.take(80).orEmpty()}) فدُفعت هذه الدفعة إلى $default.")
+            // الاستثناء الوحيد: مستودع فارغ لا فرع فيه بعد (الدفعة الأولى لا بديل لها). غير ذلك = رفض.
+            val empty = runCatching { GitHubClient.listBranches(token, owner, repo).isEmpty() }.getOrDefault(false)
+            if (!empty) throw IllegalStateException("⛔ تعذّر إنشاء فرع العمل (${e.message?.take(100).orEmpty()}) فلم أكتب على $default. أعد المحاولة أو أنشئ فرعاً بـ github_create_branch وادفع إليه.")
+            Prep(wanted, "ℹ️ المستودع فارغ فدُفعت الدفعة الأولى إلى $default.")
         }
     }
 

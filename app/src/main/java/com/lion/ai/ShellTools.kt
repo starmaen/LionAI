@@ -95,6 +95,31 @@ object ShellTools {
     )
     private const val MAX_OUTPUT = 18_000
 
+    private val PUSH_SEGMENT = Regex("(^|\\s)git\\s+(?:-[^\\s]+\\s+)*push(\\s|$)")
+
+    /**
+     * يمنع `git push` إلى الفرع الرئيسي أو بلا وجهة صريحة أو بالقوة، كي لا تُتجاوز حماية فرع العمل.
+     * المسموح: git push <remote> <فرع-غير-رئيسي>. يعيد سبب الرفض أو null.
+     */
+    internal fun pushViolation(command: String): String? {
+        for (segment in command.split(Regex("[;&|]+"))) {
+            val seg = segment.trim()
+            if (!PUSH_SEGMENT.containsMatchIn(" $seg")) continue
+            val args = seg.substringAfter("push").trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+            val flags = args.filter { it.startsWith("-") }
+            val positional = args.filter { !it.startsWith("-") }
+            val forced = flags.any { it in setOf("-f", "--force", "--force-with-lease", "--mirror", "--all", "--delete", "-d") } ||
+                positional.any { it.startsWith("+") }
+            val target = positional.getOrNull(1)?.substringAfter(':')?.removePrefix("refs/heads/").orEmpty()
+            val protectedTarget = target.isBlank() || target in setOf("main", "master", "HEAD")
+            if (forced || protectedTarget) {
+                return "⛔ رُفض git push: الدفع إلى الفرع الرئيسي أو بلا فرع صريح أو بالقوة ممنوع. " +
+                    "استخدم github_push_workspace (يُنشئ فرع عمل وPR تلقائياً) أو git push <remote> <فرع-عمل>."
+            }
+        }
+        return null
+    }
+
     fun exec(
         context: Context,
         command: String,
@@ -112,6 +137,7 @@ object ShellTools {
                 0
             )
         }
+        pushViolation(cleaned)?.let { return ShellResult(false, it, 126, 0) }
         BLOCKED.firstOrNull { it.containsMatchIn(cleaned) }?.let { pattern ->
             return ShellResult(false, "⛔ أمر مرفوض أمنياً: ${pattern.pattern}", 126, 0)
         }
