@@ -152,6 +152,9 @@ class TaskContinuity {
     val pendingRisk = mutableSetOf<String>()
     var responded = false
     var resume = false
+    /** ملخص الاستئناف يُلحق برسالة المتابعة؛ منفصل عن current حتى لا يغيّر الحالة المحفوظة. */
+    var resumeNote: String = ""
+        private set
     var trimmed = false
         private set
     private var epoch = 0
@@ -198,6 +201,7 @@ class TaskContinuity {
             receipts.keys().asSequence().toList().forEach { receipts.remove(it) }
             reads.keys().asSequence().toList().forEach { reads.remove(it) }
             current = ""
+            resumeNote = ""
         } else {
             prepareResume()
         }
@@ -209,6 +213,7 @@ class TaskContinuity {
      * ويُلحق بالسياق ما قُرئ وأين يُتابع وقواعد تمنع تكرار الاستدعاء نفسه.
      */
     private fun prepareResume() {
+        resumeNote = ""
         val unverified = mutableListOf<String>()
         for (key in receipts.keys().asSequence().toList()) {
             val receipt = receipts.optJSONObject(key) ?: continue
@@ -223,7 +228,7 @@ class TaskContinuity {
             }
         }
         if (current.isBlank()) return
-        current = current.substringBefore(RESUME_MARK).trimEnd() + resumeBrief(unverified)
+        resumeNote = resumeBrief(unverified)
     }
 
     private fun resumeBrief(unverified: List<String>): String {

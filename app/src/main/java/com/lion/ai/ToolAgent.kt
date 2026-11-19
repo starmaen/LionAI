@@ -419,7 +419,7 @@ object ToolAgent {
         val used = mutableListOf<String>()
         val historyBuffer = (if (memory.history.isNotEmpty()) memory.history else history).toMutableList()
         var current = if (memory.resume && memory.current.isNotBlank()) memory.current +
-            "\n\nالمستخدم طلب المتابعة من هذه النقطة: " + userRequest else prompt
+            "\n\nالمستخدم طلب المتابعة من هذه النقطة: " + userRequest + memory.resumeNote else prompt
         if (memory.trimmed) current += "\nتنبيه: جزء قديم من السياق تجاوز سعة الذاكرة؛ لا تفترض محتواه، وأعد قراءة ما تحتاج للتحقق فقط."
         var lastSignature = ""
         var repeated = 0
