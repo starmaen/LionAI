@@ -423,6 +423,7 @@ object ToolAgent {
         if (memory.trimmed) current += "\nتنبيه: جزء قديم من السياق تجاوز سعة الذاكرة؛ لا تفترض محتواه، وأعد قراءة ما تحتاج للتحقق فقط."
         var lastSignature = ""
         var repeated = 0
+        var repeatNudges = 0
         val failTally = mutableMapOf<String, Int>()
         var failHint = ""
         var failStopKey = ""
@@ -459,6 +460,8 @@ object ToolAgent {
         val readFiles = LinkedHashSet<String>()
         val writtenFiles = LinkedHashSet<String>()
         val failedSteps = mutableListOf<String>()
+        val ledger = FindingsLedger()
+        var reportNudges = 0
         val presented = LinkedHashSet<String>()
         var okMutations = 0
         var okCount = 0
@@ -527,6 +530,7 @@ object ToolAgent {
                 if (workLog.size > 8) sb.append("- … (").append(workLog.size - 8).append(" خطوات أقدم)\n")
                 workLog.takeLast(8).forEach { sb.append("- ").append(it.take(140)).append('\n') }
             }
+            if (!complete) sb.append(ledger.render())
             return sb.toString().trimEnd()
         }
         fun askWithReport(question: String): String {
@@ -1015,7 +1019,7 @@ object ToolAgent {
                 val bareReply = ToolMarkup.strip(reply).replace(ASK, "").replace(ASK_ALT, "").trim()
                 val placeholderReply = bareReply.length < 90 && PLACEHOLDER_REPLY.containsMatchIn(bareReply)
                 val unfinishedWork = WriteIntent.hasMutationIntent(userRequest) && okMutations == 0 &&
-                    bareReply.length < 160 && !WriteIntent.isReadOnlyRequest(userRequest)
+                    !answerOnly && !readOnly && !WriteIntent.isReadOnlyRequest(userRequest)
                 if ((placeholderReply || unfinishedWork) && endNudges < 4 && System.currentTimeMillis() + 45_000L < deadline) {
                     endNudges++
                     historyBuffer.add(ChatTurn("user", current))
@@ -1024,6 +1028,13 @@ object ToolAgent {
                         "نفّذ الخطوة التالية الآن بإرسال استدعاء الأداة نفسه ([[TOOL]]{\"name\":...}[[/TOOL]]) دون وصف أو عبارة مثل «استدعاء أدوات». " +
                         "إن احتجت إذناً أو توضيحاً فاسأل المستخدم بسؤال واضح."
                     continue
+                }
+                if (unfinishedWork) {
+                    session?.let { CheckpointStore.save(prefs, it) }
+                    return finish(
+                        reply.trim() + "\n\n⚠️ لم أعتبر المهمة مكتملة: طلبك يتضمن تعديلاً ولم يُنفَّذ أي تعديل فعلي.",
+                        false, "لم يُنفَّذ أي تعديل"
+                    ).copy(stalled = true)
                 }
                 // خطوة مطلوبة صراحةً لم تُنفَّذ (حذف الفرع التجريبي الذي أُنشئ): لا يُقبل الختام قبلها.
                 if (endNudges < 2 && "github_create_branch" in used &&
@@ -1120,11 +1131,24 @@ object ToolAgent {
                 lastSignature = signature
             }
             if (repeated >= 2) {
+                if (repeatNudges < 2) {
+                    repeatNudges++
+                    session?.recordNote("تكرار نفس الاستدعاء؛ صُحّح مسار المزود ($repeatNudges/2)")
+                    historyBuffer.add(ChatTurn("user", current))
+                    historyBuffer.add(ChatTurn("assistant", reply))
+                    current = "كررت نفس الاستدعاء بنفس المدخلات ولن يُنفَّذ مجدداً؛ نتيجته معروفة أعلاه. " +
+                        "لا تُعد قراءة الملف من أوله: تابع بـ start_line التالي من تذييل النتيجة، " +
+                        "أو ابحث عن الكلمة بـ file_search / github_search_code بدل قراءة الملف كاملاً. " +
+                        "إن كان ما لديك كافياً فاكتب الآن تقرير النتائج."
+                    repeated = 0
+                    lastSignature = ""
+                    continue
+                }
                 session?.recordNote("توقفت الأدوات لتكرار نفس الاستدعاء دون تقدّم")
                 return finish(
-                    "توقفت لأن الأداة تكرّرت بنفس المدخلات دون تقدّم. حُفظ ما أُنجز، وأحتاج توجيهاً مختلفاً للمتابعة.",
+                    "المزود علق في تكرار نفس الاستدعاء. حُفظ ما أُنجز ويتابع مزود بديل من النقطة نفسها.",
                     false, "تكرار نفس الاستدعاء دون تقدّم"
-                )
+                ).copy(stalled = true)
             }
 
             val assistantText = reply.ifBlank { "(استدعاء أدوات)" }
@@ -1253,6 +1277,7 @@ object ToolAgent {
                     if (result.ok) "✅ $desc"
                     else "❌ $desc — " + result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty().take(110)
                 )
+                ledger.record(call.name, target, result.ok, result.output)
                 if (result.ok && call.name == "file_present") {
                     FileDelivery.paths(result.output).forEach { presented.add(it) }
                 }
@@ -1301,6 +1326,12 @@ object ToolAgent {
                 )
             }
             if (failHint.isNotBlank()) { extra.append("\n\n").append(failHint); failHint = "" }
+            if ((!WriteIntent.hasMutationIntent(userRequest) || WriteIntent.isReadOnlyRequest(userRequest)) &&
+                okCount >= 10 && reportNudges < 2
+            ) {
+                reportNudges++
+                extra.append("\n\n").append(FindingsLedger.REPORT_NOW)
+            }
             if (chatMode == ChatMode.CODE && session != null &&
                 calls.any { it.name in GATE_WRITE_TOOLS } && ManifestStore.read(prefs, session.chatId) != null
             ) {
