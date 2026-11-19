@@ -35,7 +35,7 @@ internal object RiskPolicy {
                         (if (a.optBoolean("confirm_large")) " (دفعة كبيرة)" else "")) to listOf(s("path"), s("repo"))
                 else (null to emptyList())
             "shell_exec", "execute_command" ->
-                if (DESTRUCTIVE_SHELL.containsMatchIn(s("command"))) ("أمر صدفة قد يكون مدمّراً: ${s("command").take(80)}" to listOf(s("command")))
+                if (DESTRUCTIVE_SHELL.containsMatchIn(s("command"))) ("أمر صدفة قد يكون مدمّراً: ${s("command").take(160)}" to listOf(s("command")))
                 else (null to emptyList())
             "web_api" ->
                 if (AiTools.isMutation(call)) ("طلب ${s("method").uppercase()} خارجي إلى ${s("url").take(80)}" to listOf(s("url"))) else (null to emptyList())
@@ -49,9 +49,14 @@ internal object RiskPolicy {
     }
 
     /** المستخدم سمّى هدف العملية صراحةً (اسم الملف/الفرع/المسار) في طلبه نفسه. */
+    private val DELETE_VERB = Regex("(?:حذف|احذف|ازل|أزل|إزالة|ازاله|امسح|مسح|remove|delete)")
+
     fun requestNames(risk: Risk, userRequest: String): Boolean {
         val req = userRequest.lowercase()
         if (req.isBlank()) return false
+        // طلب حذف صريح يُجيز حذف ملف/مقطع من المشروع (غير الفروع/المستودعات/الأسرار): لا بطاقة على كل خطوة.
+        if (DELETE_VERB.containsMatchIn(req) && (risk.key.startsWith("file_delete|") || risk.key.startsWith("github_delete_file|")) &&
+            !risk.label.contains("بكل محتوياته") && !SENSITIVE_PATH.containsMatchIn(risk.label)) return true
         return risk.targets.any { t ->
             val tl = t.lowercase().trim()
             tl.length >= 3 && (req.contains(tl) || req.contains(tl.substringAfterLast('/')))
