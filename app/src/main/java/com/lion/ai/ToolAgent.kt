@@ -105,6 +105,15 @@ object ToolAgent {
         RegexOption.IGNORE_CASE
     )
 
+    /** دفعٌ إلى GitHub لم يتأكد نجاح بنائه بعد: لا يُقبل إعلان الاكتمال (ما لم يكن المستودع بلا CI). */
+    internal fun ciGateNeeded(pushedSinceCi: Boolean, ciMissing: Boolean, readOnly: Boolean, answerOnly: Boolean): Boolean =
+        pushedSinceCi && !ciMissing && !readOnly && !answerOnly
+
+    internal fun isCiPass(output: String): Boolean =
+        !buildFailed(output) && BUILD_PASS.containsMatchIn(output.take(800)) && !output.trimStart().startsWith("⏳")
+
+    private val PUSH_TOOLS = setOf("github_write_file", "github_delete_file", "github_commit_files", "github_push_workspace")
+
     internal fun isReadPermissionSeek(text: String): Boolean {
         val t = text.trim()
         if (t.isEmpty() || t.length > 700 || t.contains("[[TOOL]]") || t.contains("[[ASK]]") || t.contains("```")) return false
@@ -428,6 +437,9 @@ object ToolAgent {
         var transientRetries = 0
         var gateNudges = 0
         var buildFailedPending = false
+        var pushedSinceCi = false
+        var ciMissing = false
+        var ciNudges = 0
         var buildNudges = 0
         var lastGateOk = true
         var lastGateText = ""
@@ -888,7 +900,7 @@ object ToolAgent {
                         // المزود لم يستجب: لا نوقف العمل، لكن نُرفق تحذيراً صارماً للمستخدم
                         return finish(
                             reply + "\n\n⚠️ **تنبيه أمان صارم:** تم تعديل الكود لكن لم يتم تشغيل أدوات الفحص (`code_doctor`/`gate_run`) رغم تنبيه المزود مرتين. يرجى مراجعة التعديلات يدوياً قبل الاعتماد عليها.",
-                            true, "تم الإنهاء مع تحذير: لم يتم الفحص"
+                            false, "لم يتم الفحص"
                         )
                     }
                 }
@@ -996,6 +1008,23 @@ object ToolAgent {
                     current = "لم تكتمل المهمة: طلب المستخدم حذف الفرع الذي أنشأته ولم تستدعِ github_delete_branch (أو github_delete_branches) بعد. " +
                         "استدعِه الآن للفرع التجريبي نفسه (وليس الفرع الافتراضي) ثم أعطِ الملخص النهائي."
                     continue
+                }
+                if (ciGateNeeded(pushedSinceCi, ciMissing, readOnly, answerOnly) && !buildFailedPending) {
+                    if (ciNudges < 3 && System.currentTimeMillis() + 45_000L < deadline) {
+                        ciNudges++
+                        session?.recordNote("دفع بلا بناء ناجح مؤكد؛ دُفع المزود لانتظار CI ($ciNudges/3)")
+                        publish("🔎 لم يتأكد نجاح البناء بعد — أطلب من $label انتظاره ($ciNudges/3)")
+                        historyBuffer.add(ChatTurn("user", current))
+                        historyBuffer.add(ChatTurn("assistant", reply))
+                        current = "دفعت تعديلات ولم يتأكد نجاح البناء، فلا يُقبل إعلان الاكتمال. استدعِ github_wait_run بفرع العمل الآن، " +
+                            "وإن نجح فادمج بـ github_merge_pr، وإن فشل فاستدعِ build_diagnose وأصلح وادفع إلى الفرع نفسه. أرسل الاستدعاء مباشرة بلا مقدمة."
+                        continue
+                    }
+                    session?.let { CheckpointStore.save(prefs, it) }
+                    return finish(
+                        reply + "\n\n⚠️ لم أعتبر المهمة مكتملة: دُفعت تعديلات ولم يتأكد نجاح بنائها بعد. حُفظت الجلسة ويُتابع من النقطة نفسها.",
+                        false, "بناء غير متحقق"
+                    )
                 }
                 if (buildFailedPending && !readOnly && !answerOnly) {
                     if (buildNudges < 4 && System.currentTimeMillis() + 45_000L < deadline) {
@@ -1167,7 +1196,11 @@ object ToolAgent {
                 session?.let { CheckpointStore.save(prefs, it) }
                 if (call.name == "github_wait_run" || call.name == "github_get_run") {
                     buildFailedPending = buildFailed(result.output)
+                    if (isCiPass(result.output)) pushedSinceCi = false
+                    if (!result.ok && result.output.contains("لم أجد عملية بناء")) ciMissing = true
                 }
+                if (call.name in PUSH_TOOLS && result.ok && !call.args.optBoolean("dry_run", false)) pushedSinceCi = true
+                if (call.name == "github_merge_pr" && result.ok) pushedSinceCi = false
                 workLog.add(
                     if (result.ok) "✅ $desc"
                     else "❌ $desc — " + result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty().take(110)
