@@ -152,11 +152,20 @@ class TaskContinuity {
     val pendingRisk = mutableSetOf<String>()
     var responded = false
     var resume = false
+    /** ملخص الاستئناف يُلحق برسالة المتابعة؛ منفصل عن current حتى لا يغيّر الحالة المحفوظة. */
+    var resumeNote: String = ""
+        private set
     var trimmed = false
         private set
     private var epoch = 0
     private val receipts = JSONObject()
     private val reads = JSONObject()
+
+    private companion object {
+        const val RESUME_MARK = "[[RESUME_BRIEF]]"
+        val READ_HEAD = Regex("^(.+?)\\s*\\(الأسطر\\s*(\\d+)[–-](\\d+)\\s*من\\s*(\\d+)\\)")
+        val SHA_TAIL = Regex("\\s*\\([0-9a-f]{7,40}\\)\\s*$")
+    }
 
     fun begin(
         userRequest: String,
@@ -192,8 +201,65 @@ class TaskContinuity {
             receipts.keys().asSequence().toList().forEach { receipts.remove(it) }
             reads.keys().asSequence().toList().forEach { reads.remove(it) }
             current = ""
+            resumeNote = ""
+        } else {
+            prepareResume()
         }
     }
+
+    /**
+     * الاستئناف الحقيقي بدل إعادة الدورة نفسها: رفضات الإذن/الحوكمة (⛔) لا تبقى «فاشلة» للأبد،
+     * والعملية غير المؤكدة لا تمنع الاكتمال (وتبقى محجوبة من إعادة التنفيذ الآلي)،
+     * ويُلحق بالسياق ما قُرئ وأين يُتابع وقواعد تمنع تكرار الاستدعاء نفسه.
+     */
+    private fun prepareResume() {
+        resumeNote = ""
+        val unverified = mutableListOf<String>()
+        for (key in receipts.keys().asSequence().toList()) {
+            val receipt = receipts.optJSONObject(key) ?: continue
+            when (receipt.optString("state")) {
+                "failed" -> {
+                    if (receipt.optString("output").contains("⛔")) receipts.remove(key)
+                }
+                "uncertain" -> {
+                    receipt.put("state", "unverified")
+                    unverified.add(receipt.optString("output").lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(100))
+                }
+            }
+        }
+        if (current.isBlank()) return
+        resumeNote = resumeBrief(unverified)
+    }
+
+    private fun resumeBrief(unverified: List<String>): String {
+        val cover = LinkedHashMap<String, IntArray>()
+        for (key in reads.keys().asSequence().toList()) {
+            val output = reads.optJSONObject(key)?.optString("output").orEmpty()
+            val head = output.lineSequence().take(3).firstOrNull { it.contains("(الأسطر") } ?: continue
+            val match = READ_HEAD.find(head) ?: continue
+            val path = match.groupValues[1].replace(SHA_TAIL, "").trim().takeLast(70)
+            val shown = match.groupValues[3].toIntOrNull() ?: continue
+            val total = match.groupValues[4].toIntOrNull() ?: continue
+            val entry = cover.getOrPut(path) { intArrayOf(0, total) }
+            if (shown > entry[0]) entry[0] = shown
+            entry[1] = total
+        }
+        val sb = StringBuilder("\n\n").append(RESUME_MARK).append("\nحالة الاستئناف (من سجل التطبيق لا من ذاكرتك):\n")
+        cover.entries.toList().takeLast(8).forEach { (path, range) ->
+            sb.append("- قُرئ: ").append(path).append(" حتى السطر ").append(range[0]).append(" من ").append(range[1])
+            if (range[0] < range[1]) sb.append(" — المتبقي يبدأ من السطر ").append(range[0] + 1)
+            sb.append('\n')
+        }
+        unverified.take(3).forEach {
+            sb.append("- عملية لم يُعرف أثرها: ").append(it).append(" — تحقق منها بقراءة واحدة ثم تابع، ولا تعدها آلياً\n")
+        }
+        sb.append("قواعد المتابعة:\n")
+        sb.append("- لا تُعد أي استدعاء نفّذته بنفس مدخلاته؛ نتيجته معروفة.\n")
+        sb.append("- لا تقرأ ملفاً كاملاً بحثاً عن كلمة: استعمل file_search أو github_search_code، وللمتابعة استعمل start_line التالي.\n")
+        sb.append("- أنهِ هذه الجولة بنتيجة للمستخدم: ما وجدته، ما لم تجده، ما تبقى، والخطوة التالية. لا تتوقف بصمت.")
+        return sb.toString()
+    }
+
     fun checkpoint(turns: List<ChatTurn>, next: String) {
         val kept = turns.toMutableList()
         var size = kept.sumOf { it.content.length }
