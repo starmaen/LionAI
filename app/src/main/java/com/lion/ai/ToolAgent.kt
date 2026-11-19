@@ -20,7 +20,9 @@ object ToolAgent {
         val complete: Boolean = true,
         val responded: Boolean = false,
         /** المزود كرّر وعداً بلا تنفيذ: يُعامل كفشل مزود ليتابع بديل من السياق نفسه. */
-        val stalled: Boolean = false
+        val stalled: Boolean = false,
+        /** توقف سببه عدم التزام المزود بالبروتوكول لا عطله: في الوضع اليدوي لا يُبدَّل المزود بسببه. */
+        val protocolStall: Boolean = false
     ) {
         val usedTools: Boolean get() = tools.isNotEmpty()
     }
@@ -242,7 +244,7 @@ object ToolAgent {
         - لديك وصول حقيقي إلى GitHub وGoogle Drive وGmail عبر الأدوات المذكورة في نهاية هذه التعليمات. لا تعتذر عن عدم القدرة على الوصول قبل استدعاء الأداة المناسبة، وإذا كان التوكن ناقصاً فاشرح للمستخدم من أين يضيفه.
         - لا تخرج عن موضوع المستخدم، وحافظ على دعم العربية والإنجليزية.
         - عندما يطلب المستخدم ملفاً أو مجلداً أو ZIP: أنشئه بأدوات الملفات (file_write ثم file_zip_create عند الحاجة) ثم استدعِ file_present لتسليمه كبطاقة تنزيل، ولا تلصق محتوى الملف الكبير في الرد. أما المقاطع القصيرة فضعها في كتلة كود قابلة للنسخ.
-        - دورة التطوير المعتمدة: اقرأ (file_tree/file_read/code_project_analyze) ← خطّط ← عدّل (file_edit أولاً، أو file_apply_patch/code_patch) ← تحقق (code_doctor/gate_run) ← ارفع (github_push_workspace) ← ابنِ (github_dispatch ثم github_wait_run) ← عند الفشل استدعِ build_diagnose ثم صحّح وكرّر حتى ينجح البناء. لا تعلن النجاح قبل نجاح البناء أو البوابة فعلياً، وإن لم تتوفر أداة فاذكر ذلك واقترح toolchain_install.
+        - دورة التطوير المعتمدة: اقرأ (file_tree/file_read/code_project_analyze) ← خطّط ← عدّل (file_edit أولاً، أو file_apply_patch/code_patch) ← تحقق (code_doctor/gate_run) ← ارفع (github_push_workspace؛ يذهب تلقائياً إلى فرع عمل مع PR) ← ابنِ (github_wait_run) ← عند النجاح ادمج (github_merge_pr) ← عند الفشل استدعِ build_diagnose ثم صحّح وكرّر حتى ينجح البناء. لا تعلن النجاح قبل نجاح البناء أو البوابة فعلياً، وإن لم تتوفر أداة فاذكر ذلك واقترح toolchain_install.
         - عند الانتهاء قدّم ملخصاً واضحاً بالعربية: ما أُنجز فعلاً، الملفات التي قرأتها/عدّلتها، نتيجة التحقق، وما لم يُنجز مع الخطوة التالية. لا تكتفِ بكلمات قليلة.
         - إن لم تنتهِ المهمة فقل ذلك صراحةً وحدّد ما تبقى، ولا تُوحِ بأنها اكتملت.
         - إن كنت تعمل داخل «جلسة عمل مستمرة» فأنت تكمل مهمة بدأها مزود آخر؛ لا تكرر الخطوات الناجحة، وافحص الحالة الحالية أولاً.
@@ -501,7 +503,7 @@ object ToolAgent {
             }
             // سجل الخطوات يبقى في الشات بعد انتهاء المهمة (كان يظهر مؤقتاً أثناء العمل ثم يختفي) ومعه سبب كل فشل.
             if (workLog.isNotEmpty() && !(complete && failCount == 0)) {
-                sb.append("- سجل الخطوات:\n")
+                sb.append("- سجل الخطوات (الأخطاء نصوص حرفية من أدوات التطبيق على الجهاز، لا من المزود):\n")
                 if (workLog.size > 30) sb.append("- … (").append(workLog.size - 30).append(" خطوات أقدم)\n")
                 workLog.takeLast(30).forEach { sb.append("- ").append(it.take(170)).append('\n') }
             }
@@ -844,7 +846,7 @@ object ToolAgent {
                 return finish(
                     "⚠️ هذا المزود لا يلتزم ببروتوكول الأدوات. حُفظ السياق والتقدم، ويتابع مزود بديل من النقطة نفسها.",
                     false, "المزود لا يستعمل الأدوات"
-                ).copy(stalled = true)
+                ).copy(stalled = true, protocolStall = true)
             }
             if (calls.isEmpty() && forceExecution && !answerOnly && isIntentOnly(reply)) {
                 if (promiseNudges < 3 && System.currentTimeMillis() + 45_000 < deadline) {
@@ -864,11 +866,12 @@ object ToolAgent {
                 return finish(
                     "⚠️ المزود الحالي كرّر الوعد بالعمل دون تنفيذ فعلي. حُفظ السياق والتقدم، ويتابع مزود بديل من النقطة نفسها.",
                     false, "المزود لا ينفّذ"
-                ).copy(stalled = true)
+                ).copy(stalled = true, protocolStall = true)
             }
             if (calls.isEmpty()) {
                 // === بوابة التحقق الإلزامية (تعمل مع جميع المزودات) ===
-                val wroteCode = used.any { it == "file_write" || it == "file_edit" || it == "file_apply_patch" || it == "code_patch" }
+                val wroteCode = used.any { it == "file_write" || it == "file_edit" || it == "file_apply_patch" || it == "code_patch" ||
+                    it == "push_workspace" || it == "commit_files" || it == "write_file" }
                 val verifiedCode = used.any { it == "code_doctor" || it == "gate_run" || it == "build_diagnose" || it == "code_analyze_file" }
                 
                 if (wroteCode && !verifiedCode) {
@@ -1011,7 +1014,7 @@ object ToolAgent {
                     return finish(
                         "فشل البناء لم يُصلَح، وحُفظ السياق ليتابع مزود بديل من النقطة نفسها.",
                         false, "فشل البناء لم يُصلَح"
-                    ).copy(stalled = true)
+                    ).copy(stalled = true, protocolStall = true)
                 }
                 val answer = finalAnswer(reply, used, lastSubstantive)
                 if (used.isNotEmpty()) session?.recordNote("اكتملت المهمة: " + answer.take(240))
