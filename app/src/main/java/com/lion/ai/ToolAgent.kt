@@ -440,6 +440,7 @@ object ToolAgent {
         var pushedSinceCi = false
         var ciMissing = false
         var ciNudges = 0
+        var finalAuditDone = false
         var buildNudges = 0
         var lastGateOk = true
         var lastGateText = ""
@@ -482,7 +483,13 @@ object ToolAgent {
                 else -> "غير مكتملة: $why"
             }
             val sb = StringBuilder("\n\n**ملخص العمل**\n")
-            sb.append("- الحالة: ").append(status).append('\n')
+            sb.append("- طلبك: ").append(userRequest.replace('\n', ' ').take(90)).append('\n')
+            sb.append("- الحالة: ").append(if (complete) "✅ " else "❌ ").append(status).append('\n')
+            if (complete) {
+                val checked = used.any { it == "code_doctor" || it == "gate_run" }
+                sb.append("- الدليل: ").append(if (writtenFiles.isEmpty()) "لا تعديل ملفات" else "عُدّل ${writtenFiles.size} ملف")
+                    .append(if (writtenFiles.isEmpty()) "" else if (checked) "، وفُحص الكود فعلاً" else "، دون فحص آلي للكود").append('\n')
+            }
             sb.append("- الخطوات المنفذة: ").append(okCount + failCount)
             if (failCount > 0) sb.append(" (نجح ").append(okCount).append("، تعذّر ").append(failCount).append(")")
             sb.append('\n')
@@ -515,9 +522,9 @@ object ToolAgent {
             }
             // سجل الخطوات يبقى في الشات بعد انتهاء المهمة (كان يظهر مؤقتاً أثناء العمل ثم يختفي) ومعه سبب كل فشل.
             if (workLog.isNotEmpty() && !(complete && failCount == 0)) {
-                sb.append("- سجل الخطوات (الأخطاء نصوص حرفية من أدوات التطبيق على الجهاز، لا من المزود):\n")
-                if (workLog.size > 30) sb.append("- … (").append(workLog.size - 30).append(" خطوات أقدم)\n")
-                workLog.takeLast(30).forEach { sb.append("- ").append(it.take(170)).append('\n') }
+                sb.append("- آخر الخطوات (نصوص حرفية من أدوات التطبيق على جهازك، لا من المزود):\n")
+                if (workLog.size > 8) sb.append("- … (").append(workLog.size - 8).append(" خطوات أقدم)\n")
+                workLog.takeLast(8).forEach { sb.append("- ").append(it.take(140)).append('\n') }
             }
             return sb.toString().trimEnd()
         }
@@ -1007,6 +1014,24 @@ object ToolAgent {
                     historyBuffer.add(ChatTurn("assistant", reply))
                     current = "لم تكتمل المهمة: طلب المستخدم حذف الفرع الذي أنشأته ولم تستدعِ github_delete_branch (أو github_delete_branches) بعد. " +
                         "استدعِه الآن للفرع التجريبي نفسه (وليس الفرع الافتراضي) ثم أعطِ الملخص النهائي."
+                    continue
+                }
+                // تدقيق ختامي إلزامي: لا يُقبل «تم» قبل أن يطابق المزود كل بند في طلب المستخدم بدليل أداة.
+                if (!finalAuditDone && used.isNotEmpty() && !readOnly && !answerOnly &&
+                    WriteIntent.hasMutationIntent(userRequest) && !WriteIntent.isReadOnlyRequest(userRequest) &&
+                    System.currentTimeMillis() + 45_000L < deadline
+                ) {
+                    finalAuditDone = true
+                    session?.recordNote("تدقيق ختامي: مطابقة كل بنود الطلب بأدلة قبل إعلان الاكتمال")
+                    publish("🧾 مطابقة بنود طلبك قبل إعلان الاكتمال")
+                    historyBuffer.add(ChatTurn("user", current))
+                    historyBuffer.add(ChatTurn("assistant", reply))
+                    current = "قبل أن تُنهي: أعد قراءة طلب المستخدم الحرفي:\n«" + userRequest.replace('\n', ' ').take(600) + "»\n" +
+                        "قسّمه إلى بنوده، وتحقق من كل بند بأداة قراءة إن لم تكن متأكداً (مثلاً ابحث عن اسم ما طُلب حذفه فلا يظهر). " +
+                        "إن بقي بند لم يُنفَّذ فنفّذه الآن بالأدوات ولا تُنهِ. " +
+                        "فقط إذا اكتملت كل البنود فاكتب ختاماً بلغة بسيطة يفهمها المستخدم بهذا الشكل: " +
+                        "«تم: …» (ما تغيّر ولماذا)، «الدليل: …» (ملف/أداة/نتيجة)، «لم يتم: …» (إن وُجد، وسببه)، «المطلوب منك: …» (إن وُجد). " +
+                        "ولا تدّعِ شيئاً لم تؤكده أداة."
                     continue
                 }
                 if (ciGateNeeded(pushedSinceCi, ciMissing, readOnly, answerOnly) && !buildFailedPending) {
