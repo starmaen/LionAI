@@ -147,7 +147,7 @@ object FileTools {
 
     fun read(context: Context, path: String, maxBytes: Int = 1_000_000): Info {
         val file = resolve(context, path)
-        if (!file.exists() || !file.isFile) throw IllegalArgumentException("الملف غير موجود: $path")
+        if (!file.exists() || !file.isFile) throw IllegalArgumentException(CompletionGuard.missingFileMessage(root(context), path))
         if (file.length() > maxBytes) {
             val bytes = file.inputStream().use { it.readBytesLimited(maxBytes) }
             val binary = bytes.take(4096).count { it.toInt() == 0 } > 0
