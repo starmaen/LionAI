@@ -169,7 +169,14 @@ class TaskContinuity {
             (resume || answering || writeGranted || persistedWrite)
         // موافقة المستخدم على بطاقة عملية خطرة تخص تلك العملية فقط؛ المهمة الجديدة أو الرفض يمسحان الاثنتين.
         if (!resume || WriteIntent.isReadOnlyRequest(userRequest)) { riskApproved.clear(); pendingRisk.clear() }
-        else if (approved || WriteIntent.isExecute(userRequest)) { riskApproved.addAll(pendingRisk); pendingRisk.clear() }
+        else if (approved || WriteIntent.isExecute(userRequest)) {
+            riskApproved.addAll(pendingRisk)
+            // موافقة واحدة تغطي نفس الصنف من العمليات الروتينية في هذه المهمة (لا بطاقة كل دقيقتين)؛ الفروع والمستودعات والطلبات الخارجية تبقى فردية.
+            riskApproved.addAll(pendingRisk.map { it.substringBefore('|') }
+                .filter { it in setOf("shell_exec", "execute_command", "file_delete", "file_move", "github_delete_file") }
+                .map { "cat:$it" })
+            pendingRisk.clear()
+        }
         writeGranted = when {
             WriteIntent.isReadOnlyRequest(userRequest) -> false
             WriteIntent.isExecute(userRequest) -> true

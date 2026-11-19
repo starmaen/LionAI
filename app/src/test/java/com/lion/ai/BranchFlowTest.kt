@@ -57,3 +57,26 @@ class ShellPushGuardTest {
         assertEquals(null, ShellTools.pushViolation("git commit -m \"push fix\""))
     }
 }
+
+class ApprovalCardTest {
+    @Test
+    fun commandLineWithPipesIsNotSwallowedAsTable() {
+        val text = "⚠️ أطلب موافقتك على: أمر صدفة قد يكون مدمّراً: rm -f a.kt | head -50 | cat\n\nسبب السؤال"
+        val shown = AnswerGuard.sanitizeForDisplay(text)
+        assertTrue(shown.contains("rm -f a.kt"))
+    }
+
+    @Test
+    fun realTablesStillBecomeBullets() {
+        val shown = AnswerGuard.sanitizeForDisplay("| الاسم | القيمة |\n|---|---|\n| أ | ب |")
+        assertTrue(shown.contains("• أ — ب"))
+    }
+
+    @Test
+    fun explicitDeleteRequestAuthorizesPlainFileDeleteButNotBranches() {
+        val file = RiskPolicy.assess(ToolCall("file_delete", org.json.JSONObject().put("path", "app/Old.kt")))!!
+        assertTrue(RiskPolicy.requestNames(file, "احذف المزودين المعطلين"))
+        val branch = RiskPolicy.assess(ToolCall("github_delete_branch", org.json.JSONObject().put("branch", "dev")))!!
+        assertFalse(RiskPolicy.requestNames(branch, "احذف المزودين المعطلين"))
+    }
+}
