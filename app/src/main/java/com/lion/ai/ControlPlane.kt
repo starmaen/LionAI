@@ -153,7 +153,7 @@ object ControlPlane {
     ): GateReport {
         val issues = mutableListOf<GateIssue>()
         if (manifest == null) {
-            issues.add(GateIssue("error", "NO_MANIFEST", message = "لا يوجد Manifest معتمد لهذه المحادثة/المشروع"))
+            issues.add(GateIssue("warn", "NO_MANIFEST", message = "لا Manifest لهذه المحادثة (ليس خطأً: مشروع قائم). فُحص الكود والبنية فقط."))
         } else {
             manifest.files.forEach { file ->
                 val path = ManifestPaths.join(manifest.root, file.path)

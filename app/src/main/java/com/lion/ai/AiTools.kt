@@ -622,7 +622,8 @@ object AiTools {
                 .append("ابدأ بـ github_repo_overview أو github_list_tree أو github_read_file، ولا تقل إنك لا تستطيع الوصول إلى GitHub. ")
                 .append("حلقة التطوير: clone أو اقرأ الملفات، عدّل، راجع file_diff، ارفع عبر github_push_workspace ")
                 .append("(استخدم dry_run أولاً عند الشك)، ثم github_wait_run لقراءة فشل CI، ثم أصلح وأعد الرفع. ")
-                .append("لا تدفع إلى main مباشرة إن كان ذلك خطراً؛ أنشئ فرعاً وPR.\n")
+                .append("الدفع إلى الفرع الافتراضي ممنوع ميكانيكياً: أي كتابة تذهب تلقائياً إلى فرع عمل ويُفتح PR. ")
+                .append("بعد الدفع: github_wait_run ← عند النجاح github_merge_pr (يرفضه التطبيق قبل نجاح البناء) ← عند الفشل build_diagnose وأصلح وادفع إلى الفرع نفسه.\n")
         }
         if (ToolGroup.COMMS in groups) {
             builder.append("الاتصالات: WhatsApp Business Cloud API لإرسال القوالب/الرسائل الرسمية، ")
@@ -1302,23 +1303,27 @@ object AiTools {
                 val path = req(args, "path")
                 val content = args.optString("content")
                 ContentGuard.problem(path, null, content)?.let { throw IllegalArgumentException(it) }
+                val prep = BranchFlow.prepare(ctx, token, owner, repo, args.optString("branch"))
                 val result = GitHubClient.writeFile(
                     token, owner, repo, path, content,
                     args.optString("message", "تحديث من Lion AI"),
-                    args.optString("branch")
+                    prep.branch
                 )
                 val commit = result.optJSONObject("commit")?.optString("html_url").orEmpty()
-                "✅ حُفظ $path\n${commit}"
+                listOf("✅ حُفظ $path\n${commit}", prep.note, BranchFlow.afterWrite(ctx, token, owner, repo, prep.branch))
+                    .filter { it.isNotBlank() }.joinToString("\n")
             }
             "github_delete_file" -> {
                 val (owner, repo) = repoOf(ctx, args)
                 val path = req(args, "path")
+                val prep = BranchFlow.prepare(ctx, token, owner, repo, args.optString("branch"))
                 GitHubClient.deleteFile(
                     token, owner, repo, path,
                     args.optString("message", "حذف من Lion AI"),
-                    args.optString("branch")
+                    prep.branch
                 )
-                "✅ حُذف $path"
+                listOf("✅ حُذف $path", prep.note, BranchFlow.afterWrite(ctx, token, owner, repo, prep.branch))
+                    .filter { it.isNotBlank() }.joinToString("\n")
             }
             "github_list_branches" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -1496,12 +1501,15 @@ object AiTools {
                 }.orEmpty()
                 if (files.isEmpty() && deletions.isEmpty()) throw IllegalArgumentException("حدد files أو delete")
                 files.forEach { (p, c) -> ContentGuard.problem(p, null, c)?.let { throw IllegalArgumentException(it) } }
+                val prep = BranchFlow.prepare(ctx, token, owner, repo, args.optString("branch"))
                 val sha = GitHubClient.commitFiles(
-                    token, owner, repo, args.optString("branch"),
+                    token, owner, repo, prep.branch,
                     args.optString("message", "تحديث من Lion AI"),
                     files, deletions
                 )
-                "✅ أُنشئ commit ${sha.take(8)} (${files.size} ملف، ${deletions.size} حذف)"
+                listOf("✅ أُنشئ commit ${sha.take(8)} (${files.size} ملف، ${deletions.size} حذف)", prep.note,
+                    BranchFlow.afterWrite(ctx, token, owner, repo, prep.branch))
+                    .filter { it.isNotBlank() }.joinToString("\n")
             }
             "github_bootstrap_project" -> {
                 val name = req(args, "name")
@@ -2294,15 +2302,20 @@ $code
                         "⛔ هذا جذر مساحة العمل ويحوي مشاريع أخرى (repos/…). حدّد مجلد المستودع نفسه، مثل repos/$owner/$repo."
                     )
                 }
-                GitHubClient.commitWorkspace(
+                val dry = args.optBoolean("dry_run", false)
+                val prep = if (dry) BranchFlow.Prep(args.optString("branch"), "")
+                    else BranchFlow.prepare(ctx, token, owner, repo, args.optString("branch"))
+                val pushed = GitHubClient.commitWorkspace(
                     token, owner, repo,
-                    branch = args.optString("branch"),
+                    branch = prep.branch,
                     message = args.optString("message", "تحديث من Lion AI"),
                     localRoot = dir,
                     deleteMissing = args.optBoolean("delete_missing", false),
-                    dryRun = args.optBoolean("dry_run", false),
+                    dryRun = dry,
                     confirmLarge = args.optBoolean("confirm_large", false)
                 )
+                if (dry) pushed else listOf(pushed, prep.note, BranchFlow.afterWrite(ctx, token, owner, repo, prep.branch))
+                    .filter { it.isNotBlank() }.joinToString("\n")
             }
             "github_get_run" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -2314,7 +2327,7 @@ $code
                 val (owner, repo) = repoOf(ctx, args)
                 val timeout = int(args, "timeout_sec", 420).coerceIn(30, 900)
                 val interval = int(args, "interval_sec", 10).coerceIn(5, 60)
-                val branch = args.optString("branch")
+                val branch = args.optString("branch").ifBlank { BranchFlow.current(ctx.prefs, ctx, owner, repo) }
                 val requestedId = args.optLong("run_id", 0L)
                 val started = System.currentTimeMillis()
                 var run: GitHubClient.WorkflowRun? = if (requestedId > 0) {
@@ -2416,10 +2429,11 @@ $code
             }
             "github_merge_pr" -> {
                 val (owner, repo) = repoOf(ctx, args)
+                BranchFlow.mergeGate(ctx, token, owner, repo, args.optInt("number"))?.let { return it }
                 GitHubClient.mergePull(
                     token, owner, repo, args.optInt("number"),
                     args.optString("commit_title"), args.optString("method", "merge")
-                )
+                ).also { BranchFlow.afterMerge(ctx, owner, repo) }
             }
             "github_review_pr" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -2843,7 +2857,7 @@ $code
             }
             "manifest_read" -> {
                 val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
-                    ?: return "لا يوجد Manifest لهذه المحادثة. استخدم manifest_create أولاً."
+                    ?: return "ℹ️ لا يوجد Manifest لهذه المحادثة — هذا ليس خطأً ولا فشلاً. Manifest اختياري ويُنشأ بـ manifest_create عند بدء مشروع جديد فقط؛ في مشروع قائم تحقق بـ code_doctor ثم البناء."
                 buildString {
                     append("📋 ").append(manifest.project).append(" | root=").append(manifest.root.ifBlank { "." })
                     append(" | معتمد: ").append(if (manifest.approved) "نعم" else "لا").append('\n')
@@ -2866,7 +2880,7 @@ $code
             "manifest_update" -> {
                 requireChat(ctx)
                 val current = ManifestStore.read(ctx.prefs, ctx.chatId)
-                    ?: throw IllegalArgumentException("لا يوجد Manifest. استخدم manifest_create أولاً.")
+                    ?: throw IllegalArgumentException("ℹ️ لا يوجد Manifest (ليس خطأً): لا حاجة لتحديثه في مشروع قائم. أنشئه بـ manifest_create فقط لمشروع جديد.")
                 val path = ManifestPaths.normalize(req(args, "path"))
                 if (current.files.none { ManifestPaths.normalize(it.path) == path }) {
                     throw IllegalArgumentException("المسار ليس ضمن Manifest: $path")
@@ -2889,7 +2903,7 @@ $code
             "manifest_validate" -> {
                 requireChat(ctx)
                 val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
-                    ?: return "⛔ لا يوجد Manifest. لا يمكن التحقق."
+                    ?: return "ℹ️ لا يوجد Manifest (ليس خطأً): لا شيء للتحقق منه بهذه الأداة. استخدم code_doctor للكود ثم البناء."
                 // قبل الاعتماد: تحقق بنيوي فقط لأن الملفات تُكتب في مرحلة التنفيذ.
                 // بعد الاعتماد: بوابة كاملة تشمل وجود الملفات وتوازن الأقواس وRoot Reachability.
                 val check = if (manifest.approved) {
