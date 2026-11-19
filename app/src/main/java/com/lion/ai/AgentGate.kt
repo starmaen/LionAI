@@ -105,7 +105,9 @@ internal object AgentGate {
             // سؤال تقني في «المطوّر» لا يُجاب من الذاكرة وحدها: تُفتح الأدوات (الوكيل يقرر أيها يلزم).
             // أسئلة القدرة («هل تستطيع…؟») والأسئلة غير التقنية تبقى مباشرة.
             return projectRef ||
-                (chatMode == ChatMode.CODE && intent == UserIntent.Kind.QUESTION && TECH_QUESTION.containsMatchIn(text))
+                (chatMode == ChatMode.CODE && intent == UserIntent.Kind.QUESTION && TECH_QUESTION.containsMatchIn(text)) ||
+                // فهم ضمني: شكوى/سؤال تقدم/إشارة لشيء من المشروع بلا أمر صريح.
+                IntentSense.impliesProjectWork(text, chatMode, TEXT_OBJECT.containsMatchIn(text) && !hasTarget(text))
         }
         val target = hasTarget(text)
         // «عدّل الفقرة» / «اكتب رسالة»: نص عادي لا أدوات.
@@ -113,6 +115,7 @@ internal object AgentGate {
         return (STRONG_ACTION.containsMatchIn(text) && (target || chatMode == ChatMode.CODE)) ||
             (TARGETED_ACTION.containsMatchIn(text) && target) ||
             WriteIntent.isDirectCommand(text) && (target || chatMode == ChatMode.CODE) ||
-            DevTask.matches(text) || projectRef || isWorkCommand(text, chatMode)
+            DevTask.matches(text) || projectRef || isWorkCommand(text, chatMode) ||
+            IntentSense.impliesProjectWork(text, chatMode, false)
     }
 }
