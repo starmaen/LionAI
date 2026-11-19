@@ -435,6 +435,7 @@ object ToolAgent {
         var permissionNudges = 0
         var repairNudges = 0
         var transientRetries = 0
+        var contextRetries = 0
         var gateNudges = 0
         var buildFailedPending = false
         var pushedSinceCi = false
@@ -749,6 +750,26 @@ object ToolAgent {
                     stepIndex--
                     continue
                 }
+                // تجاوز طول السياق ليس نفاد حصة: نضغط السجل بقوة ونعيد على المزود نفسه بلا حظر ولا تبديل
+                // (كان يُصنَّف حصة فيُحظر كل مزود 6 ساعات ويتوقف العمل كله).
+                if (errKind == QuotaGuard.Kind.CONTEXT && contextRetries < 2 &&
+                    System.currentTimeMillis() + 45_000 < deadline
+                ) {
+                    contextRetries++
+                    val keep = if (contextRetries == 1) 8 else 4
+                    val cap = if (contextRetries == 1) 20_000 else 8_000
+                    compressHistory(keepRecent = keep, targetChars = 0)
+                    for (i in historyBuffer.indices) {
+                        val t = historyBuffer[i]
+                        if (i < historyBuffer.size - keep && t.content.length > cap / 4) {
+                            historyBuffer[i] = ChatTurn(t.role, t.content.take(cap / 4) + " … [اقتُطع توفيراً للسياق]")
+                        }
+                    }
+                    session?.recordNote("تجاوز طول السياق؛ ضُغط السجل وأُعيدت الخطوة ($contextRetries/2) دون حظر المزود")
+                    publish("↻ السياق طويل — ضغطت الخطوات القديمة وأتابع ($contextRetries/2)")
+                    stepIndex--
+                    continue
+                }
                 QuotaGuard.mark(provider, errKind)
                 session?.providerFailed(label, reply)
                 session?.recordNote("توقف المزود ($errKind): " + QuotaGuard.describe(provider).ifBlank { "خطأ" } + " — يتابع مزود بديل من النقطة نفسها")
@@ -761,6 +782,7 @@ object ToolAgent {
                 ).copy(stalled = true)
             }
             transientRetries = 0
+            contextRetries = 0
             QuotaGuard.clear(provider)
 
             memory.responded = true
