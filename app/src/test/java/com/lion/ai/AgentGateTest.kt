@@ -66,3 +66,39 @@ class AgentGateTest {
         assertFalse(shouldForceExecution(ChatMode.CODE, TaskKind.GENERAL, false, "راجع الرسالة قبل الإرسال"))
     }
 }
+
+class ImplicitIntentTest {
+    @Test
+    fun complaintsAndProgressQuestionsOpenToolsWithoutExplicitCommand() {
+        val cases = listOf(
+            "التطبيق لا يعمل بعد التحديث", "المزود بطيء جداً", "ظهر لي خطأ عند فتح الشاشة",
+            "وين وصلنا بالمهمة؟", "ما النتيجة؟", "الاستجابة تتأخر كثيراً", "ما زالت المشكلة موجودة"
+        )
+        for (c in cases) assertTrue("يجب فتح الأدوات ضمنياً: $c", AgentGate.shouldUseAgent(c, false, ChatMode.CODE))
+    }
+
+    @Test
+    fun wishesAboutProjectOpenToolsAndForceFirstRead() {
+        assertTrue(AgentGate.shouldUseAgent("أريد إضافة زر للإعدادات في التطبيق", false, ChatMode.CODE))
+        assertTrue(IntentSense.strongSignal("التطبيق لا يعمل", ChatMode.CODE))
+        assertTrue(shouldForceExecution(ChatMode.CODE, TaskKind.GENERAL, false, "المزود بطيء جداً"))
+    }
+
+    @Test
+    fun generalKnowledgeCapabilityAndChitChatStayDirect() {
+        assertFalse(AgentGate.shouldUseAgent("ما هي عاصمة فرنسا", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("هل تستطيع كتابة كود؟", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("احكي لي نكتة قصيرة", false, ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("شكراً", false, ChatMode.CODE))
+        assertFalse(IntentSense.strongSignal("شكراً", ChatMode.CODE))
+        assertFalse(AgentGate.shouldUseAgent("التطبيق لا يعمل", false, ChatMode.GENERAL))
+    }
+
+    @Test
+    fun providerAskingReadPermissionIsDetected() {
+        assertTrue(ToolAgent.isReadPermissionSeek("هل تريد أن أفحص الملفات أولاً؟"))
+        assertTrue(ToolAgent.isReadPermissionSeek("Would you like me to inspect the repository?"))
+        assertFalse(ToolAgent.isReadPermissionSeek("[[TOOL]]{\"name\":\"file_tree\"}[[/TOOL]] هل تريد أن أفحص"))
+        assertFalse(ToolAgent.isReadPermissionSeek("تم الإصلاح. النتيجة: نجح البناء."))
+    }
+}

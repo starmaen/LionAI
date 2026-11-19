@@ -187,7 +187,7 @@ internal fun shouldForceExecution(chatMode: ChatMode, kind: TaskKind, hasWork: B
     if (kind == TaskKind.DEV || hasWork) return true
     if (chatMode != ChatMode.CODE) return false
     return prompt == null || ACTION_REQUEST.containsMatchIn(prompt.trim().lowercase()) ||
-        AgentGate.isWorkCommand(prompt, chatMode)
+        AgentGate.isWorkCommand(prompt, chatMode) || IntentSense.strongSignal(prompt, chatMode)
 }
 
 /**

@@ -95,6 +95,20 @@ object ToolAgent {
         RegexOption.IGNORE_CASE
     )
 
+    /** المزود يسأل إذناً لفحص/قراءة لا تحتاج إذناً («هل تريد أن أفحص؟») بدل أن يفحص فوراً. */
+    private val READ_PERMISSION_SEEK = Regex(
+        "(هل\\s*(?:تريد|تود|ترغب|تحب)\\s*(?:مني)?\\s*(?:ان|أن)?|اتريد|أتريد|اخبرني\\s*(?:اذا|إذا|إن)\\s*(?:اردت|أردت|رغبت)|" +
+            "would you like me to|do you want me to|shall i|let me know if you(?:'d| would) like).{0,50}" +
+            "(افحص|أفحص|اقرأ|أقرأ|اراجع|أراجع|اتحقق|أتحقق|ابحث|أبحث|احلل|أحلل|اطلع|أطلع|ادقق|أدقق|check|inspect|read|look|search|analy[sz]e|review|investigate)",
+        RegexOption.IGNORE_CASE
+    )
+
+    internal fun isReadPermissionSeek(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty() || t.length > 700 || t.contains("[[TOOL]]") || t.contains("[[ASK]]") || t.contains("```")) return false
+        return READ_PERMISSION_SEEK.containsMatchIn(t)
+    }
+
     internal fun isCapabilityDenial(text: String): Boolean {
         val t = text.trim()
         if (t.isEmpty() || t.length > 900 || t.contains("[[TOOL]]") || t.contains("```")) return false
@@ -406,6 +420,7 @@ object ToolAgent {
         var lastNarration = ""
         var promiseNudges = 0
         var capabilityNudges = 0
+        var readSeekNudges = 0
         var permissionNudges = 0
         var repairNudges = 0
         var transientRetries = 0
@@ -795,6 +810,19 @@ object ToolAgent {
                     "أعد إرسال الكتلة نفسها فقط بصيغة صحيحة: [[TOOL]]{\"name\":\"اسم_أداة_من_القائمة\",\"args\":{...}}[[/TOOL]] " +
                     "(أو بالمفتاح \"tool\" بدل \"name\" — كلاهما مقبول)، " +
                     "بعلامات اقتباس مزدوجة عادية ودون أي نص داخلها. إن لم تكن متأكداً من الاسم استدعِ tools_schema."
+                continue
+            }
+            // سأل إذناً لقراءة/فحص قبل أي أداة: نُلزمه بالفحص فوراً بدل إيقاف المحادثة بسؤال.
+            if (calls.isEmpty() && effectiveGroups.isNotEmpty() && !answerOnly && stepNumber == 0 &&
+                readSeekNudges < 2 && isReadPermissionSeek(reply) && System.currentTimeMillis() + 45_000 < deadline
+            ) {
+                readSeekNudges++
+                session?.recordNote("المزود طلب إذناً لفحص لا يحتاجه؛ دُفع للتنفيذ ($readSeekNudges/2)")
+                historyBuffer.add(ChatTurn("user", current))
+                historyBuffer.add(ChatTurn("assistant", reply))
+                current = "القراءة والفحص لا يحتاجان إذناً من المستخدم. لا تسأل «هل تريد؟»؛ نفّذ الفحص الآن: " +
+                    "أرسل استدعاء الأداة المناسبة فقط بصيغة [[TOOL]]{\"name\":\"...\",\"args\":{...}}[[/TOOL]] بلا مقدمة، " +
+                    "ثم أجب بما وجدته. الإذن مطلوب فقط للكتابة/الحذف/الدفع/الإرسال/التثبيت."
                 continue
             }
             if (calls.isEmpty() && effectiveGroups.isNotEmpty() && !answerOnly && isCapabilityDenial(reply)) {
