@@ -348,14 +348,22 @@ object PipelineStore {
     fun canWrite(prefs: SharedPreferences, chatId: String): Boolean {
         if (chatId.isBlank()) return true
         val state = read(prefs, chatId)
-            ?: return ManifestStore.read(prefs, chatId)?.approved == true
+        if (state == null) {
+            // لا دورة حياة ولا Manifest = مشروع قائم أو مهمة إصلاح عادية: الكتابة مسموحة.
+            // Manifest اختياري (كما تقول manifest_read نفسها)؛ كان رفضه هنا يسبب
+            // «لا يوجد Manifest / لا يمكن تجاوز البوابة» في كل مشروع موجود.
+            val manifest = ManifestStore.read(prefs, chatId) ?: return true
+            return manifest.approved
+        }
         return state.manifestApproved &&
             state.phase in setOf(
                 PipelinePhase.IMPLEMENT,
                 PipelinePhase.GATE,
                 PipelinePhase.REVIEW,
                 PipelinePhase.QA,
-                PipelinePhase.BUILD
+                PipelinePhase.BUILD,
+                // بعد التسليم تبقى المحادثة قابلة للإصلاح والمتابعة بدل أن تُقفل للأبد.
+                PipelinePhase.DONE
             )
     }
 }
