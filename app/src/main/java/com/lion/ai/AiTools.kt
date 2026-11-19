@@ -134,7 +134,7 @@ object AiTools {
         // Files
         Def("file_list", ToolGroup.FILES, """{"path":""}""", "عرض ملفات مساحة العمل"),
         Def("file_search", ToolGroup.FILES, """{"query":"TODO","path":"","max_results":50}""", "بحث نصي في مساحة العمل (اسم/مسار/محتوى)"),
-        Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","start_line":1,"end_line":120}""", "قراءة ملف من مساحة العمل؛ مع start_line/end_line تُقرأ الأسطر المطلوبة فقط (أوفر للسياق في الملفات الكبيرة)"),
+        Def("file_read", ToolGroup.FILES, """{"path":"src/Main.kt","start_line":1,"end_line":120}""", "قراءة ملف من مساحة العمل؛ الملف الكبير يُعرض على صفحات: التذييل يخبرك بآخر سطر عُرض فتابع بـ start_line التالي؛ max_chars لصفحة أكبر (حتى 60000)"),
         Def("repo_map", ToolGroup.FILES, """{"path":"","max_files":200,"max_chars":12000}""", "خريطة المشروع: الملفات مع تواقيع الأصناف والدوال فقط بلا أجسام؛ ابدأ بها ثم اقرأ نطاق أسطر محدداً"),
         Def("boot_info", ToolGroup.FILES, """{"path":"uploads/boot.img"}""", "تحليل ترويسة boot/recovery.img (إصدار، أحجام، cmdline)"),
         Def("boot_unpack", ToolGroup.FILES, """{"path":"uploads/boot.img","out_dir":"boot_unpacked"}""", "فك boot/recovery.img: kernel وramdisk (إلى مجلد) وdtb وheader.json", true),
@@ -1283,8 +1283,10 @@ object AiTools {
                 val path = req(args, "path")
                 val file = GitHubClient.readFile(token, owner, repo, path, args.optString("branch"))
                 if (file.binary) "$path — ملف ثنائي (${file.sha})" else
-                    ContextBuilder.sliceLines("${file.path} (${file.sha})", file.text, args.optInt("start_line", 0), args.optInt("end_line", 0), 14_000)
-                        ?: "${file.path} (${file.sha})\n\n${file.text.take(14_000)}"
+                    ContextBuilder.pageLines(
+                        "${file.path} (${file.sha})", file.text, args.optInt("start_line", 0), args.optInt("end_line", 0),
+                        args.optInt("max_chars", 20_000).coerceIn(2_000, 60_000), "github_read_file path=${file.path}"
+                    )
             }
             "github_latest_run" -> {
                 val (owner, repo) = repoOf(ctx, args)
@@ -1762,8 +1764,11 @@ object AiTools {
             "file_read", "read_file" -> {
                 val info = FileTools.read(ctx.context, req(args, "path"))
                 if (info.binary) "${info.path} — ملف ثنائي (${info.size} بايت)" else
-                    ContextBuilder.sliceLines(info.path, info.text, args.optInt("start_line", 0), args.optInt("end_line", 0))
-                        ?: ("${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""})\n\n" + info.text.lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n").take(15_000))
+                    ContextBuilder.pageLines(
+                        info.path + (if (info.truncated) " [الملف أكبر من 1MB: المتاح أول جزء منه فقط]" else ""),
+                        info.text, args.optInt("start_line", 0), args.optInt("end_line", 0),
+                        args.optInt("max_chars", 20_000).coerceIn(2_000, 60_000), "file_read path=${info.path}"
+                    )
             }
             "repo_map" -> {
                 val all = FileTools.walk(ctx.context, args.optString("path"), 5000).filter { !it.directory && RepoMap.supports(it.path) }
@@ -1785,7 +1790,7 @@ object AiTools {
                     runCatching {
                         val info = FileTools.read(ctx.context, path)
                         "=== ${info.path} (${info.size} بايت${if (info.truncated) "، مقتطع" else ""}) ===\n" +
-                            if (info.binary) "[ملف ثنائي]" else info.text.lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n").take(max + 2000)
+                            if (info.binary) "[ملف ثنائي]" else ContextBuilder.pageLines(info.path, info.text, 0, 0, max + 2000, "file_read path=${info.path}")
                     }.getOrElse { "=== $path ===\n❌ ${it.message ?: it.javaClass.simpleName}" }
                 }
             }

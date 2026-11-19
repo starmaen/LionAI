@@ -137,6 +137,43 @@ internal object ContextBuilder {
      * قراءة موضعية: الأسطر [start]..[end] (ترقيم من 1، شاملة) مع أرقامها وإجمالي الأسطر.
      * بلا نطاق يعيد null ليبقى سلوك القراءة الكاملة كما هو.
      */
+    /**
+     * قراءة مُصفَّحة بلا قطع صامت: تُقطع على حدود الأسطر الكاملة، والعنوان يعكس ما عُرض فعلاً،
+     * والتذييل يقول أين توقفت وبأي استدعاء تتابع (لا يعتقد المزود أنه قرأ ما لم يُعرض).
+     * بلا نطاق: من السطر 1 حتى سقف الحجم. نطاق بلا نهاية: 200 سطر.
+     */
+    fun pageLines(label: String, text: String, start: Int, end: Int, maxChars: Int, continueWith: String): String {
+        val lines = text.lines()
+        val total = lines.size
+        val s = start.coerceAtLeast(1)
+        if (s > total) return "$label — الملف فيه $total سطراً فقط (طلبت البدء من $s)."
+        val wanted = when {
+            end > 0 -> end.coerceIn(s, total)
+            start > 0 -> (s + 199).coerceAtMost(total)
+            else -> total
+        }
+        val sb = StringBuilder()
+        var shown = s - 1
+        var chars = 0
+        for (i in s..wanted) {
+            var line = "$i: ${lines[i - 1]}"
+            if (line.length > maxChars) line = line.take(maxChars) + " …[سطر طويل جداً اقتُطع]"
+            if (chars + line.length + 1 > maxChars && shown >= s) break
+            sb.append(line).append('\n')
+            chars += line.length + 1
+            shown = i
+        }
+        val head = "$label (الأسطر $s–$shown من $total)"
+        val tail = when {
+            shown < wanted -> "\n\n⚠️ لم تُعرض كل الأسطر المطلوبة ($s–$wanted) بسبب الحجم؛ عُرض حتى السطر $shown فقط. " +
+                "تابع بـ $continueWith start_line=${shown + 1} (أو max_chars أكبر)."
+            shown < total -> "\n\n[بقي ${total - shown} سطراً بعد $shown. للمتابعة: $continueWith start_line=${shown + 1}. " +
+                "للبحث عن كلمة داخل الملف دون قراءته كاملاً استخدم file_search.]"
+            else -> "\n\n[نهاية الملف]"
+        }
+        return head + "\n\n" + sb.toString().trimEnd() + tail
+    }
+
     fun sliceLines(label: String, text: String, start: Int, end: Int, maxChars: Int = 15_000): String? {
         if (start <= 0 && end <= 0) return null
         val lines = text.lines()

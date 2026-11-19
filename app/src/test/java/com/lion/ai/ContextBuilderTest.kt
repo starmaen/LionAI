@@ -82,3 +82,43 @@ class ContextBuilderTest {
         assertTrue(ContextBuilder.sliceLines("f.kt", text, 999, 0)!!.contains("300"))
     }
 }
+
+class ReadPagingTest {
+    private val big = (1..3000).joinToString("\n") { "line $it " + "x".repeat(40) }
+
+    @Test
+    fun largeFileIsPagedOnLineBoundariesWithExplicitContinuation() {
+        val out = ContextBuilder.pageLines("F.kt", big, 0, 0, 15_000, "file_read path=F.kt")
+        val shown = Regex("الأسطر 1–(\\d+) من 3000").find(out)!!.groupValues[1].toInt()
+        assertTrue(shown in 100..400)
+        assertTrue(out.contains("start_line=${shown + 1}"))
+        assertTrue(out.contains("$shown: line $shown "))
+        assertTrue(!out.contains("${shown + 1}: line"))
+    }
+
+    @Test
+    fun hugeRequestedRangeNeverClaimsMoreThanWasShown() {
+        val out = ContextBuilder.pageLines("F.kt", big, 1, 3000, 15_000, "file_read path=F.kt")
+        assertTrue(out.contains("لم تُعرض كل الأسطر المطلوبة"))
+        assertTrue(!out.contains("الأسطر 1–3000"))
+    }
+
+    @Test
+    fun continuingFromLastShownLineReachesEndOfFile() {
+        var start = 0
+        var guard = 0
+        var last = ""
+        while (guard++ < 50) {
+            last = ContextBuilder.pageLines("F.kt", big, start, 0, 15_000, "file_read path=F.kt")
+            val next = Regex("start_line=(\\d+)").find(last)?.groupValues?.get(1)?.toInt() ?: break
+            start = next
+        }
+        assertTrue(last.contains("[نهاية الملف]") && last.contains("3000: line 3000"))
+    }
+
+    @Test
+    fun smallFileReturnsEverythingAndSaysEnd() {
+        val out = ContextBuilder.pageLines("S.kt", "a\nb\nc", 0, 0, 15_000, "file_read path=S.kt")
+        assertTrue(out.contains("1: a") && out.contains("3: c") && out.contains("[نهاية الملف]"))
+    }
+}
