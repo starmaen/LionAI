@@ -581,16 +581,25 @@ object LlmClient {
             ) {
                 val nativeCap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
                 val nativeTurns = normalize(history)
+                val (tokenParam, omitTemp) = NativeToolRoutes.requestParams(provider)
                 val attempt = try {
                     withReadTimeout(nativeCap) {
-                        callOpenAiTools(route.first, nativeKey, nativeModel, nativeTurns, message, systemPrompt, tools, route.second)
+                        callOpenAiTools(
+                            route.first, nativeKey, nativeModel, nativeTurns, message, systemPrompt, tools, route.second,
+                            tokenParam, omitTemp
+                        )
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
-                } catch (e: LlmException) {
-                    if (e.status in NativeToolRoutes.UNSUPPORTED_STATUS) NativeToolRoutes.markBroken(provider, nativeModel)
-                    null
                 } catch (e: Exception) {
+                    if (NativeToolRoutes.shouldMarkBroken(e)) NativeToolRoutes.markBroken(provider, nativeModel)
+                    if (NativeToolRoutes.decide(e) == NativeToolRoutes.Fallback.SURFACE_ERROR) {
+                        // لا نعيد الإرسال بالبروتوكول النصي: الخطأ (حد/مفتاح/مهلة/سياق) سيتكرر ويضاعف الانتظار والحصة.
+                        val msg = (e.message ?: e.javaClass.simpleName).take(200)
+                        lastErrors[provider] = "HTTP ${(e as? LlmException)?.status ?: "net"}: $msg"
+                        ProviderHealth.recordAuto(provider, false, lastErrors[provider].orEmpty())
+                        return ToolReply(NativeToolRoutes.errorReply(e, nativeModel), emptyList())
+                    }
                     null
                 }
                 if (attempt != null && (attempt.calls.isNotEmpty() || attempt.text.isNotBlank())) return attempt
@@ -789,7 +798,7 @@ object LlmClient {
         }
     }
 
-    private fun errorMessage(json: JSONObject?, raw: String): String {
+    internal fun errorMessage(json: JSONObject?, raw: String): String {
         if (json != null) {
             json.optJSONObject("error")
                 ?.optString("message", "")

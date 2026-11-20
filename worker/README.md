@@ -86,3 +86,4 @@ npx wrangler secret put GROQ_API_KEY
 
 مزودات بلا مفتاح تعمل تلقائياً: `cfai` (Workers AI)، `kilo`، `ovh`، `pollinations`، `llm7`.
 
+> **أمان:** الـ Worker يرفض كل طلب إذا لم يُضبط `RELAY_TOKEN` (يفشل مغلقاً). للتجربة المحلية فقط يمكن ضبط `ALLOW_OPEN_RELAY=true` صراحةً.
