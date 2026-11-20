@@ -1266,20 +1266,13 @@ object ToolAgent {
                         ToolResult(call.name, "⛔ الكتابة معطّلة من الإعدادات. فعّل «السماح للذكاء بالكتابة» ثم أعد المحاولة.", false)
                     mutating && !memory.writeGranted ->
                         ToolResult(call.name, "⛔ لم أنفذ التعديل: لا يوجد إذن صريح صالح لهذه المهمة.", false)
-                    receipt != null -> ToolResult(call.name,
+                    // حالتان سبق تنفيذهما بنفس المدخلات؛ "verified" ليست إحداهما: بعد أن تتحقق القراءة
+                    // من الحالة الفعلية يصبح التعديل الجديد تنفيذاً مشروعاً لا تكراراً أعمى، فيمرّ أدناه.
+                    receipt != null && receipt.optString("state") != "verified" -> ToolResult(call.name,
                         when (receipt.optString("state")) {
                             "done" -> "نتيجة محفوظة؛ لم أكرر التنفيذ:\n" + receipt.optString("output")
                             "failed" -> "⛔ هذه المحاولة بعينها فشلت سابقاً ولم يُطبَّق شيء:\n" + receipt.optString("output").take(900) +
                                 "\nغيّر الطريقة: اقرأ الجزء من الملف من جديد ثم استخدم file_edit بنصه الحالي حرفياً."
-                            // تم التحقق من الحالة الفعلية بقراءة ناجحة: لا حاجة للحجب. نفّذ المحاولة الجديدة
-                            // طالما تغيّرت مدخلاتها (البصمة مختلفة) — فالقراءة أثبتت ما هو موجود الآن.
-                            "verified" -> memory.beginMutation(fingerprint).let {
-                                AiTools.execute(toolContext, call).also { r ->
-                                    memory.recordMutation(fingerprint, r.output, r.ok, call.name in LOCAL_FILE_MUTATIONS, path)
-                                }.let { r ->
-                                    ToolResult(call.name, "ℹ️ الحالة السابقة تحققت بالقراءة، فهذه محاولة جديدة مبنية عليها:\n" + r.output, r.ok)
-                                }
-                            }
                             else -> "⛔ نتيجة محاولة سابقة غير مؤكدة، ولم تُقرأ الحالة الفعلية بعد. اقرأ الملف/المسار أولاً " +
                                 "(file_read/github_read_file) ثم أعد تنفيذ التعديل بناءً على ما قرأته."
                         },
