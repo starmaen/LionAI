@@ -571,6 +571,31 @@ object LlmClient {
                 callLionOneTools(message, apiKey, modelOverride, history, systemPrompt, tools)
             }
         }
+        // كل مزود API متوافق مع OpenAI (مجاني أو مدفوع) يجرّب الاستدعاء الأصلي أولاً؛ أي فشل = رجوع تلقائي للنص.
+        if (tools.length() > 0 && via != Channel.WEB && via != Channel.GATEWAY) {
+            val route = NativeToolRoutes.route(provider)
+            val nativeModel = modelOverride.trim().ifBlank { defaultModel(provider) }
+            val nativeKey = apiKey.filterNot { it.isWhitespace() }
+            if (route != null && !NativeToolRoutes.isBroken(provider, nativeModel) &&
+                (nativeKey.isNotBlank() || providerInfo(provider).keyless)
+            ) {
+                val nativeCap = if (readTimeoutMs > 0) readTimeoutMs else currentReadTimeout()
+                val nativeTurns = normalize(history)
+                val attempt = try {
+                    withReadTimeout(nativeCap) {
+                        callOpenAiTools(route.first, nativeKey, nativeModel, nativeTurns, message, systemPrompt, tools, route.second)
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: LlmException) {
+                    if (e.status in NativeToolRoutes.UNSUPPORTED_STATUS) NativeToolRoutes.markBroken(provider, nativeModel)
+                    null
+                } catch (e: Exception) {
+                    null
+                }
+                if (attempt != null && (attempt.calls.isNotEmpty() || attempt.text.isNotBlank())) return attempt
+            }
+        }
         if ((provider != "custom" && provider != "local_proxy") || tools.length() == 0) {
             return ToolReply(
                 ask(

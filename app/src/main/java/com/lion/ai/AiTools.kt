@@ -285,6 +285,7 @@ object AiTools {
         Def("tools_schema", ToolGroup.META, """{"group":"github|files|code|comms|web|database|util|connectors"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
         Def("tools_request_access", ToolGroup.META, """{"resource":"github|files|shell|connector|android permission","reason":"سبب الحاجة للوصول"}""", "طلب الوصول عبر بطاقة القرار؛ لا يمنح صلاحيات تلقائياً"),
         Def("tools_groups", ToolGroup.META, "{}", "حالة مجموعات الأدوات والموصلات والصلاحيات"),
+        Def("todo_write", ToolGroup.META, """{"items":[{"text":"الخطوة","status":"pending|in_progress|done"}]}""", "كتابة/تحديث خطة المهام (قائمة خطوات بحالاتها) لتتبّع التقدّم في المهام الطويلة؛ تستبدل الخطة السابقة كاملة"),
 
         // Telegram Bot API
         Def("telegram_status", ToolGroup.COMMS, "{}", "بيانات البوت وقدراته", connector = "telegram"),
@@ -623,7 +624,7 @@ object AiTools {
                 .append("حلقة التطوير: clone أو اقرأ الملفات، عدّل، راجع file_diff، ارفع عبر github_push_workspace ")
                 .append("(استخدم dry_run أولاً عند الشك)، ثم github_wait_run لقراءة فشل CI، ثم أصلح وأعد الرفع. ")
                 .append("الدفع إلى الفرع الافتراضي ممنوع ميكانيكياً: أي كتابة تذهب تلقائياً إلى فرع عمل ويُفتح PR. ")
-                .append("بعد الدفع: github_wait_run ← عند النجاح github_merge_pr (يرفضه التطبيق قبل نجاح البناء) ← عند الفشل build_diagnose وأصلح وادفع إلى الفرع نفسه.\n")
+                .append("بعد الدفع: github_wait_run ← عند النجاح أبلغ المستخدم برابط PR (github_merge_pr بطلبه الصريح فقط؛ يرفضه التطبيق قبل نجاح البناء) ← عند الفشل build_diagnose وأصلح وادفع إلى الفرع نفسه.\n")
         }
         if (ToolGroup.COMMS in groups) {
             builder.append("الاتصالات: WhatsApp Business Cloud API لإرسال القوالب/الرسائل الرسمية، ")
@@ -695,11 +696,11 @@ object AiTools {
     }
 
     /** مخطط أدوات OpenAI/function-calling للخوادم المتوافقة (LiteLLM/Ollama). */
-    fun openAiTools(groups: Set<ToolGroup>, prefs: SharedPreferences): JSONArray {
+    fun openAiTools(groups: Set<ToolGroup>, prefs: SharedPreferences, only: Set<String>? = null): JSONArray {
         val array = JSONArray()
         if (groups.isEmpty()) return array
         defs.asSequence()
-            .filter { it.group in groups && (it.connector == null || ConnectorAuth.isConnected(prefs, it.connector)) }
+            .filter { it.group in groups && (only == null || it.name in only) && (it.connector == null || ConnectorAuth.isConnected(prefs, it.connector)) }
             .forEach { def ->
                 array.put(
                     JSONObject()
@@ -906,6 +907,7 @@ object AiTools {
         "web_download" to listOf("url"),
         "file_search" to listOf("query"),
         "file_read" to listOf("path"),
+        "todo_write" to listOf("items"),
         "read_file" to listOf("path"),
         "file_write" to listOf("path"),
         "write_file" to listOf("path"),
@@ -2275,6 +2277,11 @@ $code
                 spec(setOf(group), ctx.prefs).ifBlank {
                     "لا أدوات متاحة في «$raw» حالياً. قد تحتاج ربط موصل أو تفعيل الأدوات من الإعدادات."
                 }
+            }
+            "todo_write" -> {
+                val list = TodoPlan.parse(args.optJSONArray("items"))
+                TodoPlan.save(ctx.prefs, ctx.chatId, list)
+                TodoPlan.render(list)
             }
             "tools_groups" -> buildString {
                 append("حالة الأدوات\n")

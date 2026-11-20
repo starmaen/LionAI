@@ -2749,5 +2749,20 @@
   "description": "اختبار اتصال خادم MCP",
   "write": false,
   "connector": null
+ },
+ {
+  "name": "todo_write",
+  "group": "meta",
+  "args": {
+   "items": [
+    {
+     "text": "الخطوة",
+     "status": "pending|in_progress|done"
+    }
+   ]
+  },
+  "description": "كتابة/تحديث خطة المهام (قائمة خطوات بحالاتها) لتتبّع التقدّم في المهام الطويلة؛ تستبدل الخطة السابقة كاملة",
+  "write": false,
+  "connector": null
  }
 ]
