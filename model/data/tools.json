@@ -207,6 +207,7 @@
  "telegram_webhook_set",
  "toolchain_install",
  "toolchain_status",
+ "todo_write",
  "tools_catalog",
  "tools_groups",
  "tools_request_access",

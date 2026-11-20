@@ -26,7 +26,7 @@ internal object AgentGate {
 
     /** أفعال تنفيذية لا تحتاج هدفاً صريحاً في «المطوّر». */
     private val STRONG_ACTION = Regex(
-        P + "(?:عدّل|عدل|أصلح|اصلح|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|أنشئ|انشئ|ابنِ|ابني|ادفع|اضغط|compress|extract|commit|push|build|install|execute)(?![\\p{L}])"
+        P + "(?:عدّل|عدل|أصلح|اصلح|أضف|اضف|ضيف|بدّل|بدل|غيّر|حدّث|حدث|صحّح|صحح|فعّل|فعل|عطّل|عطل|أزل|ازل|امسح|رتّب|رتب|حسّن|حسن|نفّذ|نفذ|شغّل|شغل|ثبّت|ثبت|احذف|أنشئ|انشئ|ابنِ|ابني|ادفع|اضغط|compress|extract|commit|push|build|install|execute)(?![\\p{L}])"
     )
 
     /** أفعال عامة تحتاج هدفاً (ملف/مستودع) كي لا تُفتح الأدوات لـ«اقرأ لي قصة». */
@@ -116,6 +116,7 @@ internal object AgentGate {
             (TARGETED_ACTION.containsMatchIn(text) && target) ||
             WriteIntent.isDirectCommand(text) && (target || chatMode == ChatMode.CODE) ||
             DevTask.matches(text) || projectRef || isWorkCommand(text, chatMode) ||
+            (chatMode == ChatMode.CODE && TECH_QUESTION.containsMatchIn(text)) ||
             IntentSense.impliesProjectWork(text, chatMode, false)
     }
 }

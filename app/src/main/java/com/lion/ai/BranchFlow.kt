@@ -59,7 +59,7 @@ internal object BranchFlow {
         if (branch.isBlank() || branch != prefs.getString("wb_$k", "")) return ""
         prefs.edit().putLong("wbpush_$k", System.currentTimeMillis()).apply()
         val known = prefs.getInt("wbpr_$k", 0)
-        if (known > 0) return "ℹ️ PR #$known مفتوح؛ ابدأ github_wait_run (الفرع $branch) ثم ادمج بعد النجاح."
+        if (known > 0) return "ℹ️ PR #$known مفتوح؛ ابدأ github_wait_run (الفرع $branch) وعند النجاح أبلغ المستخدم برابط PR (الدمج بطلبه الصريح)."
         return runCatching {
             val existing = GitHubClient.listPulls(token, owner, repo).firstOrNull { it.head == branch }
             val pull = existing ?: GitHubClient.createPull(
@@ -67,7 +67,7 @@ internal object BranchFlow {
                 "فتحه Lion AI تلقائياً. لا يُدمج قبل نجاح البناء."
             )
             prefs.edit().putInt("wbpr_$k", pull.number).apply()
-            "ℹ️ PR #${pull.number}: ${pull.htmlUrl}\nالخطوة التالية: github_wait_run (الفرع $branch) ← عند النجاح github_merge_pr number=${pull.number}؛ عند الفشل build_diagnose ثم أصلح وادفع إلى الفرع نفسه."
+            "ℹ️ PR #${pull.number}: ${pull.htmlUrl}\nالخطوة التالية: github_wait_run (الفرع $branch) ← عند النجاح أبلغ المستخدم برابط PR (الدمج github_merge_pr number=${pull.number} بطلبه الصريح)؛ عند الفشل build_diagnose ثم أصلح وادفع إلى الفرع نفسه."
         }.getOrElse { "⚠️ لم يُفتح PR تلقائياً (${it.message?.take(100).orEmpty()}). افتحه بـ github_create_pr head=$branch." }
     }
 

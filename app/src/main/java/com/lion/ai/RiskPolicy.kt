@@ -28,6 +28,8 @@ internal object RiskPolicy {
             "github_delete_file" -> ("حذف الملف ${s("path")} من المستودع" to listOf(s("path")))
             "github_delete_branch" -> ("حذف الفرع ${s("branch")}" to listOf(s("branch")))
             "github_delete_branches" -> ("حذف عدة فروع من المستودع" to listOf(a.optString("branches")))
+            // الدمج في الفرع الأساسي قرار المستخدم: لا يُنفَّذ تلقائياً بعد نجاح البناء ما لم يطلبه صراحة.
+            "github_merge_pr" -> ("دمج Pull Request #${a.opt("number") ?: ""} في الفرع الأساسي" to emptyList())
             "github_push_workspace" ->
                 if (a.optBoolean("delete_missing") || a.optBoolean("confirm_large"))
                     ("رفع مجلد كامل إلى المستودع" +
@@ -51,9 +53,13 @@ internal object RiskPolicy {
     /** المستخدم سمّى هدف العملية صراحةً (اسم الملف/الفرع/المسار) في طلبه نفسه. */
     private val DELETE_VERB = Regex("(?:حذف|احذف|ازل|أزل|إزالة|ازاله|امسح|مسح|remove|delete)")
 
+    private val MERGE_ASK = Regex("(?:ادمج|دمج|الدمج|اندمج|ضمّ|merge)", RegexOption.IGNORE_CASE)
+    internal fun userAskedToMerge(request: String): Boolean = MERGE_ASK.containsMatchIn(request)
+
     fun requestNames(risk: Risk, userRequest: String): Boolean {
         val req = userRequest.lowercase()
         if (req.isBlank()) return false
+        if (risk.key.startsWith("github_merge_pr|")) return userAskedToMerge(req)
         // طلب حذف صريح يُجيز حذف ملف/مقطع من المشروع (غير الفروع/المستودعات/الأسرار): لا بطاقة على كل خطوة.
         if (DELETE_VERB.containsMatchIn(req) && (risk.key.startsWith("file_delete|") || risk.key.startsWith("github_delete_file|")) &&
             !risk.label.contains("بكل محتوياته") && !SENSITIVE_PATH.containsMatchIn(risk.label)) return true
