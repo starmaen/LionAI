@@ -2503,6 +2503,8 @@ $code
                 val branch = args.optString("branch").ifBlank { BranchFlow.current(ctx.prefs, ctx, owner, repo) }
                 val requestedId = args.optLong("run_id", 0L)
                 val started = System.currentTimeMillis()
+                // الجولة 7: التطبيق يمرر زمن دفعه الفعلي (after_epoch) فلا يفوت البناء المرتبط بالدفع إن تأخر الانتظار.
+                val afterMs = if (args.has("after_epoch")) args.optLong("after_epoch", 0L) else started - 120_000
                 var run: GitHubClient.WorkflowRun? = if (requestedId > 0) {
                     GitHubClient.getWorkflowRun(token, owner, repo, requestedId)
                 } else {
@@ -2512,7 +2514,7 @@ $code
                     while (run == null && System.currentTimeMillis() - started < 90_000) {
                         run = GitHubClient.listWorkflowRuns(
                             token, owner, repo, perPage = 15, branch = branch
-                        ).firstOrNull { isoEpoch(it.createdAt) >= started - 120_000 }
+                        ).firstOrNull { isoEpoch(it.createdAt) >= afterMs }
                         if (run == null) kotlinx.coroutines.delay(5_000)
                     }
                 }
@@ -3414,7 +3416,7 @@ $code
     private fun runSummary(run: GitHubClient.WorkflowRun): String =
         "#${run.number} ${run.name} [${run.branch}] — ${run.status}/${run.conclusion}\n${run.htmlUrl}"
 
-    private fun isoEpoch(value: String): Long =
+    internal fun isoEpoch(value: String): Long =
         runCatching { java.time.Instant.parse(value).toEpochMilli() }.getOrDefault(0L)
 
     private fun notificationPackages(raw: String): List<String> = when (raw.trim().lowercase()) {

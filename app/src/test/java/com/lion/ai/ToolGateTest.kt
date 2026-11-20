@@ -43,3 +43,41 @@ class ToolGateTest {
         assertTrue("cd" in ShellTools.ALLOWED)
     }
 }
+
+/** الجولة 7: «لا عملية بناء» ليست فشلاً، والفشل الأقدم من الدفع فشل قديم لا يحظر الختام. */
+class StaleBuildGateTest {
+
+    private val noRun = "❌ لم أجد عملية بناء حديثة على الفرع bench/smoke بعد الدفع. تذكّر: build.yml على الفرع الأساسي وطلبات السحب فقط."
+    private val freshFail = "📛 Build failure · id=1 · commit=abc1234 · 2026-11-20T14:00:00Z"
+    private val oldFail = "📛 Build failure · id=608 · commit=old0000 · 2026-11-19T10:00:00Z"
+
+    @Test fun noRunFoundIsNotABuildFailure() {
+        assertTrue(ToolAgent.noRunFound(noRun))
+        assertFalse(ToolAgent.noRunFound(freshFail))
+        // المفتاح: «لم أجد» لا يفعّل بوابة البناء الفاشل (كانت توقف مهام ناجحة زائفاً)
+        assertTrue(ToolAgent.buildFailed(noRun))         // نصياً يحمل ❌
+        assertTrue(ToolAgent.noRunFound(noRun))          // لكنه يُستثنى قبل البوابة
+    }
+
+    @Test fun runCreatedAtParsesIsoFromOutput() {
+        val t = ToolAgent.runCreatedAt(freshFail)
+        assertNotNull(t)
+        assertTrue(t!! > 0L)
+        assertNull(ToolAgent.runCreatedAt("لا يوجد وقت هنا"))
+    }
+
+    @Test fun staleFailureIsOlderThanLastPush() {
+        // دفعنا بعد فشل freshFail بساعة: freshFail يصبح قديماً بالنسبة للدفع الجديد
+        val pushAt = ToolAgent.runCreatedAt(freshFail)!! + 3_599_000L
+        val old = ToolAgent.runCreatedAt(oldFail)!!
+        assertTrue("فشل الأمس أقدم من الدفع", old < pushAt)
+        val stale = old < pushAt && ToolAgent.buildFailed(oldFail)
+        assertTrue("فشل قديم على فرع معاد استخدامه لا يُفعّل البوابة", stale)
+        // فشل حقيقي بعد الدفع يبقى مفعلًا للبوابة
+        val afterPush = "📛 Build failure · id=2 · commit=new0001 · 2026-11-20T15:00:00Z"
+        val rt = ToolAgent.runCreatedAt(afterPush)!!
+        assertTrue(rt > pushAt)
+        assertTrue(!((rt < pushAt) && ToolAgent.buildFailed(afterPush)))
+        assertTrue(ToolAgent.buildFailed(afterPush))
+    }
+}
