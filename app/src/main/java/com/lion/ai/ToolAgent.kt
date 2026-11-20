@@ -287,7 +287,7 @@ object ToolAgent {
         - لا تضع مفاتيح أو أسراراً داخل الملفات أو الردود.
 
         الاستدعاء:
-        - الصيغة الموحّدة: [[TOOL]]{"name":"اسم_الأداة","args":{...}}[[/TOOL]] (name≡tool وargs≡arguments/parameters)، بلا نص خارج JSON داخل الكتلة. إن كانت أدوات الاستدعاء الأصلية متاحة فاستخدمها.
+        - الصيغة الموحّدة: [[TOOL]]{"name":"اسم_الأداة","args":{...}}[[/TOOL]] (name≡tool وargs≡arguments/parameters)، بلا نص خارج JSON داخل الكتلة. كل معاملات الأداة (path/repo/…) داخل args دائماً، لا بجانب name. إن كانت أدوات الاستدعاء الأصلية متاحة فاستخدمها.
         - حين يلزم فعل أرسل الاستدعاء مباشرة بلا مقدمة ولا شرح لصيغته؛ بعد النتيجة تابع. استخدم الأدوات عند الحاجة الفعلية فقط.
         - أسماء الأدوات حرفية كما في القائمة: file_read (لا read)، file_write (لا write)، file_edit (لا edit)، execute_command (لا bash). لا تخترع اسماً؛ إن شككت استدعِ tools_schema.
         - قبل أي كتابة/حذف/دفع/إرسال/رفع/إنشاء موعد تأكد أن المستخدم طلبها صراحة في رسالته الحالية أو السابقة.
@@ -556,9 +556,35 @@ object ToolAgent {
         // آخر نص جوهري كتبه المزود: يُعرض مع أي توقف أو ملخص بدل أن يضيع الجواب خلف سجل الإجراءات.
         private var lastSubstantive = ""
         private var lastFailure = ""
+        // ── أخطاء نقل المعاملات (استدعاء بلا args): ليست فشل أداة، فلا يُقال للنموذج «غيّر الأداة» ──
+        private var argErrors = 0
+        private var protocolStopTool = ""
+        private var lastReadName = ""
+        private var lastReadArgs: org.json.JSONObject? = null
+        private var lastReadOut = ""
+        private val READ_CONTINUE = setOf("github_read_file", "file_read", "read_file")
+        private val RANGE_FOOTER = Regex("\\(الأسطر\\s*(\\d+)[–-](\\d+)\\s*من\\s*(\\d+)\\)")
+        private fun isArgTransportError(out: String): Boolean =
+            out.contains("معاملات ناقصة أو غير صالحة") &&
+                (out.contains("المفاتيح المرسلة: لا شيء") || out.contains("_unparsed_arguments"))
+        /** قراءة متابعة وصلت بلا معاملات: تُكمل من آخر قراءة ناجحة وتتقدم لنطاق الأسطر التالي. */
+        private fun repairArgs(call: ToolCall) {
+            val empty = call.args.length() == 0 || (call.args.length() == 1 && call.args.has("_unparsed_arguments"))
+            if (!empty || call.name !in READ_CONTINUE || call.name != lastReadName) return
+            val prev = lastReadArgs ?: return
+            val m = RANGE_FOOTER.find(lastReadOut.take(400)) ?: return
+            val end = m.groupValues[2].toInt()
+            val total = m.groupValues[3].toInt()
+            if (end >= total) return
+            call.args.remove("_unparsed_arguments")
+            prev.keys().forEach { k -> call.args.put(k, prev.get(k)) }
+            call.args.put("start_line", end + 1)
+            call.args.put("end_line", minOf(total, end + 400))
+            session?.recordNote("أُكملت معاملات ${call.name} تلقائياً من آخر قراءة (المزود أرسلها فارغة)")
+        }
         private fun diagnoseFailure(err: String): String = when {
             err.contains("النص القديم غير موجود") -> "النص الذي أرسله المزود لا يطابق الملف. اقرأ المقطع الحالي بـ file_read ثم أعد file_edit بنصه حرفياً."
-            err.contains("مطلوب") && (err.contains("المعامل") || err.contains("معاملات ناقصة")) -> "المزود أرسل الأداة بمفاتيح ناقصة أو غير صحيحة. يُعاد الاستدعاء بالتوقيع المذكور في الخطأ."
+            err.contains("مطلوب") && (err.contains("المعامل") || err.contains("معاملات ناقصة")) -> "المزود أرسل الأداة بلا معاملات (غالباً خارج args أو JSON مقطوع). طُبّق إكمال تلقائي حيث أمكن؛ إن تكرر يُبدَّل المزود."
             err.contains("SYNTAX_BALANCE") -> "فشل فحص توازن الأقواس؛ تحقق بـ code_doctor إن كان الخطأ حقيقياً قبل تعديل ملف سليم."
             err.contains("401") || err.contains("403") -> "رفض GitHub الصلاحية: تحقق من التوكن ونطاقاته (repo, workflow)."
             err.contains("404") -> "المسار أو المستودع غير موجود: تحقق من الاسم والفرع."
@@ -1185,6 +1211,7 @@ object ToolAgent {
                 onNarration.invoke(narration.take(700))
             }
         }
+        calls.forEach { repairArgs(it) }
         val signature = calls.joinToString("|") { it.name + it.args.toString() }
         if (signature == lastSignature) {
             repeated++
@@ -1310,6 +1337,16 @@ object ToolAgent {
                     "ما أُنجز حتى الآن محفوظ في سجل الخطوات. للمتابعة: غيّر المزود/النموذج، أو أعطني توجيهاً مختلفاً (مثلاً مسار الملف الصحيح أو النص الحالي حرفياً).",
                 false, "فشل متكرر بنفس السبب: $tool"
             ))
+        }
+        if (protocolStopTool.isNotBlank()) {
+            val t = protocolStopTool
+            session?.recordNote("توقف: وصلت $t بلا معاملات 3 مرات؛ يُبدَّل المزود")
+            session?.providerFailed(label, "يرسل استدعاءات أدوات بلا معاملات")
+            session?.let { CheckpointStore.save(prefs, it) }
+            return Turn.Done(finish(
+                "المزود الحالي يرسل استدعاء «$t» بلا معاملات (3 مرات). حُفظ ما أُنجز ويتابع مزود بديل من النقطة نفسها.",
+                false, "معاملات أداة مفقودة من المزود"
+            ).copy(stalled = true, protocolStall = true))
         }
         if (loopResultStop.isNotBlank()) {
             session?.recordNote("توقف: تكرار نتيجة متطابقة للأداة $loopResultStop أربع مرات")
@@ -1450,7 +1487,7 @@ object ToolAgent {
                 if (result.ok) "✅ $desc"
                 else "❌ $desc — " + result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty().take(110)
             )
-            ledger.record(call.name, target, result.ok, result.output)
+            ledger.record(call.name, path.ifBlank { target }, result.ok, result.output)
             if (result.ok && call.name == "file_present") {
                 FileDelivery.paths(result.output).forEach { presented.add(it) }
             }
@@ -1460,6 +1497,12 @@ object ToolAgent {
             if (result.ok) {
                 if (mutating) okMutations++
                 okCount++
+                argErrors = 0
+                if (call.name in READ_CONTINUE) {
+                    lastReadName = call.name
+                    lastReadArgs = org.json.JSONObject(call.args.toString())
+                    lastReadOut = result.output
+                }
                 trailingFails = 0
                 if (path.isNotBlank()) {
                     if (call.name in GATE_WRITE_TOOLS) {
@@ -1480,8 +1523,19 @@ object ToolAgent {
                 val errLine = result.output.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty()
                     .replace(Regex("\\d+"), "#").take(70)
                 val failKey = call.name + "|" + errLine
-                val times = (failTally[failKey] ?: 0) + 1
+                val transport = isArgTransportError(result.output)
+                val times = if (transport) 0 else (failTally[failKey] ?: 0) + 1
                 failTally[failKey] = times
+                if (transport) {
+                    argErrors++
+                    if (argErrors >= 3) protocolStopTool = call.name
+                    else {
+                        val sample = lastReadArgs?.takeIf { call.name == lastReadName }?.toString().orEmpty()
+                        failHint = "⚠️ وصل استدعاء «${call.name}» بلا معاملات. لا تغيّر الأداة: أعد الإرسال بهذا الشكل بالضبط وكل المفاتيح داخل args: " +
+                            "[[TOOL]]{\"tool\":\"${call.name}\",\"args\":{...}}[[/TOOL]]" +
+                            (if (sample.isNotBlank()) " — مثال من آخر قراءة ناجحة: $sample" else "")
+                    }
+                }
                 if (times >= 4) failStopKey = failKey
                 else if (times >= 2) failHint = "⚠️ الأداة ${call.name} فشلت $times مرات بنفس السبب («${errLine.take(80)}»). " +
                     "لا تُعد نفس المحاولة: اقرأ الملف/الحالة الفعلية من جديد (مع refresh=true)، أو استخدم أداة أخرى، أو اشرح للمستخدم العائق بوضوح."
