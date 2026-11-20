@@ -63,10 +63,15 @@ class GatePolicyTest {
             approved = true,
             files = listOf(ManifestFile("src/Main.kt"), ManifestFile("src/Gone.kt"))
         )
-        val text = ControlPlane.evaluate(snapshot("src/Main.kt" to "fun main() = Unit"), manifest).text()
-        assertTrue(text.contains("يمنع الاكتمال"))
-        assertTrue(text.contains("لا يمنع البناء") || text.contains("ملاحظات"))
-        assertTrue(text.contains("غير موجود على القرص"))
+        // مجلد فارغ يضمن وجود قسم «ملاحظات» إلى جانب قسم «يمنع الاكتمال» في التقرير نفسه.
+        val snap = ProjectSnapshot(
+            files = mapOf("src/Main.kt" to "fun main() = Unit"),
+            emptyDirectories = setOf("docs")
+        )
+        val text = ControlPlane.evaluate(snap, manifest).text()
+        assertTrue("قسم الموانع مطلوب: $text", text.contains("يمنع الاكتمال"))
+        assertTrue("قسم الملاحظات مطلوب: $text", text.contains("لا تمنع البناء") || text.contains("ملاحظات"))
+        assertTrue("شرح سبب المنع مطلوب: $text", text.contains("غير موجود على القرص"))
     }
 
     @Test
