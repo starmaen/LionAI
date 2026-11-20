@@ -175,6 +175,10 @@ jobs:
     - name: Build signed release APK
       run: ./gradlew assembleRelease --stacktrace
 
+    - name: Report dex register pressure (giant methods break the ART verifier)
+      continue-on-error: true
+      run: python3 scripts/dex_registers.py app/build/outputs/apk/release/*.apk
+
     - name: Show signing certificate (must be identical on every build)
       run: |
         APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
