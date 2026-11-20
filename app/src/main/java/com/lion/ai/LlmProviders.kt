@@ -69,7 +69,9 @@ internal fun LlmClient.callOpenAiTools(
         message: String,
         systemPrompt: String,
         tools: JSONArray,
-        extraHeaders: Map<String, String> = emptyMap()
+        extraHeaders: Map<String, String> = emptyMap(),
+        tokenParam: String = "max_tokens",
+        omitTemperature: Boolean = false
     ): LlmClient.ToolReply {
         val messages = JSONArray()
         messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
@@ -83,8 +85,8 @@ internal fun LlmClient.callOpenAiTools(
             .put("messages", messages)
             .put("tools", tools)
             .put("tool_choice", "auto")
-            .put("max_tokens", LLM_OPENAI_MAX_TOKENS)
-            .put("temperature", LLM_TEMPERATURE)
+            .put(tokenParam, LLM_OPENAI_MAX_TOKENS)
+        if (!omitTemperature) body.put("temperature", LLM_TEMPERATURE)
 
         val headers = mutableMapOf<String, String>()
         if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"

@@ -293,12 +293,23 @@ function configured(env) {
   return out;
 }
 
+// مقارنة ثابتة الزمن حتى لا يُستنتج التوكن من زمن الرد.
+function safeEqual(a, b) {
+  const x = String(a), y = String(b);
+  let diff = x.length ^ y.length;
+  const n = Math.max(x.length, y.length);
+  for (let i = 0; i < n; i++) diff |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0);
+  return diff === 0;
+}
+
+// «يفشل مغلقاً»: بلا RELAY_TOKEN يُرفض كل طلب (كان يُقبل فيستهلك أي زائر مفاتيح المزودات المخزّنة هنا).
+// للتجربة المحلية فقط: ALLOW_OPEN_RELAY=true صراحةً.
 function authOk(request, env) {
   const token = trim(env.RELAY_TOKEN);
-  if (!token) return true;
+  if (!token) return trim(env.ALLOW_OPEN_RELAY) === "true";
   const h = request.headers.get("Authorization") || "";
-  let got = h.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() : trim(request.headers.get("X-Api-Key"));
-  return got === token;
+  const got = h.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() : trim(request.headers.get("X-Api-Key"));
+  return safeEqual(got, token);
 }
 
 function jsonResponse(obj, status, cors) {

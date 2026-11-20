@@ -39,4 +39,51 @@ internal object NativeToolRoutes {
             }
         }
     }
+
+    /** معاملات الطلب الخاصة بالمزود (اسم معامل الحد، هل نحذف temperature). OpenAI يبقى نصياً الآن؛ هذه جاهزة لتفعيله لاحقاً بسطر واحد. */
+    fun requestParams(provider: String): Pair<String, Boolean> =
+        if (provider == "openai") "max_completion_tokens" to true else "max_tokens" to false
+
+    /** ماذا نفعل عند فشل المحاولة الأصلية؟ */
+    internal enum class Fallback { TEXT_PROTOCOL, SURFACE_ERROR }
+
+    private val SURFACE_STATUS = setOf(401, 402, 403, 408, 413, 429, 502, 503, 504, 529)
+
+    private fun isContextError(e: Throwable): Boolean =
+        QuotaGuard.classify(e.message.orEmpty()) == QuotaGuard.Kind.CONTEXT
+
+    /**
+     * الرجوع للبروتوكول النصي يفيد فقط حين يكون سبب الفشل هو «الأدوات الأصلية» نفسها (رفض الحقل/الشكل).
+     * حدّ المعدّل والمفتاح والرصيد والمهلة والشبكة وطول السياق ستفشل بالمثل في المسار النصي،
+     * فإعادة الإرسال تُهدر الحصة وتضاعف الانتظار (كانت حتى 2×120ث للخطوة): نعرض الخطأ ليعالجه QuotaGuard.
+     */
+    internal fun decide(e: Throwable): Fallback = when {
+        e is LlmException ->
+            if (isContextError(e) || e.status in SURFACE_STATUS) Fallback.SURFACE_ERROR else Fallback.TEXT_PROTOCOL
+        e is java.io.IOException -> Fallback.SURFACE_ERROR
+        else -> Fallback.TEXT_PROTOCOL
+    }
+
+    /** نحظر الأدوات الأصلية لهذا المزود/النموذج فقط عند رفض صريح لها، لا عند «السياق طويل» (400 أيضاً). */
+    internal fun shouldMarkBroken(e: Throwable): Boolean =
+        e is LlmException && e.status in UNSUPPORTED_STATUS && !isContextError(e)
+
+    /** رد خطأ بأيقونات يصنّفها QuotaGuard (⏳ حد، 💳 رصيد، 🔑 مفتاح، مهلة/شبكة عابرة، سياق). */
+    internal fun errorReply(e: Throwable, model: String): String {
+        val msg = e.message.orEmpty().take(300)
+        if (e is LlmException) {
+            return when {
+                e.status == 429 -> "⏳ تجاوزت حد الاستخدام مؤقتاً (429). $msg"
+                isContextError(e) -> "⚠️ الطلب أطول من سياق الموديل (${e.status}) — طول السياق. $msg"
+                e.status == 402 -> "💳 رصيد المزود غير كافٍ (402). $msg"
+                e.status == 401 || e.status == 403 ->
+                    "🔑 المفتاح غير صالح أو لا يملك صلاحية للموديل «$model» (${e.status}). $msg"
+                e.status == 408 -> "⚠️ مهلة الاتصال بالمزود (408). $msg"
+                else -> "⚠️ خطأ من المزود (${e.status}): $msg"
+            }
+        }
+        return if (e is java.net.SocketTimeoutException) "⚠️ مهلة الاتصال بالمزود. $msg"
+        else "⚠️ تعذر الاتصال بالمزود (الشبكة): ${msg.ifBlank { e.javaClass.simpleName }}"
+    }
 }
+
