@@ -62,8 +62,10 @@ internal object CompletionGuard {
             if (near.isNotEmpty()) {
                 sb.append("\nالمجلد الأب موجود ومحتواه: ").append(near.joinToString("، "))
             } else {
-                sb.append("\nلا يوجد ملف بهذا الاسم في مساحة العمل. استخدم file_tree أو file_search لمعرفة المسار الصحيح،")
-                sb.append(" أو github_read_file إن كان الملف في المستودع وليس في مساحة العمل المحلية.")
+                sb.append("\nلا يوجد ملف بهذا الاسم في مساحة العمل المحلية. استخدم file_tree أو file_search لمعرفة المسار الصحيح،")
+                sb.append(" أو github_read_file إن كان الملف في المستودع؛")
+                sb.append(" وإن أنشأتَه على فرع عمل آخر (مثل bench/…) فهو غير موجود محلياً على الفرع الحالي —")
+                sb.append(" استخدم github_read_file مع تحديد الفرع أو github_pull لإحضار الفرع أولًا.")
             }
         }
         return sb.toString()

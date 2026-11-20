@@ -56,12 +56,14 @@ class StopAndRiskTest {
 
     @Test fun readOnlyInspectionChainsAreNotFlaggedDestructive() {
         // سلاسل الفحص الشائعة كانت تُبلّغ خطأً («أمر صدفة قد يكون مدمّراً») بسبب فخاخ القديمة.
+        // الأمر الأخير هو أمر اختبار التشغيل الفعلي (المزود الأول): بلا بطاقة أذونات بالتصميم.
         listOf(
             """{"command":"cd app && echo scan && ls && grep -r TODO ."}""",
             """{"command":"command -v gradle > /dev/null 2>&1 && echo ok"}""",
             """{"command":"grep sudo /etc/passwd"}""",
             """{"command":"git clean -n"}""",
-            """{"command":"cat run.sh | bash -n"}"""
+            """{"command":"cat run.sh | bash -n"}""",
+            """{"command":"git status > /dev/null 2>&1"}"""
         ).forEach { assertNull(it, RiskPolicy.assess(call("shell_exec", it))) }
     }
 
@@ -83,6 +85,28 @@ class StopAndRiskTest {
         assertTrue("k1" in m.riskApproved)
         m.begin("مهمة جديدة", false)
         assertTrue(m.riskApproved.isEmpty())
+    }
+
+    @Test fun missingFileMessageGuidesTowardBranchAlternatives() {
+        // ملف موجود على فرع عمل فقط (bench/…) يفشل محلياً: الرسالة يجب أن توجه لـgithub_read_file.
+        val root = java.nio.file.Files.createTempDirectory("lion-guard").toFile()
+        try {
+            val msg = CompletionGuard.missingFileMessage(root, "docs/smoke-test.md")
+            assertTrue(msg, msg.contains("github_read_file"))
+            assertTrue(msg, msg.contains("فرع"))
+            assertTrue(msg, msg.contains("file_tree"))
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun missingFileMessageListsSimilarAndParentContents() {
+        val root = java.nio.file.Files.createTempDirectory("lion-guard2").toFile()
+        try {
+            java.io.File(root, "app/src/main/Keep.kt").let { it.parentFile.mkdirs(); it.writeText("x") }
+            val similar = CompletionGuard.missingFileMessage(root, "app/src/test/Keep.kt")
+            assertTrue(similar, similar.contains("app/src/main/Keep.kt"))
+            val parent = CompletionGuard.missingFileMessage(root, "app/src/main/Other.kt")
+            assertTrue(parent, parent.contains("المجلد الأب"))
+        } finally { root.deleteRecursively() }
     }
 }
 

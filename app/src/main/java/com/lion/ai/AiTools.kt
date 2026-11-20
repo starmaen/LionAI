@@ -1826,13 +1826,30 @@ object AiTools {
                 }
             }
             "file_read", "read_file" -> {
-                val info = FileTools.read(ctx.context, req(args, "path"))
-                if (info.binary) "${info.path} — ملف ثنائي (${info.size} بايت)" else
-                    ContextBuilder.pageLines(
-                        info.path + (if (info.truncated) " [الملف أكبر من 1MB: المتاح أول جزء منه فقط]" else ""),
-                        info.text, args.optInt("start_line", 0), args.optInt("end_line", 0),
-                        args.optInt("max_chars", 20_000).coerceIn(2_000, 60_000), "file_read path=${info.path}"
-                    )
+                val path = req(args, "path")
+                // قراءة مجلد بدل فشلها: إرجاع قائمة محتوياته كتلميح يوفّر خطوات على المزود الضعيف.
+                val dirHint = runCatching { resolveWorkspace(ctx, path) }.getOrNull()
+                    ?.takeIf { it.isDirectory }
+                    ?.let { dir ->
+                        val entries = FileTools.list(ctx.context, path).take(40)
+                        val names = if (entries.isEmpty()) "(مجلد فارغ)" else entries.joinToString("\n") { e ->
+                            (if (e.directory) "📁 " else "📄 ") + e.path + if (e.directory) "/" else " (${e.size}B)"
+                        }
+                        buildString {
+                            append("📁 هذا مجلد وليس ملفاً: ").append(FileTools.relative(ctx.context, dir)).append('\n')
+                            append("محتوياته المباشرة:\n").append(names).append('\n')
+                            append("حدّد ملفاً من القائمة واقرأه بـfile_read، أو استخدم file_tree لرؤية الشجرة كاملة.")
+                        }
+                    }
+                if (dirHint != null) dirHint else {
+                    val info = FileTools.read(ctx.context, path)
+                    if (info.binary) "${info.path} — ملف ثنائي (${info.size} بايت)" else
+                        ContextBuilder.pageLines(
+                            info.path + (if (info.truncated) " [الملف أكبر من 1MB: المتاح أول جزء منه فقط]" else ""),
+                            info.text, args.optInt("start_line", 0), args.optInt("end_line", 0),
+                            args.optInt("max_chars", 20_000).coerceIn(2_000, 60_000), "file_read path=${info.path}"
+                        )
+                }
             }
             "repo_map" -> {
                 val all = FileTools.walk(ctx.context, args.optString("path"), 5000).filter { !it.directory && RepoMap.supports(it.path) }
@@ -2418,7 +2435,12 @@ $code
                     }
                 }
                 val target = run ?: throw IllegalStateException(
-                    "لم أجد عملية بناء حديثة على الفرع ${branch.ifBlank { "الافتراضي" }}. تأكد من الدفع أو استخدم github_dispatch."
+                    "لم أجد عملية بناء حديثة على الفرع ${branch.ifBlank { "الافتراضي" }} بعد الدفع. " +
+                        "تذكّر: ملفات build.yml عادة تشغّل البناء على الفرع الأساسي وطلبات السحب فقط، " +
+                        "ففروع العمل مثل bench/ لا تُبنى تلقائياً. " +
+                        "افحص مشغّلات on: في .github/workflows/build.yml، " +
+                        "أو أطلق البناء يدوياً بـgithub_dispatch (يتطلب workflow_dispatch في build.yml)، " +
+                        "أو أنشئ Pull Request ليُبنى تلقائياً."
                 )
                 var current = target
                 while (current.status != "completed" && System.currentTimeMillis() - started < timeout * 1000L) {
