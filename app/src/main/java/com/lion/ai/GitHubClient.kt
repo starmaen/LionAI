@@ -1127,6 +1127,23 @@ object GitHubClient {
         return digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
     }
 
+    /** امتدادات الكود التي يجعل دفعها بكثافة مشبوهة (نسخة أقدم أو مشروع آخر). */
+    private val LARGE_PUSH_CODE_EXTS = setOf(
+        "kt", "java", "kts", "gradle", "xml", "py", "js", "ts", "c", "cpp", "h", "hpp", "go", "rs", "swift"
+    )
+
+    /** وقاية الدفع الكبير: إما ملفات جديدة كثيرة (ملفات دخيلة) أو تعديل كود كثيف (نسخة أقدم من الفرع). */
+    internal fun largePushGuard(brandNew: Int, codeChanged: Int, confirmLarge: Boolean): String? = when {
+        brandNew > 30 && !confirmLarge ->
+            "⛔ سيُنشأ $brandNew ملفاً جديداً دفعة واحدة، وقد تكون ملفات دخيلة من مشاريع أخرى في مساحة العمل. " +
+                "راجع القائمة بـ dry_run=true، ومرّر confirm_large=true فقط إن كان ذلك مقصوداً."
+        codeChanged > 10 && !confirmLarge ->
+            "⛔ الدفع سيعدّل $codeChanged ملف كود دفعة واحدة، وقد يعني ذلك أن نسختك المحلية أقدم من الفرع " +
+                "(أُنشئ فرع العمل بعد الاستنساخ) أو أن المجلد يحوي مشروعاً آخر. " +
+                "راجع القائمة بـ dry_run=true، ومرّر confirm_large=true إن كان المقصود."
+        else -> null
+    }
+
     /**
      * يرفع مجلد مساحة عمل كاملاً إلى GitHub عبر Git Data API، بمقارنة بصمات
      * blob لتجنب رفع الملفات غير المتغيرة. يدعم الملفات الثنائية والحذف الاختياري.
@@ -1182,14 +1199,12 @@ object GitHubClient {
         }
         val deleted = if (deleteMissing) remote.keys.filterNot { local.containsKey(it) } else emptyList()
         if (changed.isEmpty() && deleted.isEmpty()) return "لا توجد تغييرات لرفعها إلى $owner/$repo@$targetBranch"
-        // وقاية من رفع ملفات دخيلة: عدد كبير من الملفات الجديدة دفعة واحدة يحتاج تأكيداً صريحاً.
+        // وقاية من رفع ملفات دخيلة أو نسخة مستنسخة أقدم من الفرع: أعداد كبيرة تحتاج تأكيداً صريحاً.
         val brandNew = changed.count { it.first !in remote }
-        if (brandNew > 30 && !confirmLarge) {
-            throw IllegalArgumentException(
-                "⛔ سيُنشأ $brandNew ملفاً جديداً دفعة واحدة، وقد تكون ملفات دخيلة من مشاريع أخرى في مساحة العمل. " +
-                    "راجع القائمة بـ dry_run=true، ومرّر confirm_large=true فقط إن كان ذلك مقصوداً."
-            )
+        val codeChanged = changed.count { (p, _) ->
+            p.substringAfterLast('.', "").lowercase() in LARGE_PUSH_CODE_EXTS
         }
+        largePushGuard(brandNew, codeChanged, confirmLarge)?.let { throw IllegalArgumentException(it) }
         if (changed.size + deleted.size > maxFiles.coerceIn(1, 500)) {
             throw IllegalArgumentException("عدد الملفات المتغيرة كبير جداً (${changed.size + deleted.size})")
         }

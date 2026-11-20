@@ -18,8 +18,8 @@ data class ShellResult(
  * قائمة أوامر مسموحة + منع الخروج من الجذر + مهلة + سقف مخرجات.
  */
 object ShellTools {
-    private val ALLOWED = setOf(
-        "git", "gradle", "./gradlew", "sh", "bash", "ls", "find", "grep", "rg", "cat", "sed",
+    internal val ALLOWED = setOf(
+        "cd", "git", "gradle", "./gradlew", "sh", "bash", "ls", "find", "grep", "rg", "cat", "sed",
         "awk", "wc", "head", "tail", "sort", "uniq", "mkdir", "cp", "mv", "rm", "touch",
         "zip", "unzip", "tar", "adb", "emulator", "avdmanager", "sdkmanager", "apkanalyzer",
         "apksigner", "bundletool", "java", "node", "npm", "npx", "python", "python3", "pip",
@@ -196,7 +196,13 @@ object ShellTools {
             reader.join(1500)
             val elapsed = System.currentTimeMillis() - started
             val code = runCatching { process.exitValue() }.getOrDefault(if (finished) 1 else 124)
-            val text = output.toString().take(MAX_OUTPUT)
+            val raw = output.toString().take(MAX_OUTPUT)
+            // exit 128 في git = ليس مستودع git محلياً (استنساخ github_clone ينزّل الملفات بلا .git):
+            // تلميح يوفّر على المزود الضعيف محاولات متكررة بأوامر git محلية لن تنجح.
+            val text = if (first == "git" && code == 128)
+                raw + "\n💡 المجلد الحالي ليس مستودع git محلياً (المستنسخ بـgithub_clone ملفات بلا .git). " +
+                    "للدفع والفروع استخدم أدوات github_* مباشرة: github_commit_files وgithub_push_workspace وgithub_create_branch."
+            else raw
             ShellResult(
                 ok = finished && code == 0,
                 output = if (text.isBlank()) "(لا مخرجات)" else text,

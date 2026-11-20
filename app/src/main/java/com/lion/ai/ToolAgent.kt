@@ -454,6 +454,7 @@ object ToolAgent {
         val workLog = mutableListOf<String>()
         val readFiles = LinkedHashSet<String>()
         val writtenFiles = LinkedHashSet<String>()
+        val codeTouched = LinkedHashSet<String>()
         val failedSteps = mutableListOf<String>()
         val ledger = FindingsLedger()
         var reportNudges = 0
@@ -914,8 +915,7 @@ object ToolAgent {
             }
             if (calls.isEmpty()) {
                 // === بوابة التحقق الإلزامية (تعمل مع جميع المزودات) ===
-                val wroteCode = used.any { it == "file_write" || it == "file_edit" || it == "file_apply_patch" || it == "code_patch" ||
-                    it == "push_workspace" || it == "commit_files" || it == "write_file" }
+                val wroteCode = codeTouched.isNotEmpty()
                 val verifiedCode = used.any { it == "code_doctor" || it == "gate_run" || it == "build_diagnose" || it == "code_analyze_file" ||
                     it == "android_build" || it == "code_run" }
                 
@@ -1249,7 +1249,7 @@ object ToolAgent {
                 val path = call.args.optString("path").ifBlank { call.args.optString("from") }
                 val target = path.ifBlank {
                     call.args.optString("query").ifBlank { call.args.optString("url").ifBlank { call.args.optString("command") } }
-                }.replace('\n', ' ').takeLast(48)
+                }.replace('\n', ' ').take(60)
                 val desc = call.name.removePrefix("github_").replace('_', ' ') + if (target.isBlank()) "" else " ← $target"
                 publish("🛠️ $desc")
                 used.add(call.name.removePrefix("github_"))
@@ -1326,7 +1326,15 @@ object ToolAgent {
                     okCount++
                     trailingFails = 0
                     if (path.isNotBlank()) {
-                        if (call.name in GATE_WRITE_TOOLS) writtenFiles.add(path.takeLast(60)) else readFiles.add(path.takeLast(60))
+                        if (call.name in GATE_WRITE_TOOLS) {
+                            writtenFiles.add(path.takeLast(60))
+                            // بوابة الفحص تخص الكود الحقيقي فقط: كتابة مستندات (md/txt…) لا تطلب code_doctor.
+                            if (codePathTouched(path)) codeTouched.add(path)
+                        } else readFiles.add(path.takeLast(60))
+                    }
+                    // الدفع/الرفع الجماعي: استخراج مسارات الكود المعدّلة من نتيجة العملية نفسها.
+                    if (call.name in setOf("github_push_workspace", "github_commit_files")) {
+                        CODE_PATH_IN_OUTPUT.findAll(result.output).forEach { codeTouched.add(it.value) }
                     }
                 } else {
                     failCount++
@@ -1497,6 +1505,19 @@ object ToolAgent {
         "file_copy", "file_mkdir", "file_unzip", "code_patch", "github_write_file",
         "github_commit_files", "github_push_workspace"
     )
+
+    /** امتدادات الكود الحقيقي: بوابة الفحص تطلب code_doctor فقط عند تعديلها، لا عند كتابة مستندات (md/txt/json). */
+    internal val CODE_EXTENSIONS = setOf(
+        "kt", "java", "kts", "gradle", "py", "js", "ts", "jsx", "tsx", "c", "cpp", "h", "hpp",
+        "cs", "go", "rs", "swift", "php", "rb", "m", "mm", "xml"
+    )
+
+    /** يلتقط مسارات الكود من نص نتيجة الدفع/الرفع (سطور «• ✏️ path…»). */
+    internal val CODE_PATH_IN_OUTPUT =
+        Regex("[A-Za-z0-9_./-]+\\.(kt|java|kts|gradle|py|js|ts|jsx|tsx|c|cpp|h|hpp|cs|go|rs|swift|php|rb|xml)\\b")
+
+    internal fun codePathTouched(path: String): Boolean =
+        path.substringAfterLast('.', "").lowercase() in CODE_EXTENSIONS
 
     private fun gatesNeeded(used: List<String>): Boolean =
         used.any { it.removePrefix("github_") in GATE_WRITE_TOOLS.map { name -> name.removePrefix("github_") } }
