@@ -1258,10 +1258,38 @@ object GitHubClient {
         return out.entries.sortedByDescending { it.value }.associate { it.key to it.value }
     }
 
+    /**
+     * يستخرج (owner, repo) من أي صيغة قبول: `owner/repo`، أو رابط `https://github.com/owner/repo`,
+     * أو مسار مساحة عمل `repos/owner/repo` أو `.git` في آخره.
+     *
+     * الإصلاح الحرج: سابقاً كانت `parseFullName("repos/starmaen/LionAI")` تعيد
+     * owner="repos" وrepo="starmaen" فيفشل كل استدعاء بـ404 رغم صحة المستودع.
+     */
     fun parseFullName(full: String): Pair<String, String> {
-        val cleaned = full.trim().removePrefix("https://github.com/").trim('/')
-        val parts = cleaned.split("/")
-        if (parts.size < 2) throw IllegalArgumentException("اسم المستودع يجب أن يكون owner/repo")
-        return parts[0] to parts[1]
+        val cleaned = full.trim()
+            .removePrefix("https://github.com/")
+            .removePrefix("http://github.com/")
+            .removeSuffix(".git")
+            .trim('/')
+        if (cleaned.isBlank()) throw IllegalArgumentException("اسم المستودع يجب أن يكون owner/repo")
+        var parts = cleaned.split("/").filter { it.isNotBlank() }
+        // مسارة مساحة العمل المحلية تبدأ غالباً بـ repos/ or workspace/ — تُحذف حتى يبقى owner/repo.
+        while (parts.size > 2 && parts.first().lowercase() in setOf("repos", "workspace", "files", "projects", "lionai")) {
+            parts = parts.drop(1)
+        }
+        if (parts.size < 2) {
+            throw IllegalArgumentException(
+                "اسم المستودع يجب أن يكون بصيغة owner/repo (مثال: starmaen/LionAI). القيمة المستلمة: \"$full\""
+            )
+        }
+        val owner = parts[0]
+        val repo = parts[1]
+        val valid = Regex("^[A-Za-z0-9_.-]+$")
+        if (!valid.matches(owner) || !valid.matches(repo)) {
+            throw IllegalArgumentException(
+                "اسم مستودع غير صالح: \"$full\". الصيغة الصحيحة owner/repo بأحرف إنجليزية وأرقام وشرطة فقط."
+            )
+        }
+        return owner to repo
     }
 }

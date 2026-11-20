@@ -335,6 +335,7 @@ object AiTools {
         Def("root_reachability", ToolGroup.QUALITY, """{"root":""}""", "فحص وصول كل ملف مصدري إلى نقطة دخول وكشف الملفات اليتيمة"),
         Def("gate_sign_tests", ToolGroup.QUALITY, """{"root":""}""", "توقيع ملفات الاختبار الحالية بـ HMAC-SHA256", true),
         Def("gate_verify_tests", ToolGroup.QUALITY, """{"root":""}""", "التحقق من عدم العبث بملفات الاختبار الموقّعة"),
+        Def("task_resolve_uncertain", ToolGroup.QUALITY, """{"path":""}""", "بعد قراءة الحالة الفعلية: يُحسم التعديل السابق غير المؤكد فلا يمنع الاكتمال", true),
         Def("pipeline_start", ToolGroup.CONTROL, """{"project":"my-app","root":""}""", "بدء دورة DAG: تخطيط ← Manifest ← تنفيذ ← بوابة ← مراجعة ← QA ← بناء", true),
         Def("pipeline_status", ToolGroup.CONTROL, "{}", "حالة دورة التطوير الحالية والمرحلة التالية"),
         Def("pipeline_approve", ToolGroup.CONTROL, "{}", "اعتماد Manifest بعد التحقق البنيوي والانتقال للتنفيذ", true),
@@ -1140,23 +1141,50 @@ object AiTools {
         val sentBefore = call.args.keys().asSequence().toList()
         normalizeArgs(call.args, call.name)
         if (isMutation(call) && !ctx.allowWrite) {
-            return ToolResult(call.name, "⛔ لم تُنفذ العملية: يلزم طلب تعديل/تنفيذ صريح من المستخدم، إضافة إلى السماح بالكتابة في الإعدادات.", false)
+            return ToolResult(
+                call.name,
+                reasonCard(
+                    "الكتابة معطّلة في الإعدادات",
+                    "أداة ${call.name} تعدّل «${PermissionReason.target(call)}» لكنّ مفتاح «السماح للذكاء بالكتابة» مغلق في إعدادات أدوات المطوّر.",
+                    "افتح: الإعدادات ← أدوات المطوّر ← فعّل «السماح للذكاء بالكتابة»، ثم أعد الطلب. لن أكرر المحاولة تلقائياً قبل التفعيل."
+                ),
+                false
+            )
         }
         if (isMutation(call) && !ctx.writeAuthorized) {
-            return ToolResult(call.name, "⛔ لم تُنفذ العملية: لا يوجد إذن صريح صالح لهذه المهمة.", false)
-        }
-        if (def.write && !ctx.allowWrite) {
-            return ToolResult(call.name, "⛔ الكتابة معطّلة. فعّل «السماح للذكاء بالكتابة» من الإعدادات أولاً.", false)
+            return ToolResult(
+                call.name,
+                reasonCard(
+                    "لا يوجد إذن كتابة لهذه المهمة",
+                    "طلبك الحالي لم يكن أمر تعديل/تنفيذ صريحاً، فلم أمنح نفسي إذن الكتابة. (قراءة الملفات والفحص لا تحتاج إذناً.)",
+                    "اكتب أمراً صريحاً واضحاً مثل «عدّل الملف X» أو «نفّذ الإصلاح»، أو اضغط «موافق» على بطاقة الإذن إن ظهرت لك."
+                ),
+                false
+            )
         }
         val shellWrite = call.name in setOf("shell_exec", "execute_command", "code_run") &&
             (call.name == "code_run" || ShellTools.looksLikeWrite(call.args.optString("command")))
         if ((call.name in CODE_WRITE_TOOLS || shellWrite) && ctx.mode == ChatMode.CODE &&
             ctx.chatId.isNotBlank() && !PipelineStore.canWrite(ctx.prefs, ctx.chatId)
         ) {
+            val state = PipelineStore.read(ctx.prefs, ctx.chatId)
+            val manifest = ManifestStore.read(ctx.prefs, ctx.chatId)
+            val detail = when {
+                state != null && !state.manifestApproved ->
+                    "توجد دورة تطوير مفتوحة لهذه المحادثة في مرحلة «${state.phase.label}» ولم يُعتمد Manifest بعد."
+                manifest != null && !manifest.approved ->
+                    "يوجد Manifest لهذه المحادثة لكنه لم يُعتمد."
+                else ->
+                    "توجد دورة تطوير نشطة تمنع الكتابة قبل اعتماد Manifest."
+            }
             return ToolResult(
                 call.name,
-                "⛔ حوكمة Manifest: لا يُسمح بكتابة/رفع كود قبل اعتماد Manifest هذه الجلسة. " +
-                    "استخدم manifest_create ثم pipeline_approve (أو أنهِ الدورة الحالية) أولاً.",
+                reasonCard(
+                    "حوكمة المانيفست تمنع الكتابة",
+                    detail,
+                    "إن كان المشروع جديداً من الصفر: أنشئ Manifest ثم اعتمده (manifest_create ← pipeline_approve). " +
+                        "وإن كان مشروعاً قائماً فلا تحتاج Manifest أصلاً: أنهِ الدورة المفتوحة بـ pipeline_reset ثم أعد المحاولة — لن تُحظر الكتابة."
+                ),
                 false
             )
         }
@@ -1208,6 +1236,17 @@ object AiTools {
             throw IllegalArgumentException("حدد المستودع بصيغة owner/name")
         }
         return owner to repo
+    }
+
+    /**
+     * بطاقة منع موحّدة بالعربية: ماذا مُنع، لماذا مُنع (السبب الفعلي لا «إذن مفقود») وما المطلوب
+     * لتنفيذه. بدونها كان المزود يرى «⛔» مبهمة فيكرر المحاولة بلا فائدة.
+     */
+    private fun reasonCard(title: String, why: String, next: String): String = buildString {
+        append("⛔ ").append(title).append('\n')
+        append("• السبب: ").append(why).append('\n')
+        append("• المطلوب: ").append(next).append('\n')
+        append("• لا تكرر الاستدعاء نفسه قبل معالجة السبب؛ أبلغ المستخدم بما ورد أعلاه.")
     }
 
     private fun req(args: JSONObject, key: String): String =
@@ -2970,6 +3009,14 @@ $code
                 val issues = ControlPlane.verifySignatures(snapshot, signatures, ManifestStore.hmacKey(ctx.prefs))
                 if (issues.isEmpty()) "✅ سلامة الاختبارات سليمة — لم يُكتشف عبث HMAC."
                 else issues.joinToString("\n") { it.lineText() }
+            }
+            "task_resolve_uncertain" -> {
+                // بديل صريح عن إعادة التشغيل الأعمى: الوكيل يعلن نتيجة التحقق الفعلي بعد قراءة الحالة.
+                // without it، تبقى المحاولات «غير المؤكدة» محجوبة إلى الأبد فتتوقف المهمة.
+                requireChat(ctx)
+                val session = AgentSessions.of(ctx.prefs, ctx.chatId)
+                val resolved = session.continuity.resolveUncertain(args.optString("path"))
+                "✅ حُلّت $resolved عملية كانت غير مؤكدة بعد التحقق الفعلي. يمكن الآن تنفيذ التعديل المقصود أو إعلان الاكتمال."
             }
 
             // ===== DAG pipeline =====

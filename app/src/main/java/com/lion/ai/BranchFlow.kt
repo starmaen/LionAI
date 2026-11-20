@@ -45,9 +45,29 @@ internal object BranchFlow {
             prefs.edit().putString("wb_$k", branch).remove("wbpr_$k").apply()
             Prep(branch, "ℹ️ لم يُدفع إلى $default: أُنشئ فرع العمل «$branch» وسيُفتح PR تلقائياً.")
         } catch (e: Exception) {
-            // الاستثناء الوحيد: مستودع فارغ لا فرع فيه بعد (الدفعة الأولى لا بديل لها). غير ذلك = رفض.
+            // حالة شائعة جداً: 422 «Reference already exists» لأن الاسم يتكرر (نفس الدقيقة) أو
+            // فرع سابق باسم مطابق. قد يكون فرعاً من محاولة سابقة: نستخدمه بدل الفشل.
+            val exists = e is GitHubException && (e.status == 422 || e.status == 409) &&
+                (e.message.orEmpty().contains("already exists", ignoreCase = true) ||
+                    e.message.orEmpty().contains("Reference already", ignoreCase = true))
+            if (exists) {
+                prefs.edit().putString("wb_$k", branch).apply()
+                return Prep(branch, "ℹ️ استخدمت فرع العمل الموجود مسبقاً «$branch» بدل إنشاء جديد.")
+            }
+            // الاستثناء الوحيد الآخر: مستودع فارغ لا فرع فيه بعد (الدفعة الأولى لا بديل لها).
             val empty = runCatching { GitHubClient.listBranches(token, owner, repo).isEmpty() }.getOrDefault(false)
-            if (!empty) throw IllegalStateException("⛔ تعذّر إنشاء فرع العمل (${e.message?.take(100).orEmpty()}) فلم أكتب على $default. أعد المحاولة أو أنشئ فرعاً بـ github_create_branch وادفع إليه.")
+            if (!empty) {
+                val reason = when (e) {
+                    is GitHubException -> "GitHub ${e.status}: ${e.message.orEmpty().take(140)}" +
+                        GitHubErrorHint.explain(e.status, e.message.orEmpty()).let { if (it.isNotBlank()) " — $it" else "" }
+                    else -> e.message?.take(140).orEmpty()
+                }
+                throw IllegalStateException(
+                    "⛔ تعذّر إنشاء فرع العمل فلم أكتب على $default.\n" +
+                        "السبب: $reason\n" +
+                        "الحل: أعد المحاولة بعد قليل، أو أنشئ فرعاً يدوياً بـ github_create_branch ثم ادفع إليه بتمرير branch صراحةً."
+                )
+            }
             Prep(wanted, "ℹ️ المستودع فارغ فدُفعت الدفعة الأولى إلى $default.")
         }
     }

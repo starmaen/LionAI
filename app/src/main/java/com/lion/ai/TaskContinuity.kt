@@ -287,18 +287,57 @@ class TaskContinuity {
     /**
      * definite = فشل محلي حاسم (patch/تعديل ملف يُتحقق منه كاملاً قبل الكتابة): لم يتغير شيء، فلا يُسمّى «غير مؤكد»
      * ولا يوقف المهمة. أما فشل الشبكة/الصدفة فيبقى غير مؤكد لأنه قد يكون نفذ فعلاً.
+     * [path] هدف العملية (ملف/فرع/مسار) ليُربط بأول قراءة ناجحة له فيُحسم حالته تلقائياً.
      */
-    fun recordMutation(key: String, output: String, ok: Boolean, definite: Boolean = false) {
+    fun recordMutation(key: String, output: String, ok: Boolean, definite: Boolean = false, path: String = "") {
         // A failed network response can still have committed remotely. Never auto-retry it.
         val state = if (ok) "done" else if (definite) "failed" else "uncertain"
-        receipts.put(key, JSONObject().put("state", state).put("output", output.take(16000)))
+        receipts.put(
+            key,
+            JSONObject().put("state", state).put("output", output.take(16000))
+                .put("path", path.trim().replace('\\', '/').take(160))
+        )
         epoch++
         reads.keys().asSequence().toList().forEach { reads.remove(it) }
     }
     fun cachedRead(key: String): String? = reads.optJSONObject(key)?.takeIf { it.optInt("epoch") == epoch }?.optString("output")
-    fun recordRead(key: String, output: String) {
+
+    /**
+     * يُحسم كل المحاولات «غير المؤكدة» (أو تلك الخاصة بمسار محدد) بعد أن يتحقق الوكيل فعلياً
+     * من الحالة. يُستخدم كبديل صريح عن إعادة التنفيذ الأعمى، فلا تبقى المهمة معلّقة للأبد.
+     */
+    fun resolveUncertain(path: String = ""): Int {
+        val normalized = path.trim().replace('\\', '/')
+        var count = 0
+        receipts.keys().asSequence().toList().forEach { key ->
+            val receipt = receipts.optJSONObject(key) ?: return@forEach
+            if (receipt.optString("state") != "uncertain") return@forEach
+            val rpath = receipt.optString("path").trim().replace('\\', '/')
+            if (normalized.isBlank() || rpath.isBlank() || rpath == normalized || rpath.endsWith("/" + normalized.substringAfterLast('/'))) {
+                receipt.put("state", "verified")
+                count++
+            }
+        }
+        return count
+    }
+
+    /**
+     * قراءة ناجحة = دليل فعلي على حالة الهدف. أي محاولة تعديل سابقة بقيت «غير مؤكدة» على المسار
+     * نفسه (أو بلا مسار محدد) تُحسم الآن إلى "verified" فلا تمنع الاكتمال ولا تُعيد التنفيذ الأعمى.
+     * هذا يكسر حلقة «نتيجة محاولة سابقة غير مؤكدة» التي كانت توقف المهمة رغم أن الحالة صارت معلومة.
+     */
+    fun recordRead(key: String, output: String, path: String = "") {
         if (reads.length() >= 24) reads.keys().asSequence().firstOrNull()?.let { reads.remove(it) }
         reads.put(key, JSONObject().put("epoch", epoch).put("output", output.take(16000)))
+        val normalized = path.trim().replace('\\', '/')
+        receipts.keys().asSequence().toList().forEach { rk ->
+            val receipt = receipts.optJSONObject(rk) ?: return@forEach
+            if (receipt.optString("state") != "uncertain") return@forEach
+            val rpath = receipt.optString("path").trim().replace('\\', '/')
+            val related = rpath.isBlank() || normalized.isBlank() ||
+                rpath == normalized || rpath.endsWith("/" + normalized.substringAfterLast('/'))
+            if (related) receipt.put("state", "verified")
+        }
     }
     fun json(): JSONObject = JSONObject().put("history", JSONArray().also { a -> history.forEach { a.put(JSONObject().put("role",it.role).put("content",it.content)) } })
         .put("current",current).put("write",writeGranted).put("receipts",receipts).put("reads",reads).put("epoch",epoch).put("trimmed",trimmed)
