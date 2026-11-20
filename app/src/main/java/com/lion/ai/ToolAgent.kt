@@ -698,31 +698,6 @@ object ToolAgent {
             publish("▶️ وصل ردّك — أتابع من النقطة نفسها")
             return answer
         }
-        private fun legacyStatusReport(complete: Boolean, why: String): String {
-            val sb = StringBuilder("\n\n——\nتقرير التنفيذ\n")
-            if (complete) {
-                sb.append("• الحالة: ✅ اكتملت المهمة\n")
-            } else {
-                sb.append("• الحالة: ⏸ لم تكتمل").append(if (why.isNotBlank()) " — $why" else "").append('\n')
-                sb.append("• للمتابعة: أرسل قرارك أو أي رد — سأتابع من نفس النقطة. لا حاجة لكتابة أكمل.\n")
-            }
-            sb.append("• الأدوات: ").append(okCount + failCount).append(" (✅ ").append(okCount)
-            if (failCount > 0) sb.append(" · ❌ ").append(failCount)
-            sb.append(")\n")
-            if (readFiles.isNotEmpty()) {
-                sb.append("• قُرئ: ").append(readFiles.take(6).joinToString("، "))
-                if (readFiles.size > 6) sb.append(" …(+").append(readFiles.size - 6).append(")")
-                sb.append('\n')
-            }
-            if (writtenFiles.isNotEmpty()) {
-                sb.append("• عُدّل/أُنشئ: ").append(writtenFiles.take(8).joinToString("، "))
-                if (writtenFiles.size > 8) sb.append(" …(+").append(writtenFiles.size - 8).append(")")
-                sb.append('\n')
-            }
-            if (failedSteps.isNotEmpty()) sb.append("• أخطاء: ").append(failedSteps.takeLast(3).joinToString("، ")).append('\n')
-            sb.append("• المزود: ").append(label)
-            return sb.toString()
-        }
         private fun finish(text: String, complete: Boolean, why: String = ""): Result {
             val cards = if (presented.isEmpty()) "" else "\n\n" + presented.joinToString("\n") { FileDelivery.marker(it) }
             val shown = if (!complete && lastSubstantive.isNotBlank() && !text.contains(lastSubstantive.take(60)))
