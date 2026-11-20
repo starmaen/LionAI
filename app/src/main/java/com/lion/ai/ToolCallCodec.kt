@@ -79,7 +79,7 @@ object ToolCallCodec {
         return when {
             known.contains(spaced) -> spaced
             known.contains(trimmed) -> trimmed
-            else -> known.firstOrNull { it.equals(spaced, ignoreCase = true) } ?: ""
+            else -> known.firstOrNull { it.equals(spaced, ignoreCase = true) } ?: ToolAliases.resolve(trimmed, known)
         }
     }
 

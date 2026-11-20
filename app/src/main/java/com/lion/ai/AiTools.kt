@@ -750,6 +750,9 @@ object AiTools {
      */
     fun parseCalls(text: String): List<ToolCall> = ToolCallCodec.parse(text, byName.keys)
 
+    /** أسماء الأدوات المسجّلة (لتوحيد أسماء الاستدعاءات الأصلية القادمة من المزود). */
+    internal fun knownToolNames(): Set<String> = byName.keys
+
     private val CODE_WRITE_TOOLS = setOf(
         "file_write", "file_append", "file_edit", "file_apply_patch", "file_delete", "file_move",
         "file_copy", "file_mkdir", "file_unzip", "file_integrity_save", "code_patch",
@@ -789,7 +792,9 @@ object AiTools {
 
     /** نماذج مختلفة تسمّي المعامل نفسه بأسماء مختلفة؛ نكمل المفتاح المعياري الناقص فقط ولا نغيّر الموجود. */
     private val ARG_ALIASES = mapOf(
-        "path" to listOf("file_path", "filepath", "filename", "file_name", "file", "target_path", "filePath"),
+        "path" to listOf("file_path", "filepath", "filename", "file_name", "file", "target_path", "filePath", "directory", "dir", "folder"),
+        "start_line" to listOf("offset", "from_line", "line_start"),
+        "end_line" to listOf("to_line", "line_end"),
         "old" to listOf("old_text", "old_string", "old_str", "search", "find", "original", "oldText"),
         "new" to listOf("new_text", "new_string", "new_str", "replace", "replacement", "newText"),
         "find" to listOf("old", "old_text", "old_string", "old_str", "search", "original", "oldText"),
@@ -798,7 +803,7 @@ object AiTools {
         "text" to listOf("content", "message", "body", "value"),
         "body" to listOf("content", "text", "message"),
         "command" to listOf("cmd", "shell", "script"),
-        "query" to listOf("q", "keyword", "keywords", "search_query", "term"),
+        "query" to listOf("q", "keyword", "keywords", "search_query", "term", "pattern", "regex"),
         "url" to listOf("uri", "href", "endpoint"),
         "workflow_id" to listOf("workflow", "workflow_file", "workflow_name", "workflowId"),
         "run_id" to listOf("runId", "id_run"),
@@ -1131,7 +1136,7 @@ object AiTools {
     }
 
     suspend fun execute(ctx: ToolContext, call: ToolCall): ToolResult {
-        val def = byName[call.name] ?: return ToolResult(call.name, "❌ أداة غير معروفة: ${call.name}", false)
+        val def = byName[call.name] ?: return ToolResult(call.name, ToolAliases.unknownMessage(call.name, byName.keys), false)
         val sentBefore = call.args.keys().asSequence().toList()
         normalizeArgs(call.args, call.name)
         if (isMutation(call) && !ctx.allowWrite) {
