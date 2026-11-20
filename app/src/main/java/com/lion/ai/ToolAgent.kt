@@ -833,11 +833,7 @@ object ToolAgent {
                 )
             }
 
-            // الاستدعاء الأصلي يمرّر ما يكتبه النموذج كما هو (read/write/bash…): نوحّد الاسم قبل التنفيذ.
-            val calls = if (nativeCalls.isNotEmpty()) {
-                val knownNames = AiTools.knownToolNames()
-                nativeCalls.map { ToolAliases.canonical(it, knownNames) }
-            } else AiTools.parseCalls(reply)
+            val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
             // كتلة [[TOOL]] وصلت لكن لم تُحلَّل (JSON معطوب أو اسم أداة غير معروف): لا ننهي المهمة بصمت،
             // نطلب إعادة الكتلة نفسها بصيغة صحيحة (مرتان كحد أقصى).
             if (calls.isEmpty() && (reply.contains("[[TOOL") || reply.contains("DSML") || reply.contains("<tool_call")) && repairNudges < 2 &&

@@ -106,7 +106,9 @@ internal fun LlmClient.callOpenAiTools(
                     is String -> runCatching { JSONObject(rawArgs) }.getOrDefault(JSONObject())
                     else -> JSONObject()
                 }
-                calls.add(ToolCall(name, args, ""))
+                // أسماء مثل read/write/bash (أسلوب Claude Code) تُترجم هنا، خارج حلقة الوكيل الضخمة.
+                val canonical = ToolAliases.resolve(name, AiTools.knownToolNames()).ifEmpty { name }
+                calls.add(ToolCall(canonical, args, ""))
             }
         }
         return LlmClient.ToolReply(text, calls)
