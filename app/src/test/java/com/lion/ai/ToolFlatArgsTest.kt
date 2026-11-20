@@ -20,4 +20,8 @@ class ToolFlatArgsTest {
         val o = ToolCallCodec.parseArgString("{\"path\":\"X.kt\",\"start_line\":5")
         assertTrue(o.length() > 0)
     }
+
+    @Test fun hintMentionsArgsWrapperWhenEmpty() {
+        assertTrue(ToolCallCodec.flatHint("file_read", emptyList()).contains("args"))
+    }
 }
