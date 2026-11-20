@@ -85,7 +85,6 @@ internal object BranchFlow {
         }
         return Prep(wanted, "ℹ️ المستودع فارغ فدُفعت الدفعة الأولى إلى $default.")
     }
-    }
 
     /** بعد كتابة ناجحة على فرع العمل: يضمن وجود PR مفتوح ويسجّل وقت الدفع. يعيد سطر معلومة. */
     fun afterWrite(ctx: ToolContext, token: String, owner: String, repo: String, branch: String): String {
