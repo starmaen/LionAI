@@ -493,7 +493,7 @@
    "start_line": 1,
    "end_line": 120
   },
-  "description": "قراءة ملف من مساحة العمل؛ مع start_line/end_line تُقرأ الأسطر المطلوبة فقط (أوفر للسياق في الملفات الكبيرة)",
+  "description": "قراءة ملف من مساحة العمل؛ الملف الكبير يُعرض على صفحات: التذييل يخبرك بآخر سطر عُرض فتابع بـ start_line التالي؛ max_chars لصفحة أكبر (حتى 60000)",
   "write": false,
   "connector": null
  },
@@ -1979,6 +1979,21 @@
   "connector": null
  },
  {
+  "name": "todo_write",
+  "group": "meta",
+  "args": {
+   "items": [
+    {
+     "text": "الخطوة",
+     "status": "pending|in_progress|done"
+    }
+   ]
+  },
+  "description": "كتابة/تحديث خطة المهام (قائمة خطوات بحالاتها) لتتبّع التقدّم في المهام الطويلة؛ تستبدل الخطة السابقة كاملة",
+  "write": false,
+  "connector": null
+ },
+ {
   "name": "telegram_status",
   "group": "comms",
   "args": {},
@@ -2443,6 +2458,16 @@
   "connector": null
  },
  {
+  "name": "task_resolve_uncertain",
+  "group": "quality",
+  "args": {
+   "path": ""
+  },
+  "description": "بعد قراءة الحالة الفعلية: يُحسم التعديل السابق غير المؤكد فلا يمنع الاكتمال",
+  "write": true,
+  "connector": null
+ },
+ {
   "name": "pipeline_start",
   "group": "control",
   "args": {
@@ -2747,21 +2772,6 @@
    "server": "files"
   },
   "description": "اختبار اتصال خادم MCP",
-  "write": false,
-  "connector": null
- },
- {
-  "name": "todo_write",
-  "group": "meta",
-  "args": {
-   "items": [
-    {
-     "text": "الخطوة",
-     "status": "pending|in_progress|done"
-    }
-   ]
-  },
-  "description": "كتابة/تحديث خطة المهام (قائمة خطوات بحالاتها) لتتبّع التقدّم في المهام الطويلة؛ تستبدل الخطة السابقة كاملة",
   "write": false,
   "connector": null
  }

@@ -44,12 +44,46 @@ internal object BranchFlow {
             GitHubClient.createBranch(token, owner, repo, branch, default)
             prefs.edit().putString("wb_$k", branch).remove("wbpr_$k").apply()
             Prep(branch, "ℹ️ لم يُدفع إلى $default: أُنشئ فرع العمل «$branch» وسيُفتح PR تلقائياً.")
+        } catch (e: GitHubException) {
+            // حالة شائعة جداً: 422 «Reference already exists» لأن اسم الفرع يتكرر (نفس الدقيقة)
+            // أو فرع سابق باسم مطابق. نستخدم الفرع القائم بدل الفشل.
+            val alreadyExists = (e.status == 422 || e.status == 409) &&
+                (e.message.orEmpty().contains("already exists", ignoreCase = true) ||
+                    e.message.orEmpty().contains("Reference already", ignoreCase = true))
+            if (alreadyExists) {
+                prefs.edit().putString("wb_$k", branch).apply()
+                return Prep(branch, "ℹ️ استخدمت فرع العمل الموجود مسبقاً «$branch» بدل إنشاء جديد.")
+            }
+            val reason = "GitHub ${e.status}: ${e.message.orEmpty().take(140)}" +
+                GitHubErrorHint.explain(e.status, e.message.orEmpty()).let { if (it.isNotBlank()) " — $it" else "" }
+            return recoverOrThrow(token, owner, repo, default, wanted, reason)
         } catch (e: Exception) {
-            // الاستثناء الوحيد: مستودع فارغ لا فرع فيه بعد (الدفعة الأولى لا بديل لها). غير ذلك = رفض.
-            val empty = runCatching { GitHubClient.listBranches(token, owner, repo).isEmpty() }.getOrDefault(false)
-            if (!empty) throw IllegalStateException("⛔ تعذّر إنشاء فرع العمل (${e.message?.take(100).orEmpty()}) فلم أكتب على $default. أعد المحاولة أو أنشئ فرعاً بـ github_create_branch وادفع إليه.")
-            Prep(wanted, "ℹ️ المستودع فارغ فدُفعت الدفعة الأولى إلى $default.")
+            // غير GitHub (شبكة/توقيت): نفس المسار الآمن — لم تُمسّ main.
+            return recoverOrThrow(token, owner, repo, default, wanted, e.message?.take(140).orEmpty())
         }
+    }
+
+    /**
+     * الاستثناء الوحيد لرفض الكتابة: مستودع فارغ لا فرع فيه بعد (الدفعة الأولى لا بديل لها).
+     * في كل حالة أخرى لا نكتب على الفرع الافتراضي، ونشرح السبب وخطوة الإصلاح بدل رسالة مبهمة.
+     */
+    private fun recoverOrThrow(
+        token: String,
+        owner: String,
+        repo: String,
+        default: String,
+        wanted: String,
+        reason: String
+    ): Prep {
+        val empty = runCatching { GitHubClient.listBranches(token, owner, repo).isEmpty() }.getOrDefault(false)
+        if (!empty) {
+            throw IllegalStateException(
+                "⛔ تعذّر إنشاء فرع العمل فلم أكتب على $default.\n" +
+                    "السبب: ${reason.ifBlank { "غير معروف" }}\n" +
+                    "الحل: أعد المحاولة بعد قليل، أو أنشئ فرعاً يدوياً بـ github_create_branch ثم ادفع إليه بتمرير branch صراحةً."
+            )
+        }
+        return Prep(wanted, "ℹ️ المستودع فارغ فدُفعت الدفعة الأولى إلى $default.")
     }
 
     /** بعد كتابة ناجحة على فرع العمل: يضمن وجود PR مفتوح ويسجّل وقت الدفع. يعيد سطر معلومة. */

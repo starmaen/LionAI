@@ -72,18 +72,53 @@ data class GateReport(
     val checkedFiles: Int = 0,
     val reachable: Int = 0,
     val totalSource: Int = 0,
-    val emptyDirectories: Int = 0
+    val emptyDirectories: Int = 0,
+    /** هل الفحص في وضع «مشروع قائم بلا Manifest» (لا شيء مانع)؟ */
+    val existingProject: Boolean = false
 ) {
     fun errors(): List<GateIssue> = issues.filter { it.severity == "error" }
+    fun warnings(): List<GateIssue> = issues.filter { it.severity != "error" }
 
+    /**
+     * نص التقرير: يوضح دائماً *ما الذي يمنع* مقابل *ما هو مجرد ملاحظة*، ويشرح كل رمز
+     * بالعربية حتى لا يبقى المستخدم أمام «فشلت البوابة» بلا سبب مفهوم.
+     */
     fun text(): String = buildString {
-        append(if (ok) "✅ اجتازت البوابة" else "⛔ فشلت البوابة")
+        if (ok) {
+            append("✅ اجتازت البوابة")
+        } else if (existingProject) {
+            append("✅ فحص مشروع قائم — لا شيء يمنع البناء (توجد ملاحظات غير مانعة)")
+        } else {
+            append("⛔ لم تجتز البوابة")
+        }
         append(" — ملفات: ").append(checkedFiles)
         append(" | مصادر: ").append(reachable).append('/').append(totalSource)
-        if (emptyDirectories > 0) append(" | مجلدات فارغة: ").append(emptyDirectories)
+        if (emptyDirectories > 0) append(" | مجلدات فارغة: ").append(emptyDirectories).append(" (ملاحظة فقط)")
         append('\n')
-        issues.take(80).forEach { append(it.lineText()).append('\n') }
-        if (issues.size > 80) append("… و").append(issues.size - 80).append(" ملاحظة أخرى\n")
+        if (existingProject) {
+            append("ℹ️ لا Manifest لهذه المحادثة (مشروع قائم): الفحوص أدناه تنبيهات لا تمنع الاكتمال. المعيار الحقيقي هو نجاح البناء/CI.\n")
+        }
+        val blocking = issues.filter { it.severity == "error" }
+        val notes = issues.filter { it.severity != "error" }
+        if (blocking.isNotEmpty()) {
+            append("⛔ يمنع الاكتمال (").append(blocking.size).append("):\n")
+            blocking.take(40).forEach { issue ->
+                append(issue.lineText())
+                ManifestPolicy.explain(issue.code).takeIf { it.isNotBlank() }?.let { append(" — ").append(it) }
+                append('\n')
+            }
+            if (blocking.size > 40) append("… و").append(blocking.size - 40).append(" مانعاً آخر\n")
+        }
+        if (notes.isNotEmpty()) {
+            append("⚠️ ملاحظات لا تمنع البناء (").append(notes.size).append("):\n")
+            notes.take(40).forEach { issue ->
+                append(issue.lineText())
+                ManifestPolicy.explain(issue.code).takeIf { it.isNotBlank() }?.let { append(" — ").append(it) }
+                append('\n')
+            }
+            if (notes.size > 40) append("… و").append(notes.size - 40).append(" ملاحظة أخرى\n")
+        }
+        if (issues.isEmpty()) append("لا ملاحظات.\n")
     }.trimEnd()
 }
 
@@ -171,9 +206,10 @@ object ControlPlane {
             }
         }
 
+        // المجلد الفارغ لا يمنع البناء أبداً (git لا يتتبعه)، لكن يظهر كملاحظة للتذكير.
         snapshot.emptyDirectories.forEach { dir ->
             if (!isIgnored(dir)) {
-                issues.add(GateIssue("error", "EMPTY_DIR", dir, message = "مجلد فارغ في التسليم"))
+                issues.add(GateIssue("warn", "EMPTY_DIR", dir, message = "مجلد فارغ (ملاحظة فقط — لا يمنع البناء)"))
             }
         }
 
@@ -182,11 +218,16 @@ object ControlPlane {
 
         val entries = buildEntryPoints(snapshot, manifest)
         val reach = reachability(snapshot, entries)
+        // في مشروع قائم بلا Manifest لا شيء «يتيم» بالمعنى المُلزم: قد تكون هذه مراجع ديناميكية.
+        val orphanSeverity = if (manifest == null) "warn" else "warn"
         reach.orphans.forEach { path ->
             issues.add(
                 GateIssue(
-                    "error", "ORPHAN_FILE", path,
-                    message = "ملف مصدري لا يصل إلى نقطة دخول (ملف يتيم أو غير مربوط)"
+                    orphanSeverity, "ORPHAN_FILE", path,
+                    message = if (manifest == null)
+                        "لم يُربط آلياً بنقطة دخول (ملاحظة — قد يكون مرجعاً ديناميكياً)"
+                    else
+                        "ملف مصدري لا يصل إلى نقطة دخول (ملف يتيم أو غير مربوط)"
                 )
             )
         }
@@ -195,14 +236,21 @@ object ControlPlane {
             verifySignatures(snapshot, signatures, hmacKey).forEach { issues.add(it) }
         }
 
-        val errors = issues.count { it.severity == "error" }
+        // التصنيف النهائي: خطأ يمنع الاكتمال فقط إذا اعتبرته السياسة مانعاً في هذا السياق.
+        val normalized = issues.map { issue ->
+            if (issue.severity == "error" && !ManifestPolicy.blocking(issue.code, manifest, snapshot))
+                issue.copy(severity = "warn")
+            else issue
+        }
+        val errors = normalized.count { it.severity == "error" }
         return GateReport(
             ok = errors == 0,
-            issues = issues,
+            issues = normalized,
             checkedFiles = snapshot.files.size,
             reachable = reach.reachable.size,
             totalSource = reach.totalSource,
-            emptyDirectories = snapshot.emptyDirectories.size
+            emptyDirectories = snapshot.emptyDirectories.size,
+            existingProject = manifest == null
         )
     }
 

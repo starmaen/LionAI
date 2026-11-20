@@ -1166,11 +1166,9 @@ object ToolAgent {
             if (toolContext.allowWrite && !memory.writeGranted && !WriteIntent.isReadOnlyRequest(userRequest)) {
                 val blocked = calls.firstOrNull { AiTools.isMutation(it) }
                 if (blocked != null) {
-                    val target = blocked.args.optString("path").ifBlank {
-                        blocked.args.optString("branch").ifBlank { blocked.args.optString("workflow").ifBlank { blocked.args.optString("name") } }
-                    }.replace('\n', ' ').takeLast(60)
-                    val what = blocked.name.removePrefix("github_").replace('_', ' ') + if (target.isBlank()) "" else " ← $target"
-                    val question = "أحتاج إذنك لتنفيذ تعديل: $what. هل تسمح لي بتنفيذ التعديلات المطلوبة في هذه المهمة؟ (نعم / لا)"
+                    val what = blocked.name.removePrefix("github_").replace('_', ' ') + " ← " + PermissionReason.target(blocked)
+                    // البطاقة تشرح: ماذا، لماذا الآن، ما البديل، وما نطاق الإذن — بدل سؤال مفتوح بلا سبب.
+                    val question = PermissionReason.writeCard(blocked)
                     session?.recordNote("طُلب إذن الكتابة قبل تنفيذ $what")
                     session?.askQuestion(question)
                     memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
@@ -1186,9 +1184,16 @@ object ToolAgent {
                     .firstOrNull { !RiskPolicy.requestNames(it, userRequest) }
                 if (risky != null) {
                     memory.pendingRisk.add(risky.key)
-                    val question = "⚠️ أطلب موافقتك على: ${risky.label}\n\n" +
-                        "سبب السؤال: لم يُذكر هذا الإجراء صراحةً في طلبك وقد لا يمكن التراجع عنه. " +
-                        "اختر «موافق» ليُنفَّذ هو وما يشبهه في هذه المهمة، أو «لا» ثم اكتب ما تريده بدلاً منه."
+                    val riskyCall = calls.firstOrNull { RiskPolicy.assess(it)?.key == risky.key }
+                    val question = buildString {
+                        append("⚠️ أطلب موافقتك على: ").append(risky.label).append("\n\n")
+                        append("• لماذا أسأل: لم تُذكر هذه العملية صراحةً في طلبك، وقد لا يمكن التراجع عنها.\n")
+                        riskyCall?.let { append("• ").append(PermissionReason.why(it).replaceFirstChar { it.lowercase() }).append('\n') }
+                        append("• نطاق الموافقة: هذه العملية وما يشبهها من العمليات الروتينية في هذه المهمة فقط؛ ")
+                        append("الفروع والمستودعات والطلبات الخارجية تبقى بموافقة فردية.\n")
+                        append("• لو رفضت: أتخطى هذه العملية وأكمل بقية المهمة بلا تنفيذها.\n")
+                        append("اختر «موافق» أو «لا» ثم اكتب ما تريده بدلاً منه.")
+                    }
                     session?.recordNote("طُلبت موافقة على عملية حساسة: ${risky.label}")
                     session?.askQuestion(question)
                     memory.checkpoint(historyBuffer + ChatTurn("user", current) + ChatTurn("assistant", reply), current)
@@ -1203,9 +1208,8 @@ object ToolAgent {
             if ((accessRequest != null || missingAccess != null) && !readOnly && !WriteIntent.isReadOnlyRequest(userRequest)) {
                 val resource = missingAccess ?: accessRequest!!.args.optString("resource").take(120)
                 val reason = accessRequest?.args?.optString("reason").orEmpty().take(500)
-                val question = "يلزم وصول إلى: $resource. $reason\n" +
-                    "فعّل الصلاحية أو اربط الحساب من إعدادات التطبيق ثم اختر المتابعة، أو ارفض الطلب. " +
-                    "الموافقة هنا وحدها لا تغيّر إعدادات الوصول."
+                // بطاقة الوصول: تسمّي المورد وسببه ووجهة التفعيل بدقة.
+                val question = PermissionReason.accessCard(resource, reason)
                 session?.askQuestion(question)
                 memory.checkpoint(historyBuffer, current)
                 session?.let { CheckpointStore.save(prefs, it) }
@@ -1262,12 +1266,15 @@ object ToolAgent {
                         ToolResult(call.name, "⛔ الكتابة معطّلة من الإعدادات. فعّل «السماح للذكاء بالكتابة» ثم أعد المحاولة.", false)
                     mutating && !memory.writeGranted ->
                         ToolResult(call.name, "⛔ لم أنفذ التعديل: لا يوجد إذن صريح صالح لهذه المهمة.", false)
-                    receipt != null -> ToolResult(call.name,
+                    // حالتان سبق تنفيذهما بنفس المدخلات؛ "verified" ليست إحداهما: بعد أن تتحقق القراءة
+                    // من الحالة الفعلية يصبح التعديل الجديد تنفيذاً مشروعاً لا تكراراً أعمى، فيمرّ أدناه.
+                    receipt != null && receipt.optString("state") != "verified" -> ToolResult(call.name,
                         when (receipt.optString("state")) {
                             "done" -> "نتيجة محفوظة؛ لم أكرر التنفيذ:\n" + receipt.optString("output")
                             "failed" -> "⛔ هذه المحاولة بعينها فشلت سابقاً ولم يُطبَّق شيء:\n" + receipt.optString("output").take(900) +
                                 "\nغيّر الطريقة: اقرأ الجزء من الملف من جديد ثم استخدم file_edit بنصه الحالي حرفياً."
-                            else -> "⛔ نتيجة محاولة سابقة غير مؤكدة. افحص الحالة الفعلية أولاً؛ لن أكرر عملية تعديل تلقائياً."
+                            else -> "⛔ نتيجة محاولة سابقة غير مؤكدة، ولم تُقرأ الحالة الفعلية بعد. اقرأ الملف/المسار أولاً " +
+                                "(file_read/github_read_file) ثم أعد تنفيذ التعديل بناءً على ما قرأته."
                         },
                         receipt.optString("state") == "done")
                     cached != null -> ToolResult(call.name, "نتيجة قراءة محفوظة لهذه المهمة (refresh=true لإعادة التحقق):\n" + cached, true)
@@ -1277,9 +1284,13 @@ object ToolAgent {
                         check(session != null && prefs.edit().putString("ckpt_" + session.chatId, session.toJson().toString()).commit()) {
                             "تعذر حفظ نقطة أمان قبل التعديل؛ لم أنفذ العملية"
                         }
-                        AiTools.execute(toolContext, call).also { memory.recordMutation(fingerprint, it.output, it.ok, call.name in LOCAL_FILE_MUTATIONS) }
+                        AiTools.execute(toolContext, call).also {
+                            memory.recordMutation(fingerprint, it.output, it.ok, call.name in LOCAL_FILE_MUTATIONS, path)
+                        }
                     }
-                    else -> (prefetched[call] ?: AiTools.execute(toolContext, call)).also { if (cacheable && it.ok) memory.recordRead(fingerprint, it.output) }
+                    else -> (prefetched[call] ?: AiTools.execute(toolContext, call)).also {
+                        if (cacheable && it.ok) memory.recordRead(fingerprint, it.output, path)
+                    }
                 }
                 session?.let { CheckpointStore.save(prefs, it) }
                 if (call.name == "github_wait_run" || call.name == "github_get_run") {
