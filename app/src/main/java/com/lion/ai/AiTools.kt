@@ -1397,8 +1397,23 @@ object AiTools {
             }
             "github_create_branch" -> {
                 val (owner, repo) = repoOf(ctx, args)
-                val branch = GitHubClient.createBranch(token, owner, repo, req(args, "branch"), args.optString("from"))
-                "✅ أُنشئ الفرع $branch"
+                val branch = req(args, "branch")
+                // الفرع الأساسي موجود أصلاً: محاولة إنشائه خطأ شائع من المزودين الضعاف — رسالة فورية بلا نداء API.
+                if (branch == "main" || branch == "master") throw IllegalStateException(
+                    "«$branch» هو الفرع الأساسي والموجود أصلاً — لا يُنشأ ولا يُعاد إنشاؤه. " +
+                        "إن كان هدفك العمل عليه فادفع إليه مباشرة بتمرير branch=\"$branch\"؛ " +
+                        "وإن كان هدفك فرع عمل جديد فأنشئ اسماً مثل feature/… أو bench/…"
+                )
+                runCatching { GitHubClient.createBranch(token, owner, repo, branch, args.optString("from")) }
+                    .getOrElse { err ->
+                        val msg = err.message ?: ""
+                        if (msg.contains("already exists", ignoreCase = true))
+                            // الفرع موجود: إعادة استخدام بدل فشل 422 (نفس سلوك BranchFlow).
+                            "ℹ️ الفرع $branch موجود مسبقاً — أعيد استخدامه دون إنشاء: ادفع إليه بتمرير branch=\"$branch\" مباشرة."
+                        else throw err
+                    }.let { created ->
+                        if (created.startsWith("ℹ️")) created else "✅ أُنشئ الفرع $created"
+                    }
             }
             "github_list_commits" -> {
                 val (owner, repo) = repoOf(ctx, args)

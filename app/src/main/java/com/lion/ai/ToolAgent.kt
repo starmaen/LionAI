@@ -191,6 +191,12 @@ object ToolAgent {
         "code_doctor", "file_delete", "file_tree", "todo_write"
     )
 
+    /** أدوات الاستطلاع النتائج المتطابقة منها لا تُقدّم شيئاً: التصعيد مبكر عند تكرارها (انظر حلقة التنفيذ). */
+    internal val DISCOVERY_TOOLS = setOf(
+        "tools_schema", "tools_groups", "github_repo_overview", "github_list_tree",
+        "file_tree", "file_list", "list_dir", "repo_map"
+    )
+
     /** يجرّب المستويات من الأكبر إلى الأصغر ويعيد أول نص يلائم الميزانية (وإلا الأصغر). */
     internal fun fitSystem(budget: Int, vararg tiers: () -> String): String {
         var last = ""
@@ -458,6 +464,7 @@ object ToolAgent {
         var trailingFails = 0
         val sameResultTally = mutableMapOf<String, Int>()
         var loopResultStop = ""
+        var repeatHint = ""
         // آخر نص جوهري كتبه المزود: يُعرض مع أي توقف أو ملخص بدل أن يضيع الجواب خلف سجل الإجراءات.
         var lastSubstantive = ""
         var lastFailure = ""
@@ -1340,17 +1347,24 @@ object ToolAgent {
                     val rk = CompletionGuard.resultKey(call.name, call.args.toString(), result.output)
                     val n = (sameResultTally[rk] ?: 0) + 1
                     sameResultTally[rk] = n
-                    if (n >= 4) loopResultStop = call.name
-                    else if (n >= 3 && failHint.isBlank()) failHint = "⚠️ كررت ${call.name} ثلاث مرات بنفس المدخلات ونفس النتيجة دون تقدّم. " +
+                    val discovery = call.name in DISCOVERY_TOOLS
+                    // أدوات الاستطلاع: تكرارها المتطابق لا قيمة له إطلاقاً — تصعيد مبكر (تلميح من الثانية، إيقاف من الثالثة).
+                    if (discovery && n == 2 && failHint.isBlank()) repeatHint =
+                        "⚠ هذا الاستدعاء الثاني لـ${call.name} بنفس المدخلات والناتج: الناتج لن يتغيّر مهما أعدتَه. " +
+                        "اعتمد هذه النتيجة وانتقل مباشرة إلى أداة العمل (قراءة/كتابة/دفع) أو اشرح العائق للمستخدم."
+                    if (n >= (if (discovery) 3 else 4)) loopResultStop = call.name
+                    else if (n >= 3 && failHint.isBlank() && repeatHint.isBlank()) failHint =
+                        "⚠️ كررت ${call.name} ثلاث مرات بنفس المدخلات ونفس النتيجة دون تقدّم. " +
                         "لا تُعدها: اعتمد النتيجة السابقة أو غيّر الأسلوب أو اشرح العائق للمستخدم."
                 }
                 publish(null)
                 stepNumber = okCount + failCount
-                injectResult(call.name, result.output)
+                val shown = if (repeatHint.isNotBlank()) result.output + "\n\n" + repeatHint.also { repeatHint = "" } else result.output
+                injectResult(call.name, shown)
                 memory.checkpoint(historyBuffer, "تابع المهمة من نتائج الأدوات المحفوظة؛ لا تكرر العمليات المنجزة.\n" + userRequest)
                 session?.recordTool(call.name, result.ok, result.output, path)
                 session?.let { CheckpointStore.save(prefs, it) }
-                "${if (result.ok) "✅" else "❌"} ${call.name}\n${result.output}"
+                "${if (result.ok) "✅" else "❌"} ${call.name}\n$shown"
             }
             session?.let { CheckpointStore.save(prefs, it) }
             val extra = StringBuilder()

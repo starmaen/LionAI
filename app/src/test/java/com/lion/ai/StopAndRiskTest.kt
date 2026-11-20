@@ -77,6 +77,18 @@ class StopAndRiskTest {
         ).forEach { assertNotNull(it, RiskPolicy.assess(call("shell_exec", it))) }
     }
 
+    @Test fun discoveryToolsLoopEscalationSetIsComplete() {
+        // أدوات الاستطلاع تتصاعد مبكراً عند التكرار المتطابق (تلميح من الثانية، إيقاف من الثالثة).
+        listOf(
+            "tools_schema", "tools_groups", "github_repo_overview", "github_list_tree",
+            "file_tree", "file_list", "list_dir", "repo_map"
+        ).forEach { assertTrue(it, it in ToolAgent.DISCOVERY_TOOLS) }
+        // أدوات العمل لا تدخل في التصعيد المبكر.
+        listOf("file_read", "file_write", "shell_exec", "github_commit_files", "wait_run").forEach {
+            assertFalse(it, it in ToolAgent.DISCOVERY_TOOLS)
+        }
+    }
+
     @Test fun riskApprovalIsPerOperationAndClearedForNewTask() {
         val m = TaskContinuity()
         m.begin("نظّف المشروع", false)
