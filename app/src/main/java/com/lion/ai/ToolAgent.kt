@@ -120,6 +120,21 @@ object ToolAgent {
         return READ_PERMISSION_SEEK.containsMatchIn(t)
     }
 
+    /**
+     * التدقيق الختامي الإلزامي يُخفَّض إلى حالات الشك الحقيقية فقط (تخفيف الحراسة):
+     * مهمة بتعديل مؤكد بنتيجة أداة ولا فشل في ذيلها تُختَم مباشرة بلا دورة زائدة تستهلك وقتاً وخطوات.
+     * CompletionGuard وبطاقات الإذن يظلان حارسَي الصدق بعد تخفيفه.
+     */
+    internal fun needsFinalAudit(
+        mutationIntent: Boolean,
+        readOnly: Boolean,
+        answerOnly: Boolean,
+        toolsUsed: Boolean,
+        okMutations: Int,
+        trailingFails: Int
+    ): Boolean = mutationIntent && !readOnly && !answerOnly && toolsUsed &&
+        (okMutations == 0 || trailingFails > 0)
+
     /** أدوات قراءة بلا أثر جانبي يصح تنفيذها معاً حين تأتي في دفعة واحدة. */
     internal val PARALLEL_READS = setOf(
         "file_read", "read_file", "file_read_many", "file_tree", "file_list", "list_dir", "file_search", "repo_map",
@@ -351,9 +366,12 @@ object ToolAgent {
         val modeBlock = if (profile.promptSuffix.isNotBlank() &&
             baseSystemPrompt.contains(profile.promptSuffix.take(60))
         ) "" else profile.promptSuffix
+        // المرحلة الحالية للمهمة: تتقدم مع أدوات المزود (استكشاف ← تعديل ← تحقق ← نشر)،
+        // وتُرتَّب قائمة الأدوات في التعليمات حسبها في كل خطوة (انظر AiTools.ToolPhase).
+        var currentPhase = ToolPhase.DISCOVERY
         fun buildSystem(g: Set<ToolGroup>, only: Set<String>? = null): String = baseSystemPrompt + modeBlock +
             AiTools.contextHint(contextText, prefs) + "\n\n" + PROMPT +
-            AiTools.spec(g, prefs, only) +
+            AiTools.spec(g, prefs, only, currentPhase) +
             (if (provider in LOCAL_PROVIDERS) LOCAL_TOOL_HINT else "") + resumeBlock
         // المزودات السحابية (خاصة المجانية) لها سقف سياق/معدّل: إن كبرت التعليمات نقلّص الأدوات للنواة
         // (والباقي متاح عبر tools_schema) بدل أن يفشل الطلب كاملاً.
@@ -371,34 +389,39 @@ object ToolAgent {
             resumeRaw.takeLast(2_000).length
         val toolBudget = (maxSystemChars - tailReserve).coerceAtLeast(maxSystemChars / 3)
         val core = coreGroups(effectiveGroups)
-        var system = fitSystem(
-            toolBudget,
-            { buildSystem(effectiveGroups) },
-            { buildSystem(core) },
-            { buildSystem(core, LEAN_TOOLS) },
-            { buildSystem(setOf(ToolGroup.META)) }
-        )
-        system += if (readOnly) "\nوضع جمع الأدلة (قراءة فقط): استخدم أدوات القراءة للتحقق من الوقائع، ولا تكتب ولا تعدّل ولا تنفّذ أي شيء." +
-            " لا تسأل المستخدم. أخرج حقائق موثقة بمصدرها (مسار الملف أو الرابط) وصرّح بما لم تستطع التحقق منه."
-        else if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
-            "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
+        // تعليمات المهمة تُبنى في كل خطوة من جديد: قائمة الأدوات تُرتَّب حسب مرحلة المهمة الحالية،
+        // فترى أدوات وقتها أولاً (استكشاف ← تعديل ← تحقق ← نشر) بدل قائمة جامدة.
+        fun assembleSystem(): String {
+            val base = fitSystem(
+                toolBudget,
+                { buildSystem(effectiveGroups) },
+                { buildSystem(core) },
+                { buildSystem(core, LEAN_TOOLS) },
+                { buildSystem(setOf(ToolGroup.META)) }
+            )
+            var s = base + if (readOnly) "\nوضع جمع الأدلة (قراءة فقط): استخدم أدوات القراءة للتحقق من الوقائع، ولا تكتب ولا تعدّل ولا تنفّذ أي شيء." +
+                " لا تسأل المستخدم. أخرج حقائق موثقة بمصدرها (مسار الملف أو الرابط) وصرّح بما لم تستطع التحقق منه."
+            else if (memory.writeGranted) "\n✅ إذن الكتابة ممنوح صراحةً لهذه المهمة. لا تطلب الإذن مجدداً ولا تستخدم [[ASK]] لطلبه؛ " +
+                "نفّذ الأداة المناسبة مباشرة، ولا تنفذ أعمالاً غير مرتبطة بالطلب الحالي."
             else "\nوضع القراءة والفحص فقط: المستخدم لم يأذن بتعديل. لا تكتب ولا ترفع ولا تنفذ أوامر تعديل؛ اسأل قبلها مرة واحدة فقط."
-        if (!readOnly && effectiveGroups.isNotEmpty() && (provider != LionOne.ID || LionOne.remoteFirstActive())) system += WorkMethod.PROMPT
-        if (effectiveGroups.isNotEmpty()) system += ScopeGuard.DIRECTIVE
-        // Export compact task context to web composers.
-        val permWrite = memory.writeGranted && !readOnly
-        val permBasis = when {
-            readOnly -> "read_only"
-            !permWrite -> "none"
-            prefs.getBoolean("auto_grant_write", false) -> "auto_grant"
-            else -> "user_command"
+            if (!readOnly && effectiveGroups.isNotEmpty() && (provider != LionOne.ID || LionOne.remoteFirstActive())) s += WorkMethod.PROMPT
+            if (effectiveGroups.isNotEmpty()) s += ScopeGuard.DIRECTIVE
+            // Export compact task context to web composers.
+            val permWrite = memory.writeGranted && !readOnly
+            val permBasis = when {
+                readOnly -> "read_only"
+                !permWrite -> "none"
+                prefs.getBoolean("auto_grant_write", false) -> "auto_grant"
+                else -> "user_command"
+            }
+            s += "\n" + WebToolBridge.CONTEXT_START +
+                "\n[LION_PERMISSIONS] write=${if (permWrite) "granted" else "denied"}; basis=$permBasis; " +
+                "settings_write=${profile.allowWrite && !readOnly}; verified_by=app" +
+                "\nوضع القراءة فقط: $readOnly؛ الكتابة في الإعدادات: ${profile.allowWrite && !readOnly}؛ إذن المهمة: ${memory.writeGranted && !readOnly}" +
+                "\n" + modeBlock.take(1_000) + AiTools.contextHint(contextText, prefs).take(2_000) +
+                "\n" + resumeRaw.takeLast(2_000) + "\n" + WebToolBridge.CONTEXT_END
+            return s
         }
-        system += "\n" + WebToolBridge.CONTEXT_START +
-            "\n[LION_PERMISSIONS] write=${if (permWrite) "granted" else "denied"}; basis=$permBasis; " +
-            "settings_write=${profile.allowWrite && !readOnly}; verified_by=app" +
-            "\nوضع القراءة فقط: $readOnly؛ الكتابة في الإعدادات: ${profile.allowWrite && !readOnly}؛ إذن المهمة: ${memory.writeGranted && !readOnly}" +
-            "\n" + modeBlock.take(1_000) + AiTools.contextHint(contextText, prefs).take(2_000) +
-            "\n" + resumeRaw.takeLast(2_000) + "\n" + WebToolBridge.CONTEXT_END
         val toolContext = ToolContext(
             context,
             prefs,
@@ -684,6 +707,8 @@ object ToolAgent {
             }
             compressHistory()
             publish("$label يخطط للخطوة ${step + 1}")
+            // التعليمات لكل خطوة بأدوات مرتبة حسب المرحلة الحالية للمهمة.
+            val system = assembleSystem()
             // صفحات الويب (خاصة نماذج التفكير بعد نتائج طويلة كسجل بناء) قد تحتاج دقائق للرد: مهلة 120ث كانت تقطع الرد
         // وتهجره في الصفحة. نمنحها حتى 6 دقائق للخطوة الواحدة.
         val stepCap = if (WebChatRuntime.handles(provider)) 360_000L else 120_000L
@@ -1050,9 +1075,16 @@ object ToolAgent {
                         "استدعِه الآن للفرع التجريبي نفسه (وليس الفرع الافتراضي) ثم أعطِ الملخص النهائي."
                     continue
                 }
-                // تدقيق ختامي إلزامي: لا يُقبل «تم» قبل أن يطابق المزود كل بند في طلب المستخدم بدليل أداة.
-                if (!finalAuditDone && used.isNotEmpty() && !readOnly && !answerOnly &&
-                    WriteIntent.hasMutationIntent(userRequest) && !WriteIntent.isReadOnlyRequest(userRequest) &&
+                // تدقيق ختامي عند الشك فقط (تخفيف الحراسة): مهمة موثقة بنتيجة أداة ناجحة وبلا فشل في الذيل تُختَم مباشرة.
+                if (!finalAuditDone &&
+                    needsFinalAudit(
+                        mutationIntent = WriteIntent.hasMutationIntent(userRequest),
+                        readOnly = readOnly,
+                        answerOnly = answerOnly,
+                        toolsUsed = used.isNotEmpty(),
+                        okMutations = okMutations,
+                        trailingFails = trailingFails
+                    ) &&
                     System.currentTimeMillis() + 45_000L < deadline
                 ) {
                     finalAuditDone = true
@@ -1375,6 +1407,11 @@ object ToolAgent {
                 "${if (result.ok) "✅" else "❌"} ${call.name}\n$shown"
             }
             session?.let { CheckpointStore.save(prefs, it) }
+            // تقدّم المرحلة: آخر أداة عملية في الدفعة تنقل مرحلة المهمة، فتُرتَّب الأدوات في التعليمات القادمة حسبها.
+            for (c in calls) {
+                val p = AiTools.phaseOf(c.name)
+                if (p != ToolPhase.SUPPORT && p != currentPhase) currentPhase = p
+            }
             val extra = StringBuilder()
             if (failStopKey.isNotBlank()) {
                 val tool = failStopKey.substringBefore('|')

@@ -28,6 +28,19 @@ enum class ToolGroup(val id: String, val label: String, val icon: String) {
     META("meta", "إدارة الأدوات", "🧭")
 }
 
+/**
+ * مراحل دورة العمل: كل أداة تنتمي إلى وقتها ومكانها (استكشاف ← تعديل ← تحقق ← نشر).
+ * تُرتَّب قائمة الأدوات في تعليمات المزود حسب المرحلة الحالية للمهمة،
+ * فتراه الأدوات الأقرب لعمله الآن أولاً بدل 242 أداة بلا ترتيب منهجي.
+ */
+enum class ToolPhase(val label: String) {
+    DISCOVERY("الاستكشاف والقراءة"),
+    EDIT("التعديل والكتابة"),
+    VERIFY("التحقق والفحص"),
+    PUBLISH("النشر إلى GitHub"),
+    SUPPORT("المرافق")
+}
+
 data class ToolResult(val name: String, val output: String, val ok: Boolean)
 
 data class ToolAuditEntry(
@@ -376,6 +389,43 @@ object AiTools {
 
     private val byName = defs.associateBy { it.name }
 
+    // ---- تصنيف الأدوات حسب مرحلة دورة العمل (وقت كل أداة ومكانها) ----
+
+    /** النشر والدفع: أدوات تُغيّر ما يعرفه الآخرون على GitHub. */
+    private val PUBLISH_NAMES = setOf(
+        "github_write_file", "github_delete_file", "github_commit_files", "github_push_workspace",
+        "github_create_branch", "github_create_pr", "github_merge_pr", "github_delete_branch",
+        "github_delete_branches", "github_dispatch", "github_pull"
+    )
+
+    /** التحقق: فحص الجودة والبناء وقراءة نتيجة CI. */
+    private val VERIFY_NAMES = setOf(
+        "code_doctor", "gate_run", "build_diagnose", "file_diff", "android_build",
+        "code_run", "github_wait_run", "github_get_run", "github_run_logs"
+    )
+
+    /** الاستكشاف: قراءة الواقع قبل البناء عليه. */
+    private val DISCOVERY_NAMES = setOf(
+        "tools_schema", "tools_groups", "todo_write", "todo_read",
+        "file_read", "read_file", "file_read_many", "file_tree", "file_list", "list_dir",
+        "file_search", "repo_map", "code_analyze_file",
+        "github_repo_overview", "github_list_tree", "github_read_file", "github_list_dir",
+        "github_search_code", "github_clone"
+    )
+
+    /** مجموعات دورة تطوير الكود: أدوات الكتابة فيها تُعدّ تعديلاً؛ كتابة الاتصالات/الموصلات مرافقة لا تنقل المرحلة. */
+    private val DEV_PHASE_GROUPS = setOf(ToolGroup.FILES, ToolGroup.SHELL, ToolGroup.CODE, ToolGroup.QUALITY, ToolGroup.CONTROL, ToolGroup.UTIL)
+
+    /** مرحلة الأداة: النشر ← التحقق ← الاستكشاف، ثم أداة كتابة في دورة الكود = تعديل، والباقي مرافق. */
+    fun phaseOf(name: String): ToolPhase {
+        if (name in PUBLISH_NAMES) return ToolPhase.PUBLISH
+        if (name in VERIFY_NAMES) return ToolPhase.VERIFY
+        if (name in DISCOVERY_NAMES) return ToolPhase.DISCOVERY
+        val def = byName[name]
+        if (def?.write == true && def.group in DEV_PHASE_GROUPS) return ToolPhase.EDIT
+        return ToolPhase.SUPPORT
+    }
+
     fun token(prefs: SharedPreferences): String =
         (prefs.getString("github_token", "") ?: "").trim()
 
@@ -596,7 +646,7 @@ object AiTools {
         names.mapNotNull { n -> defs.firstOrNull { it.name == n }?.let { "- ${it.name} ${it.signature}" } }
             .joinToString("\n")
 
-    fun spec(groups: Set<ToolGroup>, prefs: SharedPreferences, only: Set<String>? = null): String {
+    fun spec(groups: Set<ToolGroup>, prefs: SharedPreferences, only: Set<String>? = null, phase: ToolPhase? = null): String {
         if (groups.isEmpty()) return ""
         val available = defs.filter { def ->
             (def.connector == null || ConnectorAuth.isConnected(prefs, def.connector)) &&
@@ -641,6 +691,23 @@ object AiTools {
                 builder.append("الموصلات المربوطة: ").append(connected.joinToString("، ") { it.name })
                     .append(". استخدمها عند الحاجة إلى بيانات حقيقية بدل التخمين.\n")
             }
+        }
+        if (phase != null) {
+            // العرض المرحلي: أدوات المرحلة الحالية أولاً بأدواتها كاملة، ثم بقية المراحل بترتيب دورة العمل.
+            builder.append("المرحلة الحالية للمهمة: ").append(phase.label)
+                .append(" — أدواتها أولاً؛ واستخدم ما يلزم منها فقط في وقته.\n")
+            val order = listOf(phase) + ToolPhase.values().filter { it != phase }
+            order.forEach { p ->
+                val list = available.filter { phaseOf(it.name) == p }
+                if (list.isEmpty()) return@forEach
+                builder.append("\n[").append(if (p == phase) "◀ " else "").append("مرحلة ").append(p.label).append("]\n")
+                list.forEach { def ->
+                    builder.append("- ").append(def.name).append(' ').append(def.signature)
+                    if (def.write) builder.append(" [كتابة]")
+                    builder.append(" — ").append(def.description).append('\n')
+                }
+            }
+            return builder.toString()
         }
         ToolGroup.values().filter { it in groups }.forEach { group ->
             builder.append("\n[").append(group.icon).append(' ').append(group.label).append("]\n")
