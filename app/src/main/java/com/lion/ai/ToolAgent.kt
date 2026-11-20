@@ -258,6 +258,7 @@ object ToolAgent {
         الاستدعاء:
         - الصيغة الموحّدة: [[TOOL]]{"name":"اسم_الأداة","args":{...}}[[/TOOL]] (name≡tool وargs≡arguments/parameters)، بلا نص خارج JSON داخل الكتلة. إن كانت أدوات الاستدعاء الأصلية متاحة فاستخدمها.
         - حين يلزم فعل أرسل الاستدعاء مباشرة بلا مقدمة ولا شرح لصيغته؛ بعد النتيجة تابع. استخدم الأدوات عند الحاجة الفعلية فقط.
+        - أسماء الأدوات حرفية كما في القائمة: file_read (لا read)، file_write (لا write)، file_edit (لا edit)، execute_command (لا bash). لا تخترع اسماً؛ إن شككت استدعِ tools_schema.
         - قبل أي كتابة/حذف/دفع/إرسال/رفع/إنشاء موعد تأكد أن المستخدم طلبها صراحة في رسالته الحالية أو السابقة.
         - افحص قبل الإنشاء (مجلد/فرع/ملف موجود؟) واقرأ الملف قبل تعديله، ولا تعد خطوة نجحت.
         - ملف أو مجلد أو ZIP مطلوب: file_write ثم file_zip_create عند الحاجة ثم file_present؛ لا تلصق محتوى كبيراً في الرد، والمقاطع القصيرة في كتلة كود.
@@ -832,7 +833,11 @@ object ToolAgent {
                 )
             }
 
-            val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
+            // الاستدعاء الأصلي يمرّر ما يكتبه النموذج كما هو (read/write/bash…): نوحّد الاسم قبل التنفيذ.
+            val calls = if (nativeCalls.isNotEmpty()) {
+                val knownNames = AiTools.knownToolNames()
+                nativeCalls.map { ToolAliases.canonical(it, knownNames) }
+            } else AiTools.parseCalls(reply)
             // كتلة [[TOOL]] وصلت لكن لم تُحلَّل (JSON معطوب أو اسم أداة غير معروف): لا ننهي المهمة بصمت،
             // نطلب إعادة الكتلة نفسها بصيغة صحيحة (مرتان كحد أقصى).
             if (calls.isEmpty() && (reply.contains("[[TOOL") || reply.contains("DSML") || reply.contains("<tool_call")) && repairNudges < 2 &&
