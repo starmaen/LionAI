@@ -1197,6 +1197,7 @@ object AiTools {
             append("معاملات ناقصة أو غير صالحة في «").append(call.name).append("»: ")
             append(problems.joinToString("؛ ")).append('.')
             append(" المفاتيح المرسلة: ").append(sentBefore.joinToString("، ").ifBlank { "لا شيء" }).append('.')
+            append(ToolCallCodec.flatHint(call.name, sentBefore))
             if (def.signature.isNotBlank()) {
                 append(" التوقيع المتوقع: ").append(def.signature)
             }

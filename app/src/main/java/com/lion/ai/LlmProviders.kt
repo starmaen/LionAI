@@ -103,14 +103,10 @@ internal fun LlmClient.callOpenAiTools(
                 val fn = rawCalls.optJSONObject(index)?.optJSONObject("function") ?: continue
                 val name = fn.optString("name").trim()
                 if (name.isBlank()) continue
-                val args = when (val rawArgs = fn.opt("arguments")) {
-                    is JSONObject -> rawArgs
-                    is String -> runCatching { JSONObject(rawArgs) }.getOrDefault(JSONObject())
-                    else -> JSONObject()
-                }
+                val args = ToolCallCodec.extractArgs(fn, fn, fn.opt("arguments"))
                 // أسماء مثل read/write/bash (أسلوب Claude Code) تُترجم هنا، خارج حلقة الوكيل الضخمة.
                 val canonical = ToolAliases.resolve(name, AiTools.knownToolNames()).ifEmpty { name }
-                calls.add(ToolCall(canonical, args, ""))
+                calls.add(ToolCall(canonical, args, fn.toString().take(2000)))
             }
         }
         return LlmClient.ToolReply(text, calls)

@@ -71,6 +71,42 @@ object ToolCallCodec {
     private val NAME_KEYS = arrayOf("tool", "name", "tool_name", "toolname", "action", "call")
     private val ARG_KEYS = arrayOf("args", "arguments", "parameters", "params", "input")
 
+    /** يحلّل نص arguments؛ يصلح المقطوع إن أمكن وإلا يترك أثراً بدل {} الصامتة. */
+    internal fun parseArgString(raw: String): JSONObject {
+        val t = raw.trim()
+        if (t.isEmpty()) return JSONObject()
+        runCatching { JSONObject(t) }.getOrNull()?.let { return it }
+        val start = t.indexOf('{')
+        if (start >= 0) {
+            ToolMarkup.balancedJson(t, start)?.let { b ->
+                runCatching { JSONObject(b) }.getOrNull()?.let { return it }
+            }
+        }
+        return JSONObject().put("_unparsed_arguments", t.take(300))
+    }
+
+    /** المعاملات تحت args/arguments/... وإلا تُؤخذ المفاتيح المسطّحة بجانب اسم الأداة. */
+    internal fun extractArgs(json: JSONObject, function: JSONObject?, rawArgs: Any?): JSONObject {
+        val nested = asArgs(rawArgs)
+        if (nested.length() > 0) return nested
+        val src = function ?: json
+        val nameKey = src.keys().asSequence().firstOrNull { k -> NAME_KEYS.any { it.equals(k, true) } }
+        val skip = (ARG_KEYS.toList() + listOf("type", "id", "function")).map { it.lowercase() }
+        val flat = JSONObject()
+        src.keys().forEach { k ->
+            if (k == nameKey || k.lowercase() in skip) return@forEach
+            flat.put(k, src.get(k))
+        }
+        return flat
+    }
+
+    /** تلميح يُلحق برسالة الخطأ كي يصحّح النموذج الصيغة بنفسه. */
+    internal fun flatHint(name: String, sent: List<String>): String = when {
+        sent.contains("_unparsed_arguments") -> " الوسائط وصلت JSON مقطوعاً أو غير صالح؛ أعد الإرسال كاملاً."
+        sent.isEmpty() -> " لم تصل أي معاملات. ضعها كلها داخل args هكذا: [[TOOL]]{\"tool\":\"$name\",\"args\":{...}}[[/TOOL]]"
+        else -> ""
+    }
+
     /** يحوّل اسم الأداة الخام إلى اسم مسجّل معياري، أو "" إذا لم يُعرف. */
     internal fun normalizeName(raw: String, known: Set<String>): String {
         val trimmed = raw.trim()
@@ -87,9 +123,9 @@ object ToolCallCodec {
         .firstOrNull { key -> aliases.any { it.equals(key, ignoreCase = true) } }
         ?.let { key -> json.opt(key) }
 
-    private fun asArgs(raw: Any?): JSONObject = when (raw) {
+    internal fun asArgs(raw: Any?): JSONObject = when (raw) {
         is JSONObject -> raw
-        is String -> runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+        is String -> parseArgString(raw)
         else -> JSONObject()
     }
 
@@ -145,7 +181,7 @@ object ToolCallCodec {
                     ?.let { fn -> fn.keys().asSequence().firstOrNull { it.equals("arguments", true) || it.equals("parameters", true) || it.equals("args", true) }?.let { fn.opt(it) } }
                 val name = normalizeName(rawName, known)
                 if (name.isEmpty()) return@forEach
-                val args = asArgs(rawArgs)
+                val args = extractArgs(json, function, rawArgs)
                 val duplicate = found.any { it.name == name && it.args.toString() == args.toString() }
                 if (!duplicate) found.add(ToolCall(name, args, trimmed))
             }
