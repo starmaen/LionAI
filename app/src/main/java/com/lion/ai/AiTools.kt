@@ -121,7 +121,7 @@ object AiTools {
         Def("github_list_artifacts", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "مخرجات البناء (APK وغيرها)"),
         Def("github_download_artifact", ToolGroup.GITHUB, """{"repo":"owner/name","artifact_id":123,"name":"LionAI.zip"}""", "تنزيل مخرج بناء إلى مساحة العمل", true),
         Def("github_clone", ToolGroup.GITHUB, """{"repo":"owner/name","ref":"main","target":"repos/owner/name"}""", "تنزيل المستودع كامل وفك ضغطه في مساحة العمل", true),
-        Def("github_commit_files", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","message":"...","files":[{"path":"a.kt","content":"..."}],"delete":["old.txt"]}""", "commit واحد لعدة ملفات (تعديل/إنشاء/حذف)", true),
+        Def("github_commit_files", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"","message":"...","files":[{"path":"a.kt","content":"..."}],"delete":["old.txt"]}""", "commit واحد لعدة ملفات (تعديل/إنشاء/حذف). اترك branch فارغاً فيُستخدم فرع العمل النشط تلقائياً", true),
         Def("github_bootstrap_project", ToolGroup.GITHUB, """{"name":"my-app","description":"","private":true,"base":"main","branch":"feature/setup","files":[{"path":"README.md","content":"# ..."}],"gitignore":"Kotlin","license":"mit","open_pr":false}""", "إنشاء مشروع GitHub كامل: مستودع + ملفات أولية + فرع + Pull Request اختياري", true),
         Def("github_create_repo_from_template", ToolGroup.GITHUB, """{"template":"owner/template-repo","name":"my-app","description":"","private":true}""", "إنشاء مستودع من قالب GitHub جاهز", true),
 
@@ -256,9 +256,9 @@ object AiTools {
         Def("connector_request", ToolGroup.CONNECTORS, """{"path":"/items","method":"POST","body":"{}"}""", "طلب GET/POST/PUT/PATCH إلى خدمة REST المخصّصة", true, "generic"),
 
         // Developer execution loop
-        Def("github_push_workspace", ToolGroup.GITHUB, """{"repo":"owner/name","path":"repos/owner/name","branch":"main","message":"...","delete_missing":false,"dry_run":true,"confirm_large":false}""", "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً", true),
+        Def("github_push_workspace", ToolGroup.GITHUB, """{"repo":"owner/name","path":"repos/owner/name","branch":"","message":"...","delete_missing":false,"dry_run":true,"confirm_large":false}""", "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً. اترك branch فارغاً فيُستخدم فرع العمل النشط تلقائياً", true),
         Def("github_get_run", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "حالة عملية بناء واحدة"),
-        Def("github_wait_run", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"main","run_id":0,"timeout_sec":420}""", "انتظار انتهاء أحدث بناء ثم إرجاع سجل الفشل تلقائياً"),
+        Def("github_wait_run", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"","run_id":0,"timeout_sec":420}""", "انتظار انتهاء أحدث بناء على فرع العمل النشط (اترك branch فارغاً) ثم إرجاع سجل الفشل تلقائياً"),
         Def("github_run_logs", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123,"max_chars":12000}""", "سجل وظائف عملية بناء كامل (للفشل والنجاح)"),
         Def("github_compare", ToolGroup.GITHUB, """{"repo":"owner/name","base":"main","head":"feature"}""", "مقارنة فرعين: commits والملفات والفروق"),
         Def("github_pr_files", ToolGroup.GITHUB, """{"repo":"owner/name","number":1}""", "ملفات PR وتغييراتها"),
@@ -1327,12 +1327,30 @@ object AiTools {
             "github_read_file" -> {
                 val (owner, repo) = repoOf(ctx, args)
                 val path = req(args, "path")
-                val file = GitHubClient.readFile(token, owner, repo, path, args.optString("branch"))
-                if (file.binary) "$path — ملف ثنائي (${file.sha})" else
+                val attempted = runCatching { GitHubClient.readFile(token, owner, repo, path, args.optString("branch")) }
+                val file = attempted.getOrNull()
+                if (file != null && !file.binary) {
                     ContextBuilder.pageLines(
                         "${file.path} (${file.sha})", file.text, args.optInt("start_line", 0), args.optInt("end_line", 0),
                         args.optInt("max_chars", 20_000).coerceIn(2_000, 60_000), "github_read_file path=${file.path}"
                     )
+                } else if (file != null) {
+                    "$path — ملف ثنائي (${file.sha})"
+                } else {
+                    // الملف قد كُتب محلياً عبر file_write ولم يُرفع للمستودع بعد: نقرأ نسخته المحلية
+                    // بدل فشل 404 يحير النموذج ويوقظ حلقة إعادة المحاولة.
+                    val local = runCatching { FileTools.read(ctx.context, path, maxBytes = 1_000_000) }
+                        .getOrNull()?.takeIf { !it.binary }
+                    if (local != null) {
+                        ContextBuilder.pageLines(
+                            "$path (نسخة محلية في مساحة العمل لم تُرفع للمستودع بعد — ارفعها بـ github_push_workspace كي يقرأها GitHub)",
+                            local.text, args.optInt("start_line", 0), args.optInt("end_line", 0),
+                            args.optInt("max_chars", 20_000).coerceIn(2_000, 60_000), "github_read_file path=$path"
+                        )
+                    } else {
+                        throw attempted.exceptionOrNull() ?: IllegalStateException("تعذر قراءة $path")
+                    }
+                }
             }
             "github_latest_run" -> {
                 val (owner, repo) = repoOf(ctx, args)

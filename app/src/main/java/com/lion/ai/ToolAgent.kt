@@ -184,7 +184,8 @@ object ToolAgent {
         "build_diagnose", "shell_exec", "code_run", "android_build", "gate_run",
         "github_repo_overview", "github_list_tree", "github_read_file", "github_clone",
         "github_push_workspace", "github_wait_run", "github_run_logs", "github_create_branch",
-        "github_create_pr",
+        // github_commit_files ضمن الحزمة المختصرة كي لا يُضطر المزود لنداء tools_schema وسط المهمة لمعرفة معاملاته.
+        "github_commit_files", "github_create_pr",
         // أدوات تطلبها تعليمات الحلقة نفسها (دمج/تشغيل/تشخيص/حذف): يجب أن يرى المزود مخططها.
         "github_merge_pr", "github_dispatch", "github_get_run", "github_delete_branch",
         "code_doctor", "file_delete", "file_tree", "todo_write"
@@ -352,7 +353,7 @@ object ToolAgent {
         // (والباقي متاح عبر tools_schema) بدل أن يفشل الطلب كاملاً.
         // custom = خادمك الشخصي (سياق كبير). local_proxy يمرّر الطلب لمزود سحابي بسياق محدود، فيأخذ السقف السحابي.
         // lion-1 المدمج: سياق النموذج المحلي محدود (8K رمز افتراضياً)، فنضغط التعليمات
-        // بدل إغراق المحرّك بمخطط 234 أداة كاملة.
+        // بدل إغراق المحرّك بمخطط الأدوات الكامل (242 أداة).
         val maxSystemChars = when (provider) {
             "custom" -> 90_000
             LionOne.ID -> if (LionOne.remoteFirstActive()) 16_000 else 12_000
@@ -908,7 +909,8 @@ object ToolAgent {
                 // === بوابة التحقق الإلزامية (تعمل مع جميع المزودات) ===
                 val wroteCode = used.any { it == "file_write" || it == "file_edit" || it == "file_apply_patch" || it == "code_patch" ||
                     it == "push_workspace" || it == "commit_files" || it == "write_file" }
-                val verifiedCode = used.any { it == "code_doctor" || it == "gate_run" || it == "build_diagnose" || it == "code_analyze_file" }
+                val verifiedCode = used.any { it == "code_doctor" || it == "gate_run" || it == "build_diagnose" || it == "code_analyze_file" ||
+                    it == "android_build" || it == "code_run" }
                 
                 if (wroteCode && !verifiedCode) {
                     if (gateNudges < 2) {
@@ -937,7 +939,8 @@ object ToolAgent {
                     val report = ManifestStore.gate(prefs, session!!.chatId, manifest.root)
                     lastGateOk = report.ok
                     lastGateText = report.text()
-                    if (!report.ok && gateNudges < 2) {
+                    // تخفيف البوابة الميكانيكية: فرصة إصلاح واحدة فقط بدل اثنتين، ثم يُرفض الإنهاء بتقرير واضح بلا حلقات إضافية.
+                    if (!report.ok && gateNudges < 1) {
                         gateNudges++
                         session.recordNote("البوابة الميكانيكية رفضت الإنهاء")
                         CheckpointStore.save(prefs, session)
@@ -1337,7 +1340,7 @@ object ToolAgent {
                     val rk = CompletionGuard.resultKey(call.name, call.args.toString(), result.output)
                     val n = (sameResultTally[rk] ?: 0) + 1
                     sameResultTally[rk] = n
-                    if (n >= 5) loopResultStop = call.name
+                    if (n >= 4) loopResultStop = call.name
                     else if (n >= 3 && failHint.isBlank()) failHint = "⚠️ كررت ${call.name} ثلاث مرات بنفس المدخلات ونفس النتيجة دون تقدّم. " +
                         "لا تُعدها: اعتمد النتيجة السابقة أو غيّر الأسلوب أو اشرح العائق للمستخدم."
                 }
@@ -1363,9 +1366,9 @@ object ToolAgent {
                 )
             }
             if (loopResultStop.isNotBlank()) {
-                session?.recordNote("توقف: تكرار نتيجة متطابقة للأداة $loopResultStop خمس مرات")
+                session?.recordNote("توقف: تكرار نتيجة متطابقة للأداة $loopResultStop أربع مرات")
                 return finish(
-                    "توقفت لأن الأداة «$loopResultStop» أعادت النتيجة نفسها بالمدخلات نفسها 5 مرات دون تقدّم.\n" +
+                    "توقفت لأن الأداة «$loopResultStop» أعادت النتيجة نفسها بالمدخلات نفسها 4 مرات دون تقدّم.\n" +
                         "ما أُنجز محفوظ في سجل الخطوات. للمتابعة: غيّر المزود/النموذج أو أعطني توجيهاً مختلفاً.",
                     false, "تكرار نتيجة متطابقة: $loopResultStop"
                 )

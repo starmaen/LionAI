@@ -12,9 +12,16 @@ internal object RiskPolicy {
     data class Risk(val key: String, val label: String, val targets: List<String>)
 
     private val SENSITIVE_PATH = Regex("(?i)(keystore|\\.jks|\\.keystore|\\.env\\b|secrets?|signing|id_rsa|\\.pem)")
+
+    // أوامر القراءة/الفحص تُمرَّر تلقائياً (لا بطاقة عليها): القائمة أدناه حصرية للمدمِّر الفعلي،
+    // مع استثناء الفخاخ الشائعة: توجيه > /dev/null، وsudo داخل نص بحث، وgit clean -n الجاف، وأنبوب bash -n للتدقيق.
+    private val READ_ONLY_SHELL = Regex(
+        "(?i)(^|\\||&&|;)\\s*(ls|cat|head|tail|grep|rg|find|echo|pwd|wc|sort|uniq|diff|which|command|file|stat|du|df|git\\s+(status|log|diff|branch|show)|whoami|uname|env)\\b"
+    )
     private val DESTRUCTIVE_SHELL = Regex(
-        "(?i)(\\brm\\s+-[a-z]*[rf]|\\bgit\\s+push\\b.*(--force|-f\\b)|\\bgit\\s+reset\\s+--hard|\\bgit\\s+clean\\b|" +
-            "\\bchmod\\s+-R|\\bmkfs|\\bdd\\s+if=|\\bsudo\\b|\\|\\s*(sh|bash)\\b|>\\s*/dev/)"
+        "(?i)(\\brm\\s+-[a-z]*[rf]|\\bgit\\s+push\\b.*(--force|-f\\b)|\\bgit\\s+reset\\s+--hard|" +
+            "\\bgit\\s+clean\\s+(?=[^;&|]*(?:-[a-z]*[fdx]|--force))|\\bchmod\\s+-R|\\bmkfs|\\bdd\\s+if=|" +
+            "(?:^|&&|;|\\|)\\s*sudo\\b|\\|\\s*(?:sh|bash)\\b(?!\\s+-n\\b)|>\\s*/dev/(?!null))"
     )
 
     fun assess(call: ToolCall): Risk? {
@@ -36,9 +43,13 @@ internal object RiskPolicy {
                         (if (a.optBoolean("delete_missing")) " مع حذف ما ليس موجوداً محلياً" else "") +
                         (if (a.optBoolean("confirm_large")) " (دفعة كبيرة)" else "")) to listOf(s("path"), s("repo"))
                 else (null to emptyList())
-            "shell_exec", "execute_command" ->
-                if (DESTRUCTIVE_SHELL.containsMatchIn(s("command"))) ("أمر صدفة قد يكون مدمّراً: ${s("command").take(160)}" to listOf(s("command")))
+            "shell_exec", "execute_command" -> {
+                val cmd = s("command")
+                // القائمة البيضاء لأوامر القراءة تُمرَّر مباشرة حتى لو تضمنت كلمة تُراقب (مثل sudo داخل نص grep).
+                if (READ_ONLY_SHELL.containsMatchIn(cmd) && !DESTRUCTIVE_SHELL.containsMatchIn(cmd)) (null to emptyList())
+                else if (DESTRUCTIVE_SHELL.containsMatchIn(cmd)) ("أمر صدفة قد يكون مدمّراً: ${cmd.take(160)}" to listOf(cmd))
                 else (null to emptyList())
+            }
             "web_api" ->
                 if (AiTools.isMutation(call)) ("طلب ${s("method").uppercase()} خارجي إلى ${s("url").take(80)}" to listOf(s("url"))) else (null to emptyList())
             else -> (null to emptyList())

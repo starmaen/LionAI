@@ -20,7 +20,8 @@ class ToolBudgetTest {
     @Test
     fun leanSetKeepsTheEditBuildLoopAndDiscovery() {
         val lean = ToolAgent.LEAN_TOOLS
-        listOf("tools_schema", "file_read", "file_edit", "file_write", "android_build", "github_wait_run")
+        listOf("tools_schema", "file_read", "file_edit", "file_write", "android_build", "github_wait_run",
+            "github_push_workspace", "github_commit_files")
             .forEach { assertTrue("$it missing", it in lean) }
     }
 

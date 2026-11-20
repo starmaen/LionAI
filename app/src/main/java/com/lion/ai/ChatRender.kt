@@ -377,12 +377,13 @@ internal fun FileCard(path: String, context: Context) {
 
 internal const val ASK_MARK = "— 💬 أنتظر ردك"
 
-/** بطاقة قرار/صلاحية: خيارات قابلة للضغط + حقل ملاحظات، ثم يتابع الوكيل بعد الإرسال. */
+/** بطاقة قرار/صلاحية: شرح نصي غير قابل للتحديد + زرّا القرار الثابتان [موافق] و[رفض] + ملاحظات اختيارية. */
 @Composable
-internal fun AskCard(body: String, options: List<String>, enabled: Boolean, onSend: (String) -> Unit) {
-    var selected by remember(body) { mutableStateOf(-1) }
+internal fun AskCard(body: String, enabled: Boolean, onSend: (String) -> Unit) {
     var note by remember(body) { mutableStateOf("") }
-    val choices = if (options.isEmpty()) listOf("✅ موافق، تابع", "⛔ لا تنفّذ") else options
+    fun send(decision: String) {
+        onSend(decision + if (note.isNotBlank()) "\nملاحظات: ${note.trim()}" else "")
+    }
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = Color(0xFF1B1710),
@@ -393,26 +394,24 @@ internal fun AskCard(body: String, options: List<String>, enabled: Boolean, onSe
             Text("يحتاج العمل قرارك للمتابعة", color = Color(0xFFFFB800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             if (body.isNotBlank()) MdText(body, Color(0xFFE9E9E9))
-            Spacer(Modifier.height(8.dp))
-            choices.forEachIndexed { i, label ->
-                val on = i == selected
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (on) Color(0xFF2E2511) else Color(0xFF16130C))
-                        .border(1.dp, if (on) Color(0xFFFFB800) else Color(0xFF332B16), RoundedCornerShape(10.dp))
-                        .clickable(enabled = enabled) { selected = i }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(if (on) "◉" else "○", color = Color(0xFFFFB800), fontSize = 14.sp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(label, color = Color(0xFFEDEDED), fontSize = 13.sp)
-                }
+            Spacer(Modifier.height(10.dp))
+            // زرّا القرار مثبّتان دائماً أسفل البطاقة: إرادة المستخدم هي المحدّد، ولا يُرسل نص الشرح أبداً كردّ.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = { send("✅ موافق، تابع") },
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800), contentColor = Color(0xFF121212))
+                ) { Text("✅ موافق", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = { send("⛔ لا تنفّذ") },
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16130C), contentColor = Color(0xFFFFB800)),
+                    border = BorderStroke(1.dp, Color(0xFF5A4A1E))
+                ) { Text("⛔ رفض", fontWeight = FontWeight.Bold) }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
@@ -427,15 +426,6 @@ internal fun AskCard(body: String, options: List<String>, enabled: Boolean, onSe
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(6.dp))
-            Button(
-                enabled = enabled && selected >= 0,
-                onClick = {
-                    val choice = choices.getOrNull(selected).orEmpty()
-                    onSend(choice + if (note.isNotBlank()) "\nملاحظات: ${note.trim()}" else "")
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800), contentColor = Color(0xFF121212))
-            ) { Text("متابعة", fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -457,13 +447,9 @@ internal fun MessageContent(
         segs.forEach { seg ->
             when (seg) {
                 is Seg.Text -> if (askAt >= 0 && seg === segs.last()) {
-                    val lines = seg.text.lines()
-                    val options = lines.map { it.trim() }
-                        .filter { it.startsWith("- ") || it.startsWith("• ") }
-                        .map { it.drop(2).trim() }
-                    val body = lines.filterNot { it.trim().startsWith("- ") || it.trim().startsWith("• ") }
-                        .joinToString("\n").trim()
-                    AskCard(AnswerGuard.sanitizeForDisplay(body), options, askEnabled, onAskReply)
+                    // فقرات الشرح (لماذا أسأل/نطاق الموافقة/لو رفضت…) تبقى نصاً غير قابل للتحديد؛
+                    // القرار عبر زرّي «موافق/رفض» الثابتين في AskCard بدل تحويلها إلى خيارات ◉/○.
+                    AskCard(AnswerGuard.sanitizeForDisplay(seg.text.trim()), askEnabled, onAskReply)
                 } else {
                     MdText(if (isUser) seg.text else Glyphs.modernize(AnswerGuard.sanitizeForDisplay(seg.text)), color)
                 }
@@ -472,7 +458,7 @@ internal fun MessageContent(
             }
         }
         if (askAt >= 0 && (segs.isEmpty() || segs.last() !is Seg.Text)) {
-            AskCard("", emptyList(), askEnabled, onAskReply)
+            AskCard("", askEnabled, onAskReply)
         }
     }
 }

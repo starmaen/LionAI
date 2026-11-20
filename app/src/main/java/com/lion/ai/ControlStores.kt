@@ -349,11 +349,10 @@ object PipelineStore {
         if (chatId.isBlank()) return true
         val state = read(prefs, chatId)
         if (state == null) {
-            // لا دورة حياة ولا Manifest = مشروع قائم أو مهمة إصلاح عادية: الكتابة مسموحة.
-            // Manifest اختياري (كما تقول manifest_read نفسها)؛ كان رفضه هنا يسبب
-            // «لا يوجد Manifest / لا يمكن تجاوز البوابة» في كل مشروع موجود.
-            val manifest = ManifestStore.read(prefs, chatId) ?: return true
-            return manifest.approved
+            // لا دورة حياة = مشروع قائم أو مهمة إصلاح عادية: الكتابة مسموحة دائماً.
+            // Manifest اختياري ومشاوري هنا: وجوده دون اعتماد لا يحظر الكتابة بعد،
+            // فالإقفال كان يسبّب «لا يمكن تجاوز البوابة» في كل مشروع قائم بدون سبب.
+            return true
         }
         return state.manifestApproved &&
             state.phase in setOf(
