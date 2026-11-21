@@ -49,6 +49,8 @@ internal class AndroidWebSessionHost(
     private val pool = linkedMapOf<String, WebView>()
     private val chatIds = mutableMapOf<String, String>()
     private val loads = mutableMapOf<WebView, WebPageLoad>()
+    /** LION-WEBFIX-1: آخر رد 403/429/503 لصفحة رئيسية؛ لا يُعدّ فشلاً نهائياً قبل أن تُكمل الصفحة تحققها. */
+    private val softHttp = mutableMapOf<WebView, Pair<Int, Long>>()
     private var displayedProvider: String? = null
     private val script = activity.assets.open("web-session.js").bufferedReader().use { it.readText() }
     private var pending: Pending? = null
@@ -234,6 +236,7 @@ internal class AndroidWebSessionHost(
         val basePrompt: String = request.prompt,
         var attachedAt: Long = 0L,
         var busyTicks: Int = 0,
+        var jsMisses: Int = 0,
         /** عدد التمديدات الممنوحة بعد انتهاء المهلة الأساسية ما دامت الصفحة حيّة وترد على الاستطلاع. */
         var pollExtends: Int = 0,
         /** محاولة استشفاء تلقائية واحدة فقط قبل الإرسال (لا تتكرر أبداً بعد الإرسال). */
@@ -355,6 +358,7 @@ internal class AndroidWebSessionHost(
         view.webViewClient = object : WebViewClient() {
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 load.start(url)
+                softHttp.remove(v)
                 level(adapter.id, WebSessionStatus.Level.AMBER, "جارٍ تحميل الصفحة")
                 reportLoad(adapter, "جارٍ تحميل ${load.origin}")
             }
@@ -381,6 +385,11 @@ internal class AndroidWebSessionHost(
             override fun onReceivedHttpError(v: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                 if (request.isForMainFrame) {
                     val code = response.statusCode
+                    if (code == 403 || code == 429 || code == 503) {
+                        softHttp[v] = code to System.currentTimeMillis()
+                        reportLoad(adapter, "HTTP $code من الموقع؛ أنتظر اكتمال تحقق الصفحة قبل الحكم")
+                        return
+                    }
                     val hint = if (code == 401 || code == 403)
                         " قد يحجب الموقع (Google/Microsoft) الصفحة حسب البلد أو الشبكة أو لأنها داخل تطبيق. جرّب «المتصفح» على الشبكة نفسها؛ إن فشلت هناك فالحجب من الخادم ولا يُحل من التطبيق."
                     else " افتح الجلسة للتحقق أو أعد تحميلها."
@@ -751,8 +760,16 @@ internal class AndroidWebSessionHost(
     }
     private fun fail(p: Pending, message: String) {
         finish(p, WebSessionTransport.Reply("⚠️ $message" +
-            (if (p.submitted) " قد أُرسلت الرسالة؛ لن تُعاد تلقائياً." else ""), false, p.submitted))
+            (if (p.submitted) " قد أُرسلت الرسالة؛ لن تُعاد تلقائياً." else "") + (if (message.startsWith("أُلغي")) "" else diagTail(p)), false, p.submitted))
     }
+    /** سطر تشخيص قصير يكشف أين توقفت الرسالة: مرحلة/حالة/تحميل/نطاق الصفحة/HTTP. */
+    private fun diagTail(p: Pending): String = runCatching {
+        val origin = WebPageLoad.originOf(p.view.url.orEmpty())
+        val phase = loads[p.view]?.phase?.name ?: "?"
+        val http = softHttp[p.view]?.first?.let { " http=$it" }.orEmpty()
+        "\n[تشخيص: مرحلة=${p.stage} حالة=${p.lastStatus} تحميل=$phase صفحة=$origin$http]"
+    }.getOrDefault("")
+
     private fun finish(p: Pending, reply: WebSessionTransport.Reply) {
         if (pending !== p) return
         p.tickRunnable?.let { main.removeCallbacks(it) }
@@ -871,7 +888,22 @@ internal class AndroidWebSessionHost(
         if (p.stage == "attach" || p.stage == "prepare" || p.stage == "submit" || p.stage == "locate" || p.stage == "enter") {
             acquireEditorFocus(p.view)
         }
+        val jsReplied = booleanArrayOf(false)
+        main.postDelayed({
+            if (!jsReplied[0] && pending === p && !destroyed) {
+                p.jsMisses++
+                if (p.jsMisses >= 3) {
+                    fail(p, "عارض الويب لا يرد على أوامر التطبيق (3 محاولات × 10 ثوانٍ): الصفحة معلّقة أو مخفية. أعد فتح التطبيق أو افتح الجلسة من الإعدادات ثم أعد المحاولة.")
+                } else {
+                    runCatching { p.view.onResume(); p.view.resumeTimers() }
+                    status(p, "الصفحة لم ترد على الفحص خلال 10ث؛ أعيد المحاولة (${p.jsMisses}/3)")
+                    scheduleTick(p, 200L)
+                }
+            }
+        }, 10_000L)
         p.view.evaluateJavascript(js) { raw ->
+            jsReplied[0] = true
+            p.jsMisses = 0
             if (pending !== p || destroyed) return@evaluateJavascript
             val decoded = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
             val result = runCatching { JSONObject(decoded ?: "{}") }.getOrNull()
@@ -883,6 +915,14 @@ internal class AndroidWebSessionHost(
                 // الصفحة تولّد (زر إيقاف ظاهر) حتى لو لم يظهر نص بعد (تفكير/بحث): لا نقطع الانتظار.
                 if (p.submitted && result.optBoolean("generating", false)) bump(p)
                 result.optString("diag").takeIf { it.isNotBlank() }?.let { p.lastDiag = it }
+                if (state == "ready") softHttp.remove(p.view)
+                if (!p.submitted && (state == "needs_input" || state == "loading")) {
+                    val soft = softHttp[p.view]
+                    if (soft != null && System.currentTimeMillis() - soft.second > 25_000L) {
+                        fail(p, "الموقع رد HTTP ${soft.first} (صفحة تحقق أو حجب) ولم يظهر حقل الدردشة خلال 25 ثانية. افتح الجلسة وأكمل التحقق يدوياً، أو جرّب «المتصفح» على الشبكة نفسها؛ لم تُرسل الرسالة.")
+                        return@evaluateJavascript
+                    }
+                }
                 when (state) {
                     "origin" -> {
                         val actual = result.optString("actualOrigin", "unknown")

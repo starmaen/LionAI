@@ -20,10 +20,16 @@ data class WebSiteAdapter(
     /** مداخل بديلة لنفس الخدمة تُجرَّب آلياً عند فشل تحميل المدخل الأساسي (رفض/تحويل). */
     val altUrls: List<String> = emptyList()
 ) {
-    fun accepts(url: String): Boolean = runCatching {
-        val uri = URI(url)
-        uri.scheme == "https" && uri.host?.lowercase() in hosts && uri.userInfo == null
-    }.getOrDefault(false)
+    fun accepts(url: String): Boolean {
+        val strict = runCatching {
+            val uri = URI(url)
+            uri.scheme == "https" && uri.host?.lowercase() in hosts && uri.userInfo == null
+        }.getOrNull()
+        if (strict != null) return strict
+        // LION-WEBFIX-1: عنوان فيه محارف لا يقبلها java.net.URI كان يُعدّ «صفحة أخرى» فيفشل الطلب قبل الكتابة.
+        val m = Regex("^https://([^/?#@\\s]+)", RegexOption.IGNORE_CASE).find(url.trim()) ?: return false
+        return m.groupValues[1].substringBefore(':').lowercase() in hosts
+    }
 
     fun entries(): List<String> = (listOf(url) + altUrls).distinct()
 
@@ -224,9 +230,11 @@ object WebSiteAdapters {
         return extra + host + bare + "www.$bare"
     }
 
-    fun all(): List<WebSiteAdapter> = build(
-        PROVIDERS.filter { it.group == ProviderGroup.WEB }, UserWebSites.entries()
-    )
+    fun all(): List<WebSiteAdapter> {
+        val infos = PROVIDERS.filter { it.group == ProviderGroup.WEB }
+        val added = runCatching { UserWebSites.entries() }.getOrDefault(emptyList())
+        return infos.flatMap { info -> runCatching { build(listOf(info), added) }.getOrDefault(emptyList()) }
+    }
 
     /**
      * محددات كل مزود ويب. [added] بطاقات ما أضافه المستخدم بالرابط: نطاقها من رابطها، ومهلها من
