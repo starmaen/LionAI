@@ -26,7 +26,9 @@ class AgentMethodologyTest {
         assertNotNull(NativeToolRoutes.route("groq"))
         assertNotNull(NativeToolRoutes.route("openrouter"))
         assertNotNull(NativeToolRoutes.route("deepseek"))
-        listOf("gemini", "claude", "cohere", "openai", "custom", "local_proxy").forEach {
+        // OpenAI: Function Calling الأصلي مفعّل (max_completion_tokens بلا temperature) مع رجوع تلقائي للنص عند الرفض.
+        assertNotNull(NativeToolRoutes.route("openai"))
+        listOf("gemini", "claude", "cohere", "custom", "local_proxy").forEach {
             assertNull("$it must stay on the text protocol", NativeToolRoutes.route(it))
         }
     }

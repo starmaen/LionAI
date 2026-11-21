@@ -57,8 +57,8 @@ class NativeFallbackPolicyTest {
     }
 
     @Test
-    fun openAiStaysOnTextProtocolButHasModernParametersReady() {
-        assertEquals(null, NativeToolRoutes.route("openai"))
+    fun openAiUsesNativeToolsWithModernParameters() {
+        assertTrue(NativeToolRoutes.route("openai") != null)
         assertEquals("max_completion_tokens" to true, NativeToolRoutes.requestParams("openai"))
         assertEquals("max_tokens" to false, NativeToolRoutes.requestParams("groq"))
     }
