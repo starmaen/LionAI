@@ -1765,9 +1765,10 @@
   "group": "github",
   "args": {
    "repo": "owner/name",
-   "run_id": 123
+   "run_id": 0,
+   "branch": ""
   },
-  "description": "حالة عملية بناء واحدة",
+  "description": "حالة عملية بناء واحدة (اترك run_id=0 لأحدث عملية على الفرع أو المستودع)",
   "write": false,
   "connector": null
  },

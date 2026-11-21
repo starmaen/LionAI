@@ -611,7 +611,7 @@ object GitHubClient {
         }
     }
 
-    private fun fetchBytes(path: String, token: String, maxBytes: Int): ByteArray {
+    private fun fetchBytes(path: String, token: String, maxBytes: Int, tail: Boolean = false): ByteArray {
         var current = URL(if (path.startsWith("http")) path else API + path)
         var hops = 0
         while (hops < 6) {
@@ -644,14 +644,27 @@ object GitHubClient {
                 connection.inputStream.use { input ->
                     val buffer = ByteArray(8192)
                     var total = 0
-                    while (total < maxBytes) {
-                        val read = input.read(buffer, 0, minOf(buffer.size, maxBytes - total))
+                    val deadline = System.currentTimeMillis() + TAIL_SCAN_MS
+                    while (true) {
+                        if (tail) {
+                            if (total >= TAIL_SCAN_BYTES || System.currentTimeMillis() > deadline) break
+                        } else if (total >= maxBytes) {
+                            break
+                        }
+                        val want = if (tail) buffer.size else minOf(buffer.size, maxBytes - total)
+                        val read = input.read(buffer, 0, want)
                         if (read <= 0) break
                         output.write(buffer, 0, read)
                         total += read
+                        if (tail && output.size() > maxBytes * 2) {
+                            val all = output.toByteArray()
+                            output.reset()
+                            output.write(all, all.size - maxBytes, maxBytes)
+                        }
                     }
                 }
-                return output.toByteArray()
+                val all = output.toByteArray()
+                return if (tail && all.size > maxBytes) all.copyOfRange(all.size - maxBytes, all.size) else all
             } finally {
                 connection.disconnect()
             }
@@ -667,6 +680,18 @@ object GitHubClient {
         )
         return String(bytes, Charsets.UTF_8)
     }
+
+    /** آخر [maxBytes] من سجل المهمة: أخطاء Gradle تظهر في النهاية، فالقراءة من البداية كانت تفوّتها أو تنتهي مهلتها. */
+    fun jobLogTail(token: String, owner: String, repo: String, jobId: Long, maxBytes: Int = 400_000): String {
+        val keep = maxBytes.coerceIn(10_000, 2_000_000)
+        val bytes = fetchBytes("/repos/${encode(owner)}/${encode(repo)}/actions/jobs/$jobId/logs", token, keep, tail = true)
+        val text = String(bytes, Charsets.UTF_8)
+        // القص قد يقع وسط سطر/حرف: نتجاوز الجزء الأول المبتور.
+        return if (bytes.size >= keep) text.substringAfter('\n', text) else text
+    }
+
+    private const val TAIL_SCAN_BYTES = 40_000_000
+    private const val TAIL_SCAN_MS = 90_000L
 
     data class JobAnnotation(val path: String?, val startLine: Int?, val endLine: Int?, val title: String?, val message: String?)
 

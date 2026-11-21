@@ -270,7 +270,7 @@ object AiTools {
 
         // Developer execution loop
         Def("github_push_workspace", ToolGroup.GITHUB, """{"repo":"owner/name","path":"repos/owner/name","branch":"","message":"...","delete_missing":false,"dry_run":true,"confirm_large":false}""", "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً. اترك branch فارغاً فيُستخدم فرع العمل النشط تلقائياً", true),
-        Def("github_get_run", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "حالة عملية بناء واحدة"),
+        Def("github_get_run", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":0,"branch":""}""", "حالة عملية بناء واحدة (اترك run_id=0 لأحدث عملية على الفرع أو المستودع)"),
         Def("github_wait_run", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"","run_id":0,"timeout_sec":420}""", "انتظار انتهاء أحدث بناء على فرع العمل النشط (اترك branch فارغاً) ثم إرجاع سجل الفشل تلقائياً"),
         Def("github_run_logs", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123,"max_chars":12000}""", "سجل وظائف عملية بناء كامل (للفشل والنجاح)"),
         Def("github_compare", ToolGroup.GITHUB, """{"repo":"owner/name","base":"main","head":"feature"}""", "مقارنة فرعين: commits والملفات والفروق"),
@@ -1090,7 +1090,6 @@ object AiTools {
         "github_rerun" to listOf("run_id"),
         "github_cancel" to listOf("run_id"),
         "github_list_artifacts" to listOf("run_id"),
-        "github_get_run" to listOf("run_id"),
         "github_run_logs" to listOf("run_id"),
         "github_job_log" to listOf("job_id"),
         "github_download_artifact" to listOf("artifact_id"),
@@ -2315,8 +2314,17 @@ $code
                         if (runId <= 0L) throw IllegalArgumentException("لا توجد عمليات بناء لهذا المستودع")
                         val jobs = GitHubClient.listRunJobs(token, owner, repo, runId)
                         val failing = jobs.filter { it.conclusion == "failure" }.ifEmpty { jobs }
-                        failing.joinToString("\n") { job ->
-                            runCatching { GitHubClient.jobLog(token, owner, repo, job.id, 1_500_000) }.getOrDefault("")
+                        // الأخطاء في ذيل سجل Gradle: نقرأ آخر 500KB فقط ونكتفي بثلاث مهام فاشلة كي لا تنتهي المهلة.
+                        failing.take(3).joinToString("\n") { job ->
+                            runCatching { GitHubClient.jobLogTail(token, owner, repo, job.id, 500_000) }
+                                .getOrDefault("")
+                                .ifBlank {
+                                    runCatching { GitHubClient.jobAnnotations(token, owner, repo, job.id) }
+                                        .getOrDefault(emptyList())
+                                        .joinToString("\n") { a ->
+                                            "${a.path.orEmpty()}:${a.startLine ?: 0} — ${a.title.orEmpty()} ${a.message.orEmpty()}".trim()
+                                        }
+                                }
                         }
                     }
                 }
@@ -2493,7 +2501,14 @@ $code
             }
             "github_get_run" -> {
                 val (owner, repo) = repoOf(ctx, args)
-                val run = GitHubClient.getWorkflowRun(token, owner, repo, args.optLong("run_id"))
+                var runId = args.optLong("run_id", 0L)
+                if (runId <= 0L) {
+                    // run_id اختياري: نأخذ أحدث عملية (على الفرع إن حُدد) بدل رفض النداء وإدخال النموذج في حلقة استكشاف.
+                    runId = GitHubClient.listWorkflowRuns(token, owner, repo, 5, branch = args.optString("branch").trim())
+                        .firstOrNull()?.id ?: 0L
+                    if (runId <= 0L) throw IllegalArgumentException("لا توجد عمليات بناء لهذا المستودع")
+                }
+                val run = GitHubClient.getWorkflowRun(token, owner, repo, runId)
                 runSummary(run) + "\n" + GitHubClient.listRunJobs(token, owner, repo, run.id)
                     .joinToString("\n") { "• ${it.name}: ${it.status}/${it.conclusion}" }
             }

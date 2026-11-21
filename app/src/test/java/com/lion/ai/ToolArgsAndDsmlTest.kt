@@ -55,6 +55,9 @@ class ToolArgsAndDsmlTest {
         assertNotNull(AiTools.validateArgs(ToolCall("github_rerun", JSONObject().put("run_id", 0))))
         assertNull(AiTools.validateArgs(ToolCall("github_rerun", JSONObject().put("run_id", 987654L))))
 
+        // github_get_run: run_id اختياري (الأحدث عند الحذف) فلا يُرفض النداء الفارغ ولا يدخل النموذج في حلقة استكشاف.
+        assertNull(AiTools.validateArgs(ToolCall("github_get_run", JSONObject().put("repo", "owner/name"))))
+
         assertNotNull(AiTools.validateArgs(ToolCall("github_comment_issue", JSONObject().put("body", "hi"))))
         assertNull(
             AiTools.validateArgs(
