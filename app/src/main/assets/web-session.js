@@ -138,6 +138,18 @@
     if (!n) return '';
     const clone = n.cloneNode(true);
     clone.querySelectorAll('button, svg, script, style, [aria-hidden="true"]').forEach(x => x.remove());
+    // LION-LIVE-1: عناصر منسّقة تبقى مقروءة في الشات؛ لا تمسّ كتل الكود.
+    try {
+      clone.querySelectorAll('a[href]').forEach(function (a) {
+        const href = a.getAttribute('href') || '', label = (a.textContent || '').trim();
+        if (/^https?:\/\//i.test(href) && label && label.indexOf(href.replace(/^https?:\/\//i, '')) === -1 && !a.closest('pre'))
+          a.appendChild(document.createTextNode(' (' + href + ')'));
+      });
+      clone.querySelectorAll('li').forEach(function (li) { if (!li.closest('pre')) li.insertBefore(document.createTextNode('• '), li.firstChild); });
+      clone.querySelectorAll('h1, h2, h3, h4').forEach(function (h) { h.insertBefore(document.createTextNode('## '), h.firstChild); });
+      clone.querySelectorAll('td, th').forEach(function (c) { c.appendChild(document.createTextNode(' | ')); });
+      clone.querySelectorAll('tr').forEach(function (r) { r.appendChild(document.createTextNode('\n')); });
+    } catch (e) {}
     clone.querySelectorAll('pre').forEach(pre => {
       const code = pre.querySelector('code') || pre;
       const language = (code.className || '').match(/language-([a-zA-Z0-9_+-]+)/);
@@ -558,6 +570,18 @@
       }
       delete window.__lionSessionRequest;
       return result('halted', {clicked: clicked});
+    }
+    if (action === 'mirror_tick') {
+      // LION-LIVE-1: مراقب DOM يرفع عدّاداً عند أي تغيير؛ المضيف يلتقط المحادثة فور هدوء الصفحة.
+      let m = window.__lionMirror;
+      if (!m) {
+        m = window.__lionMirror = {ver: 0, at: Date.now()};
+        try {
+          new MutationObserver(function () { m.ver++; m.at = Date.now(); })
+            .observe(document.body || document.documentElement, {childList: true, subtree: true, characterData: true});
+        } catch (e) {}
+      }
+      return result('mirror', {ver: m.ver, quiet: Date.now() - m.at, generating: genericStop() || !!find(C.stop)});
     }
     if (action === 'capture') {
       // عكس محادثة الصفحة كاملة إلى التطبيق: قراءة بلا كتابة ولا نقر ولا تغيير حالة.

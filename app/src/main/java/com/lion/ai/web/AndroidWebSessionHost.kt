@@ -96,8 +96,8 @@ internal class AndroidWebSessionHost(
     private val captureTick = object : Runnable {
         override fun run() {
             if (destroyed || !interactive) return
-            if (pending == null) captureCurrent()
-            main.postDelayed(this, 2_000L)
+            if (pending == null) mirrorProbe()
+            main.postDelayed(this, 600L)
         }
     }
 
@@ -1170,6 +1170,40 @@ internal class AndroidWebSessionHost(
         val chatId = chatIds[id]?.takeIf { it.isNotBlank() } ?: ActiveChat.id
         if (pending != null) return
         runCapture(adapter, view, chatId, System.currentTimeMillis() + 12_000L)
+    }
+
+    private var mirrorVer = -1L
+    private var mirrorFullAt = 0L
+    private var mirrorBusy = false
+    private var mirrorBusyAt = 0L
+
+    /** LION-LIVE-1: فحص خفيف بعدّاد تغيّر DOM؛ لا التقاط كامل إلا بعد هدوء الصفحة (لا فقاعات ناقصة أثناء التوليد). */
+    private fun mirrorProbe() {
+        val id = displayedProvider ?: return
+        val adapter = WebSiteAdapters.get(id, prefs) ?: return
+        val view = pool[id] ?: return
+        val nowStart = SystemClock.uptimeMillis()
+        if (mirrorBusy && nowStart - mirrorBusyAt < 5_000L) return
+        if (loads[view]?.phase != WebPageLoad.Phase.READY || !adapter.accepts(view.url.orEmpty())) return
+        mirrorBusy = true
+        mirrorBusyAt = nowStart
+        view.evaluateJavascript(render(adapter, "mirror", "mirror_tick")) { raw ->
+            mirrorBusy = false
+            if (destroyed || pending != null) return@evaluateJavascript
+            val decoded = runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull()
+            val obj = runCatching { JSONObject(decoded ?: "{}") }.getOrNull() ?: return@evaluateJavascript
+            if (obj.optString("status") != "mirror") return@evaluateJavascript
+            val ver = obj.optLong("ver", -1L)
+            val quiet = obj.optLong("quiet", 0L)
+            val generating = obj.optBoolean("generating", false)
+            val now = SystemClock.uptimeMillis()
+            val changed = ver != mirrorVer && !generating && quiet >= 700L && now - mirrorFullAt > 1_200L
+            if (changed || now - mirrorFullAt > 10_000L) {
+                mirrorVer = ver
+                mirrorFullAt = now
+                captureCurrent()
+            }
+        }
     }
 
     override fun cancel(token: String) {
