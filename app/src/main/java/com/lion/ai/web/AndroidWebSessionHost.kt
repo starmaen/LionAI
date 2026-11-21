@@ -97,7 +97,7 @@ internal class AndroidWebSessionHost(
         override fun run() {
             if (destroyed || !interactive) return
             if (pending == null) captureCurrent()
-            main.postDelayed(this, 3_500L)
+            main.postDelayed(this, 2_000L)
         }
     }
 
@@ -889,18 +889,30 @@ internal class AndroidWebSessionHost(
             acquireEditorFocus(p.view)
         }
         val jsReplied = booleanArrayOf(false)
+        // LION-WEBFIX-2: لا نفشل ولا نقطع أبداً أثناء رفع ملف أو بعد تسليم الرسالة: الصفحة مشغولة لا معلّقة.
+        val uploading = p.stage == "attach" || p.stage == "attach_wait"
         main.postDelayed({
             if (!jsReplied[0] && pending === p && !destroyed) {
-                p.jsMisses++
-                if (p.jsMisses >= 3) {
-                    fail(p, "عارض الويب لا يرد على أوامر التطبيق (3 محاولات × 10 ثوانٍ): الصفحة معلّقة أو مخفية. أعد فتح التطبيق أو افتح الجلسة من الإعدادات ثم أعد المحاولة.")
-                } else {
+                if (uploading) {
+                    bump(p)
+                    status(p, "رفع الملف إلى الصفحة قيد المعالجة؛ أواصل الانتظار دون إعادة الإرسال")
+                } else if (p.submitted) {
+                    bump(p)
                     runCatching { p.view.onResume(); p.view.resumeTimers() }
-                    status(p, "الصفحة لم ترد على الفحص خلال 10ث؛ أعيد المحاولة (${p.jsMisses}/3)")
-                    scheduleTick(p, 200L)
+                    status(p, "الصفحة مشغولة وتواصل العمل؛ لا أقطع الرد")
+                    scheduleTick(p, 500L)
+                } else {
+                    p.jsMisses++
+                    if (p.jsMisses >= 6) {
+                        fail(p, "عارض الويب لا يرد على أوامر التطبيق (6 محاولات × 10 ثوانٍ) قبل الإرسال: الصفحة معلّقة أو مخفية. أعد فتح التطبيق أو افتح الجلسة من الإعدادات ثم أعد المحاولة.")
+                    } else {
+                        runCatching { p.view.onResume(); p.view.resumeTimers() }
+                        status(p, "الصفحة لم ترد على الفحص خلال 10ث؛ أعيد المحاولة (${p.jsMisses}/6)")
+                        scheduleTick(p, 200L)
+                    }
                 }
             }
-        }, 10_000L)
+        }, if (uploading) 90_000L else 10_000L)
         p.view.evaluateJavascript(js) { raw ->
             jsReplied[0] = true
             p.jsMisses = 0
