@@ -169,14 +169,23 @@ object ToolAgent {
      * ينفّذ نداءً بطيئاً في خيط منفصل ويراقب مقاطعة المستخدم؛ عند المقاطعة يتخلى عنه فوراً ويعيد null
      * (يكتمل الخيط وحده لاحقاً ويُهمل ناتجه). إلغاء المحادثة نفسها يرمي CancellationException من delay فوراً.
      */
-    private suspend fun <T> abortable(chatId: String, block: suspend () -> T): T? {
+    private suspend fun <T> abortable(chatId: String, onAbort: () -> Unit = {}, block: suspend () -> T): T? {
         val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
         val job = scope.async { block() }
-        while (!job.isCompleted) {
-            if (chatId.isNotBlank() && AgentInterrupt.isPending(chatId)) { job.cancel(); return null }
-            kotlinx.coroutines.delay(200)
+        try {
+            while (!job.isCompleted) {
+                if (chatId.isNotBlank() && AgentInterrupt.isPending(chatId)) return null
+                kotlinx.coroutines.delay(200)
+            }
+            return job.await()
+        } finally {
+            // LION-AGENT-2: أي خروج قبل اكتمال الطلب (مقاطعة أو إلغاء الوكيل نفسه) كان يترك الطلب يتيماً:
+            // الصفحة تواصل التوليد وقفل الجلسة محجوز لدقائق. نلغي الطلب ونوقف الصفحة صراحةً.
+            if (!job.isCompleted) {
+                job.cancel()
+                runCatching { onAbort() }
+            }
         }
-        return job.await()
     }
 
     private val LOCAL_FILE_MUTATIONS = setOf("file_apply_patch", "file_edit", "file_write", "file_move", "file_copy", "file_delete", "file_mkdir")
@@ -289,6 +298,7 @@ object ToolAgent {
         الاستدعاء:
         - الصيغة الموحّدة: [[TOOL]]{"name":"اسم_الأداة","args":{...}}[[/TOOL]] (name≡tool وargs≡arguments/parameters)، بلا نص خارج JSON داخل الكتلة. كل معاملات الأداة (path/repo/…) داخل args دائماً، لا بجانب name. إن كانت أدوات الاستدعاء الأصلية متاحة فاستخدمها.
         - حين يلزم فعل أرسل الاستدعاء مباشرة بلا مقدمة ولا شرح لصيغته؛ بعد النتيجة تابع. استخدم الأدوات عند الحاجة الفعلية فقط.
+        - الكفاءة: اجمع القراءات المستقلة في رد واحد بعدة كتل [[TOOL]] متتالية (مثلاً 3–5 ملفات معاً)؛ تُنفَّذ بالتوازي وتصلك نتائجها كلها في رد واحد فتُوفّر جولات كثيرة. التعديل والدفع يبقيان خطوة بخطوة.
         - أسماء الأدوات حرفية كما في القائمة: file_read (لا read)، file_write (لا write)، file_edit (لا edit)، execute_command (لا bash). لا تخترع اسماً؛ إن شككت استدعِ tools_schema.
         - قبل أي كتابة/حذف/دفع/إرسال/رفع/إنشاء موعد تأكد أن المستخدم طلبها صراحة في رسالته الحالية أو السابقة.
         - افحص قبل الإنشاء (مجلد/فرع/ملف موجود؟) واقرأ الملف قبل تعديله، ولا تعد خطوة نجحت.
@@ -528,6 +538,8 @@ object ToolAgent {
         private var buildNudges = 0
         private var lastGateOk = true
         private var lastGateText = ""
+        /** LION-AGENT-1: كود عُدّل ولم يُفحص بعد آخر تعديل. */
+        private var codeUnverified = false
         private var deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(30_000L)
         private val hardDeadline = System.currentTimeMillis() + HARD_LIMIT_MS
         private val answerOnly = answerOnly(userRequest, memory.resume, chatMode)
@@ -754,7 +766,7 @@ object ToolAgent {
         // نداء المزود قابل للإلغاء الفوري: يراقب طلب المستخدم (إيقاف/ملاحظة) كل 200ms ويتخلى عن الطلب الجاري
         // بدل أن ينتظر اتصالاً بطيئاً (مزودات API لا تُقطع بإلغاء الـ coroutine وحده).
         val chatKey = session?.chatId.orEmpty()
-        val callResult = abortable(chatKey) {
+        val callResult = abortable(chatKey, onAbort = { if (WebChatRuntime.handles(provider)) WebSessionTransport.haltGeneration(chatKey) }) {
             val tt = if (nativeTools != null && nativeTools.length() > 0) {
                 LlmClient.askWithTools(
                     message = prompt,
@@ -933,7 +945,7 @@ object ToolAgent {
                 "ثم أجب بما وجدته. الإذن مطلوب فقط للكتابة/الحذف/الدفع/الإرسال/التثبيت."
             return Turn.Next(current)
         }
-        if (calls.isEmpty() && effectiveGroups.isNotEmpty() && !answerOnly && isCapabilityDenial(reply)) {
+        if (calls.isEmpty() && effectiveGroups.isNotEmpty() && !answerOnly && okCount == 0 && isCapabilityDenial(reply)) {
             if (capabilityNudges < 3 && System.currentTimeMillis() + 45_000 < deadline) {
                 capabilityNudges++
                 session?.recordNote("المزود نفى وصوله للأدوات؛ ذُكّر بالبروتوكول ($capabilityNudges/3)")
@@ -986,7 +998,7 @@ object ToolAgent {
             val verifiedCode = used.any { it == "code_doctor" || it == "gate_run" || it == "build_diagnose" || it == "code_analyze_file" ||
                 it == "android_build" || it == "code_run" }
             
-            if (wroteCode && !verifiedCode) {
+            if (wroteCode && (!verifiedCode || codeUnverified)) {
                 if (gateNudges < 2) {
                     gateNudges++
                     session?.recordNote("بوابة التحقق رفضت الإنهاء: تعديل كود دون فحص")
@@ -1503,6 +1515,7 @@ object ToolAgent {
             if (result.ok) {
                 if (mutating) okMutations++
                 okCount++
+                if (call.name in VERIFY_TOOLS) codeUnverified = false
                 argErrors = 0
                 if (call.name in READ_CONTINUE) {
                     lastReadName = call.name
@@ -1514,12 +1527,12 @@ object ToolAgent {
                     if (call.name in GATE_WRITE_TOOLS) {
                         writtenFiles.add(path.takeLast(60))
                         // بوابة الفحص تخص الكود الحقيقي فقط: كتابة مستندات (md/txt…) لا تطلب code_doctor.
-                        if (codePathTouched(path)) codeTouched.add(path)
+                        if (codePathTouched(path)) { codeTouched.add(path); codeUnverified = true }
                     } else readFiles.add(path.takeLast(60))
                 }
                 // الدفع/الرفع الجماعي: استخراج مسارات الكود المعدّلة من نتيجة العملية نفسها.
                 if (call.name in setOf("github_push_workspace", "github_commit_files")) {
-                    CODE_PATH_IN_OUTPUT.findAll(result.output).forEach { codeTouched.add(it.value) }
+                    CODE_PATH_IN_OUTPUT.findAll(result.output).forEach { codeTouched.add(it.value); codeUnverified = true }
                 }
             } else {
                 failCount++
@@ -1705,6 +1718,12 @@ object ToolAgent {
         )
         else -> null
     }
+
+    /** LION-AGENT-1: أدوات تُعدّ فحصاً للكود بعد التعديل. */
+    private val VERIFY_TOOLS = setOf(
+        "code_doctor", "gate_run", "build_diagnose", "code_analyze_file", "code_project_analyze",
+        "android_build", "code_run", "github_wait_run"
+    )
 
     private val GATE_WRITE_TOOLS = setOf(
         "file_write", "write_file", "file_append", "file_edit", "file_apply_patch", "file_delete", "file_move",
