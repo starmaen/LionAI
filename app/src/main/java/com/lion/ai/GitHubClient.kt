@@ -1063,7 +1063,7 @@ object GitHubClient {
     }
 
     /** تعليقات Issue أو Pull Request. */
-    fun listComments(token: String, owner: String, repo: String, number: Int): String {
+    fun commentsText(token: String, owner: String, repo: String, number: Int): String {
         val array = JSONArray(request("/repos/${encode(owner)}/${encode(repo)}/issues/$number/comments?per_page=50", token))
         if (array.length() == 0) return "لا توجد تعليقات على #$number."
         return (0 until array.length()).mapNotNull { array.optJSONObject(it) }.joinToString("\n\n") { c ->

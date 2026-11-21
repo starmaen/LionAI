@@ -2678,7 +2678,7 @@ $code
             }
             "github_list_comments" -> {
                 val (owner, repo) = repoOf(ctx, args)
-                GitHubClient.listComments(token, owner, repo, args.optInt("number"))
+                GitHubClient.commentsText(token, owner, repo, args.optInt("number"))
             }
             "github_list_releases" -> {
                 val (owner, repo) = repoOf(ctx, args)
