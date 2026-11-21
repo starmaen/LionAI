@@ -27,6 +27,16 @@ class LiveStreamTest {
     }
 
     @Test
+    fun parsesGeminiStreamLines() {
+        val line = """data: {"candidates":[{"content":{"parts":[{"text":"مرحبا "},{"text":"بك"}]}}]}"""
+        assertEquals("مرحبا بك", LiveStream.parseGeminiLine(line))
+        assertNull(LiveStream.parseGeminiLine("""data: {"candidates":[{"content":{"parts":[{"text":"فكرة","thought":true}]}}]}"""))
+        assertNull(LiveStream.parseGeminiLine(""))
+        assertNull(LiveStream.parseGeminiLine("data: not json"))
+        assertNull(LiveStream.parseGeminiLine("""data: {"candidates":[{"finishReason":"STOP"}]}"""))
+    }
+
+    @Test
     fun detectsDoneMarker() {
         assertTrue(LiveStream.isDone("data: [DONE]"))
         assertTrue(LiveStream.isDone("  data:[DONE]  "))

@@ -132,6 +132,15 @@ jobs:
     - name: Static analysis (detekt)
       run: ./gradlew detekt --stacktrace
 
+    # يتأكد أن اختبارات الجهاز (androidTest) تُترجم دائماً؛ تشغيلها على محاكي في android-test.yml.
+    - name: Compile androidTest sources
+      run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
+
+    # تقرير Lint للقراءة فقط الآن (لا يفشل البناء) لقياس التحذيرات قبل تشديد abortOnError.
+    - name: Android Lint report (non-blocking)
+      continue-on-error: true
+      run: ./gradlew lintDebug --stacktrace
+
     - name: Run unit tests
       run: |
         set -o pipefail
@@ -230,5 +239,6 @@ jobs:
         path: |
           build/reports/detekt/
           app/build/reports/kover/
+          app/build/reports/lint-results-debug.*
         if-no-files-found: ignore
         retention-days: 14
