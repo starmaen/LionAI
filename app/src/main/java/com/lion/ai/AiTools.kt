@@ -304,7 +304,7 @@ object AiTools {
     Def("file_apply_patch", ToolGroup.FILES, """{"path":"src/Main.kt","patch":"@@ -1,2 +1,2 @@\n ...","backup":true}""", "تطبيق unified diff بدقة ورفض عدم التطابق", true),
 
         // Meta / tool discovery
-        Def("tools_schema", ToolGroup.META, """{"group":"${ToolGroup.values().joinToString("|") { it.id }}"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
+        Def("tools_schema", ToolGroup.META, """{"group":"github|web|files|database|firebase|code|util|connectors|comms|shell|quality|control|memory|mcp|meta"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
         Def("tools_request_access", ToolGroup.META, """{"resource":"github|files|shell|connector|android permission","reason":"سبب الحاجة للوصول"}""", "طلب الوصول عبر بطاقة القرار؛ لا يمنح صلاحيات تلقائياً"),
         Def("tools_groups", ToolGroup.META, "{}", "حالة مجموعات الأدوات والموصلات والصلاحيات"),
         Def("todo_write", ToolGroup.META, """{"items":[{"text":"الخطوة","status":"pending|in_progress|done"}]}""", "كتابة/تحديث خطة المهام (قائمة خطوات بحالاتها) لتتبّع التقدّم في المهام الطويلة؛ تستبدل الخطة السابقة كاملة"),

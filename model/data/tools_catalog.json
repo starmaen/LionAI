@@ -2065,7 +2065,7 @@
   "name": "tools_schema",
   "group": "meta",
   "args": {
-   "group": "github|files|code|comms|web|database|util|connectors"
+   "group": "github|web|files|database|firebase|code|util|connectors|comms|shell|quality|control|memory|mcp|meta"
   },
   "description": "تحميل مخطط أدوات مجموعة لم تظهر في السياق",
   "write": false,
