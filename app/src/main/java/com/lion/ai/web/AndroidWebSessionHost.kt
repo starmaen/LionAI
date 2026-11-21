@@ -193,6 +193,11 @@ internal class AndroidWebSessionHost(
         }
     }
 
+    /** حالات ما بعد تسليم الرسالة تدل أن الصفحة حيّة وتعمل على الرد (حتى لو بلا نص مرئي بعد). */
+    private val liveAfterSubmit = setOf("awaiting_ack", "clicked", "sent", "waiting", "streaming")
+    /** أقصى عدد تمديدات 60ث فوق المهلة الأساسية؛ السقف المطلق hardLimit يبقى الحماية النهائية. */
+    private val maxPollExtends = 4
+
     private data class Pending(
         var request: WebSessionTransport.Request,
         val adapter: WebSiteAdapter,
@@ -221,8 +226,8 @@ internal class AndroidWebSessionHost(
         val basePrompt: String = request.prompt,
         var attachedAt: Long = 0L,
         var busyTicks: Int = 0,
-        /** فرصة أخيرة واحدة: عند «النقرة غير المؤكدة» نكمل الفحص عبر poll قبل الاستسلام. */
-        var pollRetried: Boolean = false,
+        /** عدد التمديدات الممنوحة بعد انتهاء المهلة الأساسية ما دامت الصفحة حيّة وترد على الاستطلاع. */
+        var pollExtends: Int = 0,
         /** محاولة استشفاء تلقائية واحدة فقط قبل الإرسال (لا تتكرر أبداً بعد الإرسال). */
         var recovered: Boolean = false,
         var tickRunnable: Runnable? = null,
@@ -570,6 +575,15 @@ internal class AndroidWebSessionHost(
         val existing = pool[id]
         if (existing == null) { viewFor(adapter); return }
         val url = existing.url?.takeIf { it.startsWith("https://") } ?: adapter.url
+        // إعادة التحميل تمسح بروتوكول الأدوات الذي حفظته الصفحة: ننسي حالة الجسر هنا وإلا وصلت
+        // رسالة الاستكمال («نتائج الأدوات…») بلا ترويسة البروتوكول فيتوقف الموقع عن إصدار كتل
+        // [[TOOL]] بعد التحديث إطلاقاً (سبب فعلي لفقدان اتصال الأدوات). والعودة للمدخل الأساسي
+        // تعني صفحة بلا محادثتنا: تُعامل كصفحة جديدة تماماً (سياق كامل عند أول طلب قادم).
+        if (url != adapter.url) WebToolBridge.resetMode(id)
+        else {
+            WebToolBridge.resetPage(id)
+            chatIds.remove(id)
+        }
         loads[existing]?.start(url)
         existing.loadUrl(url)
     }
@@ -773,26 +787,28 @@ internal class AndroidWebSessionHost(
             return
         }
         if (System.currentTimeMillis() >= p.deadline) {
+            // الرسالة سُلّمت والصفحة ما زالت ترد على الاستطلاع (يعني أن محرك الصفحة حيّ): نمهدد
+            // الانتظار بدل قطع نموذج تفكير عميق يعمل بصمت بلا نص مرئي وبلا مؤشر توليد قابل للكشف
+            // (لذلك لم يكن bump() يُستدعى أصلًا). كل تمديد 60ث وبحد 4 مرات، والسقف المطلق يبقى مطبقاً.
+            // وإن أعلن الجسر «send_unconfirmed» بعد 45ث من النقرة فشل الطلب فوراً في الاستطلاع التالي.
+            if (p.submitted && p.lastStatus in liveAfterSubmit && p.pollExtends < maxPollExtends) {
+                p.pollExtends++
+                p.stage = "poll"
+                p.deadline = minOf(System.currentTimeMillis() + 60_000L, p.hardLimit)
+                WebSessionTransport.extend(p.request.token, p.deadline)
+                status(p, "الصفحة ما زالت تعمل على الرد؛ أمهلته 60ث إضافية (${p.pollExtends}/$maxPollExtends)")
+                scheduleTick(p, 700L)
+                return
+            }
             // Send already happened and a new answer was captured — return it rather
-            // than dropping a reply that is sitting on the page.
+            // than dropping a reply that is sitting on the page. لا يُنفّذ إلا بعد استنفاد
+            // التمديدات أعلاه، كي لا يُعاد نص جزئي كرد ناجح بينما الصفحة تكتب فعلاً.
             if (p.submitted && p.lastText.isNotBlank() &&
                 p.lastStatus in setOf("streaming", "waiting", "sent", "complete")
             ) {
-                val cut = if (p.lastStatus == "streaming")
+                val cut = if (p.lastStatus != "complete")
                     "\n\n⚠️ انتهت مهلة الانتظار والموقع ما زال يكتب؛ قد يكون الرد ناقصاً. افتح الجلسة لرؤية بقيته." else ""
                 finish(p, WebSessionTransport.Reply(p.lastText.trim() + cut, true, true))
-                return
-            }
-            // النقرة قد وصلت لكن إثبات التسليم تأخر: فرصة أخيرة واحدة عبر poll (إثبات الصفحة
-            // نفسها: ظهور الرسالة أو جواب جديد) قبل إعلان الفشل. الجواب المبكر الوهمي كان
-            // يظهر رغم أن الصفحة تعمل فعلاً.
-            if (!p.pollRetried && p.submitted && p.lastStatus in setOf("awaiting_ack", "clicked", "sent")) {
-                p.pollRetried = true
-                p.stage = "poll"
-                p.deadline = minOf(System.currentTimeMillis() + 45_000L, p.hardLimit)
-                WebSessionTransport.extend(p.request.token, p.deadline)
-                status(p, "لم يتأكد الإرسال بعد؛ أتابع فحص الصفحة 45ث إضافية قبل الاستسلام")
-                scheduleTick(p, 700L)
                 return
             }
             val message = when (p.lastStatus) {

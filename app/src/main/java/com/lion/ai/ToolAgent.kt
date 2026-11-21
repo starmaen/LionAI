@@ -744,7 +744,13 @@ object ToolAgent {
         // صفحات الويب (خاصة نماذج التفكير بعد نتائج طويلة كسجل بناء) قد تحتاج دقائق للرد: مهلة 120ث كانت تقطع الرد
     // وتهجره في الصفحة. نمنحها حتى 6 دقائق للخطوة الواحدة.
     val stepCap = if (WebChatRuntime.handles(provider)) 360_000L else 120_000L
-    val readTimeout = (deadline - System.currentTimeMillis()).coerceIn(10_000L, stepCap).toInt()
+    // صفحات الويب: الخطوة الواحدة تأخذ سقفها الكامل حتى قرب نهاية ميزانية المهمة؛ ضغطها ببقية
+    // قصيرة كان يقتل خطوة تعمل فعلاً (نموذج تفكير عميق على صفحة الويب) فيتوقف العمل كله بمهلة
+    // زائفة. المهلة داخل نقل الجلسة تتجدد بالنشاط والسقف المطلق (hardLimit) يبقى مطبقاً عند
+    // نقاط فحص الحلقة، فلا خطر من انتظار مفتوح.
+    val remainingMs = deadline - System.currentTimeMillis()
+    val readTimeout = if (WebChatRuntime.handles(provider)) stepCap.toInt()
+        else remainingMs.coerceIn(10_000L, stepCap).toInt()
         // نداء المزود قابل للإلغاء الفوري: يراقب طلب المستخدم (إيقاف/ملاحظة) كل 200ms ويتخلى عن الطلب الجاري
         // بدل أن ينتظر اتصالاً بطيئاً (مزودات API لا تُقطع بإلغاء الـ coroutine وحده).
         val chatKey = session?.chatId.orEmpty()
