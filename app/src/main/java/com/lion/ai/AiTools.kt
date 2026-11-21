@@ -304,7 +304,7 @@ object AiTools {
     Def("file_apply_patch", ToolGroup.FILES, """{"path":"src/Main.kt","patch":"@@ -1,2 +1,2 @@\n ...","backup":true}""", "تطبيق unified diff بدقة ورفض عدم التطابق", true),
 
         // Meta / tool discovery
-        Def("tools_schema", ToolGroup.META, """{"group":"github|files|code|comms|web|database|util|connectors"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
+        Def("tools_schema", ToolGroup.META, """{"group":"${ToolGroup.values().joinToString("|") { it.id }}"}""", "تحميل مخطط أدوات مجموعة لم تظهر في السياق"),
         Def("tools_request_access", ToolGroup.META, """{"resource":"github|files|shell|connector|android permission","reason":"سبب الحاجة للوصول"}""", "طلب الوصول عبر بطاقة القرار؛ لا يمنح صلاحيات تلقائياً"),
         Def("tools_groups", ToolGroup.META, "{}", "حالة مجموعات الأدوات والموصلات والصلاحيات"),
         Def("todo_write", ToolGroup.META, """{"items":[{"text":"الخطوة","status":"pending|in_progress|done"}]}""", "كتابة/تحديث خطة المهام (قائمة خطوات بحالاتها) لتتبّع التقدّم في المهام الطويلة؛ تستبدل الخطة السابقة كاملة"),
@@ -1122,6 +1122,25 @@ object AiTools {
         "manifest_create" to listOf("files")
     )
 
+    /** مجموعة tools_schema: من group، أو من اسم أداة معروفة أرسلها النموذج (tool/tool_name/name). */
+    private fun schemaGroup(args: JSONObject): ToolGroup? {
+        val raw = args.optString("group").trim().lowercase()
+        ToolGroup.values().firstOrNull { it.id == raw || it.name.lowercase() == raw }?.let { return it }
+        return listOf("tool", "tool_name", "name").asSequence()
+            .map { args.optString(it).trim() }
+            .firstOrNull { it.isNotBlank() && byName.containsKey(it) }
+            ?.let { byName[it]?.group }
+    }
+
+    /** قائمة المجموعات مع عدد أدوات كل منها: ما يراه النموذج حين يستدعي tools_schema بلا group. */
+    private fun groupsOverview(): String = buildString {
+        append("tools_schema يحتاج المعامل group (مثال: tools_schema {\"group\":\"files\"}). المجموعات المتاحة:\n")
+        ToolGroup.values().forEach { g ->
+            append("• ").append(g.id).append(" — ").append(g.label).append(": ").append(defs.count { it.group == g }).append(" أداة\n")
+        }
+        append("ويمكنك تمرير اسم أداة (tool) لتحصل على مجموعتها.")
+    }
+
     /**
      * فحص شامل ومسبق لوسائط الأداة قبل أي اتصال شبكي أو تعديل ملفات.
      * يعيد رسالة خطأ عربية جامعة لكل الحقول الناقصة/الخاطئة مع التوقيع المتوقع، أو null عند الصحة.
@@ -1201,7 +1220,8 @@ object AiTools {
             }
             "tools_schema" -> {
                 val raw = args.optString("group").trim().lowercase()
-                val ok = ToolGroup.values().any { it.id == raw || it.name.lowercase() == raw }
+                // بلا group (أو باسم أداة معروفة) لا خطأ: التنفيذ يعيد قائمة المجموعات أو مجموعة تلك الأداة.
+                val ok = raw.isBlank() || schemaGroup(args) != null
                 if (!ok) {
                     problems.add(
                         "«group» مطلوب من القيم: " + ToolGroup.values().joinToString(", ") { it.id }
@@ -2459,12 +2479,16 @@ $code
             "tools_request_access" -> throw IllegalStateException("طلب الوصول يحتاج جلسة وكيل تفاعلية وبطاقة قرار؛ لم تُمنح أي صلاحية")
             "tools_schema" -> {
                 val raw = args.optString("group").trim().lowercase()
-                val group = ToolGroup.values().firstOrNull { it.id == raw || it.name.lowercase() == raw }
-                    ?: throw IllegalArgumentException(
+                val group = schemaGroup(args)
+                if (group == null && raw.isBlank()) {
+                    groupsOverview()
+                } else {
+                    val target = group ?: throw IllegalArgumentException(
                         "مجموعة غير معروفة. المتاح: " + ToolGroup.values().joinToString(", ") { it.id }
                     )
-                spec(setOf(group), ctx.prefs).ifBlank {
-                    "لا أدوات متاحة في «$raw» حالياً. قد تحتاج ربط موصل أو تفعيل الأدوات من الإعدادات."
+                    spec(setOf(target), ctx.prefs).ifBlank {
+                        "لا أدوات متاحة في «${target.id}» حالياً. قد تحتاج ربط موصل أو تفعيل الأدوات من الإعدادات."
+                    }
                 }
             }
             "todo_write" -> {

@@ -372,6 +372,9 @@ class AgentSession(val chatId: String) {
                 else builder.append('\n')
             }
         }
+        // تلميح الأدوات في الذيل (يبقى عند اقتطاع ملخص الاستئناف لمزودات الويب): group معامل إلزامي.
+        builder.append("أدوات: tools_schema يتطلب group من: ").append(ToolGroup.values().joinToString(", ") { it.id })
+            .append("؛ وtools_groups لحالة المجموعات.\n")
         // الاقتطاع من المنتصف لا من الذيل: نحافظ على رأس الملخص (المهمة/الإذن/الملفات) وآخر الخطوات معاً.
         val limit = maxChars.coerceIn(800, 12_000)
         val text = builder.toString()

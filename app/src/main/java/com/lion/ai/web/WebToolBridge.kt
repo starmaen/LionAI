@@ -54,7 +54,7 @@ object WebToolBridge {
         أدوات شائعة: file_tree, file_read, file_write, file_edit, file_apply_patch, file_diff, code_doctor, gate_run,
         github_repo_overview, github_list_tree, github_read_file, github_search_code, github_push_workspace,
         github_dispatch, github_wait_run, github_run_logs, build_diagnose, execute_command.
-        لمخطط أي أداة استدعِ tools_schema، ولبقية المجموعات استدعِ tools_groups.
+        لمخطط مجموعة أدوات استدعِ tools_schema مع المعامل group (مثال: tools_schema {"group":"files"})، ولحالة المجموعات والصلاحيات استدعِ tools_groups.
         المجموعات: github, web, files, database, firebase, code, util, connectors, comms, shell, quality, control, memory, mcp, meta.
         للتعديل النصي في ملف موجود استخدم file_edit (old = النص الحالي حرفياً، new = الجديد) فهو أوثق من file_apply_patch.
         للسرعة: اجمع كل الأدوات المستقلة في رد واحد (كتلة [[TOOL]] لكل أداة) بدل أداة واحدة في كل رد؛ فكل رد = جولة كاملة عبر الصفحة.

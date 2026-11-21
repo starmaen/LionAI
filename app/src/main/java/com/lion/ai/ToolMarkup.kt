@@ -69,6 +69,16 @@ object ToolMarkup {
         return out.replace(STRAY, "").replace(FENCED_EMPTY, "").replace(Regex("\\n{3,}"), "\n\n").trim()
     }
 
+    // محاولة استدعاء فعلية = الوسم متبوعاً ببداية JSON له مفتاح (`{"name":` أو `{name:`).
+    // ذكر الوسم في شرح («[[TOOL]]» وحده أو «[[TOOL]]{...}[[/TOOL]]») ليس محاولة ولا يستوجب تنبيه إصلاح.
+    private val TOOL_ATTEMPT = Regex("\\[\\[TOOL\\]\\][\\s`]*(?:json)?\\s*[\\{\\[]\\s*(?:\\{\\s*)?[\"']?[A-Za-z_]+[\"']?\\s*:")
+    private val TAG_ATTEMPT = Regex("<tool_call[^>]*>\\s*[\\{\\[]")
+
+    /** هل الرد يحمل محاولة استدعاء أداة (سليمة أو معطوبة) لا مجرد ذكر لاسم الوسم؟ */
+    fun looksLikeAttempt(text: String): Boolean =
+        TOOL_ATTEMPT.containsMatchIn(text) || TAG_ATTEMPT.containsMatchIn(text) ||
+            (text.contains("DSML") && text.contains("invoke"))
+
     /** هل في النص أثر لبروتوكول الأدوات؟ */
     fun hasMarkup(text: String): Boolean =
         text.contains("[[TOOL]]") || text.contains("[[/TOOL]]") || text.contains("DSML") || text.contains("<tool_call>")

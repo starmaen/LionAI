@@ -937,7 +937,7 @@ object ToolAgent {
         val calls = if (nativeCalls.isNotEmpty()) nativeCalls else AiTools.parseCalls(reply)
         // كتلة [[TOOL]] وصلت لكن لم تُحلَّل (JSON معطوب أو اسم أداة غير معروف): لا ننهي المهمة بصمت،
         // نطلب إعادة الكتلة نفسها بصيغة صحيحة (مرتان كحد أقصى).
-        if (calls.isEmpty() && (reply.contains("[[TOOL") || reply.contains("DSML") || reply.contains("<tool_call")) && repairNudges < 2 &&
+        if (calls.isEmpty() && ToolMarkup.looksLikeAttempt(reply) && repairNudges < 2 &&
             System.currentTimeMillis() + 45_000 < deadline
         ) {
             repairNudges++
