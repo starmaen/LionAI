@@ -82,7 +82,15 @@ jobs:
 
     # بوابة ترجمة سريعة: أخطاء Kotlin تظهر خلال دقائق قبل Playwright وproot.
     - name: Fast compile gate (Kotlin)
-      run: ./gradlew :app:compileDebugKotlin --stacktrace
+      run: |
+        set -o pipefail
+        if ! ./gradlew :app:compileDebugKotlin --stacktrace 2>&1 | tee /tmp/compile.log; then
+          # يُظهر أخطاء Kotlin كتنبيهات مقروءة في صفحة التشغيل بدل الاضطرار لفتح السجل الكامل.
+          grep -E '^e: ' /tmp/compile.log | sed -E 's#^e: file://##; s#/home/runner/work/[^/]+/[^/]+/##' | head -30 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit 1
+        fi
 
     # اختبارات Chromium الحقيقية بطيئة (تثبيت apt + تنزيل 1-8 دقائق): تعمل فقط عند تغيّر ملفاتها.
     - name: Detect browser-related changes
