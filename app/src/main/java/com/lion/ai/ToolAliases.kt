@@ -86,6 +86,6 @@ internal object ToolAliases {
         val sg = suggest(name, known)
         if (sg.isNotEmpty()) append("\nهل تقصد: ").append(sg.joinToString("، ")).append("؟")
         append("\nأسماء الأدوات حرفية كما في القائمة (file_read لا read، file_write لا write، file_edit لا edit، execute_command لا bash). ")
-        append("لمعرفة أدوات مجموعة استدعِ tools_schema.")
+        append("لمعرفة أدوات مجموعة استدعِ tools_schema مع المعامل group (مثال: {\"group\":\"files\"}).")
     }
 }
