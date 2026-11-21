@@ -169,21 +169,28 @@ object ToolAgent {
      * ينفّذ نداءً بطيئاً في خيط منفصل ويراقب مقاطعة المستخدم؛ عند المقاطعة يتخلى عنه فوراً ويعيد null
      * (يكتمل الخيط وحده لاحقاً ويُهمل ناتجه). إلغاء المحادثة نفسها يرمي CancellationException من delay فوراً.
      */
-    private suspend fun <T> abortable(chatId: String, onAbort: () -> Unit = {}, block: suspend () -> T): T? {
+    private suspend fun <T> abortable(
+        chatId: String,
+        onAbort: (String) -> Unit = {},
+        tokenOf: () -> String? = { null },
+        block: suspend () -> T
+    ): T? {
         val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
         val job = scope.async { block() }
+        var seen: String? = null
         try {
             while (!job.isCompleted) {
+                tokenOf()?.let { seen = it }
                 if (chatId.isNotBlank() && AgentInterrupt.isPending(chatId)) return null
                 kotlinx.coroutines.delay(200)
             }
             return job.await()
         } finally {
-            // LION-AGENT-2: أي خروج قبل اكتمال الطلب (مقاطعة أو إلغاء الوكيل نفسه) كان يترك الطلب يتيماً:
-            // الصفحة تواصل التوليد وقفل الجلسة محجوز لدقائق. نلغي الطلب ونوقف الصفحة صراحةً.
+            // LION-ABORT-2: عند الخروج قبل اكتمال الطلب نلغي رمز الطلب القديم نفسه فقط (لا طلباً لاحقاً)،
+            // فيتحرر قفل الجلسة دون أن نمسّ أي طلب جديد بدأ بعده.
             if (!job.isCompleted) {
                 job.cancel()
-                runCatching { onAbort() }
+                seen?.let { token -> runCatching { onAbort(token) } }
             }
         }
     }
@@ -406,6 +413,14 @@ object ToolAgent {
     ) {
         private val memory = session?.continuity ?: TaskContinuity().also { it.begin(userRequest, false) }
         private val label = providerLabel.ifBlank { providerInfo(provider).shortName }
+        /** LION-AGENT-3: خطوات الجولات السابقة للمهمة المستأنفة (للتقرير فقط، لا تدخل منطق الحلقة). */
+        private val priorReadTools = setOf(
+            "file_read", "read_file", "github_read_file", "file_read_many", "file_list", "list_dir", "file_tree",
+            "repo_map", "file_search", "github_list_tree", "github_list_dir", "file_diff", "tools_schema"
+        )
+        private val priorWork: List<AgentStep> =
+            if (memory.resume && session != null) session.timeline().filter { it.tool !in setOf("user", "note", "provider") }
+            else emptyList()
         init {
             // «السماح التلقائي»: إذن كتابة مفتوح لكل المحادثات والمزودات دون بطاقة (إلا في طلبات القراءة الصريحة).
             if (!readOnly && prefs.getBoolean("auto_grant_write", false) && !WriteIntent.isReadOnlyRequest(userRequest)) {
@@ -551,8 +566,8 @@ object ToolAgent {
         private val cycleCap = MAX_CYCLES
         // سجل العمل الحي: يظهر في الواجهة (✅ منجز / ❌ فشل / خطوة جارية) ويُلخَّص في تقرير نهائي ثابت لا يعتمد على النموذج.
         private val workLog = mutableListOf<String>()
-        private val readFiles = LinkedHashSet<String>()
-        private val writtenFiles = LinkedHashSet<String>()
+        private val readFiles = LinkedHashSet<String>().apply { priorWork.filter { it.ok && it.path.isNotBlank() && it.tool in priorReadTools }.forEach { add(it.path.takeLast(60)) } }
+        private val writtenFiles = LinkedHashSet<String>().apply { priorWork.filter { it.ok && it.path.isNotBlank() && it.tool !in priorReadTools }.forEach { add(it.path.takeLast(60)) } }
         private val codeTouched = LinkedHashSet<String>()
         private val failedSteps = mutableListOf<String>()
         private val ledger = FindingsLedger()
@@ -615,12 +630,16 @@ object ToolAgent {
             sb.append("- طلبك: ").append(userRequest.replace('\n', ' ').take(90)).append('\n')
             sb.append("- الحالة: ").append(if (complete) "✅ " else "❌ ").append(status).append('\n')
             if (complete) {
-                val checked = used.any { it == "code_doctor" || it == "gate_run" }
+                val verifyNames = setOf("code_doctor", "gate_run", "code_run", "android_build", "build_diagnose", "wait_run")
+                val checked = used.any { it in verifyNames } || priorWork.any { it.ok && it.tool.removePrefix("github_") in verifyNames }
                 sb.append("- الدليل: ").append(if (writtenFiles.isEmpty()) "لا تعديل ملفات" else "عُدّل ${writtenFiles.size} ملف")
                     .append(if (writtenFiles.isEmpty()) "" else if (checked) "، وفُحص الكود فعلاً" else "، دون فحص آلي للكود").append('\n')
             }
-            sb.append("- الخطوات المنفذة: ").append(okCount + failCount)
-            if (failCount > 0) sb.append(" (نجح ").append(okCount).append("، تعذّر ").append(failCount).append(")")
+            val totalOk = okCount + priorWork.sumOf { if (it.ok) 1 + it.repeat else 0 }
+            val totalFail = failCount + priorWork.sumOf { if (!it.ok) 1 + it.repeat else 0 }
+            sb.append("- الخطوات المنفذة: ").append(totalOk + totalFail)
+            if (totalFail > 0) sb.append(" (نجح ").append(totalOk).append("، تعذّر ").append(totalFail).append(")")
+            if (priorWork.isNotEmpty()) sb.append(" — منها ").append(okCount + failCount).append(" في هذه الجولة")
             sb.append('\n')
             if (readFiles.isNotEmpty()) {
                 sb.append("- ملفات قُرئت: ").append(readFiles.take(6).joinToString("، "))
@@ -766,7 +785,7 @@ object ToolAgent {
         // نداء المزود قابل للإلغاء الفوري: يراقب طلب المستخدم (إيقاف/ملاحظة) كل 200ms ويتخلى عن الطلب الجاري
         // بدل أن ينتظر اتصالاً بطيئاً (مزودات API لا تُقطع بإلغاء الـ coroutine وحده).
         val chatKey = session?.chatId.orEmpty()
-        val callResult = abortable(chatKey, onAbort = { if (WebChatRuntime.handles(provider)) WebSessionTransport.haltGeneration(chatKey) }) {
+        val callResult = abortable(chatKey, onAbort = { tok -> WebSessionTransport.cancelToken(tok) }, tokenOf = { if (WebChatRuntime.handles(provider)) WebSessionTransport.activeTokenFor(chatKey) else null }) {
             val tt = if (nativeTools != null && nativeTools.length() > 0) {
                 LlmClient.askWithTools(
                     message = prompt,

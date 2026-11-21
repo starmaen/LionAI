@@ -42,6 +42,10 @@ object WebSessionTransport {
     fun attach(value: Host) { host = value }
     fun detach(value: Host) { if (host === value) host = null }
     fun attached(): Boolean = host != null
+    /** LION-ABORT-2: رمز الطلب النشط لمحادثة بعينها؛ يُلتقط أثناء الانتظار ليُلغى هو بالذات لا طلب لاحق. */
+    fun activeTokenFor(chatId: String): String? =
+        if (chatId.isNotBlank() && activeChat.get() == chatId) active.get() else null
+    fun cancelToken(token: String) { runCatching { host?.cancel(token) } }
     fun open(provider: String) { host?.open(provider) }
     fun inspect(provider: String) { host?.inspect(provider) }
 

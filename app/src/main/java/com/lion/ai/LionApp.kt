@@ -1156,7 +1156,15 @@ fun LionApp() {
         // صدى فهم فوري محلي قبل أول خطوة فعلية، ليرى المستخدم كيف فُهم طلبه.
         toolStatus[chatId] = if (agentRequested) UnderstandingEcho.line(prompt) else ""
         agentTurns[chatId] = agentRequested
-        turnStartedAt[chatId] = System.currentTimeMillis()
+        // LION-APP-1: استئناف مهمة غير مكتملة يُبقي بداية خطواتها الأصلية فلا تختفي خطوات ما قبل المقاطعة،
+        // والسؤال المستقل لا يُصفّر بداية المهمة المعلّقة.
+        turnStartedAt[chatId] = when {
+            resumingTask -> previousSession.timeline()
+                .firstOrNull { it.tool !in setOf("user", "note", "provider") }?.at?.takeIf { it > 0L }
+                ?: System.currentTimeMillis()
+            standalone -> turnStartedAt[chatId] ?: System.currentTimeMillis()
+            else -> System.currentTimeMillis()
+        }
         livePartial.remove(chatId)
         ActiveChat.id = chatId
         val session = AgentSessions.of(prefs, chatId)
@@ -1715,6 +1723,12 @@ fun LionApp() {
                     (if (toolNames.isNotEmpty()) " · 🧰 " + toolNames.distinct().take(4).joinToString("، ") else "") +
                     (if (agentAsked) " · 💬 بانتظار ردك" else "") +
                     (if (consensusPercent >= 0) " · 🧩 " + consensusPercent + "%" else "")
+            }
+            // LION-APP-1: ما بُثّ من الصفحة قبل انقطاع الرد يُحفظ في المحادثة بدل أن يختفي مع رسالة الخطأ.
+            val streamedPartial = livePartial[chatId].orEmpty().trim()
+            if (!agentRequested && streamedPartial.length > 80 && LlmClient.isErrorReply(reply)) {
+                reply = streamedPartial + "\n\n— انقطع الرد قبل اكتماله: " +
+                    reply.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().removePrefix("⚠️").trim().take(160)
             }
             toolStatus.remove(chatId)
             agentProgress.remove(chatId)
