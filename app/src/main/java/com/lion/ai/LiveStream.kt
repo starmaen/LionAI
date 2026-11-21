@@ -68,21 +68,7 @@ internal fun LlmClient.streamChat(
         }
         connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
         val status = connection.responseCode
-        if (status !in 200..299) {
-            val raw = runCatching {
-                connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-            }.getOrNull().orEmpty()
-            // مفتاح/رصيد/صلاحية: سيعيد المسار العادي الخطأ نفسه، فنرميه الآن بدل طلب ثانٍ مهدور.
-            if (status in 401..403) {
-                throw LlmException(status, LlmClient.errorMessage(runCatching { JSONObject(raw) }.getOrNull(), raw))
-            }
-            // حد معدّل/عطل عابر: المسار العادي سيعيد المحاولة، فنمنحه مهلة (Retry-After) بدل قصفه فوراً.
-            if (status == 429 || status in 500..599) {
-                val wait = connection.getHeaderField("Retry-After")?.trim()?.toLongOrNull()?.times(1000) ?: 2_000L
-                Thread.sleep(wait.coerceIn(500L, 15_000L))
-            }
-            return null
-        }
+        if (status !in 200..299) { handleStreamHttpError(connection, status); return null }
         val type = connection.contentType.orEmpty().lowercase()
         if (!type.contains("event-stream")) {
             // الخادم تجاهل البث وردّ بـJSON عادي (مثل الخادم المحلي): نقرأه كما هو.

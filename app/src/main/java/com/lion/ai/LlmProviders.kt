@@ -92,24 +92,11 @@ internal fun LlmClient.callOpenAiTools(
         if (apiKey.isNotBlank()) headers["Authorization"] = "Bearer $apiKey"
         headers.putAll(extraHeaders)
 
-        val response = postJson(url, headers, body)
-        val reply = response.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
-        val text = reply?.optString("content", "").orEmpty()
-            .takeIf { it.isNotBlank() && it != "null" }.orEmpty()
-        val calls = mutableListOf<ToolCall>()
-        val rawCalls = reply?.optJSONArray("tool_calls")
-        if (rawCalls != null) {
-            for (index in 0 until rawCalls.length()) {
-                val fn = rawCalls.optJSONObject(index)?.optJSONObject("function") ?: continue
-                val name = fn.optString("name").trim()
-                if (name.isBlank()) continue
-                val args = ToolCallCodec.extractArgs(fn, fn, fn.opt("arguments"))
-                // أسماء مثل read/write/bash (أسلوب Claude Code) تُترجم هنا، خارج حلقة الوكيل الضخمة.
-                val canonical = ToolAliases.resolve(name, AiTools.knownToolNames()).ifEmpty { name }
-                calls.add(ToolCall(canonical, args, fn.toString().take(2000)))
-            }
-        }
-        return LlmClient.ToolReply(text, calls)
+        val liveChat = LiveStream.active()
+        val streamed = if (liveChat != null) streamToolsChat(url, headers, JSONObject(body.toString()), liveChat) else null
+        val reply = streamed
+            ?: postJson(url, headers, body).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+        return parseToolMessage(reply)
     }
 
 internal fun LlmClient.callGemini(

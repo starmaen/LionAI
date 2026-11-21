@@ -11,7 +11,7 @@ internal object NativeToolRoutes {
 
     /** مزودات بصيغة خاصة (غير OpenAI) أو بمعاملات مختلفة: تبقى على البروتوكول النصي. */
     private val TEXT_ONLY = setOf(
-        "gemini", "claude", "cohere", "aihorde", "deepai", "cloudflare", "openai", "qwen",
+        "gemini", "claude", "cohere", "aihorde", "deepai", "cloudflare", "qwen",
         "custom", "local_proxy", "opencode-local"
     )
 
@@ -30,6 +30,7 @@ internal object NativeToolRoutes {
             "openrouter" -> LlmClient.endpoint("openrouter", "https://openrouter.ai/api/v1/chat/completions") to
                 mapOf("HTTP-Referer" to "https://github.com/starmaen/LionAI", "X-Title" to "Lion AI")
             "deepseek" -> LlmClient.endpoint("deepseek", "https://api.deepseek.com/chat/completions") to emptyMap()
+            "openai" -> LlmClient.endpoint("openai", "https://api.openai.com/v1/chat/completions") to emptyMap()
             "apinex" -> LlmClient.endpoint("apinex", "https://api.apinex.bond/v1/chat/completions") to emptyMap()
             else -> {
                 val info = PROVIDERS.firstOrNull { it.id == provider } ?: return null
@@ -40,7 +41,7 @@ internal object NativeToolRoutes {
         }
     }
 
-    /** معاملات الطلب الخاصة بالمزود (اسم معامل الحد، هل نحذف temperature). OpenAI يبقى نصياً الآن؛ هذه جاهزة لتفعيله لاحقاً بسطر واحد. */
+    /** معاملات الطلب الخاصة بالمزود (اسم معامل الحد، هل نحذف temperature). OpenAI يستخدم max_completion_tokens بلا temperature. */
     fun requestParams(provider: String): Pair<String, Boolean> =
         if (provider == "openai") "max_completion_tokens" to true else "max_tokens" to false
 
