@@ -116,14 +116,22 @@ internal class AndroidWebSessionHost(
 
     /**
      * حارس لوحة المفاتيح: صفحات الويب تعيد التركيز لحقلها أثناء الإرسال/الاستلام فتظهر اللوحة وتغطي الشاشة
-     * دون لمس المستخدم. نُخفيها فقط عندما (1) يكون التركيز لدى WebView الخلفية وليس حقل التطبيق، أو
-     * (2) خلال ثوانٍ من انتهاء الطلب إن لم تكن ظاهرة قبله. حقل الكتابة في التطبيق لا يتأثر.
+     * دون لمس المستخدم. نُخفيها فقط عندما يكون WebView الخلفية هدفًا فعليًا للكتابة (أي أن
+     * onCreateInputConnection يسمح له بالإدخال)، أو أثناء طلب نشط يستخدم عقدة التركيز، أو خلال ثوانٍ
+     * من انتهاء الطلب إن لم تكن ظاهرة قبله. مجرد تركيز العرض على WebView لا يكفي لإخفاء اللوحة:
+     * بعد أي تبادل تبقى الصفحة أحيانًا مركّزة دون أن تكون هدف لوحة مفاتيح، فكان إخفاء اللوحة عندها
+     * يحبس الكتابة في صندوق المحادثة عند الانتقال إلى محادثة أخرى (تظهر الكيبورد ثم تخفيها فورًا)
+     * ولا يزول إلا بإغلاق التطبيق. حقل الكتابة في التطبيق لا يتأثر.
      */
     private val imeGuard = ViewTreeObserver.OnGlobalLayoutListener {
         if (destroyed || interactive || !imeVisible()) return@OnGlobalLayoutListener
-        val webFocused = activity.currentFocus is SessionWebView
+        // هدف لوحة المفاتيح الفعلي هو WebView يسمح له الإدخال حاليًا (عقدة تركيز نشطة أو جلسة يدوية
+        // مع لمسة مستخدم حديثة)، لا مجرد تركيز العرض.
+        val webOwnsIme = (activity.currentFocus as? SessionWebView)?.let {
+            it.manualInput && SystemClock.uptimeMillis() - it.userTouchAt < 20_000L
+        } == true
         val justReleased = !imeShownBeforeLease && SystemClock.uptimeMillis() - leaseReleasedAt < 3_000L
-        if (webFocused || (pending != null && inputLease != null) || justReleased) hideKeyboardIfBackground()
+        if (webOwnsIme || (pending != null && inputLease != null) || justReleased) hideKeyboardIfBackground()
     }
 
     init {
