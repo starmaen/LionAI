@@ -365,7 +365,7 @@
   "group": "github",
   "args": {
    "repo": "owner/name",
-   "branch": "main",
+   "branch": "",
    "message": "...",
    "files": [
     {
@@ -377,7 +377,7 @@
     "old.txt"
    ]
   },
-  "description": "commit واحد لعدة ملفات (تعديل/إنشاء/حذف)",
+  "description": "commit واحد لعدة ملفات (تعديل/إنشاء/حذف). اترك branch فارغاً فيُستخدم فرع العمل النشط تلقائياً",
   "write": true,
   "connector": null
  },
@@ -1750,13 +1750,13 @@
   "args": {
    "repo": "owner/name",
    "path": "repos/owner/name",
-   "branch": "main",
+   "branch": "",
    "message": "...",
    "delete_missing": false,
    "dry_run": true,
    "confirm_large": false
   },
-  "description": "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً",
+  "description": "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً. اترك branch فارغاً فيُستخدم فرع العمل النشط تلقائياً",
   "write": true,
   "connector": null
  },
@@ -1765,9 +1765,10 @@
   "group": "github",
   "args": {
    "repo": "owner/name",
-   "run_id": 123
+   "run_id": 0,
+   "branch": ""
   },
-  "description": "حالة عملية بناء واحدة",
+  "description": "حالة عملية بناء واحدة (اترك run_id=0 لأحدث عملية على الفرع أو المستودع)",
   "write": false,
   "connector": null
  },
@@ -1776,11 +1777,11 @@
   "group": "github",
   "args": {
    "repo": "owner/name",
-   "branch": "main",
+   "branch": "",
    "run_id": 0,
    "timeout_sec": 420
   },
-  "description": "انتظار انتهاء أحدث بناء ثم إرجاع سجل الفشل تلقائياً",
+  "description": "انتظار انتهاء أحدث بناء على فرع العمل النشط (اترك branch فارغاً) ثم إرجاع سجل الفشل تلقائياً",
   "write": false,
   "connector": null
  },
@@ -1853,6 +1854,117 @@
    "number": 1
   },
   "description": "إغلاق Issue",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_get_pr",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1
+  },
+  "description": "تفاصيل Pull Request: الحالة وقابلية الدمج والفروع وحجم التغيير",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_pr_checks",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 0,
+   "ref": ""
+  },
+  "description": "فحوص CI لـPR (number) أو لفرع/SHA (ref): نجح/فشل/قيد التنفيذ لكل فحص",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_get_commit",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "ref": "sha-or-branch"
+  },
+  "description": "كوميت واحد بملفاته وإحصاءاته",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_list_comments",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1
+  },
+  "description": "تعليقات Issue أو Pull Request",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_list_releases",
+  "group": "github",
+  "args": {
+   "repo": "owner/name"
+  },
+  "description": "إصدارات المستودع (Releases)",
+  "write": false,
+  "connector": null
+ },
+ {
+  "name": "github_rerun_failed",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "run_id": 0,
+   "branch": ""
+  },
+  "description": "إعادة تشغيل المهام الفاشلة فقط (run_id=0: أحدث عملية فاشلة)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_update_pr",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1,
+   "title": "",
+   "body": "",
+   "state": "open|closed",
+   "base": ""
+  },
+  "description": "تعديل PR: عنوان/وصف/إغلاق/إعادة فتح/فرع أساسي (الحقول الفارغة لا تتغير)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_update_issue",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "number": 1,
+   "title": "",
+   "body": "",
+   "state": "open|closed",
+   "labels": [],
+   "assignees": []
+  },
+  "description": "تعديل Issue: عنوان/وصف/حالة/وسوم/مسندون (الحقول الفارغة لا تتغير)",
+  "write": true,
+  "connector": null
+ },
+ {
+  "name": "github_cleanup_runs",
+  "group": "github",
+  "args": {
+   "repo": "owner/name",
+   "keep": 20,
+   "older_than_days": 14,
+   "dry_run": true
+  },
+  "description": "صيانة: حذف عمليات البناء المكتملة القديمة (معاينة افتراضياً؛ dry_run=false للتنفيذ)",
   "write": true,
   "connector": null
  },

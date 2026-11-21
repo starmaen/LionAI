@@ -15,6 +15,7 @@ android {
 
     defaultConfig {
         applicationId = "com.lion.ai"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
         // رقم إصدار متزايد دائماً (حتى في البناء المحلي) حتى يُقبل التحديث فوق أي نسخة سابقة
@@ -112,5 +113,7 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.1")
 }
 

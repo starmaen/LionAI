@@ -611,7 +611,7 @@ object GitHubClient {
         }
     }
 
-    private fun fetchBytes(path: String, token: String, maxBytes: Int): ByteArray {
+    private fun fetchBytes(path: String, token: String, maxBytes: Int, tail: Boolean = false): ByteArray {
         var current = URL(if (path.startsWith("http")) path else API + path)
         var hops = 0
         while (hops < 6) {
@@ -644,14 +644,27 @@ object GitHubClient {
                 connection.inputStream.use { input ->
                     val buffer = ByteArray(8192)
                     var total = 0
-                    while (total < maxBytes) {
-                        val read = input.read(buffer, 0, minOf(buffer.size, maxBytes - total))
+                    val deadline = System.currentTimeMillis() + TAIL_SCAN_MS
+                    while (true) {
+                        if (tail) {
+                            if (total >= TAIL_SCAN_BYTES || System.currentTimeMillis() > deadline) break
+                        } else if (total >= maxBytes) {
+                            break
+                        }
+                        val want = if (tail) buffer.size else minOf(buffer.size, maxBytes - total)
+                        val read = input.read(buffer, 0, want)
                         if (read <= 0) break
                         output.write(buffer, 0, read)
                         total += read
+                        if (tail && output.size() > maxBytes * 2) {
+                            val all = output.toByteArray()
+                            output.reset()
+                            output.write(all, all.size - maxBytes, maxBytes)
+                        }
                     }
                 }
-                return output.toByteArray()
+                val all = output.toByteArray()
+                return if (tail && all.size > maxBytes) all.copyOfRange(all.size - maxBytes, all.size) else all
             } finally {
                 connection.disconnect()
             }
@@ -667,6 +680,18 @@ object GitHubClient {
         )
         return String(bytes, Charsets.UTF_8)
     }
+
+    /** آخر [maxBytes] من سجل المهمة: أخطاء Gradle تظهر في النهاية، فالقراءة من البداية كانت تفوّتها أو تنتهي مهلتها. */
+    fun jobLogTail(token: String, owner: String, repo: String, jobId: Long, maxBytes: Int = 400_000): String {
+        val keep = maxBytes.coerceIn(10_000, 2_000_000)
+        val bytes = fetchBytes("/repos/${encode(owner)}/${encode(repo)}/actions/jobs/$jobId/logs", token, keep, tail = true)
+        val text = String(bytes, Charsets.UTF_8)
+        // القص قد يقع وسط سطر/حرف: نتجاوز الجزء الأول المبتور.
+        return if (bytes.size >= keep) text.substringAfter('\n', text) else text
+    }
+
+    private const val TAIL_SCAN_BYTES = 40_000_000
+    private const val TAIL_SCAN_MS = 90_000L
 
     data class JobAnnotation(val path: String?, val startLine: Int?, val endLine: Int?, val title: String?, val message: String?)
 
@@ -969,6 +994,165 @@ object GitHubClient {
         val json = JSONObject().put("event", normalized).put("body", body)
         val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/pulls/$number/reviews", token, "POST", json))
         return "✅ أُرسلت المراجعة ($normalized) — ${o.optString("html_url")}"
+    }
+
+    private fun clean(value: String): String = value.takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+
+    /** تفاصيل Pull Request واحد: الحالة وقابلية الدمج والفروع وحجم التغيير. */
+    fun getPull(token: String, owner: String, repo: String, number: Int): String {
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/pulls/$number", token))
+        val state = if (o.optBoolean("merged")) "merged" else o.optString("state")
+        val mergeable = if (o.isNull("mergeable")) "قيد الحساب" else o.optBoolean("mergeable").toString()
+        return buildString {
+            append("#").append(number).append(" [").append(state).append("] ").append(o.optString("title")).append('\n')
+            append(o.optJSONObject("head")?.optString("ref").orEmpty()).append(" → ")
+                .append(o.optJSONObject("base")?.optString("ref").orEmpty()).append('\n')
+            append("قابل للدمج: ").append(mergeable).append(" · حالة الدمج: ").append(o.optString("mergeable_state")).append('\n')
+            append("ملفات: ").append(o.optInt("changed_files")).append(" (+").append(o.optInt("additions"))
+                .append(" −").append(o.optInt("deletions")).append(")\n")
+            append(o.optString("html_url"))
+            clean(o.optString("body")).takeIf { it.isNotBlank() }?.let { append("\n\n").append(it.take(1500)) }
+        }
+    }
+
+    /** SHA رأس الـPR: يُستخدم لقراءة فحوص CI الخاصة به. */
+    fun pullHeadSha(token: String, owner: String, repo: String, number: Int): String =
+        JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/pulls/$number", token))
+            .optJSONObject("head")?.optString("sha").orEmpty()
+
+    /** فحوص CI (check runs) لمرجع: فرع أو SHA أو وسم. */
+    fun checkRuns(token: String, owner: String, repo: String, ref: String): String {
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/commits/${encode(ref)}/check-runs?per_page=100", token))
+        val array = o.optJSONArray("check_runs")
+        if (array == null || array.length() == 0) return "لا توجد فحوص CI لهذا المرجع ($ref)."
+        val lines = (0 until array.length()).mapNotNull { array.optJSONObject(it) }.map { c ->
+            val result = clean(c.optString("conclusion")).ifBlank { c.optString("status") }
+            val icon = when (result) {
+                "success" -> "✅"
+                "failure", "timed_out", "cancelled", "action_required" -> "❌"
+                "skipped", "neutral" -> "➖"
+                else -> "⏳"
+            }
+            "$icon ${c.optString("name")}: $result"
+        }
+        return "فحوص $ref (${lines.size}):\n" + lines.joinToString("\n")
+    }
+
+    /** كوميت واحد بملفاته وإحصاءاته. */
+    fun getCommit(token: String, owner: String, repo: String, ref: String): String {
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/commits/${encode(ref)}", token))
+        val commit = o.optJSONObject("commit")
+        val stats = o.optJSONObject("stats")
+        val files = o.optJSONArray("files")
+        return buildString {
+            append(o.optString("sha").take(7)).append(' ')
+                .append(commit?.optString("message").orEmpty().lineSequence().firstOrNull().orEmpty()).append('\n')
+            append(commit?.optJSONObject("author")?.optString("name").orEmpty()).append(" · ")
+                .append(commit?.optJSONObject("author")?.optString("date").orEmpty()).append('\n')
+            if (stats != null) append("+").append(stats.optInt("additions")).append(" −").append(stats.optInt("deletions")).append('\n')
+            if (files != null) {
+                for (i in 0 until minOf(files.length(), 40)) {
+                    val f = files.optJSONObject(i) ?: continue
+                    append("• ").append(f.optString("status")).append(' ').append(f.optString("filename"))
+                        .append(" (+").append(f.optInt("additions")).append(" −").append(f.optInt("deletions")).append(")\n")
+                }
+                if (files.length() > 40) append("…(+").append(files.length() - 40).append(" ملفات أخرى)\n")
+            }
+            append(o.optString("html_url"))
+        }
+    }
+
+    /** تعليقات Issue أو Pull Request. */
+    fun commentsText(token: String, owner: String, repo: String, number: Int): String {
+        val array = JSONArray(request("/repos/${encode(owner)}/${encode(repo)}/issues/$number/comments?per_page=50", token))
+        if (array.length() == 0) return "لا توجد تعليقات على #$number."
+        return (0 until array.length()).mapNotNull { array.optJSONObject(it) }.joinToString("\n\n") { c ->
+            "@${c.optJSONObject("user")?.optString("login").orEmpty()} (${c.optString("created_at").take(10)}):\n${c.optString("body").take(500)}"
+        }
+    }
+
+    fun listReleases(token: String, owner: String, repo: String): String {
+        val array = JSONArray(request("/repos/${encode(owner)}/${encode(repo)}/releases?per_page=15", token))
+        if (array.length() == 0) return "لا توجد إصدارات."
+        return (0 until array.length()).mapNotNull { array.optJSONObject(it) }.joinToString("\n") { r ->
+            val flags = listOfNotNull("draft".takeIf { r.optBoolean("draft") }, "prerelease".takeIf { r.optBoolean("prerelease") })
+            "${r.optString("tag_name")} — ${clean(r.optString("name"))} ${flags.joinToString(",")} (${r.optString("published_at").take(10)})".replace("  ", " ").trim()
+        }
+    }
+
+    /** إعادة تشغيل المهام الفاشلة فقط (أسرع وأرخص من إعادة البناء كله). */
+    fun rerunFailedJobs(token: String, owner: String, repo: String, runId: Long) {
+        request("/repos/${encode(owner)}/${encode(repo)}/actions/runs/$runId/rerun-failed-jobs", token, "POST")
+    }
+
+    /** تعديل Pull Request: العنوان/الوصف/الحالة (open|closed)/الفرع الأساسي. الحقول الفارغة لا تُغيَّر. */
+    fun updatePull(
+        token: String, owner: String, repo: String, number: Int,
+        title: String = "", body: String? = null, state: String = "", base: String = ""
+    ): String {
+        val patch = JSONObject()
+        if (title.isNotBlank()) patch.put("title", title)
+        if (body != null) patch.put("body", body)
+        if (state == "open" || state == "closed") patch.put("state", state)
+        if (base.isNotBlank()) patch.put("base", base)
+        if (patch.length() == 0) throw IllegalArgumentException("لا يوجد ما يُعدَّل: مرّر title أو body أو state=open|closed أو base")
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/pulls/$number", token, "PATCH", patch))
+        return "✅ حُدّث PR #$number [${o.optString("state")}] ${o.optString("title")}"
+    }
+
+    /** تعديل Issue: العنوان/الوصف/الحالة/الوسوم/المسندون. الحقول الفارغة لا تُغيَّر. */
+    fun updateIssue(
+        token: String, owner: String, repo: String, number: Int,
+        title: String = "", body: String? = null, state: String = "",
+        labels: List<String>? = null, assignees: List<String>? = null
+    ): String {
+        val patch = JSONObject()
+        if (title.isNotBlank()) patch.put("title", title)
+        if (body != null) patch.put("body", body)
+        if (state == "open" || state == "closed") patch.put("state", state)
+        if (labels != null) patch.put("labels", JSONArray(labels))
+        if (assignees != null) patch.put("assignees", JSONArray(assignees))
+        if (patch.length() == 0) throw IllegalArgumentException("لا يوجد ما يُعدَّل: مرّر title أو body أو state أو labels أو assignees")
+        val o = JSONObject(request("/repos/${encode(owner)}/${encode(repo)}/issues/$number", token, "PATCH", patch))
+        return "✅ حُدّث #$number [${o.optString("state")}] ${o.optString("title")}"
+    }
+
+    /**
+     * تنظيف عمليات البناء المكتملة القديمة: تبقى أحدث [keep] عملية، وتُحذف ما هو أقدم من [olderThanDays] يوماً.
+     * الوضع الافتراضي dry_run يعرض فقط ما سيُحذف.
+     */
+    fun cleanupRuns(
+        token: String, owner: String, repo: String,
+        keep: Int, olderThanDays: Int, dryRun: Boolean
+    ): String {
+        val cutoff = System.currentTimeMillis() - olderThanDays.coerceAtLeast(0) * 86_400_000L
+        val completed = mutableListOf<JSONObject>()
+        for (page in 1..5) {
+            val raw = request(
+                "/repos/${encode(owner)}/${encode(repo)}/actions/runs?per_page=100&status=completed&page=$page", token
+            )
+            val array = JSONObject(raw).optJSONArray("workflow_runs") ?: break
+            if (array.length() == 0) break
+            for (i in 0 until array.length()) array.optJSONObject(i)?.let { completed.add(it) }
+            if (array.length() < 100) break
+        }
+        val candidates = completed.drop(keep.coerceAtLeast(0)).filter {
+            runCatching { java.time.Instant.parse(it.optString("created_at")).toEpochMilli() < cutoff }.getOrDefault(false)
+        }
+        if (candidates.isEmpty()) return "لا توجد عمليات بناء قديمة للحذف (المكتملة: ${completed.size}، المحتفظ بها: $keep)."
+        if (dryRun) {
+            return "🔎 معاينة: سيُحذف ${candidates.size} من ${completed.size} عملية مكتملة (تبقى أحدث $keep، وأقدم من $olderThanDays يوماً).\n" +
+                "أعد النداء بـ dry_run=false للتنفيذ."
+        }
+        var deleted = 0
+        var failed = 0
+        for (run in candidates.take(200)) {
+            runCatching {
+                request("/repos/${encode(owner)}/${encode(repo)}/actions/runs/${run.optLong("id")}", token, "DELETE")
+            }.onSuccess { deleted++ }.onFailure { failed++ }
+        }
+        return "🧹 حُذفت $deleted عملية بناء قديمة" + (if (failed > 0) " (تعذّر حذف $failed)" else "") +
+            (if (candidates.size > 200) "؛ بقي ${candidates.size - 200} فأعد النداء." else ".")
     }
 
     fun closeIssue(token: String, owner: String, repo: String, number: Int): String {

@@ -1,0 +1,35 @@
+name: Android device tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  androidTest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v7
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+    - uses: actions/setup-java@v5
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    - uses: gradle/actions/setup-gradle@v4
+    - name: Run instrumented tests on emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 34
+        arch: x86_64
+        target: google_apis
+        script: ./gradlew connectedDebugAndroidTest --stacktrace
+    - name: Upload test reports
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: android-test-reports
+        path: app/build/reports/androidTests/
+        if-no-files-found: ignore

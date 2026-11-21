@@ -50,10 +50,36 @@ class ToolArgsAndDsmlTest {
     }
 
     @Test
+    fun newGithubMaintenanceToolsValidateArgsClearly() {
+        assertNotNull(AiTools.validateArgs(ToolCall("github_get_pr", JSONObject())))
+        assertNull(AiTools.validateArgs(ToolCall("github_get_pr", JSONObject().put("number", 5))))
+        // فحوص CI: رقم PR أو ref، أحدهما يكفي ولا شيء منهما خطأ واضح.
+        assertNotNull(AiTools.validateArgs(ToolCall("github_pr_checks", JSONObject())))
+        assertNull(AiTools.validateArgs(ToolCall("github_pr_checks", JSONObject().put("number", 5))))
+        assertNull(AiTools.validateArgs(ToolCall("github_pr_checks", JSONObject().put("ref", "main"))))
+        assertNotNull(AiTools.validateArgs(ToolCall("github_get_commit", JSONObject())))
+        assertNull(AiTools.validateArgs(ToolCall("github_get_commit", JSONObject().put("ref", "abc1234"))))
+        // الصيانة وإعادة المهام الفاشلة: كل الوسائط اختيارية بقيم افتراضية آمنة.
+        assertNull(AiTools.validateArgs(ToolCall("github_rerun_failed", JSONObject())))
+        assertNull(AiTools.validateArgs(ToolCall("github_cleanup_runs", JSONObject())))
+        assertNotNull(AiTools.validateArgs(ToolCall("github_update_issue", JSONObject())))
+    }
+
+    @Test
+    fun cleanupRunsIsMarkedAsWriteTool() {
+        assertTrue(AiTools.isMutation(ToolCall("github_cleanup_runs", JSONObject())))
+        assertTrue(AiTools.isMutation(ToolCall("github_update_pr", JSONObject().put("number", 1))))
+        assertFalse(AiTools.isMutation(ToolCall("github_get_pr", JSONObject().put("number", 1))))
+    }
+
+    @Test
     fun validateArgsRejectsZeroOrNegativeRequiredIdsWhileKeepingOptionalRunIds() {
         assertNotNull(AiTools.validateArgs(ToolCall("github_rerun", JSONObject())))
         assertNotNull(AiTools.validateArgs(ToolCall("github_rerun", JSONObject().put("run_id", 0))))
         assertNull(AiTools.validateArgs(ToolCall("github_rerun", JSONObject().put("run_id", 987654L))))
+
+        // github_get_run: run_id اختياري (الأحدث عند الحذف) فلا يُرفض النداء الفارغ ولا يدخل النموذج في حلقة استكشاف.
+        assertNull(AiTools.validateArgs(ToolCall("github_get_run", JSONObject().put("repo", "owner/name"))))
 
         assertNotNull(AiTools.validateArgs(ToolCall("github_comment_issue", JSONObject().put("body", "hi"))))
         assertNull(

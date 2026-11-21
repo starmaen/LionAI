@@ -140,6 +140,11 @@ internal fun LlmClient.callGemini(
                 JSONObject().put("maxOutputTokens", LLM_GEMINI_MAX_TOKENS)
             )
 
+        val liveChat = LiveStream.active()
+        if (liveChat != null) {
+            val streamed = streamGemini(url, headers, JSONObject(body.toString()), liveChat)
+            if (streamed != null) return streamed
+        }
         val response = postJson(url, headers, body)
 
         val parts = response.optJSONArray("candidates")

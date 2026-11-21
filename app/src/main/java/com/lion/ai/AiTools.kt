@@ -270,7 +270,7 @@ object AiTools {
 
         // Developer execution loop
         Def("github_push_workspace", ToolGroup.GITHUB, """{"repo":"owner/name","path":"repos/owner/name","branch":"","message":"...","delete_missing":false,"dry_run":true,"confirm_large":false}""", "رفع مجلد المستودع (لا جذر مساحة العمل) دفعة واحدة عبر مقارنة blob. أكثر من 30 ملفاً جديداً يحتاج confirm_large=true. استعمل dry_run أولاً. اترك branch فارغاً فيُستخدم فرع العمل النشط تلقائياً", true),
-        Def("github_get_run", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123}""", "حالة عملية بناء واحدة"),
+        Def("github_get_run", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":0,"branch":""}""", "حالة عملية بناء واحدة (اترك run_id=0 لأحدث عملية على الفرع أو المستودع)"),
         Def("github_wait_run", ToolGroup.GITHUB, """{"repo":"owner/name","branch":"","run_id":0,"timeout_sec":420}""", "انتظار انتهاء أحدث بناء على فرع العمل النشط (اترك branch فارغاً) ثم إرجاع سجل الفشل تلقائياً"),
         Def("github_run_logs", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":123,"max_chars":12000}""", "سجل وظائف عملية بناء كامل (للفشل والنجاح)"),
         Def("github_compare", ToolGroup.GITHUB, """{"repo":"owner/name","base":"main","head":"feature"}""", "مقارنة فرعين: commits والملفات والفروق"),
@@ -278,6 +278,15 @@ object AiTools {
         Def("github_merge_pr", ToolGroup.GITHUB, """{"repo":"owner/name","number":1,"method":"squash","commit_title":""}""", "دمج Pull Request", true),
         Def("github_review_pr", ToolGroup.GITHUB, """{"repo":"owner/name","number":1,"event":"APPROVE|REQUEST_CHANGES|COMMENT","body":"..."}""", "مراجعة PR واعتماده أو طلب تعديلات", true),
         Def("github_close_issue", ToolGroup.GITHUB, """{"repo":"owner/name","number":1}""", "إغلاق Issue", true),
+        Def("github_get_pr", ToolGroup.GITHUB, """{"repo":"owner/name","number":1}""", "تفاصيل Pull Request: الحالة وقابلية الدمج والفروع وحجم التغيير"),
+        Def("github_pr_checks", ToolGroup.GITHUB, """{"repo":"owner/name","number":0,"ref":""}""", "فحوص CI لـPR (number) أو لفرع/SHA (ref): نجح/فشل/قيد التنفيذ لكل فحص"),
+        Def("github_get_commit", ToolGroup.GITHUB, """{"repo":"owner/name","ref":"sha-or-branch"}""", "كوميت واحد بملفاته وإحصاءاته"),
+        Def("github_list_comments", ToolGroup.GITHUB, """{"repo":"owner/name","number":1}""", "تعليقات Issue أو Pull Request"),
+        Def("github_list_releases", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "إصدارات المستودع (Releases)"),
+        Def("github_rerun_failed", ToolGroup.GITHUB, """{"repo":"owner/name","run_id":0,"branch":""}""", "إعادة تشغيل المهام الفاشلة فقط (run_id=0: أحدث عملية فاشلة)", true),
+        Def("github_update_pr", ToolGroup.GITHUB, """{"repo":"owner/name","number":1,"title":"","body":"","state":"open|closed","base":""}""", "تعديل PR: عنوان/وصف/إغلاق/إعادة فتح/فرع أساسي (الحقول الفارغة لا تتغير)", true),
+        Def("github_update_issue", ToolGroup.GITHUB, """{"repo":"owner/name","number":1,"title":"","body":"","state":"open|closed","labels":[],"assignees":[]}""", "تعديل Issue: عنوان/وصف/حالة/وسوم/مسندون (الحقول الفارغة لا تتغير)", true),
+        Def("github_cleanup_runs", ToolGroup.GITHUB, """{"repo":"owner/name","keep":20,"older_than_days":14,"dry_run":true}""", "صيانة: حذف عمليات البناء المكتملة القديمة (معاينة افتراضياً؛ dry_run=false للتنفيذ)", true),
         Def("github_list_tags", ToolGroup.GITHUB, """{"repo":"owner/name"}""", "وسوم الإصدارات"),
         Def("github_create_tag", ToolGroup.GITHUB, """{"repo":"owner/name","name":"v1.0.0","from":"main"}""", "إنشاء وسم إصدار", true),
         Def("github_create_release", ToolGroup.GITHUB, """{"repo":"owner/name","tag":"v1.0.0","name":"","body":"","draft":false,"prerelease":false}""", "إنشاء Release", true),
@@ -401,7 +410,7 @@ object AiTools {
     /** التحقق: فحص الجودة والبناء وقراءة نتيجة CI. */
     private val VERIFY_NAMES = setOf(
         "code_doctor", "gate_run", "build_diagnose", "file_diff", "android_build",
-        "code_run", "github_wait_run", "github_get_run", "github_run_logs"
+        "code_run", "github_wait_run", "github_get_run", "github_run_logs", "github_pr_checks"
     )
 
     /** الاستكشاف: قراءة الواقع قبل البناء عليه. */
@@ -1068,7 +1077,8 @@ object AiTools {
         "mcp_remove_server" to listOf("id"),
         "mcp_list_tools" to listOf("server"),
         "mcp_call" to listOf("server", "tool"),
-        "mcp_ping" to listOf("server")
+        "mcp_ping" to listOf("server"),
+        "github_get_commit" to listOf("ref")
     )
 
     /** مفاتيح يُسمح أن تكون فارغة "" (مثل حذف نص أو إنشاء ملف فارغ) لكن يجب إرسالها صراحةً. */
@@ -1086,11 +1096,14 @@ object AiTools {
         "github_merge_pr" to listOf("number"),
         "github_review_pr" to listOf("number"),
         "github_close_issue" to listOf("number"),
+        "github_get_pr" to listOf("number"),
+        "github_list_comments" to listOf("number"),
+        "github_update_pr" to listOf("number"),
+        "github_update_issue" to listOf("number"),
         "github_workflow_jobs" to listOf("run_id"),
         "github_rerun" to listOf("run_id"),
         "github_cancel" to listOf("run_id"),
         "github_list_artifacts" to listOf("run_id"),
-        "github_get_run" to listOf("run_id"),
         "github_run_logs" to listOf("run_id"),
         "github_job_log" to listOf("job_id"),
         "github_download_artifact" to listOf("artifact_id"),
@@ -1149,6 +1162,11 @@ object AiTools {
                 val hasDelete = (args.optJSONArray("delete")?.length() ?: 0) > 0 ||
                     (args.optJSONArray("deletions")?.length() ?: 0) > 0
                 if (!hasFiles && !hasDelete) problems.add("يجب تحديد «files» أو «delete» غير فارغين")
+            }
+            "github_pr_checks" -> {
+                if (args.optLong("number", 0L) <= 0L && args.optString("ref").trim().isBlank()) {
+                    problems.add("مرّر «number» (رقم PR) أو «ref» (فرع/SHA)")
+                }
             }
             "github_delete_branches" -> {
                 val hasBranches = (args.optJSONArray("branches")?.length() ?: 0) > 0
@@ -2315,8 +2333,17 @@ $code
                         if (runId <= 0L) throw IllegalArgumentException("لا توجد عمليات بناء لهذا المستودع")
                         val jobs = GitHubClient.listRunJobs(token, owner, repo, runId)
                         val failing = jobs.filter { it.conclusion == "failure" }.ifEmpty { jobs }
-                        failing.joinToString("\n") { job ->
-                            runCatching { GitHubClient.jobLog(token, owner, repo, job.id, 1_500_000) }.getOrDefault("")
+                        // الأخطاء في ذيل سجل Gradle: نقرأ آخر 500KB فقط ونكتفي بثلاث مهام فاشلة كي لا تنتهي المهلة.
+                        failing.take(3).joinToString("\n") { job ->
+                            runCatching { GitHubClient.jobLogTail(token, owner, repo, job.id, 500_000) }
+                                .getOrDefault("")
+                                .ifBlank {
+                                    runCatching { GitHubClient.jobAnnotations(token, owner, repo, job.id) }
+                                        .getOrDefault(emptyList())
+                                        .joinToString("\n") { a ->
+                                            "${a.path.orEmpty()}:${a.startLine ?: 0} — ${a.title.orEmpty()} ${a.message.orEmpty()}".trim()
+                                        }
+                                }
                         }
                     }
                 }
@@ -2493,7 +2520,14 @@ $code
             }
             "github_get_run" -> {
                 val (owner, repo) = repoOf(ctx, args)
-                val run = GitHubClient.getWorkflowRun(token, owner, repo, args.optLong("run_id"))
+                var runId = args.optLong("run_id", 0L)
+                if (runId <= 0L) {
+                    // run_id اختياري: نأخذ أحدث عملية (على الفرع إن حُدد) بدل رفض النداء وإدخال النموذج في حلقة استكشاف.
+                    runId = GitHubClient.listWorkflowRuns(token, owner, repo, 5, branch = args.optString("branch").trim())
+                        .firstOrNull()?.id ?: 0L
+                    if (runId <= 0L) throw IllegalArgumentException("لا توجد عمليات بناء لهذا المستودع")
+                }
+                val run = GitHubClient.getWorkflowRun(token, owner, repo, runId)
                 runSummary(run) + "\n" + GitHubClient.listRunJobs(token, owner, repo, run.id)
                     .joinToString("\n") { "• ${it.name}: ${it.status}/${it.conclusion}" }
             }
@@ -2626,6 +2660,75 @@ $code
             "github_close_issue" -> {
                 val (owner, repo) = repoOf(ctx, args)
                 GitHubClient.closeIssue(token, owner, repo, args.optInt("number"))
+            }
+            "github_get_pr" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.getPull(token, owner, repo, args.optInt("number"))
+            }
+            "github_pr_checks" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                val number = args.optInt("number", 0)
+                val ref = args.optString("ref").trim().ifBlank { GitHubClient.pullHeadSha(token, owner, repo, number) }
+                if (ref.isBlank()) throw IllegalArgumentException("تعذّر تحديد المرجع: تأكد من رقم الـPR أو مرّر ref")
+                GitHubClient.checkRuns(token, owner, repo, ref)
+            }
+            "github_get_commit" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.getCommit(token, owner, repo, req(args, "ref"))
+            }
+            "github_list_comments" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.commentsText(token, owner, repo, args.optInt("number"))
+            }
+            "github_list_releases" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.listReleases(token, owner, repo)
+            }
+            "github_rerun_failed" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                var runId = args.optLong("run_id", 0L)
+                if (runId <= 0L) {
+                    runId = GitHubClient.listWorkflowRuns(token, owner, repo, 15, branch = args.optString("branch").trim())
+                        .firstOrNull { it.conclusion == "failure" }?.id ?: 0L
+                    if (runId <= 0L) throw IllegalArgumentException("لا توجد عملية فاشلة لإعادة تشغيلها")
+                }
+                GitHubClient.rerunFailedJobs(token, owner, repo, runId)
+                "✅ أُعيد تشغيل المهام الفاشلة في العملية $runId. تابعها بـ github_wait_run run_id=$runId"
+            }
+            "github_update_pr" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.updatePull(
+                    token, owner, repo, args.optInt("number"),
+                    title = args.optString("title").trim(),
+                    body = if (args.has("body") && args.optString("body").isNotBlank()) args.optString("body") else null,
+                    state = args.optString("state").trim().lowercase(),
+                    base = args.optString("base").trim()
+                )
+            }
+            "github_update_issue" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                fun list(key: String): List<String>? {
+                    val array = args.optJSONArray(key)
+                    if (array != null) return (0 until array.length()).mapNotNull { array.optString(it).trim().takeIf { v -> v.isNotBlank() } }
+                    return args.optString(key).trim().takeIf { it.isNotBlank() }?.split(',')?.map { it.trim() }
+                }
+                GitHubClient.updateIssue(
+                    token, owner, repo, args.optInt("number"),
+                    title = args.optString("title").trim(),
+                    body = if (args.has("body") && args.optString("body").isNotBlank()) args.optString("body") else null,
+                    state = args.optString("state").trim().lowercase(),
+                    labels = list("labels"),
+                    assignees = list("assignees")
+                )
+            }
+            "github_cleanup_runs" -> {
+                val (owner, repo) = repoOf(ctx, args)
+                GitHubClient.cleanupRuns(
+                    token, owner, repo,
+                    keep = int(args, "keep", 20).coerceIn(0, 500),
+                    olderThanDays = int(args, "older_than_days", 14).coerceIn(0, 3650),
+                    dryRun = args.optBoolean("dry_run", true)
+                )
             }
             "github_list_tags" -> {
                 val (owner, repo) = repoOf(ctx, args)
