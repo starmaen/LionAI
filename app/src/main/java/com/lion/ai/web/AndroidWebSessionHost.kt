@@ -889,30 +889,29 @@ internal class AndroidWebSessionHost(
             acquireEditorFocus(p.view)
         }
         val jsReplied = booleanArrayOf(false)
-        // LION-WEBFIX-2: لا نفشل ولا نقطع أبداً أثناء رفع ملف أو بعد تسليم الرسالة: الصفحة مشغولة لا معلّقة.
-        val uploading = p.stage == "attach" || p.stage == "attach_wait"
-        main.postDelayed({
-            if (!jsReplied[0] && pending === p && !destroyed) {
-                if (uploading) {
-                    bump(p)
-                    status(p, "رفع الملف إلى الصفحة قيد المعالجة؛ أواصل الانتظار دون إعادة الإرسال")
-                } else if (p.submitted) {
-                    bump(p)
-                    runCatching { p.view.onResume(); p.view.resumeTimers() }
-                    status(p, "الصفحة مشغولة وتواصل العمل؛ لا أقطع الرد")
-                    scheduleTick(p, 500L)
+        // LION-WEBFIX-3: الصمت ليس دليل تعليق. الكتابة/الرفع/الإرسال لا تُعاد ولا تُقطع (تكرارها خطر)،
+        // وبعد الإرسال لا فشل بسبب الصمت أبداً؛ نمدّ المهلة ونواصل الانتظار.
+        val heavy = p.stage == "attach" || p.stage == "attach_wait" || p.stage == "prepare" || p.stage == "submit"
+        val guard = object : Runnable {
+            override fun run() {
+                if (jsReplied[0] || pending !== p || destroyed) return
+                p.jsMisses++
+                bump(p)
+                val limit = if (p.submitted) Int.MAX_VALUE else if (heavy) 36 else 12
+                if (p.jsMisses >= limit) {
+                    fail(p, "عارض الويب صامت تماماً منذ ${p.jsMisses * 10} ثانية قبل الإرسال: الصفحة معلّقة أو مخفية. أعد فتح التطبيق أو افتح الجلسة من الإعدادات ثم أعد المحاولة.")
+                    return
+                }
+                status(p, "الصفحة مشغولة بمعالجة كبيرة؛ أواصل الانتظار (${p.jsMisses * 10}ث)")
+                if (heavy) {
+                    main.postDelayed(this, 10_000L)
                 } else {
-                    p.jsMisses++
-                    if (p.jsMisses >= 6) {
-                        fail(p, "عارض الويب لا يرد على أوامر التطبيق (6 محاولات × 10 ثوانٍ) قبل الإرسال: الصفحة معلّقة أو مخفية. أعد فتح التطبيق أو افتح الجلسة من الإعدادات ثم أعد المحاولة.")
-                    } else {
-                        runCatching { p.view.onResume(); p.view.resumeTimers() }
-                        status(p, "الصفحة لم ترد على الفحص خلال 10ث؛ أعيد المحاولة (${p.jsMisses}/6)")
-                        scheduleTick(p, 200L)
-                    }
+                    runCatching { p.view.onResume(); p.view.resumeTimers() }
+                    scheduleTick(p, 500L)
                 }
             }
-        }, if (uploading) 90_000L else 10_000L)
+        }
+        main.postDelayed(guard, 10_000L)
         p.view.evaluateJavascript(js) { raw ->
             jsReplied[0] = true
             p.jsMisses = 0
